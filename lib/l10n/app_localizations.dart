@@ -455,7 +455,7 @@ class S {
   String get shareCruise => _es ? 'Compartir Cruise' : 'Share Cruise';
   String get madeWithHeart =>
       _es ? 'Hecho con ❤ en Miami' : 'Made with ❤ in Miami';
-  String get copyright => '© 2026 Cruise Technologies, Inc.';
+  String get copyright => '@2026 Cruiseinride';
   String get thankYou =>
       _es ? '¡Gracias por tu apoyo! ⭐' : 'Thank you for your support! ⭐';
 
@@ -2568,6 +2568,310 @@ class S {
       _es ? 'Rostro detectado' : 'Face detected';
   String get positionYourFace =>
       _es ? 'Coloca tu rostro en el óvalo' : 'Position your face in the oval';
+
+  // ── Coming Soon ────────────────────────────────────────────────────────────
+  String get comingSoon => _es ? 'Próximamente' : 'Coming Soon';
+
+  // ── Vehicle Insurance ──────────────────────────────────────────────────────
+  String get vehicleInsuranceValid =>
+      _es ? 'Seguro del vehículo válido' : 'Vehicle Insurance Valid';
+  String get insuranceExpiredLabel =>
+      _es ? 'Seguro vencido' : 'Insurance Expired';
+  String get insuranceUpToDate =>
+      _es ? 'Seguro al día' : 'Insurance is up to date';
+  String get tapToUpdateDocuments =>
+      _es ? 'Toca para actualizar documentos' : 'Tap to update documents';
+  String get notAssigned => _es ? 'No asignado' : 'Not assigned';
+  String get setByDispatch =>
+      _es ? 'Asignado por despacho' : 'Set by dispatch';
+
+  // ── Documents Screen ───────────────────────────────────────────────────────
+  String get documentsLockedNote => _es
+      ? 'Las actualizaciones de documentos son gestionadas por el equipo de Cruise. Contacta soporte si necesitas actualizar un documento.'
+      : 'Document updates are managed by the Cruise team. Contact support if you need to update a document.';
+
+  // ── Sounds Screen ──────────────────────────────────────────────────────────
+  String get syncedWithDeviceVolume =>
+      _es ? 'Sincronizado con el volumen del dispositivo' : 'Synced with device volume';
+  String get adjustWithPhoneVolumeButtons =>
+      _es ? 'Ajusta con los botones de volumen de tu teléfono' : "Adjust using your phone's volume buttons";
+
+  // ── Opportunities Screen ───────────────────────────────────────────────────
+  String get peakHoursBonusTitle => _es ? 'Bono de Horas Pico' : 'Peak Hours Bonus';
+  String get peakHoursBonusDesc => _es
+      ? 'Gana hasta 2x durante las horas pico de demanda (7-9 AM, 5-8 PM entre semana). El precio dinámico se aplica automáticamente.'
+      : 'Earn up to 2x during peak demand hours (7-9 AM, 5-8 PM weekdays). Surge pricing automatically applies.';
+  String get weekendWarriorBonusTitle =>
+      _es ? 'Guerrero de Fin de Semana' : 'Weekend Warrior';
+  String get weekendWarriorBonusDesc => _es
+      ? 'Completa 20+ viajes los fines de semana para desbloquear un bono de \$50 cada semana.'
+      : 'Complete 20+ trips on weekends to unlock a \$50 bonus each week.';
+  String get airportRunsTitle => _es ? 'Viajes al Aeropuerto' : 'Airport Runs';
+  String get airportRunsDesc => _es
+      ? 'Los viajes al aeropuerto generan tarifas premium. Mantente cerca del aeropuerto para más viajes de alto valor.'
+      : 'Airport pickups and drop-offs earn premium fares. Stay near airports for more high-value trips.';
+  String get eventSurgeTitle => _es ? 'Surge de Eventos' : 'Event Surge';
+  String get eventSurgeDesc => _es
+      ? 'Grandes eventos = grandes ganancias. Revisa el mapa para zonas de aumento cerca de conciertos, partidos y festivales.'
+      : 'Major events = major earnings. Check the map for surge zones near concerts, games, and festivals.';
+  String get consecutiveTripBonusTitle =>
+      _es ? 'Bono por Viajes Consecutivos' : 'Consecutive Trip Bonus';
+  String get consecutiveTripBonusDesc => _es
+      ? 'Acepta 3 viajes seguidos sin desconectarte para ganar un bono extra de \$10.'
+      : 'Accept 3 trips in a row without going offline to earn an extra \$10 bonus.';
+
+  // ── Work Hub Screen ────────────────────────────────────────────────────────
+  String get rideServicesTitle => _es ? 'Servicio de Viajes' : 'Ride Services';
+  String get rideServicesDesc => _es
+      ? 'Tu servicio principal. Recoge y deja pasajeros de forma segura y eficiente.'
+      : 'Your primary service. Pick up and drop off riders safely and efficiently.';
+  String get packageDeliveryTitle =>
+      _es ? 'Entrega de Paquetes' : 'Package Delivery';
+  String get packageDeliveryDesc => _es
+      ? 'Entrega paquetes para negocios locales e individuos.'
+      : 'Deliver packages for local businesses and individuals.';
+  String get groceryDeliveryTitle =>
+      _es ? 'Entrega de Supermercado' : 'Grocery Delivery';
+  String get groceryDeliveryDesc => _es
+      ? 'Asóciate con supermercados locales para entrega en el mismo día.'
+      : 'Partner with local grocery stores for same-day delivery.';
+  String get scheduledRidesWorkHubTitle =>
+      _es ? 'Viajes Programados' : 'Scheduled Rides';
+  String get scheduledRidesWorkHubDesc => _es
+      ? 'Acepta viajes pre-programados para ganancias garantizadas en horarios fijos.'
+      : 'Accept pre-scheduled rides for guaranteed earnings at set times.';
+
+  // ── Refer Friends Screen ───────────────────────────────────────────────────
+  String get referEarn200 => _es ? 'GANA \$200' : 'EARN \$200';
+  String get referFriendsSubtitle => _es
+      ? 'por cada amigo que se registre y complete sus primeros 50 viajes'
+      : 'for every friend who signs up and completes their first 50 rides';
+  String get shareInviteLinkBtn =>
+      _es ? 'Compartir Enlace de Invitación' : 'Share Invite Link';
+  String get referDriverShareText => _es
+      ? '¡Conduce con Cruise y gana excelente dinero! Regístrate con mi enlace: https://cruiseride.com/drive'
+      : 'Drive with Cruise and earn great money! Sign up with my link: https://cruiseride.com/drive';
+  String get howItWorksTitle => _es ? 'Cómo funciona' : 'How it works';
+  String get howItWorksDesc => _es
+      ? '1. Comparte tu enlace de invitación único\n2. Tu amigo se registra y completa sus primeros 50 viajes\n3. Ganas un bono de \$200'
+      : '1. Share your unique invite link\n2. Your friend signs up and completes their first 50 rides\n3. You earn \$200 bonus';
+  String get noLimitTitle => _es ? 'Sin Límite' : 'No Limit';
+  String get noLimitDesc => _es
+      ? 'Refiere a tantos amigos como quieras — no hay límite de cuánto puedes ganar.'
+      : "Refer as many friends as you want — there's no cap on how much you can earn.";
+
+  // ── Driver Insurance Screen ────────────────────────────────────────────────
+  String get cruiseDriverProtectionTitle =>
+      _es ? 'Protección para Conductores Cruise' : 'Cruise Driver Protection';
+  String get cruiseDriverProtectionDesc => _es
+      ? 'Estás cubierto desde el momento en que aceptas una solicitud de viaje hasta que el viaje se completa.'
+      : "You're covered from the moment you accept a ride request until the trip is completed.";
+  String get liabilityCoverageTitle =>
+      _es ? 'Cobertura de Responsabilidad' : 'Liability Coverage';
+  String get liabilityCoverageDesc => _es
+      ? 'Hasta \$1,000,000 en cobertura de responsabilidad a terceros durante un viaje.'
+      : 'Up to \$1,000,000 in third-party liability coverage while on a trip.';
+  String get collisionCoverageTitle =>
+      _es ? 'Cobertura de Colisión' : 'Collision Coverage';
+  String get collisionCoverageDesc => _es
+      ? 'Cobertura de daños al vehículo durante un viaje activo, sujeto a deducible.'
+      : 'Vehicle damage coverage while on an active trip, subject to deductible.';
+  String get uninsuredMotoristTitle =>
+      _es ? 'Motorista No Asegurado' : 'Uninsured Motorist';
+  String get uninsuredMotoristDesc => _es
+      ? 'Protección contra conductores no asegurados o insuficientemente asegurados durante viajes activos.'
+      : 'Protection against uninsured or underinsured drivers during active trips.';
+  String get personalInsuranceTitle =>
+      _es ? 'Seguro Personal' : 'Personal Insurance';
+  String get personalInsuranceDesc => _es
+      ? 'Recuerda: debes mantener tu propio seguro de auto personal para conducir con Cruise.'
+      : 'Remember: you must maintain your own personal auto insurance to drive with Cruise.';
+
+  // ── Tax Info Screen ────────────────────────────────────────────────────────
+  String get taxDocumentsTitle => _es ? 'Documentos Fiscales' : 'Tax Documents';
+  String get taxDocumentsDesc => _es
+      ? 'Tus formularios fiscales 1099 estarán disponibles aquí al final del año fiscal si ganaste más de \$600.'
+      : 'Your 1099 tax forms will be available here at the end of the tax year if you earned more than \$600.';
+  String get earningsSummaryTitle =>
+      _es ? 'Resumen de Ganancias' : 'Earnings Summary';
+  String get earningsSummaryDesc => _es
+      ? 'Ve y descarga tu resumen de ganancias anual para la declaración de impuestos.'
+      : 'View and download your annual earnings summary for tax filing purposes.';
+  String get deductibleExpensesTitle =>
+      _es ? 'Gastos Deducibles' : 'Deductible Expenses';
+  String get deductibleExpensesDesc => _es
+      ? 'Rastrea millaje, gasolina, mantenimiento y otros gastos que podrían ser deducibles de impuestos.'
+      : 'Track mileage, gas, maintenance, and other expenses that may be tax deductible.';
+  String get taxTipsTitle => _es ? 'Consejos Fiscales' : 'Tax Tips';
+  String get taxTipsDesc => _es
+      ? 'Como contratista independiente, puede que necesites pagar impuestos estimados trimestrales. Consulta a un profesional fiscal.'
+      : 'As an independent contractor, you may need to pay quarterly estimated taxes. Consult a tax professional.';
+
+  // ── Plus Card Screen ───────────────────────────────────────────────────────
+  String get instantEarningsAccessTitle =>
+      _es ? 'Acceso Instantáneo a Ganancias' : 'Instant Earnings Access';
+  String get instantEarningsAccessDesc => _es
+      ? 'Recibe tus ganancias instantáneamente después de cada viaje — sin esperar pagos semanales.'
+      : 'Get your earnings instantly after every trip — no waiting for weekly payouts.';
+  String get cashBackRewardsTitle =>
+      _es ? 'Recompensas de Cashback' : 'Cash Back Rewards';
+  String get cashBackRewardsDesc => _es
+      ? 'Gana 3% de cashback en gasolina, 2% en mantenimiento de auto, y 1% en todo lo demás.'
+      : 'Earn 3% cash back on gas, 2% on car maintenance, and 1% on everything else.';
+  String get noAnnualFeeTitle => _es ? 'Sin Cuota Anual' : 'No Annual Fee';
+  String get noAnnualFeeDesc => _es
+      ? 'La Tarjeta Cruise Plus no tiene cuotas anuales. Solo conduce y gana.'
+      : 'The Cruise Plus Card has zero annual fees. Just drive and earn.';
+
+  // ── Learning Center Screen ─────────────────────────────────────────────────
+  String get lcGettingStartedTitle => _es ? 'Primeros Pasos' : 'Getting Started';
+  String get lcGettingStartedSubtitle => _es
+      ? 'Todo lo que necesitas saber sobre tus primeros viajes con Cruise.'
+      : 'Everything you need to know about your first trips with Cruise.';
+  String get lcGettingStarted1 => _es
+      ? 'Descarga la app de Conductor de Cruise y asegúrate de que tu cuenta esté completamente aprobada.'
+      : 'Download the Cruise Driver app and make sure your account is fully approved.';
+  String get lcGettingStarted2 => _es
+      ? 'Configura tu disponibilidad — toca "Conectarse" para empezar a recibir solicitudes de viaje.'
+      : 'Set your availability — tap "Go Online" to start receiving ride requests.';
+  String get lcGettingStarted3 => _es
+      ? 'Mantén tu teléfono cargado y el GPS habilitado en todo momento mientras conduces.'
+      : 'Keep your phone charged and GPS enabled at all times while driving.';
+  String get lcGettingStarted4 => _es
+      ? 'Tu primer viaje: acepta la solicitud, navega hacia la recogida, saluda al pasajero profesionalmente.'
+      : 'Your first ride: accept the request, navigate to pickup, greet the rider professionally.';
+  String get lcGettingStarted5 => _es
+      ? 'Completa el viaje y califica a tu pasajero. Las ganancias se acreditan a tu cuenta instantáneamente.'
+      : 'Complete the ride and rate your rider. Earnings are credited to your account instantly.';
+  String get lcNavTipsTitle => _es ? 'Consejos de Navegación' : 'Navigation Tips';
+  String get lcNavTipsSubtitle => _es
+      ? 'Usa apps de GPS efectivamente, aprende sobre rutas preferidas y maneja desvíos.'
+      : 'Use GPS apps effectively, learn about preferred routes, and handle detours.';
+  String get lcNavTip1 => _es
+      ? 'Configura tu app de navegación preferida en Configuración → Navegación.'
+      : 'Set your preferred navigation app under Settings → Navigation.';
+  String get lcNavTip2 => _es
+      ? 'Siempre sigue la ruta sugerida a menos que el pasajero solicite un camino específico.'
+      : 'Always follow the suggested route unless the rider requests a specific path.';
+  String get lcNavTip3 => _es
+      ? 'Para desvíos por tráfico, recalcula en tu app de navegación y notifica al pasajero.'
+      : 'For detours due to traffic, re-route through your navigation app and notify the rider.';
+  String get lcNavTip4 => _es
+      ? 'Recogidas en el aeropuerto: sigue los letreros del terminal y espera en la zona de rideshare designada.'
+      : 'Airport pickups: follow terminal signs and wait in the designated rideshare pickup zone.';
+  String get lcNavTip5 => _es
+      ? 'Evita giros en U en calles transitadas — da vuelta a la derecha para una navegación más segura.'
+      : 'Avoid U-turns on busy roads — make a right block instead for safer navigation.';
+  String get lcRiderCommTitle =>
+      _es ? 'Comunicación con Pasajeros' : 'Rider Communication';
+  String get lcRiderCommSubtitle => _es
+      ? 'Mejores prácticas para saludar pasajeros, manejar solicitudes especiales y obtener calificaciones de 5 estrellas.'
+      : 'Best practices for greeting riders, handling special requests, and earning 5-star ratings.';
+  String get lcRiderComm1 => _es
+      ? 'Saluda a los pasajeros amablemente: "Hola, soy [nombre], vamos a [destino]."'
+      : 'Greet riders warmly: "Hi, I\'m [name], headed to [destination]."';
+  String get lcRiderComm2 => _es
+      ? 'Pregunta si tienen una ruta preferida o preferencia musical.'
+      : 'Ask if they have a preferred route or music preference.';
+  String get lcRiderComm3 => _es
+      ? "Mantén la conversación ligera — sigue el ritmo del pasajero. Algunos prefieren viajes en silencio."
+      : "Keep conversation light — follow the rider's lead. Some prefer quiet rides.";
+  String get lcRiderComm4 => _es
+      ? 'Para solicitudes especiales (paradas extra, espera), comunica claramente y actualiza la app.'
+      : 'For special requests (extra stops, waiting), communicate clearly and update the app.';
+  String get lcRiderComm5 => _es
+      ? 'Termina el viaje profesionalmente: "¡Gracias por viajar con Cruise, que tengas un excelente día!"'
+      : 'End the ride professionally: "Thanks for riding with Cruise, have a great day!"';
+  String get lcSafetyTitle =>
+      _es ? 'Protocolos de Seguridad' : 'Safety Protocols';
+  String get lcSafetySubtitle => _es
+      ? 'Sabe qué hacer en emergencias, accidentes y situaciones incómodas.'
+      : 'Know what to do in emergencies, accidents, and uncomfortable situations.';
+  String get lcSafety1 => _es
+      ? 'Emergencia: detente de forma segura y llama al 911. Toca el botón SOS en la app para alertar a Cruise.'
+      : 'Emergency: pull over safely and call 911. Tap the SOS button in the app to alert Cruise.';
+  String get lcSafety2 => _es
+      ? 'Accidentes: documenta todo con fotos. Reporta a través de la app dentro de 24 horas.'
+      : 'Accidents: document everything with photos. Report through the app within 24 hours.';
+  String get lcSafety3 => _es
+      ? 'Situaciones incómodas: tienes el derecho de terminar cualquier viaje si te sientes inseguro.'
+      : 'Uncomfortable situations: you have the right to end any ride if you feel unsafe.';
+  String get lcSafety4 => _es
+      ? 'Nunca manejes bajo la influencia de alcohol, medicamentos u otras sustancias.'
+      : 'Never drive under the influence of alcohol, medication, or other substances.';
+  String get lcSafety5 => _es
+      ? 'Revisa tu vehículo antes de cada turno: frenos, luces, espejos y presión de llantas.'
+      : 'Check your vehicle before each shift: brakes, lights, mirrors, and tire pressure.';
+  String get lcMaxEarningsTitle =>
+      _es ? 'Maximizar Ganancias' : 'Maximizing Earnings';
+  String get lcMaxEarningsSubtitle => _es
+      ? 'Consejos pro para encontrar zonas de aumento, horas de manejo óptimas y reducir gastos.'
+      : 'Pro tips for finding surge zones, optimal driving hours, and reducing expenses.';
+  String get lcMaxEarnings1 => _es
+      ? 'Horas pico (7-9 AM y 5-8 PM entre semana) ofrecen hasta 2× de ganancias — prioriza estos horarios.'
+      : 'Peak hours (7-9 AM and 5-8 PM weekdays) offer up to 2× earnings — prioritize these.';
+  String get lcMaxEarnings2 => _es
+      ? 'Noches de fin de semana (Vie/Sáb 10 PM–2 AM) son los períodos de mayor demanda en la mayoría de ciudades.'
+      : 'Weekend nights (Fri/Sat 10 PM–2 AM) are the highest demand periods in most cities.';
+  String get lcMaxEarnings3 => _es
+      ? 'Mantente cerca de distritos de entretenimiento populares y centros de tránsito entre viajes.'
+      : 'Stay near popular entertainment districts and transit hubs between rides.';
+  String get lcMaxEarnings4 => _es
+      ? 'Completa 20+ viajes de fin de semana para desbloquear el bono Guerrero de Fin de Semana de \$50.'
+      : 'Complete 20+ weekend trips to unlock the \$50 Weekend Warrior bonus.';
+  String get lcMaxEarnings5 => _es
+      ? 'Rastrea tus gastos: gasolina, mantenimiento y comisiones de la app suelen ser deducibles de impuestos.'
+      : 'Track your expenses: gas, maintenance, and app fees are often tax deductible.';
+  String get lcVehicleMaintenanceTitle =>
+      _es ? 'Mantenimiento del Vehículo' : 'Vehicle Maintenance';
+  String get lcVehicleMaintenanceSubtitle => _es
+      ? 'Mantén tu auto en óptimas condiciones con horarios de mantenimiento y consejos de cuidado.'
+      : 'Keep your car in top shape with maintenance schedules and care tips.';
+  String get lcVehicleMaintenance1 => _es
+      ? 'Cambio de aceite cada 5,000 millas o según lo recomiende el fabricante de tu vehículo.'
+      : 'Oil change every 5,000 miles or as recommended by your vehicle manufacturer.';
+  String get lcVehicleMaintenance2 => _es
+      ? 'Rotación de llantas cada 6,000–8,000 millas. Revisa la presión semanalmente.'
+      : 'Tire rotation every 6,000–8,000 miles. Check pressure weekly.';
+  String get lcVehicleMaintenance3 => _es
+      ? 'Mantén el interior limpio — aspira semanalmente y usa un aromatizante de auto.'
+      : 'Keep the interior clean — vacuum weekly and use a car freshener.';
+  String get lcVehicleMaintenance4 => _es
+      ? 'Reemplaza el filtro de aire de cabina cada 15,000–25,000 millas para un viaje con olor fresco.'
+      : 'Replace cabin air filter every 15,000–25,000 miles for a fresh-smelling ride.';
+  String get lcVehicleMaintenance5 => _es
+      ? 'Mantén la inspección del vehículo y los documentos de seguro actualizados en la app Cruise.'
+      : 'Keep vehicle inspection and insurance documents up to date in the Cruise app.';
+
+  // ── New Driver Instructions Screen ────────────────────────────────────────
+  String get newDriverWelcomeTitle =>
+      _es ? '¡Bienvenido a Cruise!' : 'Welcome to Cruise!';
+  String get youreApprovedTitle =>
+      _es ? '¡Estás Aprobado!' : "You're Approved!";
+  String get threeThingsToDo => _es
+      ? 'Aquí hay 3 cosas que hacer antes de tu primer viaje'
+      : 'Here are 3 things to do before your first ride';
+  String get verifyDocumentsTitle =>
+      _es ? 'Verifica tus documentos' : 'Verify your documents';
+  String get verifyDocumentsBody => _es
+      ? "Asegúrate de que tu Licencia de Conducir, Seguro del Vehículo y Registro estén subidos y aprobados en la sección de Documentos. Mantenlos actualizados — los documentos vencidos suspenderán tu cuenta."
+      : "Make sure your Driver's License, Vehicle Insurance, and Registration are uploaded and approved in the Documents section. Keep them up to date — expired documents will suspend your account.";
+  String get setupNavigationTitle =>
+      _es ? 'Configura tu navegación' : 'Set up your navigation';
+  String get setupNavigationBody => _es
+      ? 'Ve a Configuración → Navegación y selecciona tu app de mapas preferida (Cruise Maps, Google Maps, Apple Maps o Waze). Esta es la app que se abrirá cuando aceptes un viaje.'
+      : 'Go to Settings → Navigation and select your preferred map app (Cruise Maps, Google Maps, Apple Maps, or Waze). This is the app that will open when you accept a ride.';
+  String get goOnlineAndEarnTitle =>
+      _es ? 'Conéctate y gana' : 'Go online and earn';
+  String get goOnlineAndEarnBody => _es
+      ? 'Toca "Conectarse" en la pantalla principal para empezar a recibir solicitudes de viaje. Conduce durante las horas pico (7–9 AM y 5–8 PM entre semana) para ganancias máximas. ¡Completa tu primer viaje y recibe el pago instantáneamente!'
+      : 'Tap "Go Online" on the home screen to start receiving ride requests. Drive during peak hours (7–9 AM and 5–8 PM weekdays) for maximum earnings. Complete your first ride and get paid instantly!';
+  String get letsGoBtn => _es ? '¡Vamos!' : "Let's Go!";
+
+  // ── About Screen ───────────────────────────────────────────────────────────
+  String get shareAppText => _es
+      ? '¡Mira Cruise — la mejor experiencia de viaje! 🚗\nhttps://cruiseride.com/download'
+      : 'Check out Cruise - the best ride experience! 🚗\nhttps://cruiseride.com/download';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

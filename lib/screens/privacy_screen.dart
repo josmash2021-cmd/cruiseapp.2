@@ -20,7 +20,6 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
   bool _locationSharing = true;
   bool _analyticsEnabled = true;
-  bool _personalizedAds = false;
 
   @override
   void initState() {
@@ -34,7 +33,6 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     setState(() {
       _locationSharing = prefs.getBool('privacy_location') ?? true;
       _analyticsEnabled = prefs.getBool('privacy_analytics') ?? true;
-      _personalizedAds = prefs.getBool('privacy_ads') ?? false;
     });
   }
 
@@ -417,18 +415,6 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                         _toggle('privacy_analytics', v);
                       },
                     ),
-                    const SizedBox(height: 10),
-                    _toggleItem(
-                      c,
-                      S.of(context).personalizedAds,
-                      S.of(context).personalizedAdsDesc,
-                      _personalizedAds,
-                      (v) {
-                        setState(() => _personalizedAds = v);
-                        _toggle('privacy_ads', v);
-                      },
-                    ),
-
                     const SizedBox(height: 28),
                     Text(
                       S.of(context).yourData,

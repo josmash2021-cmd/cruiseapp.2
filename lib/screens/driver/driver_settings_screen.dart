@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -155,6 +156,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   _nightMode,
                   _setNightMode,
                 ),
+                if (Platform.isIOS)
                 _navItem(
                   Icons.record_voice_over_rounded,
                   S.of(context).siriShortcuts,

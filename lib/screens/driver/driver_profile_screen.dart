@@ -10,6 +10,7 @@ import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/common/profile_avatar.dart';
 import 'driver_trip_history_screen.dart';
+import 'cruise_level_screen.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
 class DriverProfileScreen extends StatefulWidget {
@@ -577,7 +578,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   //  YOUR MODE CARD
   // ═══════════════════════════════════════════════════
   Widget _buildModeCard() {
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        Navigator.push(
+          context,
+          slideFromRightRoute(const CruiseLevelScreen()),
+        );
+      },
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: _card,
@@ -621,6 +630,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

@@ -356,18 +356,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       ).push(slideFromRightRoute(const PayoutMethodsScreen()));
                     },
                   ),
-                  _item(
-                    context,
-                    Icons.credit_card_rounded,
-                    S.of(context).plusCard,
-                    S.of(context).cruiseDebitCard,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const PlusCardScreen()));
-                    },
-                  ),
-
                   const SizedBox(height: 24),
 
                   // ── Resources ──

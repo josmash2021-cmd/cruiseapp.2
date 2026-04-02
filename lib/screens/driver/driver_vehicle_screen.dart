@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../driver/driver_documents_screen.dart';
+import '../../config/page_transitions.dart';
 
 /// Vehicle management screen – view and edit car details.
 class DriverVehicleScreen extends StatefulWidget {
@@ -21,27 +23,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   String _year = '';
   String _color = '';
   String _plate = '';
-  String _vin = '';
-  String _vehicleType = 'Sedan';
+  String _vehicleType = 'comfort';
   bool _inspectionValid = false;
+  bool _insuranceValid = false;
   bool _loading = true;
-  bool _saving = false;
-
-  bool _isEditing = false;
-  late TextEditingController _makeCtrl;
-  late TextEditingController _modelCtrl;
-  late TextEditingController _yearCtrl;
-  late TextEditingController _colorCtrl;
-  late TextEditingController _plateCtrl;
 
   @override
   void initState() {
     super.initState();
-    _makeCtrl = TextEditingController();
-    _modelCtrl = TextEditingController();
-    _yearCtrl = TextEditingController();
-    _colorCtrl = TextEditingController();
-    _plateCtrl = TextEditingController();
     _fetchVehicle();
   }
 
@@ -55,74 +44,13 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         _year = (v['year'] ?? '').toString();
         _color = (v['color'] ?? '') as String;
         _plate = (v['plate'] ?? '') as String;
-        _vin = (v['vin'] ?? '') as String;
-        _vehicleType = (v['vehicle_type'] ?? 'Sedan') as String;
+        _vehicleType = (v['vehicle_type'] ?? 'comfort') as String;
         _inspectionValid = v['inspection_valid'] == true;
-        _makeCtrl.text = _make;
-        _modelCtrl.text = _model;
-        _yearCtrl.text = _year;
-        _colorCtrl.text = _color;
-        _plateCtrl.text = _plate;
+        _insuranceValid = v['insurance_valid'] == true;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _makeCtrl.dispose();
-    _modelCtrl.dispose();
-    _yearCtrl.dispose();
-    _colorCtrl.dispose();
-    _plateCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveChanges() async {
-    HapticFeedback.mediumImpact();
-    setState(() => _saving = true);
-    try {
-      await ApiService.saveVehicle(
-        make: _makeCtrl.text,
-        model: _modelCtrl.text,
-        year: int.tryParse(_yearCtrl.text) ?? 0,
-        color: _colorCtrl.text,
-        plate: _plateCtrl.text,
-        vin: _vin,
-        vehicleType: _vehicleType,
-      );
-      if (!mounted) return;
-      setState(() {
-        _make = _makeCtrl.text;
-        _model = _modelCtrl.text;
-        _year = _yearCtrl.text;
-        _color = _colorCtrl.text;
-        _plate = _plateCtrl.text;
-        _isEditing = false;
-        _saving = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).vehicleInfoUpdated),
-          backgroundColor: _gold,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).failedToSave(e.toString())),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
@@ -154,35 +82,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
               ),
               onPressed: () => Navigator.pop(context),
             ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: IconButton(
-                  onPressed: () {
-                    if (_isEditing) {
-                      _saveChanges();
-                    } else {
-                      setState(() => _isEditing = true);
-                    }
-                  },
-                  icon: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: _isEditing
-                          ? _gold.withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.06),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _isEditing ? Icons.check_rounded : Icons.edit_rounded,
-                      color: _isEditing ? _gold : Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ),
-              ),
-            ],
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
               title: Text(
@@ -275,156 +174,167 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Inspection status ──
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: _inspectionValid
-                          ? const Color(0xFFE8C547).withValues(alpha: 0.08)
-                          : Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
+                  // ── Inspection status (tappable to update) ──
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.push(
+                        context,
+                        slideFromRightRoute(const DriverDocumentsScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
                         color: _inspectionValid
-                            ? const Color(0xFFE8C547).withValues(alpha: 0.2)
-                            : Colors.white.withValues(alpha: 0.2),
+                            ? const Color(0xFFE8C547).withValues(alpha: 0.08)
+                            : Colors.orange.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: _inspectionValid
+                              ? const Color(0xFFE8C547).withValues(alpha: 0.2)
+                              : Colors.orange.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _inspectionValid
+                                ? Icons.verified_rounded
+                                : Icons.warning_rounded,
+                            color: _inspectionValid
+                                ? const Color(0xFFE8C547)
+                                : Colors.orange,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _inspectionValid
+                                      ? s.vehicleInspectionValid
+                                      : s.inspectionExpired,
+                                  style: TextStyle(
+                                    color: _inspectionValid
+                                        ? const Color(0xFFE8C547)
+                                        : Colors.orange,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _inspectionValid
+                                      ? s.nextInspectionDue
+                                      : s.tapToUpdateDocuments,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white38,
+                            size: 20,
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _inspectionValid
-                              ? Icons.verified_rounded
-                              : Icons.warning_rounded,
-                          color: _inspectionValid
-                              ? const Color(0xFFE8C547)
-                              : Colors.white.withValues(alpha: 0.5),
-                          size: 24,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Insurance status (tappable to update) ──
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.push(
+                        context,
+                        slideFromRightRoute(const DriverDocumentsScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: _insuranceValid
+                            ? const Color(0xFF4CAF50).withValues(alpha: 0.08)
+                            : Colors.red.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: _insuranceValid
+                              ? const Color(0xFF4CAF50).withValues(alpha: 0.3)
+                              : Colors.red.withValues(alpha: 0.4),
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _inspectionValid
-                                    ? s.vehicleInspectionValid
-                                    : s.inspectionExpired,
-                                style: TextStyle(
-                                  color: _inspectionValid
-                                      ? const Color(0xFFE8C547)
-                                      : Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _inspectionValid
-                                    ? s.nextInspectionDue
-                                    : s.scheduleNewInspection,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _insuranceValid
+                                ? Icons.security_rounded
+                                : Icons.security_rounded,
+                            color: _insuranceValid
+                                ? const Color(0xFF4CAF50)
+                                : Colors.red,
+                            size: 24,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _insuranceValid
+                                      ? s.vehicleInsuranceValid
+                                      : s.insuranceExpiredLabel,
+                                  style: TextStyle(
+                                    color: _insuranceValid
+                                        ? const Color(0xFF4CAF50)
+                                        : Colors.red,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _insuranceValid
+                                      ? s.insuranceUpToDate
+                                      : s.tapToUpdateDocuments,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white38,
+                            size: 20,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Details ──
-                  if (!_isEditing) ...[
-                    _detailRow(
-                      s.makeLabel,
-                      _make,
-                      Icons.directions_car_filled_rounded,
-                    ),
-                    _detailRow(s.modelLabel, _model, Icons.local_taxi_rounded),
-                    _detailRow(
-                      s.yearLabel,
-                      _year,
-                      Icons.calendar_today_rounded,
-                    ),
-                    _detailRow(s.colorLabel, _color, Icons.palette_rounded),
-                    _detailRow(
-                      s.licensePlate,
-                      _plate,
-                      Icons.confirmation_number_rounded,
-                    ),
-                    _detailRow(s.vinLabel, _vin, Icons.qr_code_rounded),
-                    _detailRow(
-                      s.typeLabel,
-                      _vehicleType,
-                      Icons.category_rounded,
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 8),
-                    _editField(
-                      s.makeLabel,
-                      _makeCtrl,
-                      Icons.directions_car_filled_rounded,
-                    ),
-                    _editField(
-                      s.modelLabel,
-                      _modelCtrl,
-                      Icons.local_taxi_rounded,
-                    ),
-                    _editField(
-                      s.yearLabel,
-                      _yearCtrl,
-                      Icons.calendar_today_rounded,
-                      keyboard: TextInputType.number,
-                    ),
-                    _editField(s.colorLabel, _colorCtrl, Icons.palette_rounded),
-                    _editField(
-                      s.licensePlate,
-                      _plateCtrl,
-                      Icons.confirmation_number_rounded,
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _saveChanges,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: Text(
-                          s.saveChanges,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextButton(
-                      onPressed: () {
-                        _makeCtrl.text = _make;
-                        _modelCtrl.text = _model;
-                        _yearCtrl.text = _year;
-                        _colorCtrl.text = _color;
-                        _plateCtrl.text = _plate;
-                        setState(() => _isEditing = false);
-                      },
-                      child: Text(
-                        s.cancel,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+                  // ── Read-only vehicle details ──
+                  _detailRow(s.makeLabel, _make, Icons.directions_car_filled_rounded),
+                  _detailRow(s.modelLabel, _model, Icons.local_taxi_rounded),
+                  _detailRow(s.yearLabel, _year, Icons.calendar_today_rounded),
+                  _detailRow(s.colorLabel, _color, Icons.palette_rounded),
+                  _detailRow(s.licensePlate, _plate, Icons.confirmation_number_rounded),
+                  // Vehicle type: set by dispatch only
+                  _detailRowWithNote(
+                    s.typeLabel,
+                    _vehicleType.isNotEmpty ? _vehicleType : s.notAssigned,
+                    Icons.category_rounded,
+                    s.setByDispatch,
+                  ),
                   const SizedBox(height: 30),
                 ],
               ),
@@ -512,44 +422,70 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     );
   }
 
-  Widget _editField(
+  Widget _detailRowWithNote(
     String label,
-    TextEditingController ctrl,
-    IconData icon, {
-    TextInputType keyboard = TextInputType.text,
-  }) {
+    String value,
+    IconData icon,
+    String note,
+  ) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: TextFormField(
-        controller: ctrl,
-        keyboardType: keyboard,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-        ),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
-          prefixIcon: Padding(
-            padding: const EdgeInsets.only(left: 14, right: 10),
-            child: Icon(icon, color: _gold, size: 20),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.white.withValues(alpha: 0.4), size: 18),
           ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 48),
-          filled: true,
-          fillColor: _card,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              note,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: _gold.withValues(alpha: 0.5)),
-          ),
-        ),
+        ],
       ),
     );
   }

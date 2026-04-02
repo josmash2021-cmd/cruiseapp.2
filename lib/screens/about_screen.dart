@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
 import 'package:flutter/material.dart';
@@ -173,18 +174,9 @@ class _AboutScreenState extends State<AboutScreen> {
 
               // ── Credits ──
               Center(
-                child: Column(
-                  children: [
-                    Text(
-                      S.of(context).madeWithHeart,
-                      style: TextStyle(fontSize: 14, color: c.textSecondary),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      S.of(context).copyright,
-                      style: TextStyle(fontSize: 13, color: c.textTertiary),
-                    ),
-                  ],
+                child: Text(
+                  S.of(context).copyright,
+                  style: TextStyle(fontSize: 13, color: c.textTertiary),
                 ),
               ),
               const SizedBox(height: 32),
@@ -241,10 +233,10 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   Future<void> _rateApp() async {
-    // Try Google Play Store first, then fallback
-    const playStoreUrl =
-        'https://play.google.com/store/apps/details?id=com.cruise_app';
-    final uri = Uri.parse(playStoreUrl);
+    final storeUrl = Platform.isIOS
+        ? 'https://apps.apple.com/app/id0000000000'
+        : 'https://play.google.com/store/apps/details?id=com.cruise_app';
+    final uri = Uri.parse(storeUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
@@ -252,7 +244,7 @@ class _AboutScreenState extends State<AboutScreen> {
       final sc = AppColors.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Thank you for your support! ⭐'),
+          content: Text(S.of(context).thankYou),
           backgroundColor: sc.isDark ? sc.surface : Colors.black87,
         ),
       );
@@ -260,9 +252,6 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   Future<void> _shareCruise() async {
-    const shareUrl = 'https://cruiseride.com/download';
-    const shareText =
-        'Check out Cruise - the best ride experience! 🚗\n$shareUrl';
-    await Share.share(shareText);
+    await Share.share(S.of(context).shareAppText);
   }
 }

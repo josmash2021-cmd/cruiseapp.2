@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
 import 'driver_profile_photo_screen.dart';
+import 'driver_info_pages.dart';
 
 /// Premium cinematic "You're Approved!" screen.
 /// Shows for ~3.2 s then auto-navigates to [DriverProfilePhotoScreen].
@@ -83,11 +84,12 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
   }
 
   void _goToDriverHome() {
+    // Show new driver instructions for newly approved drivers
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 280),
         reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, __, ___) => const DriverProfilePhotoScreen(),
+        pageBuilder: (_, __, ___) => const NewDriverInstructionsScreen(),
         transitionsBuilder: (_, anim, __, child) {
           return FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

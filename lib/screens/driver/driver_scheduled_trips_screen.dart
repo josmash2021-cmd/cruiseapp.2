@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/notification_service.dart';
 
 /// Premium Scheduled Trips screen for drivers.
 /// Shows upcoming assigned rides with airport indicators and pickup zone info.
@@ -73,12 +74,36 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
         _loading = false;
       });
       _staggerCtrl.forward(from: 0);
+      _scheduleUpcomingNotifications(trips);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  /// Schedules a local push notification 2 hours before each upcoming trip.
+  void _scheduleUpcomingNotifications(List<Map<String, dynamic>> trips) {
+    for (int i = 0; i < trips.length; i++) {
+      final trip = trips[i];
+      final rawTime = trip['scheduled_time'] ?? trip['pickup_time'] ?? trip['created_at'];
+      if (rawTime == null) continue;
+      try {
+        final scheduledAt = DateTime.parse(rawTime.toString());
+        final notifyAt = scheduledAt.subtract(const Duration(hours: 2));
+        if (notifyAt.isAfter(DateTime.now())) {
+          final pickup = trip['pickup_address']?.toString() ?? 'pickup';
+          final dropoff = trip['dropoff_address']?.toString() ?? 'dropoff';
+          NotificationService.scheduleAt(
+            id: 2000 + i,
+            title: 'Upcoming Ride in 2 Hours',
+            body: 'From $pickup to $dropoff',
+            scheduledTime: notifyAt,
+          );
+        }
+      } catch (_) {}
     }
   }
 

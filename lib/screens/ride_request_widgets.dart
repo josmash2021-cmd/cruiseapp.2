@@ -455,11 +455,23 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
                   const SizedBox(height: 6),
 
-                  // Payment Method + Request button — visible after car selection
+                  // Payment Method + Request button — slide in after card selection
                   AnimatedSize(
-                    duration: const Duration(milliseconds: 300),
+                    duration: const Duration(milliseconds: 350),
                     curve: Curves.easeInOutCubic,
-                    child: option != null
+                    child: AnimatedSlide(
+                      offset: option != null && !_rideOptionsExpanded
+                          ? Offset.zero
+                          : const Offset(0, 0.3),
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedOpacity(
+                        opacity: option != null && !_rideOptionsExpanded ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOut,
+                        child: IgnorePointer(
+                          ignoring: option == null || _rideOptionsExpanded,
+                          child: option != null && !_rideOptionsExpanded
                         ? Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Column(
@@ -577,6 +589,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ),
                           )
                         : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
                   ),
                   const SizedBox(height: 8),
                 ],

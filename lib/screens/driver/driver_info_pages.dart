@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
+import '../../config/page_transitions.dart';
+import 'driver_profile_photo_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  Reusable dark-themed info page shell
@@ -136,7 +138,7 @@ Widget _card(String title, String body, {IconData? icon}) {
   );
 }
 
-Widget _comingSoonCard(String title, String body, {IconData? icon}) {
+Widget _comingSoonCard(BuildContext context, String title, String body, {IconData? icon}) {
   return Container(
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.all(16),
@@ -178,9 +180,9 @@ Widget _comingSoonCard(String title, String body, {IconData? icon}) {
                         color: const Color(0xFFE8C547).withValues(alpha: 0.3),
                       ),
                     ),
-                    child: const Text(
-                      'Coming Soon',
-                      style: TextStyle(
+                    child: Text(
+                      S.of(context).comingSoon,
+                      style: const TextStyle(
                         color: Color(0xFFE8C547),
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -221,28 +223,31 @@ class OpportunitiesScreen extends StatelessWidget {
       icon: Icons.trending_up_rounded,
       children: [
         _card(
-          'Peak Hours Bonus',
-          'Earn up to 2x during peak demand hours (7-9 AM, 5-8 PM weekdays). Surge pricing automatically applies.',
+          S.of(context).peakHoursBonusTitle,
+          S.of(context).peakHoursBonusDesc,
           icon: Icons.access_time_filled_rounded,
         ),
         _card(
-          'Weekend Warrior',
-          'Complete 20+ trips on weekends to unlock a \$50 bonus each week.',
+          S.of(context).weekendWarriorBonusTitle,
+          S.of(context).weekendWarriorBonusDesc,
           icon: Icons.calendar_today_rounded,
         ),
-        _card(
-          'Airport Runs',
-          'Airport pickups and drop-offs earn premium fares. Stay near airports for more high-value trips.',
+        _comingSoonCard(
+          context,
+          S.of(context).airportRunsTitle,
+          S.of(context).airportRunsDesc,
           icon: Icons.flight_takeoff_rounded,
         ),
-        _card(
-          'Event Surge',
-          'Major events = major earnings. Check the map for surge zones near concerts, games, and festivals.',
+        _comingSoonCard(
+          context,
+          S.of(context).eventSurgeTitle,
+          S.of(context).eventSurgeDesc,
           icon: Icons.celebration_rounded,
         ),
-        _card(
-          'Consecutive Trip Bonus',
-          'Accept 3 trips in a row without going offline to earn an extra \$10 bonus.',
+        _comingSoonCard(
+          context,
+          S.of(context).consecutiveTripBonusTitle,
+          S.of(context).consecutiveTripBonusDesc,
           icon: Icons.repeat_rounded,
         ),
       ],
@@ -265,23 +270,25 @@ class WorkHubScreen extends StatelessWidget {
       iconColor: const Color(0xFF2196F3),
       children: [
         _card(
-          'Ride Services',
-          'Your primary service. Pick up and drop off riders safely and efficiently.',
+          S.of(context).rideServicesTitle,
+          S.of(context).rideServicesDesc,
           icon: Icons.local_taxi_rounded,
         ),
         _comingSoonCard(
-          'Package Delivery',
-          'Deliver packages for local businesses and individuals.',
+          context,
+          S.of(context).packageDeliveryTitle,
+          S.of(context).packageDeliveryDesc,
           icon: Icons.inventory_2_rounded,
         ),
         _comingSoonCard(
-          'Grocery Delivery',
-          'Partner with local grocery stores for same-day delivery.',
+          context,
+          S.of(context).groceryDeliveryTitle,
+          S.of(context).groceryDeliveryDesc,
           icon: Icons.shopping_cart_rounded,
         ),
         _card(
-          'Scheduled Rides',
-          'Accept pre-scheduled rides for guaranteed earnings at set times.',
+          S.of(context).scheduledRidesWorkHubTitle,
+          S.of(context).scheduledRidesWorkHubDesc,
           icon: Icons.schedule_rounded,
         ),
       ],
@@ -303,6 +310,38 @@ class ReferFriendsScreen extends StatelessWidget {
       icon: Icons.person_add_rounded,
       iconColor: const Color(0xFF4CAF50),
       children: [
+        // Coming Soon banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFE8C547).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.access_time_rounded,
+                color: Color(0xFFE8C547),
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                S.of(context).comingSoon,
+                style: const TextStyle(
+                  color: Color(0xFFE8C547),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -313,9 +352,9 @@ class ReferFriendsScreen extends StatelessWidget {
           ),
           child: Column(
             children: [
-              const Text(
-                'EARN \$50',
-                style: TextStyle(
+              Text(
+                S.of(context).referEarn200,
+                style: const TextStyle(
                   color: Color(0xFFE8C547),
                   fontSize: 36,
                   fontWeight: FontWeight.w900,
@@ -323,7 +362,7 @@ class ReferFriendsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'for every friend who signs up and completes their first 50 rides',
+                S.of(context).referFriendsSubtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.6),
@@ -337,14 +376,12 @@ class ReferFriendsScreen extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
-                    Share.share(
-                      'Drive with Cruise and earn great money! Sign up with my link: https://cruiseride.com/drive',
-                    );
+                    Share.share(S.of(context).referDriverShareText);
                   },
                   icon: const Icon(Icons.share_rounded),
-                  label: const Text(
-                    'Share Invite Link',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  label: Text(
+                    S.of(context).shareInviteLinkBtn,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE8C547),
@@ -360,13 +397,13 @@ class ReferFriendsScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _card(
-          'How it works',
-          '1. Share your unique invite link\n2. Your friend signs up and completes their first 50 rides\n3. You earn \$50 bonus',
+          S.of(context).howItWorksTitle,
+          S.of(context).howItWorksDesc,
           icon: Icons.info_outline_rounded,
         ),
         _card(
-          'No Limit',
-          'Refer as many friends as you want — there\'s no cap on how much you can earn.',
+          S.of(context).noLimitTitle,
+          S.of(context).noLimitDesc,
           icon: Icons.all_inclusive_rounded,
         ),
       ],
@@ -389,28 +426,28 @@ class DriverInsuranceScreen extends StatelessWidget {
       iconColor: const Color(0xFF00BCD4),
       children: [
         _card(
-          'Cruise Driver Protection',
-          'You\'re covered from the moment you accept a ride request until the trip is completed.',
+          S.of(context).cruiseDriverProtectionTitle,
+          S.of(context).cruiseDriverProtectionDesc,
           icon: Icons.shield_rounded,
         ),
         _card(
-          'Liability Coverage',
-          'Up to \$1,000,000 in third-party liability coverage while on a trip.',
+          S.of(context).liabilityCoverageTitle,
+          S.of(context).liabilityCoverageDesc,
           icon: Icons.verified_user_rounded,
         ),
         _card(
-          'Collision Coverage',
-          'Vehicle damage coverage while on an active trip, subject to deductible.',
+          S.of(context).collisionCoverageTitle,
+          S.of(context).collisionCoverageDesc,
           icon: Icons.car_crash_rounded,
         ),
         _card(
-          'Uninsured Motorist',
-          'Protection against uninsured or underinsured drivers during active trips.',
+          S.of(context).uninsuredMotoristTitle,
+          S.of(context).uninsuredMotoristDesc,
           icon: Icons.warning_rounded,
         ),
         _card(
-          'Personal Insurance',
-          'Remember: you must maintain your own personal auto insurance to drive with Cruise.',
+          S.of(context).personalInsuranceTitle,
+          S.of(context).personalInsuranceDesc,
           icon: Icons.assignment_rounded,
         ),
       ],
@@ -433,23 +470,23 @@ class TaxInfoScreen extends StatelessWidget {
       iconColor: const Color(0xFFFF9800),
       children: [
         _card(
-          'Tax Documents',
-          'Your 1099 tax forms will be available here at the end of the tax year if you earned more than \$600.',
+          S.of(context).taxDocumentsTitle,
+          S.of(context).taxDocumentsDesc,
           icon: Icons.description_rounded,
         ),
         _card(
-          'Earnings Summary',
-          'View and download your annual earnings summary for tax filing purposes.',
+          S.of(context).earningsSummaryTitle,
+          S.of(context).earningsSummaryDesc,
           icon: Icons.summarize_rounded,
         ),
         _card(
-          'Deductible Expenses',
-          'Track mileage, gas, maintenance, and other expenses that may be tax deductible.',
+          S.of(context).deductibleExpensesTitle,
+          S.of(context).deductibleExpensesDesc,
           icon: Icons.calculate_rounded,
         ),
         _card(
-          'Tax Tips',
-          'As an independent contractor, you may need to pay quarterly estimated taxes. Consult a tax professional.',
+          S.of(context).taxTipsTitle,
+          S.of(context).taxTipsDesc,
           icon: Icons.lightbulb_outline_rounded,
         ),
       ],
@@ -529,24 +566,24 @@ class PlusCardScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _card(
-          'Instant Earnings Access',
-          'Get your earnings instantly after every trip — no waiting for weekly payouts.',
+          S.of(context).instantEarningsAccessTitle,
+          S.of(context).instantEarningsAccessDesc,
           icon: Icons.flash_on_rounded,
         ),
         _card(
-          'Cash Back Rewards',
-          'Earn 3% cash back on gas, 2% on car maintenance, and 1% on everything else.',
+          S.of(context).cashBackRewardsTitle,
+          S.of(context).cashBackRewardsDesc,
           icon: Icons.percent_rounded,
         ),
         _card(
-          'No Annual Fee',
-          'The Cruise Plus Card has zero annual fees. Just drive and earn.',
+          S.of(context).noAnnualFeeTitle,
+          S.of(context).noAnnualFeeDesc,
           icon: Icons.money_off_rounded,
         ),
         const SizedBox(height: 16),
         Center(
           child: Text(
-            'Coming Soon',
+            S.of(context).comingSoon,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.3),
               fontSize: 16,
@@ -568,42 +605,592 @@ class LearningCenterScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _InfoPageShell(
-      title: S.of(context).learningCenter,
-      icon: Icons.school_rounded,
-      iconColor: const Color(0xFF9C27B0),
-      children: [
-        _card(
-          'Getting Started',
-          'Everything you need to know about your first trips with Cruise.',
-          icon: Icons.play_circle_outline_rounded,
+    final s = S.of(context);
+    final topics = [
+      _LearningTopic(
+        title: s.lcGettingStartedTitle,
+        subtitle: s.lcGettingStartedSubtitle,
+        icon: Icons.play_circle_outline_rounded,
+        color: const Color(0xFF4CAF50),
+        content: [
+          s.lcGettingStarted1,
+          s.lcGettingStarted2,
+          s.lcGettingStarted3,
+          s.lcGettingStarted4,
+          s.lcGettingStarted5,
+        ],
+      ),
+      _LearningTopic(
+        title: s.lcNavTipsTitle,
+        subtitle: s.lcNavTipsSubtitle,
+        icon: Icons.navigation_rounded,
+        color: const Color(0xFF2196F3),
+        content: [
+          s.lcNavTip1,
+          s.lcNavTip2,
+          s.lcNavTip3,
+          s.lcNavTip4,
+          s.lcNavTip5,
+        ],
+      ),
+      _LearningTopic(
+        title: s.lcRiderCommTitle,
+        subtitle: s.lcRiderCommSubtitle,
+        icon: Icons.chat_bubble_outline_rounded,
+        color: const Color(0xFFFF9800),
+        content: [
+          s.lcRiderComm1,
+          s.lcRiderComm2,
+          s.lcRiderComm3,
+          s.lcRiderComm4,
+          s.lcRiderComm5,
+        ],
+      ),
+      _LearningTopic(
+        title: s.lcSafetyTitle,
+        subtitle: s.lcSafetySubtitle,
+        icon: Icons.health_and_safety_rounded,
+        color: const Color(0xFFE53935),
+        content: [
+          s.lcSafety1,
+          s.lcSafety2,
+          s.lcSafety3,
+          s.lcSafety4,
+          s.lcSafety5,
+        ],
+      ),
+      _LearningTopic(
+        title: s.lcMaxEarningsTitle,
+        subtitle: s.lcMaxEarningsSubtitle,
+        icon: Icons.attach_money_rounded,
+        color: const Color(0xFFE8C547),
+        content: [
+          s.lcMaxEarnings1,
+          s.lcMaxEarnings2,
+          s.lcMaxEarnings3,
+          s.lcMaxEarnings4,
+          s.lcMaxEarnings5,
+        ],
+      ),
+      _LearningTopic(
+        title: s.lcVehicleMaintenanceTitle,
+        subtitle: s.lcVehicleMaintenanceSubtitle,
+        icon: Icons.build_rounded,
+        color: const Color(0xFF9C27B0),
+        content: [
+          s.lcVehicleMaintenance1,
+          s.lcVehicleMaintenance2,
+          s.lcVehicleMaintenance3,
+          s.lcVehicleMaintenance4,
+          s.lcVehicleMaintenance5,
+        ],
+      ),
+    ];
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    S.of(context).learningCenter,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                itemCount: topics.length,
+                itemBuilder: (context, i) {
+                  final topic = topics[i];
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => _LearningTopicScreen(topic: topic),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: topic.color.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(topic.icon, color: topic.color, size: 22),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  topic.title,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  topic.subtitle,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 13,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white.withValues(alpha: 0.2),
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        _card(
-          'Navigation Tips',
-          'Use GPS apps effectively, learn about preferred routes, and handle detours.',
-          icon: Icons.navigation_rounded,
+      ),
+    );
+  }
+}
+
+class _LearningTopic {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final List<String> content;
+
+  const _LearningTopic({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.content,
+  });
+}
+
+class _LearningTopicScreen extends StatelessWidget {
+  final _LearningTopic topic;
+  const _LearningTopicScreen({required this.topic});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      topic.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: topic.color.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(topic.icon, color: topic.color, size: 32),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      topic.title,
+                      style: TextStyle(
+                        color: topic.color,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      topic.subtitle,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ...topic.content.asMap().entries.map((e) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: topic.color.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${e.key + 1}',
+                                style: TextStyle(
+                                  color: topic.color,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              e.value,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 14,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
         ),
-        _card(
-          'Rider Communication',
-          'Best practices for greeting riders, handling special requests, and earning 5-star ratings.',
-          icon: Icons.chat_bubble_outline_rounded,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  NEW DRIVER INSTRUCTIONS SCREEN (shown to newly approved drivers)
+// ═══════════════════════════════════════════════════════════════
+
+class NewDriverInstructionsScreen extends StatelessWidget {
+  const NewDriverInstructionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    S.of(context).newDriverWelcomeTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: [
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE8C547), Color(0xFFF5D990)],
+                        ),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.local_taxi_rounded,
+                        color: Colors.black,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Text(
+                      S.of(context).youreApprovedTitle,
+                      style: const TextStyle(
+                        color: Color(0xFFE8C547),
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      S.of(context).threeThingsToDo,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  _instructionStep(
+                    step: 1,
+                    title: S.of(context).verifyDocumentsTitle,
+                    body: S.of(context).verifyDocumentsBody,
+                    icon: Icons.description_rounded,
+                    color: const Color(0xFF2196F3),
+                  ),
+                  const SizedBox(height: 16),
+                  _instructionStep(
+                    step: 2,
+                    title: S.of(context).setupNavigationTitle,
+                    body: S.of(context).setupNavigationBody,
+                    icon: Icons.navigation_rounded,
+                    color: const Color(0xFF4CAF50),
+                  ),
+                  const SizedBox(height: 16),
+                  _instructionStep(
+                    step: 3,
+                    title: S.of(context).goOnlineAndEarnTitle,
+                    body: S.of(context).goOnlineAndEarnBody,
+                    icon: Icons.play_circle_filled_rounded,
+                    color: const Color(0xFFE8C547),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        Navigator.of(context).pushAndRemoveUntil(
+                          slideFromRightRoute(const DriverProfilePhotoScreen()),
+                          (_) => false,
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE8C547),
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        S.of(context).letsGoBtn,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
         ),
-        _card(
-          'Safety Protocols',
-          'Know what to do in emergencies, accidents, and uncomfortable situations.',
-          icon: Icons.health_and_safety_rounded,
-        ),
-        _card(
-          'Maximizing Earnings',
-          'Pro tips for finding surge zones, optimal driving hours, and reducing expenses.',
-          icon: Icons.attach_money_rounded,
-        ),
-        _card(
-          'Vehicle Maintenance',
-          'Keep your car in top shape with maintenance schedules and care tips.',
-          icon: Icons.build_rounded,
-        ),
-      ],
+      ),
+    );
+  }
+
+  Widget _instructionStep({
+    required int step,
+    required String title,
+    required String body,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '$step',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: color, size: 18),
+                    const SizedBox(width: 6),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

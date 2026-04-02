@@ -405,44 +405,31 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // ── Document list ──
+                        // ── Document list (read-only) ──
                         ..._documents.map((doc) => _documentCard(doc)),
-                        const SizedBox(height: 24),
-
-                        // ── Upload new ──
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              HapticFeedback.mediumImpact();
-                              _showUploadSheet();
-                            },
-                            icon: const Icon(
-                              Icons.upload_file_rounded,
-                              size: 20,
-                            ),
-                            label: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: const Text(
-                                'Upload New Document',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
+                        const SizedBox(height: 16),
+                        // Info note
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded, color: Colors.white38, size: 18),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  s.documentsLockedNote,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _gold,
-                              side: BorderSide(
-                                color: _gold.withValues(alpha: 0.3),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 30),
@@ -486,7 +473,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     IconData statusIcon;
     if (isComingSoon) {
       statusColor = Colors.white.withValues(alpha: 0.4);
-      statusText = 'Coming Soon';
+      statusText = s.comingSoon;
       statusIcon = Icons.upcoming_rounded;
     } else if (isApproved && expiryStatus == _ExpiryStatus.expired) {
       statusColor = Colors.red.shade400;
@@ -548,17 +535,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             ? Border.all(color: Colors.orange.withValues(alpha: 0.2))
             : null,
       ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: isDisabled ? null : () => _showDocDetails(doc),
-          child: Opacity(
-            opacity: isDisabled ? 0.5 : 1.0,
-            child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Row(
+      child: Opacity(
+        opacity: isDisabled ? 0.5 : 1.0,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
               children: [
                 Container(
                   width: 46,
@@ -660,8 +641,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   ),
                 ),
               ],
-            ),
-            ),
           ),
         ),
       ),

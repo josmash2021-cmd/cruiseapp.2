@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import 'dart:math' as math;
 
 /// Cruise Level (formerly Cruise Pro) – Green → Gold → Platinum → Diamond
 class CruiseLevelScreen extends StatefulWidget {
@@ -11,11 +13,19 @@ class CruiseLevelScreen extends StatefulWidget {
   State<CruiseLevelScreen> createState() => _CruiseLevelScreenState();
 }
 
-class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
+class _CruiseLevelScreenState extends State<CruiseLevelScreen>
+    with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _card = Color(0xFF1C1C1E);
 
   bool _loading = true;
+
+  // Level-up celebration
+  bool _showLevelUp = false;
+  int _previousTierIndex = -1;
+  late AnimationController _celebrationCtrl;
+  late Animation<double> _celebrationAnim;
+  final List<_Particle> _particles = [];
 
   // Driver stats
   double _acceptanceRate = 0;
@@ -43,7 +53,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
         rewards: [
           s.rewardBasicSupport,
           s.rewardStandardAccess,
-          s.rewardFuelTips,
         ],
       ),
       _Tier(
@@ -57,9 +66,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
         pointsRequired: 500,
         rewards: [
           s.rewardPriorityAccess,
-          s.rewardCashback3,
           s.rewardPremiumSupport,
-          s.rewardTuitionDiscount,
         ],
       ),
       _Tier(
@@ -73,8 +80,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
         pointsRequired: 2000,
         rewards: [
           s.rewardAllGold,
-          s.rewardCashback6,
-          s.rewardMaintenanceDiscount,
           s.rewardAirportQueue,
           s.rewardExclusivePromos,
         ],
@@ -90,8 +95,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
         pointsRequired: 5000,
         rewards: [
           s.rewardAllPlatinum,
-          s.rewardCashback10,
-          s.rewardFreeInspections,
           s.rewardConcierge,
           s.rewardEarningsMultiplier,
           s.rewardDiamondEvents,
@@ -103,11 +106,55 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
   @override
   void initState() {
     super.initState();
+    _celebrationCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    );
+    _celebrationAnim = CurvedAnimation(
+      parent: _celebrationCtrl,
+      curve: Curves.easeOut,
+    );
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _celebrationCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<SharedPreferences> _getPrefs() => SharedPreferences.getInstance();
+
+  void _triggerLevelUp() {
+    final rng = math.Random();
+    _particles.clear();
+    for (int i = 0; i < 60; i++) {
+      _particles.add(_Particle(
+        x: rng.nextDouble(),
+        y: rng.nextDouble() * 0.5,
+        vx: (rng.nextDouble() - 0.5) * 0.6,
+        vy: rng.nextDouble() * 0.8 + 0.2,
+        color: [
+          const Color(0xFFE8C547),
+          const Color(0xFFF5D990),
+          const Color(0xFF4CAF50),
+          Colors.white,
+        ][rng.nextInt(4)],
+        size: rng.nextDouble() * 8 + 4,
+      ));
+    }
+    setState(() => _showLevelUp = true);
+    _celebrationCtrl.forward(from: 0).then((_) {
+      if (mounted) setState(() => _showLevelUp = false);
+    });
   }
 
   Future<void> _loadData() async {
     try {
+      // Load previously saved tier to detect level-up
+      final prefs = await _getPrefs();
+      _previousTierIndex = prefs.getInt('cruise_tier_index') ?? -1;
+
       final userId = await ApiService.getCurrentUserId();
       if (userId != null) {
         final stats = await ApiService.getDriverStats(userId);
@@ -144,16 +191,26 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
         } else {
           _currentTierIndex = 0;
         }
+        // Persist new tier index
+        prefs.setInt('cruise_tier_index', _currentTierIndex);
       }
     } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+      // Trigger level-up animation if tier improved since last visit
+      if (_previousTierIndex >= 0 && _currentTierIndex > _previousTierIndex) {
+        Future.delayed(const Duration(milliseconds: 400), _triggerLevelUp);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _loading
+      body: Stack(
+        children: [
+          _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
             )
@@ -242,6 +299,115 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen> {
                 ),
               ],
             ),
+          // Level-up celebration overlay
+          if (_showLevelUp) _buildCelebrationOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCelebrationOverlay() {
+    final tier = _buildTiers()[_currentTierIndex];
+    return AnimatedBuilder(
+      animation: _celebrationAnim,
+      builder: (context, _) {
+        return IgnorePointer(
+          child: Stack(
+            children: [
+              // Semi-transparent flash
+              if (_celebrationAnim.value < 0.3)
+                Positioned.fill(
+                  child: Container(
+                    color: tier.color.withValues(
+                      alpha: (0.3 - _celebrationAnim.value) * 2,
+                    ),
+                  ),
+                ),
+              // Confetti particles
+              ..._particles.map((p) {
+                final progress = _celebrationAnim.value;
+                final x = p.x + p.vx * progress;
+                final y = p.y + p.vy * progress * 1.5;
+                final opacity = (1.0 - progress).clamp(0.0, 1.0);
+                return Positioned(
+                  left: x * MediaQuery.of(context).size.width,
+                  top: y * MediaQuery.of(context).size.height,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.rotate(
+                      angle: progress * math.pi * 4,
+                      child: Container(
+                        width: p.size,
+                        height: p.size,
+                        decoration: BoxDecoration(
+                          color: p.color,
+                          borderRadius: BorderRadius.circular(p.size / 4),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+              // Level-up banner
+              Positioned(
+                top: MediaQuery.of(context).size.height * 0.3,
+                left: 40,
+                right: 40,
+                child: Opacity(
+                  opacity: (_celebrationAnim.value < 0.7
+                      ? _celebrationAnim.value / 0.7
+                      : (1.0 - _celebrationAnim.value) / 0.3),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 24,
+                      horizontal: 32,
+                    ),
+                    decoration: BoxDecoration(
+                      color: tier.color,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: tier.color.withValues(alpha: 0.5),
+                          blurRadius: 40,
+                          spreadRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Colors.black,
+                          size: 36,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Level Up!',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'You reached ${tier.name}!',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -815,5 +981,18 @@ class _Tier {
     required this.minOnTime,
     required this.pointsRequired,
     required this.rewards,
+  });
+}
+
+class _Particle {
+  double x, y, vx, vy, size;
+  Color color;
+  _Particle({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.color,
+    required this.size,
   });
 }

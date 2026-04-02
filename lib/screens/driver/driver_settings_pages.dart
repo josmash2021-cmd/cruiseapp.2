@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/notification_service.dart';
 
 // ═══════════════════════════════════════════════════════
 //  EDIT ADDRESS SCREEN
@@ -350,7 +353,16 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                   S.of(context).pushNotifications,
                   S.of(context).pushNotificationsDesc,
                   _pushNotifications,
-                  (v) {
+                  (v) async {
+                    if (v) {
+                      // Request system notification permission when enabling
+                      final granted = await NotificationService.requestPermission();
+                      if (!granted) {
+                        // Open system settings if denied
+                        NotificationService.openSystemSettings();
+                        return;
+                      }
+                    }
                     setState(() => _pushNotifications = v);
                     _set('comm_push', v);
                   },
@@ -465,6 +477,24 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
   bool _avoidTolls = false;
   bool _avoidHighways = false;
 
+  // Map app deep-link scheme used to test if installed
+  static const _mapSchemes = {
+    'google': 'comgooglemaps://',
+    'apple': 'maps://',
+    'waze': 'waze://',
+  };
+
+  // Store URLs if app is not installed
+  static final _storeUrls = {
+    'google': Platform.isIOS
+        ? 'https://apps.apple.com/app/google-maps/id585027354'
+        : 'https://play.google.com/store/apps/details?id=com.google.android.apps.maps',
+    'apple': 'https://apps.apple.com/app/apple-maps/id915056765',
+    'waze': Platform.isIOS
+        ? 'https://apps.apple.com/app/waze-navigation-live-traffic/id323229106'
+        : 'https://play.google.com/store/apps/details?id=com.waze',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -557,6 +587,23 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
     return GestureDetector(
       onTap: () async {
         HapticFeedback.selectionClick();
+        // For third-party apps, check if installed first
+        final scheme = _mapSchemes[key];
+        if (scheme != null) {
+          final uri = Uri.parse(scheme);
+          final available = await canLaunchUrl(uri);
+          if (!available) {
+            // App not installed — redirect to store
+            final storeUrl = _storeUrls[key];
+            if (storeUrl != null) {
+              final storeUri = Uri.parse(storeUrl);
+              if (await canLaunchUrl(storeUri)) {
+                await launchUrl(storeUri, mode: LaunchMode.externalApplication);
+              }
+            }
+            return;
+          }
+        }
         setState(() => _defaultMap = key);
         (await SharedPreferences.getInstance()).setString(
           'nav_default_map',
@@ -649,9 +696,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
   static const _bg = Color(0xFF0A0A0A);
 
   bool _tripSounds = true;
-  bool _navigationVoice = true;
   bool _messageSounds = true;
-  double _volume = 0.8;
 
   @override
   void initState() {
@@ -664,9 +709,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
     if (!mounted) return;
     setState(() {
       _tripSounds = prefs.getBool('sound_trips') ?? true;
-      _navigationVoice = prefs.getBool('sound_nav_voice') ?? true;
       _messageSounds = prefs.getBool('sound_messages') ?? true;
-      _volume = prefs.getDouble('sound_volume') ?? 0.8;
     });
   }
 
@@ -682,6 +725,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                // Volume: synced with device
                 Text(
                   S.of(context).volumeLevel,
                   style: const TextStyle(
@@ -694,7 +738,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 8,
+                    vertical: 14,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.05),
@@ -703,30 +747,33 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
                   child: Row(
                     children: [
                       const Icon(
-                        Icons.volume_down_rounded,
-                        color: Colors.white38,
-                        size: 22,
-                      ),
-                      Expanded(
-                        child: Slider(
-                          value: _volume,
-                          min: 0,
-                          max: 1,
-                          activeColor: _gold,
-                          inactiveColor: Colors.white12,
-                          onChanged: (v) async {
-                            setState(() => _volume = v);
-                            (await SharedPreferences.getInstance()).setDouble(
-                              'sound_volume',
-                              v,
-                            );
-                          },
-                        ),
-                      ),
-                      const Icon(
                         Icons.volume_up_rounded,
                         color: _gold,
                         size: 22,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              S.of(context).syncedWithDeviceVolume,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              S.of(context).adjustWithPhoneVolumeButtons,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.4),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -741,19 +788,6 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
                     setState(() => _tripSounds = v);
                     (await SharedPreferences.getInstance()).setBool(
                       'sound_trips',
-                      v,
-                    );
-                  },
-                ),
-                _toggleTile(
-                  Icons.record_voice_over_rounded,
-                  S.of(context).navigationVoice,
-                  S.of(context).navigationVoiceDesc,
-                  _navigationVoice,
-                  (v) async {
-                    setState(() => _navigationVoice = v);
-                    (await SharedPreferences.getInstance()).setBool(
-                      'sound_nav_voice',
                       v,
                     );
                   },

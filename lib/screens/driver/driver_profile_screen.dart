@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
@@ -458,6 +459,77 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     return '$base/$clean';
   }
 
+  Future<void> _changePhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _photoOption(Icons.camera_alt_rounded, 'Take Photo',
+                () => Navigator.pop(ctx, ImageSource.camera)),
+            const SizedBox(height: 10),
+            _photoOption(Icons.photo_library_rounded, 'Choose from Gallery',
+                () => Navigator.pop(ctx, ImageSource.gallery)),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    final picker = ImagePicker();
+    final xFile = await picker.pickImage(
+      source: source,
+      maxWidth: 800,
+      imageQuality: 85,
+    );
+    if (xFile == null || !mounted) return;
+
+    final permanentPath = await UserSession.saveProfilePhoto(xFile.path);
+    imageCache.clear();
+    imageCache.clearLiveImages();
+    setState(() => _photoUrl = permanentPath);
+
+    ApiService.uploadPhoto(permanentPath).then((url) {
+      if (url.isNotEmpty && mounted) {
+        setState(() => _photoUrl = url);
+      }
+    }).catchError((e) {
+      debugPrint('Photo upload failed (saved locally): $e');
+    });
+  }
+
+  Widget _photoOption(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 14),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════
   //  PROFILE HEADER — avatar + name + tier + view public
   // ═══════════════════════════════════════════════════
@@ -470,46 +542,63 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       ),
       child: Row(
         children: [
-          // Avatar with tier ring
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ProfileAvatar(
-                imageUrl: _resolvedPhotoUrl,
-                imagePath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                name: _name,
-                size: 72,
-                isVerified: _isVerified,
-                borderColor: _tierColor,
-                uid: UserSession.currentUid,
-                role: 'driver',
-              ),
-              Positioned(
-                bottom: -2,
-                left: 0,
-                right: 0,
-                child: Center(
+          // Avatar with tier ring — tap to change photo
+          GestureDetector(
+            onTap: _changePhoto,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ProfileAvatar(
+                  imageUrl: _resolvedPhotoUrl,
+                  imagePath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                  name: _name,
+                  size: 72,
+                  isVerified: _isVerified,
+                  borderColor: _tierColor,
+                  uid: UserSession.currentUid,
+                  role: 'driver',
+                ),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
+                    width: 24,
+                    height: 24,
                     decoration: BoxDecoration(
-                      color: _tierColor,
-                      borderRadius: BorderRadius.circular(8),
+                      color: _gold,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _card, width: 2),
                     ),
-                    child: Text(
-                      _tierLabel,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
+                    child: const Icon(Icons.camera_alt_rounded, color: Colors.black, size: 12),
+                  ),
+                ),
+                Positioned(
+                  bottom: -2,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _tierColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _tierLabel,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(

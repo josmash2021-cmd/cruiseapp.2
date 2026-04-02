@@ -1,9 +1,12 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
+import '../../config/mapbox_config.dart';
+import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
@@ -22,6 +25,8 @@ class DriverRateRiderScreen extends StatefulWidget {
     this.riderPhotoUrl = '',
     this.riderId,
     this.fare = 0,
+    this.dropoffLat,
+    this.dropoffLng,
   });
 
   final int tripId;
@@ -29,6 +34,8 @@ class DriverRateRiderScreen extends StatefulWidget {
   final String riderPhotoUrl;
   final int? riderId;
   final double fare;
+  final double? dropoffLat;
+  final double? dropoffLng;
 
   @override
   State<DriverRateRiderScreen> createState() => _DriverRateRiderScreenState();
@@ -130,75 +137,129 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(Responsive.w(24), top + 24, Responsive.w(24), bot + 24),
-          child: Column(
-            children: [
-              SizedBox(height: Responsive.h(20)),
-              _buildAvatar(),
-              SizedBox(height: Responsive.h(20)),
-              Text(
-                '¿Cómo fue tu viaje\ncon $_firstName?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: Responsive.sp(22),
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                ),
-              ),
-              SizedBox(height: Responsive.h(32)),
-              _buildStars(),
-              SizedBox(height: Responsive.h(28)),
-              if (_stars > 0) _buildTags(),
-              const Spacer(),
-              // Submit
-              SizedBox(
-                width: double.infinity,
-                height: Responsive.h(52),
-                child: ElevatedButton(
-                  onPressed: _stars > 0 && !_submitting ? _submit : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _stars > 0 ? _gold : _gold.withValues(alpha: 0.3),
-                    disabledBackgroundColor: _gold.withValues(alpha: 0.3),
-                    foregroundColor: Colors.black,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+      body: Stack(
+        children: [
+          // ── Blurred dark Mapbox map background ──
+          Positioned.fill(
+            child: IgnorePointer(
+              child: mapbox.MapWidget(
+                styleUri: MapboxConfig.styleDark,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(
+                    coordinates: mapbox.Position(
+                      widget.dropoffLng ?? -80.1918,
+                      widget.dropoffLat ?? 25.7617,
                     ),
                   ),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 22, height: 22,
-                          child: CircularProgressIndicator(
-                            color: Colors.black, strokeWidth: 2.5))
-                      : Text(
-                          'Enviar',
-                          style: TextStyle(
-                            color: _stars > 0 ? Colors.black : Colors.white38,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                  zoom: 14.0,
+                  pitch: 0,
                 ),
+                onMapCreated: (ctrl) async {
+                  await MapTheme.applyNavyGold(ctrl);
+                  await ctrl.gestures.updateSettings(
+                    mapbox.GesturesSettings(
+                      scrollEnabled: false,
+                      rotateEnabled: false,
+                      pitchEnabled: false,
+                      doubleTapToZoomInEnabled: false,
+                      doubleTouchToZoomOutEnabled: false,
+                      quickZoomEnabled: false,
+                      pinchToZoomEnabled: false,
+                    ),
+                  );
+                  await ctrl.compass.updateSettings(
+                    mapbox.CompassSettings(enabled: false),
+                  );
+                  await ctrl.scaleBar.updateSettings(
+                    mapbox.ScaleBarSettings(enabled: false),
+                  );
+                },
               ),
-              const SizedBox(height: 12),
-              // Skip
-              TextButton(
-                onPressed: _submitting ? null : _goOnline,
-                child: Text(
-                  'Omitir',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.38),
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          // ── Soft blur + semi-transparent dark overlay ──
+          Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: Container(
+                  color: _bg.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+          ),
+          // ── Content ──
+          FadeTransition(
+            opacity: _fadeAnim,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(Responsive.w(24), top + 24, Responsive.w(24), bot + 24),
+              child: Column(
+                children: [
+                  SizedBox(height: Responsive.h(20)),
+                  _buildAvatar(),
+                  SizedBox(height: Responsive.h(20)),
+                  Text(
+                    '¿Cómo fue tu viaje\ncon $_firstName?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: Responsive.sp(22),
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
+                  ),
+                  SizedBox(height: Responsive.h(32)),
+                  _buildStars(),
+                  SizedBox(height: Responsive.h(28)),
+                  if (_stars > 0) _buildTags(),
+                  const Spacer(),
+                  // Submit
+                  SizedBox(
+                    width: double.infinity,
+                    height: Responsive.h(52),
+                    child: ElevatedButton(
+                      onPressed: _stars > 0 && !_submitting ? _submit : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _stars > 0 ? _gold : _gold.withValues(alpha: 0.3),
+                        disabledBackgroundColor: _gold.withValues(alpha: 0.3),
+                        foregroundColor: Colors.black,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 22, height: 22,
+                              child: CircularProgressIndicator(
+                                color: Colors.black, strokeWidth: 2.5))
+                          : Text(
+                              'Enviar',
+                              style: TextStyle(
+                                color: _stars > 0 ? Colors.black : Colors.white38,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Skip
+                  TextButton(
+                    onPressed: _submitting ? null : _goOnline,
+                    child: Text(
+                      'Omitir',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.38),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

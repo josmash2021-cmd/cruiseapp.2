@@ -1395,6 +1395,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             riderPhotoUrl: widget.riderPhotoUrl,
             riderId: widget.riderId,
             fare: widget.fare,
+            dropoffLat: widget.dropoffLatLng.latitude,
+            dropoffLng: widget.dropoffLatLng.longitude,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

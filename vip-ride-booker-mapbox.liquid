@@ -414,6 +414,12 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-attrib{ font-size:9px; opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-logo{ opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; }
+/* Mapbox zoom controls — dark theme */
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-group{ background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15); border-radius:12px; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.4); }
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button{ width:36px; height:36px; background:transparent; border:none; color:#fff; }
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button:hover{ background:rgba(255,255,255,.1); }
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button+button{ border-top:1px solid rgba(255,255,255,.1); }
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon{ filter:invert(1); }
 
 .vipRide__back{
   position:absolute; top:14px; left:14px;
@@ -1673,13 +1679,23 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     var mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
     var sheetH = sheet ? sheet.offsetHeight : 240;
     var padBottom = Math.min(sheetH + 30, mapH * 0.55);
+    // First fit bounds flat, then cinematic tilt
     map.fitBounds(bounds, {
       padding:{top:80, right:50, bottom:padBottom, left:50},
-      pitch:55,
+      pitch:0,
       bearing:map.getBearing(),
-      duration:1400,
+      duration:1000,
       maxZoom:16
     });
+    // Cinematic tilt after bounds settle
+    setTimeout(function(){
+      map.easeTo({
+        pitch:60,
+        bearing:map.getBearing()-8,
+        duration:2200,
+        easing:function(t){ return 1-Math.pow(1-t,3); }
+      });
+    }, 1100);
   }
 
   function setMarker(which,lat,lng){
@@ -1697,7 +1713,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     if(currentMode === 'ride' && pickupPlace&&dropoffPlace&&map){
       fitRouteBounds();
     } else if(map){
-      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:55,duration:1200});
+      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:0,duration:1200});
     }
   }
 
@@ -2116,16 +2132,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         antialias:true
       });
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
-
-      // Camera tilt-in animation on load
-      map.on('load',function(){
-        map.easeTo({
-          pitch:60,
-          bearing:-17.6,
-          duration:2400,
-          easing:function(t){ return 1-Math.pow(1-t,3); }
-        });
-      });
+      map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'bottom-right');
 
       // Keyboard/viewport handling
       if(window.visualViewport){
@@ -2197,7 +2204,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         navigator.geolocation.getCurrentPosition(
           function(pos){
             var lat=pos.coords.latitude, lng=pos.coords.longitude;
-            map.flyTo({center:[lng,lat],zoom:15,pitch:55,duration:1200});
+            map.flyTo({center:[lng,lat],zoom:15,pitch:0,duration:1200});
             if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
             pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
               .setLngLat([lng,lat]).addTo(map);

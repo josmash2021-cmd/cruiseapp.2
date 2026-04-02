@@ -321,7 +321,7 @@ extension _RideRequestController on _RideRequestScreenState {
           );
 
           _driverFoundTimer?.cancel();
-          _driverFoundTimer = Timer(const Duration(milliseconds: 4000), () {
+          _driverFoundTimer = Timer(const Duration(milliseconds: 2000), () {
             if (!mounted) return;
             _ctrl.transitionToArriving();
           });

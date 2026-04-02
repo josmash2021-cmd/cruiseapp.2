@@ -1038,7 +1038,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Column(
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // ── ROW 1: Service badge (left) · X reject (right) ──
         Row(
@@ -1098,8 +1098,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
         const SizedBox(height: 4),
 
-        // ── ROW 2: Price + Tips (same line) ──
+        // ── ROW 2: Price + Tips (centered) ──
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
@@ -1114,16 +1115,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             const SizedBox(width: 8),
             Text(
               '+ Tips',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+              style: const TextStyle(
+                color: goldAccent,
                 fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
         const SizedBox(height: 2),
-        // ── Rating + Total trip time & distance ──
+        // ── Rating + Total trip time & distance (centered, gold metrics) ──
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.star_rounded, color: goldAccent, size: 13),
             const SizedBox(width: 3),
@@ -1136,23 +1139,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             ),
             const SizedBox(width: 12),
-            Icon(Icons.access_time_rounded, color: Colors.white.withValues(alpha: 0.4), size: 12),
+            Icon(Icons.access_time_rounded, color: goldAccent, size: 12),
             const SizedBox(width: 3),
             Text(
               '${etaToPickup + tripEta} min',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+              style: const TextStyle(
+                color: goldAccent,
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(width: 10),
-            Icon(Icons.straighten_rounded, color: Colors.white.withValues(alpha: 0.4), size: 12),
+            Icon(Icons.straighten_rounded, color: goldAccent, size: 12),
             const SizedBox(width: 3),
             Text(
               '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+              style: const TextStyle(
+                color: goldAccent,
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

@@ -396,14 +396,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _animatePinPop();
     }
 
-    // ── Cap route endpoints to exact pin coordinates ──
-    if (_fullSegOne.isNotEmpty) {
-      _fullSegOne[_fullSegOne.length - 1] = pickupLL;
-    }
-    if (_fullSegTwo.isNotEmpty) {
-      _fullSegTwo[0] = pickupLL;
-      _fullSegTwo[_fullSegTwo.length - 1] = dropoffLL;
-    }
+    // Do NOT force raw pin coordinates onto road-snapped route endpoints.
+    // The Directions API returns geometry that follows actual roads — overriding
+    // the first/last points with user-tap coordinates creates off-road zigzags.
 
     // ── PHASE 4 (t=700ms): Gold gloss route draws ──
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }

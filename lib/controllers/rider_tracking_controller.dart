@@ -700,9 +700,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       await _initRoute();
       return;
     }
-    // Force endpoints to exact pin coordinates
-    _routePts[0] = widget.pickupLatLng;
-    _routePts[_routePts.length - 1] = widget.dropoffLatLng;
+    // Do NOT force raw pin coordinates onto the route — Mapbox Directions API
+    // already snaps start/end to the nearest road. Replacing them with the
+    // user's raw tap coordinates creates off-road straight-line segments.
 
     _buildSegDist();
 

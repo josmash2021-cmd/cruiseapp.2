@@ -420,6 +420,19 @@ class UserSession {
     final cachedUrl = uidUrl.isNotEmpty ? uidUrl : (user?['photoUrl'] ?? '');
     if (cachedUrl.isNotEmpty) {
       photoUrlNotifier.value = cachedUrl;
+    } else {
+      // No cached URL — fetch from Firestore immediately (cross-device / fresh-install recovery)
+      final userId = int.tryParse(uid);
+      if (userId != null && userId > 0) {
+        try {
+          final firestoreUrl = await FirebaseStorageService.fetchPhotoUrl(userId);
+          if (firestoreUrl != null && firestoreUrl.isNotEmpty) {
+            photoUrlNotifier.value = firestoreUrl;
+            await prefs.setString(_photoUrlKeyForUid(uid), firestoreUrl);
+            await updateField('photoUrl', firestoreUrl);
+          }
+        } catch (_) {}
+      }
     }
 
     Future<bool> tryPath(String p) async {

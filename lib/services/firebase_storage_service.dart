@@ -120,6 +120,18 @@ class FirebaseStorageService {
     }
   }
 
+  /// Fetch the stored photo URL from Firestore users collection.
+  /// Returns null if not found or on error.
+  static Future<String?> fetchPhotoUrl(int userId) async {
+    try {
+      final doc = await _firestore.collection('users').doc('sql_$userId').get();
+      final url = doc.data()?['photoUrl'] as String?;
+      return (url != null && url.isNotEmpty) ? url : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Migrate photo from Firebase Auth to Firestore users collection.
   /// Call once after login for existing users who have Auth photoURL
   /// but no Firestore record yet.

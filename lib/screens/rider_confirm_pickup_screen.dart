@@ -94,7 +94,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     // Fade out on confirm
     _fadeOutCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 600),
     );
     _fadeOutAnim =
         CurvedAnimation(parent: _fadeOutCtrl, curve: Curves.easeInOut);
@@ -191,8 +191,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     HapticFeedback.mediumImpact();
     setState(() {});
 
-    // Show the confirmation message briefly, then dismiss
-    await Future.delayed(const Duration(milliseconds: 800));
+    // Let the rider read "Tu conductor ha confirmado que ya estás en el carro"
+    await Future.delayed(const Duration(milliseconds: 2000));
     if (!mounted) return;
     await _fadeOutCtrl.forward();
     if (mounted) widget.onConfirmed();

@@ -484,7 +484,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut), child: child),
         transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 600),
       ),
     );
   }

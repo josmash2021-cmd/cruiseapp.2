@@ -2268,34 +2268,32 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'bottom-right');
 
       // ── FORCE ZOOM ON MOBILE ──────────────────────────────────
-      // Walk up from map canvas to <body> and force touch-action:none on every ancestor
-      // so Shopify theme / browser never steals pinch-zoom from Mapbox.
+      // Ensure touch-action:none on map elements so the browser doesn't
+      // intercept pinch gestures. Do NOT call preventDefault on touchmove
+      // because that blocks Mapbox's own touchZoomRotate handler.
       (function(){
         var mapContainer = map.getContainer();
-        var el = mapContainer;
-        while(el && el !== document.documentElement){
+        var cc = map.getCanvasContainer();
+        var cv = map.getCanvas();
+        // Force touch-action on Mapbox's own elements
+        mapContainer.style.touchAction = 'none';
+        if(cc) cc.style.touchAction = 'none';
+        if(cv) cv.style.touchAction = 'none';
+        // Walk up to section root only (not body) to prevent Shopify theme interference
+        var el = mapContainer.parentElement;
+        var sectionRoot = mapContainer.closest('.vipRide');
+        while(el && el !== sectionRoot && el !== document.body){
           el.style.touchAction = 'none';
-          el.style.webkitOverflowScrolling = 'auto';
           el = el.parentElement;
         }
-        // Also force on canvas and its container
-        var cc = map.getCanvasContainer();
-        if(cc) cc.style.touchAction = 'none';
-        var cv = map.getCanvas();
-        if(cv) cv.style.touchAction = 'none';
-
-        // Prevent browser from intercepting multi-touch on the map area
-        mapContainer.addEventListener('touchmove', function(e){
-          if(e.touches && e.touches.length >= 2){
-            e.preventDefault(); // stop page scroll/zoom when pinching on map
-          }
-        }, {passive:false});
-
-        // Also prevent wheel event from scrolling the page
-        mapContainer.addEventListener('wheel', function(e){
-          e.preventDefault();
-        }, {passive:false});
+        if(sectionRoot) sectionRoot.style.touchAction = 'none';
       })();
+      // Explicitly enable pinch-zoom after load (belt and suspenders)
+      map.on('load', function(){
+        map.touchZoomRotate.enable();
+        map.scrollZoom.enable({around:'center'});
+        map.doubleClickZoom.enable();
+      });
 
       // Keyboard/viewport handling
       if(window.visualViewport){

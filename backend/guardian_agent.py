@@ -359,6 +359,44 @@ class DataGuardian:
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)
 
+                # Check for ghost trips: driver_en_route/arrived/in_trip with no
+                # location update for 60+ minutes — driver app likely crashed.
+                ghost_result = await session.execute(text("""
+                    SELECT t.id, t.status, t.driver_id, t.updated_at
+                    FROM trips t
+                    WHERE t.status IN ('driver_en_route', 'arrived', 'in_trip')
+                    AND t.updated_at < NOW() - INTERVAL '60 minutes'
+                """))
+                ghosts = ghost_result.fetchall()
+
+                for row in ghosts:
+                    trip_id, status, driver_id, updated_at = row
+                    logger.warning(
+                        f"👻 GHOST TRIP: id={trip_id} status='{status}' driver={driver_id} "
+                        f"no update since {updated_at} — auto-cancelling"
+                    )
+                    await session.execute(text("""
+                        UPDATE trips
+                        SET status = 'cancelled', cancel_reason = 'ghost_stale_no_update'
+                        WHERE id = :trip_id
+                    """), {"trip_id": trip_id})
+                    self._trips_fixed += 1
+                    try:
+                        from config import _HAS_FIRESTORE, firestore_sync
+                        if _HAS_FIRESTORE:
+                            firestore_sync.sync_trip_status(
+                                trip_id=trip_id,
+                                status="cancelled",
+                                cancel_reason="ghost_stale_no_update",
+                                cancelled_by="system",
+                            )
+                    except Exception as fs_err:
+                        logger.error(f"Firestore sync for ghost trip {trip_id} failed: {fs_err}")
+
+                if ghosts:
+                    await session.commit()
+                    self._trips_checked += len(ghosts)
+
         except Exception as e:
             logger.error(f"Trip integrity check failed: {e}")
 

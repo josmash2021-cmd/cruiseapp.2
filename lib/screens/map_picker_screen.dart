@@ -245,8 +245,6 @@ class _MapPickerScreenState extends State<MapPickerScreen>
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
               ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-              // Enforce top-down view: disable pitch so zoom stays flat
-              ctrl.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
               Future.delayed(
                 const Duration(milliseconds: 800),
                 _onCameraIdle,

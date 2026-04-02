@@ -767,14 +767,19 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   void _onDriverMatched(Map<String, dynamic> data, int tripId) {
     // Prevent duplicate processing from in-flight polls after SSE match
     if (_driverMatched) return;
-    _driverMatched = true;
 
-    // Validate driver_id exists before creating MatchedDriver
+    // Validate driver_id exists before creating MatchedDriver.
+    // Do NOT set _driverMatched=true until validation passes — otherwise a stale
+    // poll response without driver_id permanently blocks the rider (timers already
+    // cancelled, flag prevents future polls from re-triggering this method).
     final driverId = data['driver_id']?.toString();
     if (driverId == null || driverId.isEmpty) {
-      debugPrint('⚠️ Driver matched but driver_id is null/empty');
+      debugPrint('⚠️ Driver matched but driver_id is null/empty — will retry on next poll');
+      // Restart polling so we can try again with a fresh response
+      _startDispatchPolling(tripId);
       return;
     }
+    _driverMatched = true;
 
     // Extract photo URL — try flat field first, then nested driver object
     final photoUrl = data['driver_photo_url']?.toString() ??

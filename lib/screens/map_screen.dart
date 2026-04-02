@@ -307,16 +307,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
-    // Detect the right icon based on the dropoff address text
-    final pinIcon = detectCircularPinIcon(_dropoffAddress);
-    final pinBytes = await renderCircularPinBytes(
-      icon: pinIcon,
-      isPickup: false,
-      radius: 44,
-    );
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
-      image: pinBytes,
+      image: _dropoffPinIconBytes ?? _goldPinIconBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
       iconOffset: [0, 0],

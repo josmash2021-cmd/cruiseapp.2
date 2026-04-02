@@ -222,7 +222,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
     # Find nearby online drivers with fresh heartbeat to avoid assigning offers
     # to stale "ghost" drivers left online after app/network crashes.
-    active_cutoff = utc_now() - timedelta(minutes=5)
+    # 15-min window: drivers idle between trips shouldn't be filtered out.
+    active_cutoff = utc_now() - timedelta(minutes=15)
     result = await db.execute(
         select(User).where(
             and_(
@@ -571,7 +572,7 @@ async def reject_offer(
             select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
         )
         rejected_ids = {r[0] for r in rejected_ids_result.all()}
-        active_cutoff = utc_now() - timedelta(minutes=5)
+        active_cutoff = utc_now() - timedelta(minutes=15)
         drivers_result = await db.execute(
             select(User).where(
                 and_(

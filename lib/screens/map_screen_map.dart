@@ -116,8 +116,6 @@ extension _MapScreenMap on _MapScreenState {
     controller.compass.updateSettings(mapbox.CompassSettings(enabled: false));
     controller.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
     controller.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-    // Enforce top-down view: disable pitch so zoom stays flat
-    controller.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
     // Route polyline goes below all symbols/labels (at the very bottom)
     _polylineAnnotMgr = await controller.annotations.createPolylineAnnotationManager(
       below: "road-label",
@@ -166,7 +164,7 @@ extension _MapScreenMap on _MapScreenState {
         center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)),
         zoom: z,
         bearing: bearing,
-        pitch: 0, // Always top-down
+        pitch: tilt,
       ),
       mapbox.MapAnimationOptions(duration: 600),
     );
@@ -183,7 +181,7 @@ extension _MapScreenMap on _MapScreenState {
         .toList();
     final cam = await _mapController!.cameraForCoordinatesPadding(
       coords,
-      mapbox.CameraOptions(bearing: _cinematicBearing, pitch: 0),
+      mapbox.CameraOptions(bearing: _cinematicBearing, pitch: _cinematicPitch),
       mapbox.MbxEdgeInsets(top: top, left: left, bottom: bottom, right: right),
       null, null,
     );
@@ -239,7 +237,7 @@ extension _MapScreenMap on _MapScreenState {
   void _applyCinematicCamera() {
     if (_mapController == null || !mounted) return;
     _mapController!.setCamera(mapbox.CameraOptions(
-      pitch: 0, // Always top-down
+      pitch: _tiltAnim?.value,
       bearing: _bearingAnim?.value,
     ));
   }

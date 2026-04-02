@@ -696,7 +696,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _applyMapCamera() {
     if (_mapCtrl == null || !mounted) return;
     _mapCtrl!.setCamera(mapbox.CameraOptions(
-      pitch: 0, // Always top-down
+      pitch: _tiltAnim?.value,
       bearing: _bearingAnim?.value,
     ));
   }
@@ -734,7 +734,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _applySearchCamera() {
     if (_mapCtrl == null || !mounted) return;
     _mapCtrl!.setCamera(mapbox.CameraOptions(
-      pitch: 0, // Always top-down
+      pitch: _searchPitchAnim?.value,
       bearing: _searchBearingAnim?.value,
     ));
   }
@@ -1071,7 +1071,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(
-        pitch: 0, // Always top-down
+        pitch: preserveCamera ? 55.0 : null,
         bearing: preserveCamera ? _randomBearing : null,
       ),
       mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),

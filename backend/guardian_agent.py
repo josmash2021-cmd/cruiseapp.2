@@ -1014,7 +1014,7 @@ class UnmatchedTripRetryAgent:
 
         now = utc_now()
         min_age = now - timedelta(seconds=self.MAX_AGE_SECS)
-        active_cutoff = now - timedelta(minutes=5)
+        active_cutoff = now - timedelta(minutes=15)
 
         async with self._db_session_maker() as db:
             # Find trips in "requested" status that have NO pending/accepted offers
@@ -1044,9 +1044,17 @@ class UnmatchedTripRetryAgent:
                 if existing.scalar() > 0:
                     continue  # already has a pending offer, skip
 
-                # Get IDs of drivers who already rejected/expired
+                # Only exclude drivers with active (pending/accepted) offers — allow
+                # re-offering to drivers whose previous offer expired or was auto-rejected
+                # (e.g. 20-second UI countdown timeout). This prevents a single-driver
+                # scenario from permanently blocking dispatch.
                 prev_result = await db.execute(
-                    select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
+                    select(DispatchOffer.driver_id).where(
+                        and_(
+                            DispatchOffer.trip_id == trip.id,
+                            DispatchOffer.status.in_(["pending", "accepted"]),
+                        )
+                    )
                 )
                 excluded_ids = {r[0] for r in prev_result.all()}
 

@@ -514,7 +514,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                   coordinates: mapbox.Position(_currentPos.longitude, _currentPos.latitude),
                 ),
                 zoom: _speedZoom,
-                pitch: 0, // Top-down view
+                pitch: 55.0,
                 bearing: _currentBearing,
               ),
               onMapCreated: (ctrl) async {
@@ -523,8 +523,6 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
                 ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                 ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                 ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                // Enforce top-down view: disable pitch so zoom stays flat
-                ctrl.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
                 _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                 try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
                 _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
@@ -898,7 +896,7 @@ class SmoothCameraController {
 
     _smoothedBearing = _lerpAngle(_smoothedBearing, carBearing, 0.06);
     _smoothedZoom = _lerp(_smoothedZoom, speedZoom, 0.03);
-    _smoothedTilt = 0; // Top-down view
+    _smoothedTilt = _lerp(_smoothedTilt, 55 + turnTilt, 0.05);
 
     return mapbox.CameraOptions(
       center: mapbox.Point(
@@ -909,7 +907,7 @@ class SmoothCameraController {
       ),
       zoom: _smoothedZoom,
       bearing: _smoothedBearing,
-      pitch: 0, // Always top-down
+      pitch: _smoothedTilt,
     );
   }
 

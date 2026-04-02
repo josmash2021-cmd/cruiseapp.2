@@ -340,9 +340,6 @@ workflows:
     integrations:
       app_store_connect: CruiseinRide
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
       groups:
         - Default
       flutter: stable
@@ -357,25 +354,32 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
-      - name: Verify signing setup
+      - name: Set up iOS code signing
         script: |
-          echo "── Keychain identities ──"
+          keychain initialize
+
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --verbose
+
+          keychain add-certificates
+
+          xcode-project use-profiles
+
+          echo "── Identities ──"
           security find-identity -v -p codesigning
-          echo "── Provisioning profiles ──"
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ || echo "No profiles dir"
-          echo "── Xcode project signing ──"
-          grep -A2 "CODE_SIGN_STYLE\|PROVISIONING_PROFILE\|DEVELOPMENT_TEAM" ios/Runner.xcodeproj/project.pbxproj | head -30
-          echo "✅ Signing verification complete"
+          echo "── Profiles ──"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo "✅ Signing ready"
       - name: Build IPA (App Store)
         script: |
-          mkdir -p /tmp/xcodebuild_logs
-
           flutter build ipa \
             --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \
             --export-options-plist=$HOME/export_options.plist \
-            2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
+            2>&1 | tee /tmp/flutter_build.log
 
           IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
           if [ -z "$IPA_PATH" ]; then

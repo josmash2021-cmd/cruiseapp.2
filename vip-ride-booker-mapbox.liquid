@@ -441,23 +441,23 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 @keyframes vipLocatePulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(212,175,55,.5); } 70%{ box-shadow:0 0 0 10px rgba(212,175,55,0); } }
 
 /* ══ Mapbox Custom Markers ══ */
-.vipRide__marker{ cursor:pointer; will-change:transform,opacity; position:relative; display:inline-block; width:48px; height:60px; }
-.vipRide__marker--pickup,
-.vipRide__marker--dropoff{
-  animation:vipMarkerPop 1100ms cubic-bezier(.22,.61,.36,1) forwards;
+.vipRide__marker{ cursor:pointer; }
+.vipRide__markerInner{
+  display:block; width:48px; height:60px;
+  will-change:transform,opacity;
+  animation:vipMarkerPop 1200ms cubic-bezier(.22,.61,.36,1) forwards;
   filter:drop-shadow(0 3px 6px rgba(212,168,0,.45));
+  position:relative;
 }
-.vipRide__marker--pickup svg,
-.vipRide__marker--dropoff svg{ display:block; width:48px; height:60px; }
+.vipRide__markerInner svg{ display:block; width:48px; height:60px; }
 @keyframes vipMarkerPop{
   0%  { transform:scale(0) translateY(30px); opacity:0; }
-  40% { transform:scale(1.08) translateY(-3px); opacity:1; }
-  65% { transform:scale(0.98) translateY(1px); opacity:1; }
-  82% { transform:scale(1.02) translateY(0); opacity:1; }
+  35% { transform:scale(1.06) translateY(-2px); opacity:1; }
+  55% { transform:scale(0.98) translateY(1px); opacity:1; }
+  75% { transform:scale(1.02) translateY(0); opacity:1; }
   100%{ transform:scale(1) translateY(0); opacity:1; }
 }
-.vipRide__marker--pickup::after,
-.vipRide__marker--dropoff::after{
+.vipRide__markerInner::after{
   content:''; position:absolute; bottom:-4px; left:50%; transform:translateX(-50%);
   width:14px; height:6px; border-radius:50%;
   background:rgba(212,175,55,.35);
@@ -1280,7 +1280,9 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   function createPickupMarkerEl(){
     var el=document.createElement('div');
     el.className='vipRide__marker vipRide__marker--pickup';
-    el.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="60" viewBox="0 0 48 60">'
+    var inner=document.createElement('div');
+    inner.className='vipRide__markerInner';
+    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="60" viewBox="0 0 48 60">'
       +'<defs>'
       +'<radialGradient id="pg-halo" cx="50%" cy="40%" r="55%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.22"/><stop offset="70%" stop-color="#E8C547" stop-opacity="0.06"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
       +'<radialGradient id="pg-body" cx="38%" cy="30%"><stop offset="0%" stop-color="#F5DC7A"/><stop offset="50%" stop-color="#D4A800"/><stop offset="100%" stop-color="#B08800"/></radialGradient>'
@@ -1302,12 +1304,15 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       // Green status dot
       +'<circle cx="24" cy="53" r="3" fill="#4CAF50" stroke="#1A1A1A" stroke-width="1"/>'
       +'</svg>';
+    el.appendChild(inner);
     return el;
   }
   function createDropoffMarkerEl(){
     var el=document.createElement('div');
     el.className='vipRide__marker vipRide__marker--dropoff';
-    el.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="60" viewBox="0 0 48 60">'
+    var inner=document.createElement('div');
+    inner.className='vipRide__markerInner';
+    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="60" viewBox="0 0 48 60">'
       +'<defs>'
       +'<radialGradient id="dg-halo" cx="50%" cy="40%" r="55%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.22"/><stop offset="70%" stop-color="#E8C547" stop-opacity="0.06"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
       +'<radialGradient id="dg-body" cx="38%" cy="30%"><stop offset="0%" stop-color="#F5DC7A"/><stop offset="50%" stop-color="#D4A800"/><stop offset="100%" stop-color="#B08800"/></radialGradient>'
@@ -1328,6 +1333,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       // Gold status dot
       +'<circle cx="24" cy="53" r="3" fill="#E8C547" stroke="#1A1A1A" stroke-width="1"/>'
       +'</svg>';
+    el.appendChild(inner);
     return el;
   }
 
@@ -1739,15 +1745,29 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       maxZoom:16,
       easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
-    // Cinematic tilt after bounds settle
-    setTimeout(function(){
-      map.easeTo({
-        pitch:55,
-        bearing:-12,
-        duration:3500,
-        easing:function(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-      });
-    }, 2400);
+    // Smooth cinematic tilt — wait for fitBounds to fully settle, then ease in gradually
+    map.once('moveend', function(){
+      // Small pause before starting tilt for visual rest
+      setTimeout(function(){
+        var startPitch=0, endPitch=50;
+        var startBearing=0, endBearing=-10;
+        var dur=4000; // 4 seconds total
+        var startTime=null;
+        function smoothTilt(ts){
+          if(!startTime) startTime=ts;
+          var elapsed=ts-startTime;
+          var t=Math.min(elapsed/dur,1);
+          // Smooth ease-out (decelerate) — feels natural
+          var ease=1-Math.pow(1-t,4);
+          map.jumpTo({
+            pitch:startPitch+(endPitch-startPitch)*ease,
+            bearing:startBearing+(endBearing-startBearing)*ease
+          });
+          if(t<1) requestAnimationFrame(smoothTilt);
+        }
+        requestAnimationFrame(smoothTilt);
+      }, 300);
+    });
   }
 
   function setMarker(which,lat,lng){

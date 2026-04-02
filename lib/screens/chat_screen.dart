@@ -86,13 +86,18 @@ class _ChatScreenState extends State<ChatScreen> {
     _recipientPhone = widget.recipientPhone?.trim();
 
     // Resolve user ID
-    if (widget.currentUserId != null) {
+    if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
       _myUserId = widget.currentUserId!;
     } else {
       final id = await ApiService.getCurrentUserId();
       _myUserId = (id ?? 0).toString();
     }
     _myRole = widget.currentRole ?? 'rider';
+
+    // Enable RTDB offline persistence so messages queue when disconnected
+    try {
+      FirebaseDatabase.instance.setPersistenceEnabled(true);
+    } catch (_) {}
 
     // Decide mode: RTDB for trip chats, polling for support
     if (!widget.isSupport && widget.tripId != null) {
@@ -171,18 +176,15 @@ class _ChatScreenState extends State<ChatScreen> {
   Color _connectionDotColor() {
     if (!_useRtdb) return const Color(0xFF4CAF50);
     if (_rtdbConnected == true) return const Color(0xFF4CAF50);
-    // Show amber "connecting" until first successful connect
-    if (!_hadFirstConnect) return const Color(0xFFF59E0B);
-    if (_rtdbConnected == false) return const Color(0xFFEF4444);
+    // Show amber while connecting or reconnecting
     return const Color(0xFFF59E0B);
   }
 
   String _connectionLabel(S s) {
     if (!_useRtdb) return s.online;
     if (_rtdbConnected == true) return s.activeNow;
-    // Show "Connecting..." until first successful connect
-    if (!_hadFirstConnect) return 'Connecting...';
-    if (_rtdbConnected == false) return s.connectionLost;
+    // Show "Reconnecting..." instead of alarming "Connection lost"
+    if (_hadFirstConnect) return 'Reconnecting...';
     return 'Connecting...';
   }
 

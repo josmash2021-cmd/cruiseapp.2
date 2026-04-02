@@ -141,8 +141,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late final Animation<double> _pinPopAnim;
   final List<mapbox.PointAnnotation> _pinAnnots = [];
 
-  // ── Slide-to-confirm state ──
-  double _slideVal = 0;
+  // ── Start Trip tap state ──
   bool   _slid     = false;
 
   // ── Mini map animation already played flag ──
@@ -171,9 +170,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   double _arrivedSlideVal = 0;
   bool _arrivedSlidDone = false;
 
-  // ── Ride started (passenger picked up → second "Start Trip") ──
+  // ── Ride started (passenger picked up → "Start Ride") ──
   bool _rideStarted = false;
-  double _startRideSlideVal = 0;
   bool _startRideSlidDone = false;
 
   // ── Dropoff proximity + trip finish ──
@@ -303,23 +301,43 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   Future<void> _resolveRiderPhotoFromTrip() async {
     if (_riderPhotoUrl != null && _riderPhotoUrl!.isNotEmpty) return;
+    // 1) Try Firestore trip document
     try {
       final snap = await FirebaseFirestore.instance
           .collection('trips')
           .doc(_fsDocId)
           .get();
       final data = snap.data();
-      if (data == null || !mounted) return;
+      if (data != null && mounted) {
+        final recovered = _normalizedPhotoUrl(
+          data['riderPhotoUrl']?.toString() ??
+              data['rider_photo_url']?.toString() ??
+              data['passengerPhotoUrl']?.toString() ??
+              data['passenger_photo_url']?.toString() ??
+              data['photo_url']?.toString() ??
+              data['profile_photo_url']?.toString(),
+        );
+        if (recovered != null && recovered.isNotEmpty) {
+          setState(() => _riderPhotoUrl = recovered);
+          return;
+        }
+      }
+    } catch (_) {}
+    // 2) Fallback: query dispatch status API for rider photo
+    try {
+      final status = await ApiService.getDispatchStatus(widget.tripId);
+      if (!mounted) return;
+      final trip = (status['trip'] is Map)
+          ? Map<String, dynamic>.from((status['trip'] as Map).cast<String, dynamic>())
+          : <String, dynamic>{};
       final recovered = _normalizedPhotoUrl(
-        data['riderPhotoUrl']?.toString() ??
-            data['rider_photo_url']?.toString() ??
-            data['passengerPhotoUrl']?.toString() ??
-            data['passenger_photo_url']?.toString() ??
-            data['photo_url']?.toString() ??
-            data['profile_photo_url']?.toString(),
+        trip['rider_photo_url']?.toString() ??
+            trip['riderPhotoUrl']?.toString() ??
+            trip['passenger_photo_url']?.toString(),
       );
-      if (recovered == null || recovered.isEmpty) return;
-      setState(() => _riderPhotoUrl = recovered);
+      if (recovered != null && recovered.isNotEmpty) {
+        setState(() => _riderPhotoUrl = recovered);
+      }
     } catch (_) {}
   }
 
@@ -786,14 +804,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   );
 
   // ── Chat ─────────────────────────────────────────────────────────────────
-  void _openChat() {
+  void _openChat() async {
     HapticFeedback.lightImpact();
+    // Resolve driver user ID before navigating so chat doesn't have to await
+    final driverId = await ApiService.getCurrentUserId();
+    if (!mounted) return;
     Navigator.of(context).push(
       slideFromRightRoute(ChatScreen(
         recipientName: widget.riderName,
-        recipientPhone: widget.riderPhone,
+        recipientPhone: widget.riderPhone.isNotEmpty ? widget.riderPhone : null,
         tripId: widget.tripId,
         currentRole: 'driver',
+        currentUserId: driverId?.toString(),
       )),
     );
   }
@@ -2264,125 +2286,46 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  // ── Slide-to-confirm "Start Trip" widget ────────────────────────────────
+  // ── Tap "Start Trip" button ──────────────────────────────────────────────
   Widget _buildSlideStartTrip() {
-    const height = 62.0;
-    const thumbW = 62.0;
-    return Container(
-      key: const ValueKey('slide_start_trip'),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111318),
-        borderRadius: BorderRadius.circular(height / 2),
-        border: Border.all(color: _gold.withValues(alpha: 0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (ctx, constraints) {
-          final trackW = constraints.maxWidth;
-          final maxDrag = trackW - thumbW - 4;
-          return SizedBox(
-            height: height,
-            child: Stack(
-              children: [
-                // Fill
-                Positioned(
-                  left: 0, top: 0, bottom: 0,
-                  width: (_slideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _gold.withValues(alpha: 0.45),
-                          _gold.withValues(alpha: 0.10),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(height / 2),
-                    ),
-                  ),
-                ),
-                // Shimmer sweep hint
-                _buildShimmerOverlay(height),
-                // Label
-                Center(
-                  child: AnimatedOpacity(
-                    opacity: 1.0 - _slideVal,
-                    duration: const Duration(milliseconds: 100),
-                    child: const Text('Start Trip',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-                // Thumb
-                Positioned(
-                  left: 2 + _slideVal * maxDrag,
-                  top: 3, bottom: 3,
-                  child: GestureDetector(
-                    onHorizontalDragUpdate: (d) {
-                      if (_slid) return;
-                      setState(() {
-                        _slideVal = (_slideVal + d.delta.dx / maxDrag)
-                            .clamp(0.0, 1.0);
-                      });
-                      if (_slideVal >= 0.88) {
-                        setState(() => _slid = true);
-                        HapticFeedback.heavyImpact();
-                        // Gloss re-animate the route polyline then open maps
-                        Future.delayed(const Duration(milliseconds: 300), () async {
-                          if (!mounted) return;
-                          // Re-draw the existing route with gloss animation
-                          if (_routePoints.length >= 2) {
-                            // Remove existing route so re-draw is visible
-                            if (_routeAnnot != null && _polyMgr != null) {
-                              try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
-                              _routeAnnot = null;
-                            }
-                            await _animateGoldRoute(
-                              points: _routePoints,
-                              duration: const Duration(milliseconds: 600),
-                            );
-                          }
-                          if (!mounted) return;
-                          setState(() => _tripStarted = true);
-                          _openNativeMaps(widget.pickupLatLng);
-                        });
-                      }
-                    },
-                    onHorizontalDragEnd: (_) {
-                      if (!_slid) setState(() => _slideVal = 0);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 80),
-                      width: thumbW - 4,
-                      decoration: BoxDecoration(
-                        color: _slid ? _gold.withValues(alpha: 0.8) : _gold,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.5),
-                            blurRadius: 12,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        _slid ? Icons.check_rounded : Icons.chevron_right_rounded,
-                        color: Colors.black,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
+    return SizedBox(
+      key: const ValueKey('tap_start_trip'),
+      width: double.infinity,
+      height: 62,
+      child: ElevatedButton(
+        onPressed: _slid ? null : () {
+          setState(() => _slid = true);
+          HapticFeedback.heavyImpact();
+          Future.delayed(const Duration(milliseconds: 300), () async {
+            if (!mounted) return;
+            if (_routePoints.length >= 2) {
+              if (_routeAnnot != null && _polyMgr != null) {
+                try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
+                _routeAnnot = null;
+              }
+              await _animateGoldRoute(
+                points: _routePoints,
+                duration: const Duration(milliseconds: 600),
+              );
+            }
+            if (!mounted) return;
+            setState(() => _tripStarted = true);
+            _openNativeMaps(widget.pickupLatLng);
+          });
         },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          foregroundColor: Colors.black,
+          disabledBackgroundColor: _gold.withValues(alpha: 0.6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(31),
+          ),
+          elevation: 0,
+        ),
+        child: Text(
+          _slid ? 'Starting...' : 'Start Trip',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -2558,134 +2501,55 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  // ── Slide-to-confirm "Start Trip" #2 (pickup confirmed → go to dropoff) ─
+  // ── Tap "Start Ride" button (pickup confirmed → go to dropoff) ─────────
   Widget _buildSlideStartRide() {
-    const height = 62.0;
-    const thumbW = 62.0;
-    return Container(
-      key: const ValueKey('slide_start_ride'),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111318),
-        borderRadius: BorderRadius.circular(height / 2),
-        border: Border.all(color: _gold.withValues(alpha: 0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (ctx, constraints) {
-          final trackW = constraints.maxWidth;
-          final maxDrag = trackW - thumbW - 4;
-          return SizedBox(
-            height: height,
-            child: Stack(
-              children: [
-                // Fill
-                Positioned(
-                  left: 0, top: 0, bottom: 0,
-                  width: (_startRideSlideVal * maxDrag + thumbW).clamp(thumbW.toDouble(), trackW),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _gold.withValues(alpha: 0.45),
-                          _gold.withValues(alpha: 0.10),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(height / 2),
-                    ),
-                  ),
-                ),
-                // Shimmer sweep hint
-                _buildShimmerOverlay(height),
-                // Label
-                Center(
-                  child: AnimatedOpacity(
-                    opacity: 1.0 - _startRideSlideVal,
-                    duration: const Duration(milliseconds: 100),
-                    child: const Text('Start Trip',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-                // Thumb
-                Positioned(
-                  left: 2 + _startRideSlideVal * maxDrag,
-                  top: 3, bottom: 3,
-                  child: GestureDetector(
-                    onHorizontalDragUpdate: (d) {
-                      if (_startRideSlidDone) return;
-                      setState(() {
-                        _startRideSlideVal = (_startRideSlideVal + d.delta.dx / maxDrag)
-                            .clamp(0.0, 1.0);
-                      });
-                      if (_startRideSlideVal >= 0.88) {
-                        setState(() => _startRideSlidDone = true);
-                        HapticFeedback.heavyImpact();
-                        // Update status + gloss animate dropoff route + navigate
-                        Future.delayed(const Duration(milliseconds: 300), () async {
-                          if (!mounted) return;
-                          setState(() => _rideStarted = true);
-                          _startDropoffProximityDetection();
-                          _updateTripInTrip();
-                          // Fetch and animate driver→dropoff route with gloss
-                          try {
-                            // Remove existing pickup route
-                            if (_routeAnnot != null && _polyMgr != null) {
-                              try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
-                              _routeAnnot = null;
-                            }
-                            final driverPos = await Geolocator.getCurrentPosition(
-                              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-                            ).timeout(const Duration(seconds: 5));
-                            final origin = LatLng(driverPos.latitude, driverPos.longitude);
-                            final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng);
-                            if (mounted && dropoffRoute.length >= 2) {
-                              _routePoints = dropoffRoute;
-                              await _animateGoldRoute(
-                                points: dropoffRoute,
-                                duration: const Duration(milliseconds: 800),
-                              );
-                            }
-                          } catch (_) {}
-                          if (mounted) _openNativeMaps(widget.dropoffLatLng);
-                        });
-                      }
-                    },
-                    onHorizontalDragEnd: (_) {
-                      if (!_startRideSlidDone) setState(() => _startRideSlideVal = 0);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 80),
-                      width: thumbW - 4,
-                      decoration: BoxDecoration(
-                        color: _startRideSlidDone ? _gold.withValues(alpha: 0.8) : _gold,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.5),
-                            blurRadius: 12,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        _startRideSlidDone ? Icons.check_rounded : Icons.chevron_right_rounded,
-                        color: Colors.black,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
+    return SizedBox(
+      key: const ValueKey('tap_start_ride'),
+      width: double.infinity,
+      height: 62,
+      child: ElevatedButton(
+        onPressed: _startRideSlidDone ? null : () {
+          setState(() => _startRideSlidDone = true);
+          HapticFeedback.heavyImpact();
+          Future.delayed(const Duration(milliseconds: 300), () async {
+            if (!mounted) return;
+            setState(() => _rideStarted = true);
+            _startDropoffProximityDetection();
+            _updateTripInTrip();
+            try {
+              if (_routeAnnot != null && _polyMgr != null) {
+                try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
+                _routeAnnot = null;
+              }
+              final driverPos = await Geolocator.getCurrentPosition(
+                locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+              ).timeout(const Duration(seconds: 5));
+              final origin = LatLng(driverPos.latitude, driverPos.longitude);
+              final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng);
+              if (mounted && dropoffRoute.length >= 2) {
+                _routePoints = dropoffRoute;
+                await _animateGoldRoute(
+                  points: dropoffRoute,
+                  duration: const Duration(milliseconds: 800),
+                );
+              }
+            } catch (_) {}
+            if (mounted) _openNativeMaps(widget.dropoffLatLng);
+          });
         },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          foregroundColor: Colors.black,
+          disabledBackgroundColor: _gold.withValues(alpha: 0.6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(31),
+          ),
+          elevation: 0,
+        ),
+        child: Text(
+          _startRideSlidDone ? 'Starting...' : 'Start Ride',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -2739,7 +2603,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   child: AnimatedOpacity(
                     opacity: 1.0 - _finishSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Finalizar Viaje',
+                    child: const Text('Finalizar Ride',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
@@ -2799,7 +2663,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       key: const ValueKey('slide_finish_trip_locked'),
       mainAxisSize: MainAxisSize.min,
       children: const [
-        _LockedSlideButton(label: 'Finalizar Viaje'),
+        _LockedSlideButton(label: 'Finalizar Ride'),
         SizedBox(height: 10),
         Text(
           'El boton se activa cuando ya estes en la direccion de destino',

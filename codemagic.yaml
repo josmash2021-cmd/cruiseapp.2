@@ -383,22 +383,27 @@ workflows:
         script: |
           mkdir -p /tmp/xcodebuild_logs
 
-          # Use Flutter's built-in IPA builder with automatic signing from profiles
+          # xcode-project use-profiles generates ~/export_options.plist
+          echo "── Export options plist ──"
+          cat ~/export_options.plist 2>/dev/null || echo "WARNING: ~/export_options.plist not found"
+          ls -la ~/export_options.plist 2>/dev/null || true
+
+          # Build IPA using the signing profiles configured by use-profiles
           flutter build ipa \
             --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \
-            --export-options-plist=/tmp/export_options.plist \
-            2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log || {
+            --export-options-plist=$HOME/export_options.plist \
+            2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
 
-            # Fallback: if export-options-plist doesn't exist, build without it
-            echo "── Retrying without export-options-plist ──"
-            flutter build ipa \
-              --release \
-              --no-tree-shake-icons \
-              --build-number=$BUILD_NUMBER \
-              2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
-          }
+          # Verify IPA was created
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "ERROR: No IPA file found after build"
+            ls -laR build/ios/ipa/ 2>/dev/null || echo "build/ios/ipa/ does not exist"
+            exit 1
+          fi
+          echo "✅ IPA created: $IPA_PATH ($(stat -f%z "$IPA_PATH" 2>/dev/null || stat -c%s "$IPA_PATH") bytes)"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

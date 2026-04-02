@@ -383,14 +383,38 @@ workflows:
           echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
 
           echo "── Applying profiles to Xcode project ──"
-          xcode-project use-profiles || echo "use-profiles warning (continuing)"
+          xcode-project use-profiles --verbose || echo "use-profiles warning (continuing)"
 
-          echo "── Patching Xcode project with profile info ──"
+          echo "── Injecting PROVISIONING_PROFILE_SPECIFIER into pbxproj ──"
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' "s/CODE_SIGN_STYLE = Manual;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";/" "$PBXPROJ"
-          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tDEVELOPMENT_TEAM = 7QLC9UVB3Z;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";/" "$PBXPROJ"
-          echo "Patched project.pbxproj"
-          grep -c "PROVISIONING_PROFILE_SPECIFIER" "$PBXPROJ"
+          python3 << PYEOF
+import re
+with open("$PBXPROJ", "r") as f:
+    content = f.read()
+# For every build config that has CODE_SIGN_STYLE = Manual and no PROVISIONING_PROFILE_SPECIFIER,
+# inject it right after CODE_SIGN_STYLE
+profile_name = "$PROFILE_NAME"
+profile_uuid = "$PROFILE_UUID"
+# Add PROVISIONING_PROFILE_SPECIFIER where missing
+if "PROVISIONING_PROFILE_SPECIFIER" not in content:
+    content = content.replace(
+        'CODE_SIGN_STYLE = Manual;',
+        f'CODE_SIGN_STYLE = Manual;\\n\\t\\t\\t\\tPROVISIONING_PROFILE_SPECIFIER = "{profile_name}";'
+    )
+    print(f"Injected PROVISIONING_PROFILE_SPECIFIER = {profile_name}")
+else:
+    # Update existing specifier
+    content = re.sub(
+        r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"',
+        f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}"',
+        content
+    )
+    print(f"Updated PROVISIONING_PROFILE_SPECIFIER = {profile_name}")
+with open("$PBXPROJ", "w") as f:
+    f.write(content)
+count = content.count("PROVISIONING_PROFILE_SPECIFIER")
+print(f"PROVISIONING_PROFILE_SPECIFIER appears {count} times")
+PYEOF
 
           echo "── Creating export_options.plist ──"
           python3 -c "

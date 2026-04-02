@@ -322,7 +322,7 @@ _CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIG
     "http://localhost:3000",
     "http://localhost:8000",
 ]
-app.add_middleware(GZipMiddleware, minimum_size=2000)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -426,6 +426,7 @@ _HOT_PATHS = {
     "/dispatch/driver/pending", "/drivers/nearby", "/health",
     "/dispatch/trip/status", "/auth/me", "/auth/account-status",
     "/drivers/vehicle", "/drivers/earnings",
+    "/dispatch/driver/accept", "/dispatch/driver/reject",
 }
 _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
 _LOCATION_PREFIX = "/drivers/"  # matches /drivers/{id}/location

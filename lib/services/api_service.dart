@@ -77,7 +77,7 @@ class ApiService {
     
     // Make the request and track it
     final requestFuture = _client.get(url, headers: headers).timeout(
-      const Duration(seconds: 8),
+      const Duration(seconds: 6),
       onTimeout: () {
         _inFlightRequests.remove(cacheKey);
         throw TimeoutException('Request to \${url.path} timed out');
@@ -1427,7 +1427,7 @@ class ApiService {
           headers: h,
           body: jsonEncode({'lat': lat, 'lng': lng, 'is_online': isOnline}),
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 4));
     return _parse(res);
   }
 
@@ -1928,7 +1928,7 @@ class ApiService {
           Uri.parse('$_baseUrl/dispatch/driver/pending?driver_id=$driverId'),
           headers: h,
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 5));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final body = jsonDecode(res.body);
       if (body is List) {
@@ -1987,7 +1987,7 @@ class ApiService {
           Uri.parse('$_baseUrl/dispatch/trip/status?trip_id=$tripId'),
           headers: h,
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 5));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }

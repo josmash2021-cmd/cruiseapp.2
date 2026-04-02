@@ -162,11 +162,11 @@ Future<void> _initFirebase() async {
 /// Called from SplashScreen.initState().
 Future<void> heavyInit() async {
   // Probe + warm up the server BEFORE the user reaches the login screen.
-  // 10 s total covers cellular DNS/TLS overhead AND Railway cold-starts.
+  // DNS is pre-resolved in startup Group 1, so probes should resolve fast.
   await ApiService.probeAndSetBestUrl(
-    timeout: const Duration(seconds: 8),
+    timeout: const Duration(seconds: 4),
   ).timeout(
-    const Duration(seconds: 10),
+    const Duration(seconds: 6),
     onTimeout: () {
       debugPrint('[heavyInit] probe timed out — using production URL');
       return null;

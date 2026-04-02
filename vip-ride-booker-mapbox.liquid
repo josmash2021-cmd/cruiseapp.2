@@ -413,7 +413,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 /* Mapbox attribution — keep compact */
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-attrib{ font-size:9px; opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-logo{ opacity:.35; }
-#vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; }
+#vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; touch-action:none; }
 /* Mapbox zoom controls — dark theme */
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group{ background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15); border-radius:12px; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.4); }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button{ width:36px; height:36px; background:transparent; border:none; color:#fff; }
@@ -1776,29 +1776,38 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     var mapEl = document.getElementById('vipRideMap-{{ section.id }}');
     var mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
     var sheetH = sheet ? sheet.offsetHeight : 240;
-    // Generous bottom padding: full sheet height + extra margin so pins sit well above it
-    var padBottom = sheetH + 60;
-    // On mobile, ensure at least 40% of map height as bottom pad (sheet covers more)
-    if(window.innerWidth < 900) padBottom = Math.max(padBottom, mapH * 0.45);
-    // First fit bounds flat, then cinematic tilt
-    map.fitBounds(bounds, {
-      padding:{top:90, right:60, bottom:padBottom, left:60},
+    // Bottom padding: full sheet height + generous extra so both pins are visible above
+    var padBottom = sheetH + 80;
+    if(window.innerWidth < 900) padBottom = Math.max(padBottom, mapH * 0.50);
+    // Step 1: Fly to fit both points flat (pitch=0, bearing=0)
+    map.flyTo({
+      center:[
+        (pickupPlace.lng + dropoffPlace.lng) / 2,
+        (pickupPlace.lat + dropoffPlace.lat) / 2
+      ],
+      zoom: map.cameraForBounds(bounds, {
+        padding:{top:100, right:70, bottom:padBottom, left:70},
+        maxZoom:15
+      }).zoom,
       pitch:0,
       bearing:0,
-      duration:2200,
-      maxZoom:15.5,
+      duration:2000,
+      essential:true,
       easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
-    // Cinematic tilt — native easeTo for buttery smooth animation
+    // Step 2: After fly completes, cinematic tilt + rotation
     map.once('moveend', function(){
       setTimeout(function(){
+        // Zoom out slightly before tilting to ensure everything stays visible
+        var currentZoom = map.getZoom();
         map.easeTo({
-          pitch:45,
-          bearing:15,
-          duration:3500,
-          easing:function(t){ return 1-Math.pow(1-t,3); }
+          pitch: 45,
+          bearing: 20,
+          zoom: Math.max(currentZoom - 0.5, 10),
+          duration: 3000,
+          easing: function(t){ return t*(2-t); } // ease-out quad — very smooth
         });
-      }, 250);
+      }, 300);
     });
   }
 
@@ -2244,10 +2253,20 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         dragRotate:false,
         touchPitch:false
       });
-      // Zoom around center so tilted/pitched views don't fly off
+      // Force zoom to always work — even when tilted
       map.scrollZoom.enable({around:'center'});
-      map.scrollZoom.setWheelZoomRate(1/10);
-      map.scrollZoom.setZoomRate(1/10);
+      map.scrollZoom.setWheelZoomRate(1/5);
+      map.scrollZoom.setZoomRate(1/5);
+      map.touchZoomRotate.enable();
+      map.doubleClickZoom.enable();
+      // Re-force scroll zoom after any animation ends (easeTo/flyTo can disable it)
+      map.on('moveend', function(){
+        if(!map.scrollZoom.isEnabled()){
+          map.scrollZoom.enable({around:'center'});
+          map.scrollZoom.setWheelZoomRate(1/5);
+          map.scrollZoom.setZoomRate(1/5);
+        }
+      });
       // Smooth drag-pan
       map.dragPan.enable({linearity:0.2,deceleration:2500,maxSpeed:1000});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');

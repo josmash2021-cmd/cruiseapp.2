@@ -441,18 +441,19 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 @keyframes vipLocatePulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(212,175,55,.5); } 70%{ box-shadow:0 0 0 10px rgba(212,175,55,0); } }
 
 /* ══ Mapbox Custom Markers ══ */
-.vipRide__marker{ cursor:pointer; will-change:transform; }
+.vipRide__marker{ cursor:pointer; will-change:transform,opacity; position:relative; display:inline-block; width:48px; height:60px; }
 .vipRide__marker--pickup,
 .vipRide__marker--dropoff{
-  animation:vipMarkerPop 550ms cubic-bezier(.2,.8,.2,1) both;
+  animation:vipMarkerPop 1100ms cubic-bezier(.22,.61,.36,1) forwards;
   filter:drop-shadow(0 3px 6px rgba(212,168,0,.45));
 }
 .vipRide__marker--pickup svg,
 .vipRide__marker--dropoff svg{ display:block; width:48px; height:60px; }
 @keyframes vipMarkerPop{
-  0%  { transform:scale(0) translateY(20px); opacity:0; }
-  55% { transform:scale(1.15) translateY(-4px); opacity:1; }
-  80% { transform:scale(0.97) translateY(1px); opacity:1; }
+  0%  { transform:scale(0) translateY(30px); opacity:0; }
+  40% { transform:scale(1.08) translateY(-3px); opacity:1; }
+  65% { transform:scale(0.98) translateY(1px); opacity:1; }
+  82% { transform:scale(1.02) translateY(0); opacity:1; }
   100%{ transform:scale(1) translateY(0); opacity:1; }
 }
 .vipRide__marker--pickup::after,
@@ -460,11 +461,11 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   content:''; position:absolute; bottom:-4px; left:50%; transform:translateX(-50%);
   width:14px; height:6px; border-radius:50%;
   background:rgba(212,175,55,.35);
-  animation:vipPinShadow 2.5s ease-in-out infinite;
+  animation:vipPinShadow 4s ease-in-out infinite;
 }
 @keyframes vipPinShadow{
   0%,100%{ transform:translateX(-50%) scale(1); opacity:.35; }
-  50%{ transform:translateX(-50%) scale(1.8); opacity:.10; }
+  50%{ transform:translateX(-50%) scale(1.6); opacity:.12; }
 }
 
 /* ══ Autocomplete Suggestions ══ */
@@ -1437,11 +1438,17 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     var coords=geometry.coordinates;
     var total=coords.length;
     var idx=0;
-    var step=Math.max(1,Math.ceil(total/80));
-    function tick(){
-      idx=Math.min(idx+step,total);
-      var src=map.getSource('route');
-      if(src) src.setData({type:'Feature',geometry:{type:'LineString',coordinates:coords.slice(0,idx)}});
+    var step=Math.max(1,Math.ceil(total/180));
+    var lastTime=0;
+    function tick(ts){
+      if(!lastTime) lastTime=ts;
+      var delta=ts-lastTime;
+      if(delta>=12){ // ~80fps cap for buttery smooth
+        idx=Math.min(idx+step,total);
+        var src=map.getSource('route');
+        if(src) src.setData({type:'Feature',geometry:{type:'LineString',coordinates:coords.slice(0,idx)}});
+        lastTime=ts;
+      }
       if(idx<total) requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
@@ -1728,18 +1735,19 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       padding:{top:80, right:50, bottom:padBottom, left:50},
       pitch:0,
       bearing:0,
-      duration:1000,
-      maxZoom:16
+      duration:2200,
+      maxZoom:16,
+      easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
     // Cinematic tilt after bounds settle
     setTimeout(function(){
       map.easeTo({
         pitch:55,
         bearing:-12,
-        duration:2200,
-        easing:function(t){ return 1-Math.pow(1-t,3); }
+        duration:3500,
+        easing:function(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
       });
-    }, 1100);
+    }, 2400);
   }
 
   function setMarker(which,lat,lng){
@@ -1757,7 +1765,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     if(currentMode === 'ride' && pickupPlace&&dropoffPlace&&map){
       fitRouteBounds();
     } else if(map){
-      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:0,bearing:0,duration:1200});
+      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:0,bearing:0,duration:2200,easing:function(t){var t1=t-1;return t1*t1*t1+1;}});
     }
   }
 
@@ -2121,15 +2129,28 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
           {id:'transit',type:'line',source:'mapbox-streets','source-layer':'road',
             filter:['any',['==',['get','class'],'major_rail'],['==',['get','class'],'minor_rail']],
             paint:{'line-color':'#101828','line-width':1,'line-opacity':0.3}},
-          // Place labels — major
+          // Country labels
+          {id:'country-label',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
+            filter:['==',['get','class'],'country'],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],
+              'text-size':['interpolate',['linear'],['zoom'],1,10,6,16],'text-max-width':8,
+              'text-transform':'uppercase','text-letter-spacing':0.1},
+            paint:{'text-color':'#8a9ab8','text-halo-color':'#0a0e1a','text-halo-width':2,'text-opacity':0.9}},
+          // State / region labels
+          {id:'state-label',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
+            filter:['==',['get','class'],'state'],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Medium','Arial Unicode MS Regular'],
+              'text-size':['interpolate',['linear'],['zoom'],4,9,9,14],'text-max-width':7},
+            paint:{'text-color':'#6a7a98','text-halo-color':'#0a0e1a','text-halo-width':1.5,'text-opacity':0.7}},
+          // Place labels — cities & towns (v8: class = settlement)
           {id:'place-city',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
-            filter:['any',['==',['get','class'],'city'],['==',['get','class'],'town']],
+            filter:['==',['get','class'],'settlement'],
             layout:{'text-field':['get','name'],'text-font':['DIN Pro Medium','Arial Unicode MS Regular'],
               'text-size':['interpolate',['linear'],['zoom'],6,10,14,20],'text-max-width':8},
             paint:{'text-color':'#8090b0','text-halo-color':'#1a1d2c','text-halo-width':2,'text-opacity':0.85}},
-          // Place labels — neighborhoods
+          // Place labels — neighborhoods (v8: class = settlement_subdivision)
           {id:'place-neighborhood',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
-            filter:['==',['get','class'],'neighbourhood'],
+            filter:['==',['get','class'],'settlement_subdivision'],
             layout:{'text-field':['get','name'],'text-font':['DIN Pro Regular','Arial Unicode MS Regular'],
               'text-size':['interpolate',['linear'],['zoom'],12,10,16,14],'text-max-width':7},
             paint:{'text-color':'#5a6a88','text-halo-color':'#0a0e1a','text-halo-width':1.5,'text-opacity':0.7}},
@@ -2148,14 +2169,18 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
           {id:'poi-icon',type:'symbol',source:'mapbox-streets','source-layer':'poi_label',
             minzoom:12,
             filter:['any',
-              ['==',['get','type'],'Restaurant'],['==',['get','type'],'Cafe'],
-              ['==',['get','type'],'Shop'],['==',['get','type'],'Store'],
-              ['==',['get','type'],'Bar'],['==',['get','type'],'Mall'],
-              ['==',['get','type'],'Supermarket'],['==',['get','type'],'Hotel'],
-              ['==',['get','type'],'Bank'],['==',['get','type'],'Pharmacy'],
-              ['==',['get','type'],'Gas Station'],['==',['get','type'],'Hospital'],
-              ['==',['get','type'],'School'],['==',['get','type'],'Airport'],
-              ['==',['get','type'],'Museum'],['==',['get','type'],'Cinema']
+              ['==',['get','class'],'food_and_drink'],
+              ['==',['get','class'],'food_and_drink_stores'],
+              ['==',['get','class'],'shop_grocery'],
+              ['==',['get','class'],'shop_other'],
+              ['==',['get','class'],'lodging'],
+              ['==',['get','class'],'hospital'],
+              ['==',['get','class'],'commercial_services'],
+              ['==',['get','class'],'motorist'],
+              ['==',['get','class'],'airport'],
+              ['==',['get','class'],'school'],
+              ['==',['get','class'],'visitor_amenities'],
+              ['==',['get','class'],'general']
             ],
             layout:{'icon-image':['get','maki'],'icon-size':['interpolate',['linear'],['zoom'],12,0.6,16,0.85],
               'icon-allow-overlap':false,'icon-padding':4,
@@ -2281,7 +2306,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         navigator.geolocation.getCurrentPosition(
           function(pos){
             var lat=pos.coords.latitude, lng=pos.coords.longitude;
-            map.flyTo({center:[lng,lat],zoom:15,pitch:0,bearing:0,duration:1200});
+            map.flyTo({center:[lng,lat],zoom:15,pitch:0,bearing:0,duration:2200,easing:function(t){var t1=t-1;return t1*t1*t1+1;}});
             if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
             pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
               .setLngLat([lng,lat]).addTo(map);

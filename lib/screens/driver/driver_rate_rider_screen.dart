@@ -115,12 +115,15 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     _goOnline();
   }
 
-  void _goOnline() {
+  Future<void> _goOnline() async {
+    // Smooth fade-out of this screen's content first
+    await _fadeCtrl.reverse();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => const DriverOnlineScreen(),
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 600),

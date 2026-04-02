@@ -160,13 +160,18 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
     _navigateToHome();
   }
 
-  void _navigateToHome() {
+  Future<void> _navigateToHome() async {
+    // Smooth fade-out of this screen's content first
+    await _entranceCtrl.reverse();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const HomeScreen(),
-        transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 600),
       ),
       (_) => false,
     );

@@ -231,7 +231,7 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       groups:
-        - default
+        - Default
       flutter: stable
       xcode: 16.2
       cocoapods: 1.15.2
@@ -290,7 +290,7 @@ workflows:
       app_store_connect: CruiseinRide
     environment:
       groups:
-        - default
+        - Default
       ios_signing:
         distribution_type: ad_hoc
         bundle_identifier: com.cruiseinride.app
@@ -335,7 +335,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.cruiseinride.app
       groups:
-        - default
+        - Default
       flutter: stable
       xcode: 16.2
       cocoapods: 1.15.2
@@ -432,7 +432,7 @@ workflows:
           source: true
     environment:
       groups:
-        - default
+        - Default
       flutter: stable
       java: 17
       vars:
@@ -480,7 +480,7 @@ workflows:
           source: true
     environment:
       groups:
-        - default
+        - Default
       flutter: stable
       java: 17
       vars:

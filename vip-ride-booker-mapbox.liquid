@@ -1,0 +1,2324 @@
+{% comment %}
+  VIP Ride Booker (Uber-like UX) - Shopify Section
+  CON RESERVA POR HORAS - Hourly Booking Added
+  MAPBOX GL JS — Custom dark map, animated route, tilt camera, gold pins
+{% endcomment %}
+
+{% assign bp = section.settings.booking_product %}
+{% if bp %}
+  {% assign booked_raw = bp.metafields.vip.booked_slots.value | default: '[]' %}
+{% else %}
+  {% assign booked_raw = '[]' %}
+{% endif %}
+<script>
+  window.__VIP_BOOKED_SLOTS__     = {{ booked_raw }};
+  window.__VIP_CENT_VARIANT_ID__  = 48209875435775;
+  window.__VIP_VEHICLE_VARIANTS__ = {
+    {% for block in section.blocks %}
+      {% assign p = block.settings.product %}
+      {% if p and p.variants.size > 0 %}
+        "{{ block.id }}": [
+          {% for v in p.variants %}
+            { "id": {{ v.id }}, "price": {{ v.price }} }{% unless forloop.last %},{% endunless %}
+          {% endfor %}
+        ]{% unless forloop.last %},{% endunless %}
+      {% endif %}
+    {% endfor %}
+  };
+</script>
+
+<section id="vipRide-{{ section.id }}" class="vipRide">
+
+  <div class="vipRide__bg" aria-hidden="true">
+    {% if section.settings.bg_video != blank %}
+      {{ section.settings.bg_video | video_tag:
+        autoplay: true, loop: true, muted: true,
+        controls: false, playsinline: true,
+        class: 'vipRide__bgVideo'
+      }}
+    {% elsif section.settings.bg_video_url != blank and section.settings.bg_video_url != 'https://example.com/your-video.mp4' %}
+      <video class="vipRide__bgVideo" autoplay muted loop playsinline>
+        <source src="{{ section.settings.bg_video_url }}" type="video/mp4">
+      </video>
+    {% endif %}
+    <div class="vipRide__bgOverlay"></div>
+  </div>
+
+  <div class="vipRide__wrap">
+
+    <!-- Map -->
+    <div class="vipRide__map">
+      <div class="vipRide__mapInner" id="vipRideMap-{{ section.id }}"></div>
+      <button type="button" class="vipRide__locateBtn" id="vipLocate-{{ section.id }}" aria-label="Use my location" title="Detect my location">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/><circle cx="12" cy="12" r="9" stroke-opacity=".3"/></svg>
+      </button>
+      <div class="vipRide__routePills" aria-hidden="true">
+        <div class="vipRide__pill">
+          <span class="vipRide__pillIcon">&#9679;</span>
+          <span class="vipRide__pillText" data-vipride-pickup-pill>{{ section.settings.pickup_pill_default }}</span>
+        </div>
+        <div class="vipRide__pill">
+          <span class="vipRide__pillIcon">&#9632;</span>
+          <span class="vipRide__pillText" data-vipride-dropoff-pill>{{ section.settings.dropoff_pill_default }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sheet -->
+    <div class="vipRide__sheet" data-vipride-sheet data-vipride-step="1">
+      <div class="vipRide__handle" aria-hidden="true"></div>
+      <div class="vipRide__stepDots" aria-hidden="true">
+        <div class="vipRide__stepDot is-active"></div>
+        <div class="vipRide__stepDot"></div>
+        <div class="vipRide__stepDot"></div>
+      </div>
+
+      <!-- STEP 1: Location -->
+      <div class="vipRide__step" data-vipride-step-panel="1">
+        <!-- Title + Lang only in step 1 -->
+        <div class="vipRide__titleRow">
+          <h2 class="vipRide__title">{{ section.settings.heading }}</h2>
+        </div>
+        <!-- Booking Mode Toggle (only in step 1) -->
+        <div class="vipRide__modeToggle" data-vipride-mode-toggle>
+          <button type="button" class="vipRide__modeBtn is-active" data-mode="ride" data-vipride-mode-btn>
+            {{ section.settings.ride_mode_text | default: 'Point to Point' }}
+          </button>
+          <button type="button" class="vipRide__modeBtn" data-mode="hourly" data-vipride-mode-btn>
+            {{ section.settings.hourly_mode_text | default: 'By the Hour' }}
+          </button>
+        </div>
+        <div class="vipRide__form" data-vipride-mode="ride">
+
+          <!-- Pickup -->
+          <div class="vipRide__field">
+            <label class="vipRide__label" data-vipride-pickup-label>{{ section.settings.pickup_label }}</label>
+            <div class="vipRide__inputWrap">
+              <span class="vipRide__inputIcon">&#9679;</span>
+              <input type="text" class="vipRide__input" placeholder="{{ section.settings.pickup_placeholder }}" data-vipride-pickup autocomplete="off">
+              <button type="button" class="vipRide__clear" aria-label="Clear pickup" data-vipride-clear="pickup">&times;</button>
+            </div>
+          </div>
+
+          <!-- Dropoff (hidden in hourly mode) -->
+          <div class="vipRide__field" data-vipride-dropoff-field>
+            <label class="vipRide__label">{{ section.settings.dropoff_label }}</label>
+            <div class="vipRide__inputWrap">
+              <span class="vipRide__inputIcon">&#9632;</span>
+              <input type="text" class="vipRide__input" placeholder="{{ section.settings.dropoff_placeholder }}" data-vipride-dropoff autocomplete="off">
+              <button type="button" class="vipRide__clear" aria-label="Clear dropoff" data-vipride-clear="dropoff">&times;</button>
+            </div>
+          </div>
+
+          <!-- Hours Selector (visible only in hourly mode) -->
+          <div class="vipRide__field vipRide__field--hours" data-vipride-hours-field hidden>
+            <label class="vipRide__label">{{ section.settings.hours_label | default: 'Duration' }}</label>
+            <div class="vipRide__hoursWrap">
+              <button type="button" class="vipRide__hoursBtn" data-vipride-hours-minus aria-label="Decrease hours">&#8722;</button>
+              <div class="vipRide__hoursDisplay">
+                <span class="vipRide__hoursValue" data-vipride-hours-value>4</span>
+                <span class="vipRide__hoursUnit">{{ section.settings.hours_unit | default: 'hours' }}</span>
+              </div>
+              <button type="button" class="vipRide__hoursBtn" data-vipride-hours-plus aria-label="Increase hours">&#43;</button>
+            </div>
+            <input type="hidden" data-vipride-hours-input value="4">
+            <div class="vipRide__hoursHint" data-vipride-hours-hint>
+              {{ section.settings.hours_hint | default: 'Minimum 3 hours, maximum 12 hours' }}
+            </div>
+          </div>
+
+          <!-- Step 1 CTA -->
+          <button type="button" class="vipRide__stepNext" data-vipride-step1-next disabled>
+            {{ section.settings.see_prices_text | default: 'Continue' }} &#8250;
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Date & Time -->
+      <div class="vipRide__step" data-vipride-step-panel="2" hidden>
+        <!-- Step back -->
+        <button type="button" class="vipRide__stepBack" data-vipride-step-back>&#8592; <span data-vipride-stepback-label></span></button>
+
+        <div class="vipRide__form">
+          <!-- Date -->
+          <div class="vipRide__field">
+            <label class="vipRide__label" for="vipDate-{{ section.id }}">{{ section.settings.date_label }}</label>
+            <div class="vipRide__inputWrap vipRide__inputWrap--date" id="vipDateWrap-{{ section.id }}">
+              <span class="vipRide__inputIcon">&#128197;</span>
+              <input
+                type="date"
+                id="vipDate-{{ section.id }}"
+                class="vipRide__input vipRide__input--dt vipRide__input--date"
+                data-vipride-date
+                autocomplete="off"
+              >
+            </div>
+          </div>
+
+          <!-- Time -->
+          <div class="vipRide__field vipRide__field--time" data-vipride-time-field>
+            <label class="vipRide__label">{{ section.settings.time_label }}</label>
+
+            <button
+              type="button"
+              class="vipRide__timeTrigger"
+              data-vipride-time-trigger
+              aria-expanded="false"
+              aria-controls="vipTimeAccordion-{{ section.id }}"
+            >
+              <span class="vipRide__timeTrigger__text" data-vipride-slot-display></span>
+              <span class="vipRide__timeTrigger__arrow" aria-hidden="true">&#9662;</span>
+            </button>
+
+            <input type="time" class="vipRide__input vipRide__input--dt" data-vipride-time style="display:none">
+
+            <div
+              class="vipRide__timeAccordion"
+              id="vipTimeAccordion-{{ section.id }}"
+              data-vipride-slotpicker
+              hidden
+            >
+              <div class="vipRide__timeAccordion__inner">
+                <p class="vipRide__slotHint" data-vipride-slot-hint></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: auto-advance when date+time filled, no button needed -->
+        </div>
+      </div>
+
+      <!-- STEP 3: Vehicle -->
+      <div class="vipRide__step" data-vipride-step-panel="3" hidden>
+        <!-- Step back -->
+        <button type="button" class="vipRide__stepBack" data-vipride-step-back2>&#8592; <span data-vipride-stepback2-label></span></button>
+
+        <div class="vipRide__prices" data-vipride-prices>
+          <div class="vipRide__pricesHeader">
+            <span class="vipRide__pricesTitle" data-vipride-prices-title>{{ section.settings.choose_ride_text }}</span>
+          </div>
+
+          <div class="vipRide__routeEstimate" data-vipride-route-estimate hidden>
+            <span class="vipRide__routeEstimateLabel">&#128337; </span>
+            <span data-vipride-route-time>--</span>
+          </div>
+
+          <div class="vipRide__rideList" role="list">
+            {% for block in section.blocks %}
+              {% assign p = block.settings.product %}
+              {% assign v = nil %}
+              {% if p and p.variants.size > 0 %}
+                {% assign v = p.selected_or_first_available_variant %}
+              {% endif %}
+              <button
+                type="button"
+                class="vipRide__rideCard{% if block.settings.disabled %} vipRide__rideCard--disabled{% endif %}"
+                role="listitem"
+                data-vipride-card
+                data-title="{{ block.settings.title | escape }}"
+                data-seats="{{ block.settings.seats }}"
+                data-desc="{{ block.settings.desc | escape }}"
+                data-price="{% if v %}{{ v.price | money }}{% else %}{{ block.settings.manual_price | escape }}{% endif %}"
+                data-rate="{{ block.settings.vehicle_rate }}"
+                data-variant-id="{% if v %}{{ v.id }}{% endif %}"
+                data-block-id="{{ block.id }}"
+                data-hourly-price="{{ block.settings.hourly_rate | default: block.settings.vehicle_rate }}"
+                {% if block.settings.disabled %}disabled data-disabled="true"{% endif %}
+              >
+                <div class="vipRide__rideImg">
+                  {% if block.settings.image %}
+                    {{ block.settings.image | image_url: width: 220 | image_tag: loading: 'lazy', class: 'vipRide__rideImgTag', alt: block.settings.title }}
+                  {% else %}
+                    <div class="vipRide__rideImgPh">&#128664;</div>
+                  {% endif %}
+                </div>
+                <div class="vipRide__rideMeta">
+                  <div class="vipRide__rideTop">
+                    <div class="vipRide__rideName">{{ block.settings.title }}</div>
+                    <div class="vipRide__ridePrice" data-vipride-card-price>
+                      {% if v %}{{ v.price | money }}{% else %}{{ block.settings.manual_price }}{% endif %}
+                    </div>
+                    <div class="vipRide__rideEta" data-vipride-eta>--</div>
+                  </div>
+                  <div class="vipRide__rideSub">
+                    <span class="vipRide__seats">
+                      <span class="vipRide__personIcon">&#128100;</span>
+                      {{ block.settings.seats }}
+                    </span>
+                    {% if block.settings.badge != blank %}
+                      <span class="vipRide__badge">{{ block.settings.badge }}</span>
+                    {% endif %}
+                  </div>
+                  {% if block.settings.desc != blank %}
+                    <div class="vipRide__rideDesc">{{ block.settings.desc }}</div>
+                  {% endif %}
+                </div>
+              </button>
+            {% endfor %}
+          </div>
+
+          <form class="vipRide__ctaForm" data-vipride-form>
+            <input type="hidden" name="id"       value="" data-vipride-booking-variant>
+            <input type="hidden" name="quantity" value="1" data-vipride-quantity>
+            <input type="hidden" name="properties[Booking Type]"  value="ride" data-vipride-prop="bookingType">
+            <input type="hidden" name="properties[Pickup]"          value="" data-vipride-prop="pickup">
+            <input type="hidden" name="properties[Dropoff]"         value="" data-vipride-prop="dropoff">
+            <input type="hidden" name="properties[Hours]"           value="" data-vipride-prop="hours">
+            <input type="hidden" name="properties[Date]"            value="" data-vipride-prop="date">
+            <input type="hidden" name="properties[Time]"            value="" data-vipride-prop="time">
+            <input type="hidden" name="properties[Vehicle]"         value="" data-vipride-prop="vehicle">
+            <input type="hidden" name="properties[Estimated Price]" value="" data-vipride-prop="price">
+            <button type="submit" class="vipRide__cta" data-vipride-cta disabled>
+              {{ section.settings.cta_default_text }}
+            </button>
+            <button type="button" class="vipRide__checkout" data-vipride-checkout disabled>
+              Checkout
+            </button>
+            <div class="vipRide__hint" data-vipride-hint>{{ section.settings.cta_hint_text }}</div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<script>
+  // Set browser theme-color to black to match the dark page
+  (function(){
+    var existing = document.querySelector('meta[name="theme-color"]');
+    if(existing){ existing.setAttribute('content','#000000'); }
+    else{
+      var m = document.createElement('meta');
+      m.name = 'theme-color'; m.content = '#000000';
+      document.head.appendChild(m);
+    }
+    var ab = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if(!ab){
+      var a = document.createElement('meta');
+      a.name = 'apple-mobile-web-app-status-bar-style'; a.content = 'black-translucent';
+      document.head.appendChild(a);
+    }
+  })();
+</script>
+
+<!-- Mapbox GL JS -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap" rel="stylesheet">
+
+<style>
+/* Dark browser chrome: body + html background black when this section is present */
+body:has(#vipRide-{{ section.id }}),
+html:has(#vipRide-{{ section.id }}){
+  background:#000 !important;
+  background-color:#000 !important;
+}
+body:has(#vipRide-{{ section.id }}){
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+body:has(#vipRide-{{ section.id }}) footer,
+body:has(#vipRide-{{ section.id }}) .footer,
+body:has(#vipRide-{{ section.id }}) #footer,
+body:has(#vipRide-{{ section.id }}) [class*="footer"],
+body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
+
+#vipRide-{{ section.id }}{
+  --vip-gold:        #D4AF37;
+  --vip-gold-2:      #FFD700;
+  --vip-glass:       rgba(0,0,0,.55);
+  --vip-border:      rgba(255,255,255,.16);
+  --vip-ease:        cubic-bezier(.2,.8,.2,1);
+  --vip-hover-speed: 260ms;
+}
+.vipRide{
+  position:relative; overflow:hidden;
+  background:#000; color:#fff;
+  isolation:isolate;
+  height:100vh; min-height:600px;
+}
+@media (max-width:899px){
+  .vipRide{ height:100svh; min-height:100svh; padding-top:0; overflow:hidden; }
+  .vipRide.js-height-locked{ height:var(--vip-locked-h,100svh) !important; min-height:var(--vip-locked-h,100svh) !important; }
+}
+.vipRide,.vipRide *{
+  box-sizing:border-box;
+  text-shadow:none !important;
+  -webkit-text-stroke:0 !important;
+  filter:none !important;
+  -webkit-tap-highlight-color:transparent;
+}
+.vipRide__step,.vipRide__step *{ filter:none !important; }
+.vipRide__bg{ position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+.vipRide__bg::before{
+  content:""; position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:linear-gradient(to bottom,rgba(0,0,0,.85) 0%,rgba(0,0,0,.45) 25%,rgba(0,0,0,0) 55%);
+}
+.vipRide__bgVideo{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scale(1.02); }
+.vipRide__bgOverlay{ position:absolute; inset:0; background:rgba(0,0,0,.30); }
+.vipRide__wrap{
+  position:relative; z-index:1;
+  display:flex; flex-direction:row; align-items:flex-start;
+  max-width:1280px; margin:0 auto;
+  padding:28px 36px; gap:28px;
+  height:100%;
+}
+/* Desktop: map fills full wrap, sheet floats on top */
+@media (min-width:900px){
+  .vipRide__map{
+    position:absolute !important;
+    inset:0 !important;
+    height:100% !important; width:100% !important;
+    border-radius:0; min-height:0;
+  }
+  .vipRide__sheet{
+    position:absolute !important;
+    top:var(--vip-top-offset, 120px) !important;
+    right:36px !important;
+    left:auto !important; bottom:auto !important;
+    width:300px !important;
+    height:auto !important; max-height:calc(100vh - var(--vip-top-offset, 120px) - 60px) !important;
+    overflow-y:auto !important;
+    z-index:10;
+    margin:0 !important;
+  }
+  .vipRide__handle{ display:none; }
+}
+@media (min-width:600px) and (max-width:899px){
+  .vipRide__sheet{ max-height:72vh; }
+}
+@media (max-width:899px){
+  .vipRide__wrap{ position:absolute; inset:0; padding:0; display:flex; flex-direction:column; }
+}
+.vipRide__map{
+  position:relative; flex:1;
+  border-radius:18px; overflow:hidden;
+  background:rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.16);
+  touch-action:auto;
+  min-height:320px;
+}
+@media (max-width:899px){
+  .vipRide__map{ position:absolute; inset:0; height:100% !important; min-height:0 !important; border-radius:0; border:none; }
+}
+.vipRide__mapInner{ height:100%; width:100%; }
+#vipRideMap-{{ section.id }},
+#vipRideMap-{{ section.id }} > div{ height:100% !important; width:100% !important; border-radius:inherit; }
+
+/* Mapbox attribution — keep compact */
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-attrib{ font-size:9px; opacity:.35; }
+#vipRideMap-{{ section.id }} .mapboxgl-ctrl-logo{ opacity:.35; }
+#vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; }
+
+.vipRide__back{
+  position:absolute; top:14px; left:14px;
+  background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.18);
+  border-radius:999px; padding:10px 12px;
+  cursor:pointer; color:#fff; z-index:3;
+}
+#vipRide-{{ section.id }} .vipRide__routePills{ display:none !important; }
+.vipRide__locateBtn{
+  position:absolute; bottom:14px; right:14px; z-index:3;
+  background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.2);
+  border-radius:12px; width:46px; height:46px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; color:var(--vip-gold); padding:0;
+  transition:background 200ms, border-color 200ms;
+}
+.vipRide__locateBtn:hover{ background:rgba(212,175,55,.15); border-color:rgba(212,175,55,.5); }
+.vipRide__locateBtn.is-locating{ animation:vipLocatePulse 1s ease-in-out infinite; border-color:var(--vip-gold); }
+@keyframes vipLocatePulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(212,175,55,.5); } 70%{ box-shadow:0 0 0 10px rgba(212,175,55,0); } }
+
+/* ══ Mapbox Custom Markers ══ */
+.vipRide__marker{ cursor:pointer; will-change:transform; }
+.vipRide__marker--pickup,
+.vipRide__marker--dropoff{
+  animation:vipMarkerPop 550ms cubic-bezier(.2,.8,.2,1) both;
+}
+.vipRide__marker--pickup svg,
+.vipRide__marker--dropoff svg{ display:block; }
+@keyframes vipMarkerPop{
+  0%  { transform:scale(0) translateY(20px); opacity:0; }
+  55% { transform:scale(1.18) translateY(-5px); opacity:1; }
+  100%{ transform:scale(1) translateY(0); opacity:1; }
+}
+.vipRide__marker--pickup::after{
+  content:''; position:absolute; bottom:-3px; left:50%; transform:translateX(-50%);
+  width:10px; height:5px; border-radius:50%;
+  background:rgba(212,175,55,.35);
+  animation:vipPinShadow 2s ease-in-out infinite;
+}
+@keyframes vipPinShadow{
+  0%,100%{ transform:translateX(-50%) scale(1); opacity:.35; }
+  50%{ transform:translateX(-50%) scale(1.6); opacity:.12; }
+}
+
+/* ══ Autocomplete Suggestions ══ */
+.vipRide__suggestions{
+  position:absolute; top:100%; left:0; right:0; z-index:99999;
+  background:rgba(10,8,4,.92);
+  backdrop-filter:blur(24px) saturate(1.3);
+  -webkit-backdrop-filter:blur(24px) saturate(1.3);
+  border:1px solid rgba(212,175,55,.22);
+  border-radius:14px; margin-top:4px;
+  overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.55);
+  display:none;
+  max-height:260px; overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.vipRide__suggestion{
+  padding:12px 14px; color:#fff; font-size:14px; cursor:pointer;
+  border-top:1px solid rgba(255,255,255,.08);
+  transition:background 180ms;
+  display:flex; align-items:flex-start; gap:10px;
+}
+.vipRide__suggestion:first-child{ border-top:none; }
+.vipRide__suggestion:hover,
+.vipRide__suggestion.is-active{ background:rgba(212,175,55,.14); }
+.vipRide__suggestionIcon{
+  flex-shrink:0; width:18px; height:18px; margin-top:2px; opacity:.5;
+  color:var(--vip-gold);
+}
+.vipRide__suggestionText{ flex:1; min-width:0; }
+.vipRide__suggestionMain{ font-weight:700; font-size:14px; color:#fff; }
+.vipRide__suggestionSub{ font-size:12px; color:rgba(255,255,255,.5); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ══ Booking Mode Toggle ══ */
+.vipRide__modeToggle{
+  display:flex; gap:4px; margin:0 0 10px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);
+  border-radius:12px; padding:3px;
+}
+.vipRide__modeBtn{
+  flex:1; padding:8px 10px; border-radius:10px;
+  background:transparent; border:none; color:rgba(255,255,255,.65);
+  font-size:12px; font-weight:700; letter-spacing:.04em; cursor:pointer;
+  transition:all 200ms var(--vip-ease);
+  white-space:nowrap;
+}
+.vipRide__modeBtn:hover{ color:var(--vip-gold); }
+.vipRide__modeBtn.is-active{
+  background:var(--vip-gold); color:#000 !important;
+  font-weight:800;
+  box-shadow:0 4px 14px rgba(212,175,55,.3);
+}
+
+/* ══ Language Toggle ══ */
+.vipRide__titleRow{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.vipRide__langToggle{
+  display:flex; gap:4px;
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
+  border-radius:10px; padding:3px;
+}
+.vipRide__langBtn{
+  padding:6px 10px; border-radius:8px;
+  background:transparent; border:none; color:#fff;
+  font-size:12px; font-weight:600; cursor:pointer;
+  transition:all 200ms ease;
+}
+.vipRide__langBtn:hover{ color:var(--vip-gold); }
+.vipRide__langBtn.is-active{
+  background:var(--vip-gold); color:#000 !important;
+  font-weight:700;
+}
+
+.vipRide__sheet{
+  position:relative; margin-top:0;
+  background:#1A1A1A;
+  border-radius:20px;
+  border:none;
+  box-shadow:0 -4px 24px rgba(0,0,0,.5);
+  padding:12px 14px 16px;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  align-self:flex-start;
+}
+@media (max-width:899px){
+  .vipRide__sheet{
+    position:absolute; bottom:16px; left:16px; right:16px; z-index:10;
+    margin-top:0;
+    max-height:62vh;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    border-radius:20px;
+  }
+}
+.vipRide__handle{ width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.15); margin:0 auto 10px; }
+.vipRide__title{ margin:0; font-family:'Poppins',Inter,system-ui,sans-serif; font-size:18px; font-weight:800; letter-spacing:-.03em; text-transform:none; color:rgba(255,255,255,.9) !important; }
+.vipRide__form{ margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+.vipRide__field{ display:flex; flex-direction:column; gap:6px; position:relative; }
+.vipRide__field:focus-within{ z-index:99999; }
+.vipRide__field--hours{ margin-bottom:4px; }
+.vipRide__field--hours[hidden]{ display:none !important; }
+.vipRide__label{ font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:rgba(212,175,55,.7) !important; }
+.vipRide__inputWrap{
+  display:flex; align-items:center; gap:8px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);
+  border-radius:12px; padding:10px 12px; position:relative; box-shadow:none !important;
+  transition:border-color 200ms ease, background 200ms ease;
+}
+.vipRide__inputWrap:focus-within{
+  border-color:rgba(212,175,55,.55) !important;
+  background:rgba(212,175,55,.06) !important;
+}
+.vipRide__inputIcon{ opacity:.95; color:#fff; user-select:none; flex-shrink:0; }
+.vipRide__input{
+  width:100%; border:0; outline:none;
+  background:transparent !important; background-color:transparent !important;
+  font-size:16px; color:#fff !important;
+  box-shadow:none !important; -webkit-appearance:none; appearance:none;
+}
+.vipRide__input::placeholder{ color:rgba(255,255,255,.55) !important; }
+.vipRide__input:focus{ box-shadow:none !important; outline:none !important; font-size:16px !important; }
+.vipRide__input--dt{ color-scheme:dark; }
+.vipRide__input--dt::-webkit-datetime-edit,
+.vipRide__input--dt::-webkit-datetime-edit-text,
+.vipRide__input--dt::-webkit-datetime-edit-month-field,
+.vipRide__input--dt::-webkit-datetime-edit-day-field,
+.vipRide__input--dt::-webkit-datetime-edit-year-field,
+.vipRide__input--dt::-webkit-datetime-edit-hour-field,
+.vipRide__input--dt::-webkit-datetime-edit-minute-field{ color:#fff; }
+.vipRide__inputWrap--date{ cursor:pointer; position:relative; }
+.vipRide__input--date{ cursor:pointer; flex:1; }
+.vipRide__input--date::-webkit-calendar-picker-indicator{
+  opacity:0; cursor:pointer;
+  position:absolute; inset:0; width:100%; height:100%;
+}
+.vipRide input[type="time"]::-webkit-calendar-picker-indicator{ display:none !important; opacity:0 !important; }
+.vipRide input[type="time"]{ background:transparent !important; color:#fff !important; -webkit-appearance:none !important; appearance:none !important; }
+
+/* ══ Hours Selector ══ */
+.vipRide__hoursWrap{
+  display:flex; align-items:center; justify-content:center; gap:16px;
+  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18);
+  border-radius:12px; padding:12px 16px;
+}
+.vipRide__hoursBtn{
+  width:40px; height:40px; border-radius:10px;
+  background:var(--vip-gold); border:none; color:#000;
+  font-size:20px; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:transform 150ms, opacity 200ms;
+  touch-action:manipulation;
+}
+.vipRide__hoursBtn:hover:not(:disabled){ transform:scale(1.1); }
+.vipRide__hoursBtn:active:not(:disabled){ transform:scale(0.95); }
+.vipRide__hoursBtn:disabled{ opacity:0.35; cursor:not-allowed; }
+.vipRide__hoursDisplay{
+  display:flex; align-items:baseline; gap:6px;
+  min-width:80px; justify-content:center;
+}
+.vipRide__hoursValue{
+  font-size:28px; font-weight:700; color:var(--vip-gold);
+  min-width:30px; text-align:center;
+}
+.vipRide__hoursUnit{
+  font-size:14px; color:rgba(255,255,255,.7);
+}
+.vipRide__hoursHint{
+  font-size:11px; color:rgba(255,255,255,.5);
+  text-align:center; margin-top:4px;
+}
+
+.vipRide__clear{
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25);
+  width:28px; height:28px; border-radius:999px;
+  cursor:pointer; font-size:18px; line-height:26px; display:none; color:#fff;
+}
+.vipRide__timeTrigger{
+  display:flex; align-items:center; gap:8px; width:100%;
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
+  border-radius:12px; padding:10px 12px; cursor:pointer; color:#fff;
+  text-align:left; transition:border-color 200ms, background 200ms;
+}
+.vipRide__timeTrigger:hover,
+.vipRide__timeTrigger[aria-expanded="true"]{ border-color:var(--vip-gold); background:rgba(212,175,55,.08); }
+.vipRide__timeTrigger[aria-expanded="true"]{ border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom-color:transparent; }
+.vipRide__timeTrigger__text{ flex:1; font-size:13px; color:rgba(255,255,255,.65); transition:color 200ms; }
+.vipRide__timeTrigger__text.has-value{ color:#fff; font-weight:600; }
+.vipRide__timeTrigger__arrow{ font-size:14px; color:var(--vip-gold); transition:transform 300ms var(--vip-ease); flex-shrink:0; }
+.vipRide__timeTrigger[aria-expanded="true"] .vipRide__timeTrigger__arrow{ transform:rotate(180deg); }
+.vipRide__timeAccordion{
+  overflow:hidden; max-height:0;
+  transition:max-height 400ms var(--vip-ease), opacity 300ms ease;
+  opacity:0;
+  border:1px solid var(--vip-gold); border-top:none;
+  border-bottom-left-radius:14px; border-bottom-right-radius:14px;
+  background:rgba(10,8,4,.92); backdrop-filter:blur(16px);
+}
+.vipRide__timeAccordion:not([hidden]).is-open{ max-height:52vh; opacity:1; }
+.vipRide__timeAccordion:not([hidden]){ display:block !important; }
+.vipRide__timeAccordion__inner{
+  padding:14px 12px 16px; overflow-y:auto; max-height:48vh;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  scrollbar-width:thin; scrollbar-color:rgba(212,175,55,.3) transparent;
+}
+.vipRide__timeAccordion__inner::-webkit-scrollbar{ width:4px; }
+.vipRide__timeAccordion__inner::-webkit-scrollbar-track{ background:transparent; }
+.vipRide__timeAccordion__inner::-webkit-scrollbar-thumb{ background:rgba(212,175,55,.35); border-radius:4px; }
+.vipRide__slotSection{ margin-bottom:10px; }
+.vipRide__slotSection:last-child{ margin-bottom:0; }
+.vipRide__slotSectionTitle{
+  font-size:10px; font-weight:700; letter-spacing:.14em;
+  text-transform:uppercase; color:rgba(212,175,55,.65); margin:0 0 6px 2px;
+}
+.vipRide__slotGrid{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+.vipRide__slot{
+  padding:10px 4px; border-radius:10px;
+  border:1px solid rgba(212,175,55,.30); background:rgba(255,255,255,.05);
+  color:var(--vip-gold); font-size:13px; font-weight:600; cursor:pointer;
+  transition:background 180ms, border-color 180ms, transform 140ms;
+  text-align:center; white-space:nowrap; line-height:1;
+  touch-action:manipulation;
+}
+.vipRide__slot:hover:not(:disabled){ background:rgba(212,175,55,.18); border-color:var(--vip-gold); transform:scale(1.05); }
+.vipRide__slot:active:not(:disabled){ transform:scale(.95); }
+.vipRide__slot--active{ background:var(--vip-gold) !important; color:#000 !important; border-color:var(--vip-gold) !important; font-weight:900; box-shadow:0 0 14px rgba(212,175,55,.45); }
+.vipRide__slot--blocked{ background:rgba(255,255,255,.02) !important; border-color:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.18) !important; cursor:not-allowed !important; text-decoration:line-through; pointer-events:none; }
+.vipRide__slotHint{ font-size:12px; color:rgba(255,255,255,.4); margin:0; text-align:center; padding:8px 0; }
+.vipRide__seePrices{
+  margin-top:4px;
+  background:var(--vip-gold) !important;
+  color:#000 !important;
+  border:none !important;
+  border-radius:12px;
+  padding:13px 16px;
+  font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  cursor:pointer;
+  box-shadow:0 6px 20px rgba(212,175,55,.3), 0 2px 6px rgba(0,0,0,.35);
+  transition:opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease;
+  touch-action:manipulation;
+  width:100%;
+}
+.vipRide__seePrices[disabled]{
+  background:rgba(212,175,55,.2) !important;
+  color:rgba(255,255,255,.35) !important;
+  box-shadow:none;
+  cursor:not-allowed; pointer-events:none;
+}
+.vipRide__seePrices:not([disabled]):hover{ opacity:.9; transform:translateY(-1px); box-shadow:0 12px 40px rgba(212,175,55,.45); }
+.vipRide__prices{ margin-top:4px; }
+.vipRide__pricesHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.vipRide__pricesTitle{ font-family:'Poppins',Inter,system-ui,sans-serif; font-size:18px; font-weight:800; color:rgba(255,255,255,.9) !important; text-transform:none; letter-spacing:-.03em; }
+.vipRide__routeEstimate{ margin:6px 0 10px; padding:8px 12px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); display:flex; gap:6px; align-items:center; font-size:12px; color:rgba(255,255,255,.65); }
+.vipRide__routeEstimateLabel{ opacity:.7; }
+.vipRide__rideList{ display:flex; flex-direction:column; gap:8px; }
+.vipRide__rideCard{
+  display:grid !important; grid-template-columns:100px 1fr;
+  align-items:center; gap:10px;
+  width:100% !important; max-width:100% !important; overflow:hidden;
+  min-height:80px; padding:12px 14px !important;
+  border:1px solid rgba(255,255,255,.06); border-radius:16px;
+  background:#1E1E1E !important; cursor:pointer; text-align:left; color:#fff;
+  box-shadow:0 4px 8px rgba(0,0,0,.15) !important;
+  transition:transform var(--vip-hover-speed) var(--vip-ease),
+    box-shadow var(--vip-hover-speed) var(--vip-ease),
+    border-color var(--vip-hover-speed) var(--vip-ease),
+    background var(--vip-hover-speed) var(--vip-ease);
+  will-change:transform; transform:translateZ(0);
+  touch-action:manipulation;
+  position:relative;
+}
+.vipRide__rideCard *{ color:#fff; text-shadow:none !important; }
+@media (hover:hover) and (pointer:fine){
+  .vipRide__rideCard:hover{ transform:translateY(-3px) scale(1.01); border-color:rgba(255,255,255,.15); box-shadow:0 12px 32px rgba(0,0,0,.35) !important; }
+  .vipRide__rideCard:hover .vipRide__rideImgTag{ transform:scale(1.04); }
+}
+.vipRide__rideCard:active{ transform:scale(.98); }
+@keyframes vipSelectPop{ 0%{ transform:scale(.95); } 60%{ transform:scale(1.05); } 100%{ transform:translateY(-4px) scale(1.025); } }
+.vipRide__rideCard.is-active{ animation:vipSelectPop 400ms var(--vip-ease) forwards; border-color:#E8C547; border-width:1.5px; background:linear-gradient(135deg,#1A1708 0%,#1E1E1E 100%) !important; box-shadow:0 12px 48px rgba(0,0,0,.35), 0 0 0 .5px rgba(232,197,71,.3), 0 0 20px rgba(232,197,71,.08) !important; }
+.vipRide__rideCard.is-active::after{ content:'\2713'; position:absolute; top:12px; right:12px; width:24px; height:24px; border-radius:50%; background:#E8C547; color:#000; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center; line-height:1; animation:vipCheckPop 350ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes vipCheckPop{ 0%{ transform:scale(0); opacity:0; } 60%{ transform:scale(1.2); } 100%{ transform:scale(1); opacity:1; } }
+.vipRide__rideCard--disabled{ opacity:.35 !important; pointer-events:none !important; cursor:not-allowed !important; filter:grayscale(.8) !important; position:relative; }
+.vipRide__rideCard--disabled::after{ content:'COMING SOON'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.7); color:var(--vip-gold); font-size:11px; font-weight:800; letter-spacing:.12em; padding:6px 14px; border-radius:8px; border:1px solid rgba(212,175,55,.4); text-transform:uppercase; pointer-events:none; z-index:2; }
+.vipRide__rideImg{ width:100%; overflow:hidden; }
+.vipRide__rideImgTag,.vipRide__rideCard img{ display:block; width:100% !important; max-width:100% !important; height:auto !important; object-fit:contain !important; transition:transform 260ms var(--vip-ease); }
+.vipRide__rideImgPh{ background:transparent; border:none; }
+.vipRide__rideMeta{ min-width:0; }
+.vipRide__rideTop{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; box-sizing:border-box; }
+.vipRide__rideName{ font-size:14px; font-weight:700; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(255,255,255,.9); }
+.vipRide__ridePrice{ white-space:nowrap; font-weight:900; font-size:14px; margin-left:auto; color:#E8C547 !important; }
+.vipRide__rideEta{ font-size:11px; font-weight:600; white-space:nowrap; margin-top:2px; background:rgba(255,255,255,.06); padding:3px 8px; border-radius:6px; color:rgba(255,255,255,.50) !important; display:inline-block; }
+.vipRide__rideSub{ margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.vipRide__seats{ background:rgba(255,255,255,.06); padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; color:rgba(255,255,255,.50) !important; display:inline-flex; align-items:center; gap:3px; }
+.vipRide__personIcon{ color:rgba(255,255,255,.50) !important; text-shadow:none !important; font-size:11px; }
+.vipRide__badge{ padding:3px 10px; border-radius:8px; font-size:10px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; position:relative; overflow:hidden; }
+.vipRide__badge--vip,.vipRide__badge:not([class*='--']){ background:linear-gradient(135deg,#E8C547,#D4A574); color:#000; border:none; }
+.vipRide__badge--premium{ background:linear-gradient(135deg,#E8E8E8,#B0B0B0); color:#000; border:none; }
+.vipRide__badge--comfort{ background:linear-gradient(135deg,#66BB6A,#388E3C); color:#fff; border:none; }
+/* Badge shimmer */
+.vipRide__badge::before{ content:''; position:absolute; top:0; left:-100%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent); animation:vipBadgeShimmer 1800ms ease-in-out infinite; }
+@keyframes vipBadgeShimmer{ 0%{ left:-100%; } 100%{ left:200%; } }
+.vipRide__rideDesc{ font-size:10px; color:#E8C547; opacity:.8; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; }
+.vipRide__ctaForm{ margin-top:14px; margin-bottom:0; }
+.vipRide__ctaForm[hidden]{ display:none !important; }
+.vipRide__cta{ width:100%; height:52px; background:linear-gradient(to bottom,#E8C547,#D4A520) !important; color:#000 !important; border:none !important; border-radius:14px; padding:0 16px; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif !important; font-size:17px; font-weight:800; letter-spacing:-.03em; text-transform:none; cursor:pointer; box-shadow:0 4px 12px rgba(212,165,32,.35) !important; transition:opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease; touch-action:manipulation; }
+.vipRide__cta[disabled]{ opacity:.35 !important; background:linear-gradient(to bottom,#E8C547,#D4A520) !important; color:#000 !important; cursor:not-allowed !important; transform:none !important; box-shadow:none !important; }
+.vipRide__cta:not([disabled]):hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(212,165,32,.45) !important; }
+.vipRide__hint{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.75); }
+.vipRide__checkout{
+  width:100%; margin-top:8px;
+  background:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.75) !important;
+  border:1px solid rgba(255,255,255,.10) !important; border-radius:14px;
+  padding:14px 16px; height:50px;
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif !important;
+  font-size:15px; font-weight:600; letter-spacing:0; text-transform:none;
+  cursor:pointer; box-shadow:none !important;
+  transition:opacity 200ms ease, transform 200ms ease, background 200ms ease;
+  touch-action:manipulation;
+}
+.vipRide__checkout[disabled]{
+  opacity:.35 !important; background:rgba(255,255,255,.04) !important;
+  color:rgba(255,255,255,.35) !important; border-color:rgba(255,255,255,.06) !important;
+  cursor:not-allowed !important; transform:none !important; box-shadow:none !important;
+}
+.vipRide__checkout:not([disabled]):hover{
+  background:rgba(255,255,255,.10) !important; color:#fff !important;
+  transform:translateY(-1px);
+}
+
+/* ══ Step Flow ══ */
+.vipRide__steps-wrap{ overflow:hidden; }
+.vipRide__step{ display:flex; flex-direction:column; will-change:transform,opacity; }
+.vipRide__step[hidden]{ display:none !important; }
+
+.vipRide__stepNext{
+  margin-top:4px; width:100%;
+  background:var(--vip-gold) !important; color:#000 !important;
+  border:none !important; border-radius:12px;
+  padding:13px 16px; font-size:13px; font-weight:800;
+  letter-spacing:.08em; text-transform:uppercase; cursor:pointer;
+  box-shadow:0 6px 20px rgba(212,175,55,.3), 0 2px 6px rgba(0,0,0,.35);
+  transition:opacity 200ms, transform 200ms, box-shadow 200ms;
+  touch-action:manipulation;
+}
+.vipRide__stepNext[disabled]{
+  background:rgba(212,175,55,.2) !important; color:rgba(255,255,255,.35) !important;
+  box-shadow:none; cursor:not-allowed; pointer-events:none;
+}
+.vipRide__stepNext:not([disabled]):hover{ opacity:.9; transform:translateY(-1px); box-shadow:0 12px 40px rgba(212,175,55,.45); }
+
+.vipRide__stepBack{
+  display:inline-flex; align-items:center; gap:5px;
+  background:none; border:none; color:rgba(212,175,55,.8);
+  font-size:12px; font-weight:600; cursor:pointer; padding:0 0 8px;
+  transition:color 200ms; touch-action:manipulation;
+}
+.vipRide__stepBack:hover{ color:var(--vip-gold); }
+
+/* ══ 3D Perspective Step Transitions ══ */
+.vipRide__sheet{ perspective:1000px; }
+@keyframes vip3DInRight{
+  0%  { opacity:0; transform:translateX(40px) rotateY(-8deg) scale(.97); }
+  100%{ opacity:1; transform:translateX(0)    rotateY(0deg)  scale(1);   }
+}
+@keyframes vip3DInLeft{
+  0%  { opacity:0; transform:translateX(-40px) rotateY(8deg)  scale(.97); }
+  100%{ opacity:1; transform:translateX(0)     rotateY(0deg)  scale(1);   }
+}
+@keyframes vipCardIn{
+  from{ opacity:0; transform:translateY(20px) scale(.96); }
+  to{   opacity:1; transform:translateY(0)     scale(1);   }
+}
+.vipRide__step{ transform-style:preserve-3d; }
+.vipRide__step.is-entering      { animation:vip3DInRight 700ms cubic-bezier(0,.55,.45,1) both; }
+.vipRide__step.is-entering-back { animation:vip3DInLeft  700ms cubic-bezier(0,.55,.45,1) both; }
+.vipRide__step[data-vipride-step-panel="3"].is-entering .vipRide__rideCard:nth-child(1){ animation:vipCardIn 550ms cubic-bezier(0,.55,.45,1) 80ms  both; }
+.vipRide__step[data-vipride-step-panel="3"].is-entering .vipRide__rideCard:nth-child(2){ animation:vipCardIn 550ms cubic-bezier(0,.55,.45,1) 200ms both; }
+.vipRide__step[data-vipride-step-panel="3"].is-entering .vipRide__rideCard:nth-child(3){ animation:vipCardIn 550ms cubic-bezier(0,.55,.45,1) 320ms both; }
+.vipRide__step[data-vipride-step-panel="3"].is-entering .vipRide__rideCard:nth-child(4){ animation:vipCardIn 550ms cubic-bezier(0,.55,.45,1) 420ms both; }
+
+/* Step indicator dots */
+.vipRide__stepDots{
+  display:flex; gap:5px; justify-content:center; margin-bottom:8px;
+}
+.vipRide__stepDot{
+  width:5px; height:5px; border-radius:99px;
+  background:rgba(255,255,255,.2);
+  transition:all 300ms ease;
+}
+.vipRide__stepDot.is-active{ width:18px; background:var(--vip-gold); }
+.vipRide__stepDot.is-done{ background:rgba(212,175,55,.45); }
+
+@keyframes vipFadeUp{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
+@keyframes vipCardIn{ from{ opacity:0; transform:translateY(14px) scale(.985); } to{ opacity:1; transform:translateY(0) scale(1); } }
+#vipRide-{{ section.id }} .vipRide__sheet{ animation:vipFadeUp 800ms var(--vip-ease) both; }
+#vipRide-{{ section.id }} .vipRide__modeToggle{ animation:vipFadeUp 800ms var(--vip-ease) both; animation-delay:40ms; }
+#vipRide-{{ section.id }} .vipRide__field:nth-child(1) .vipRide__inputWrap{ animation:vipFadeUp 800ms var(--vip-ease) both; animation-delay:80ms; }
+#vipRide-{{ section.id }} .vipRide__field:nth-child(2) .vipRide__inputWrap{ animation:vipFadeUp 800ms var(--vip-ease) both; animation-delay:140ms; }
+#vipRide-{{ section.id }} .vipRide__field:nth-child(3) .vipRide__inputWrap{ animation:vipFadeUp 800ms var(--vip-ease) both; animation-delay:200ms; }
+#vipRide-{{ section.id }} .vipRide__seePrices{ animation:vipFadeUp 800ms var(--vip-ease) both; animation-delay:320ms; }
+#vipRide-{{ section.id }} .vipRide__rideCard{ animation:vipCardIn 520ms var(--vip-ease) both; }
+#vipRide-{{ section.id }} .vipRide__rideCard:nth-child(1){ animation-delay:80ms; }
+#vipRide-{{ section.id }} .vipRide__rideCard:nth-child(2){ animation-delay:140ms; }
+#vipRide-{{ section.id }} .vipRide__rideCard:nth-child(3){ animation-delay:200ms; }
+#vipRide-{{ section.id }} .vipRide__rideCard:nth-child(4){ animation-delay:260ms; }
+#vipRide-{{ section.id }} .vipRide__rideCard:nth-child(5){ animation-delay:320ms; }
+
+@media (max-width:899px){
+  #vipRide-{{ section.id }}{ padding-top:0; margin-top:0 !important; }
+  #vipRide-{{ section.id }} .vipRide__sheet{
+    padding-bottom:calc(20px + env(safe-area-inset-bottom)) !important;
+  }
+  #vipRide-{{ section.id }} .vipRide__modeToggle{ margin:10px 0 14px; }
+  #vipRide-{{ section.id }} .vipRide__hoursBtn{ width:36px; height:36px; font-size:18px; }
+  #vipRide-{{ section.id }} .vipRide__hoursValue{ font-size:24px; }
+  #vipRide-{{ section.id }} .vipRide__rideCard{ grid-template-columns:100px 1fr; gap:10px; padding:12px 14px !important; min-height:90px !important; }
+  #vipRide-{{ section.id }} .vipRide__ctaForm{ position:static; padding:12px 0 max(16px,env(safe-area-inset-bottom)); background:transparent !important; border-top:none !important; backdrop-filter:none !important; }
+  #vipRide-{{ section.id }} .vipRide__cta{ background:linear-gradient(to bottom,#E8C547,#D4A520) !important; border:none !important; border-radius:14px; color:#000 !important; }
+  #vipRide-{{ section.id }} .vipRide__checkout{ background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.10) !important; border-radius:14px; color:rgba(255,255,255,.75) !important; }
+  #vipRide-{{ section.id }} .vipRide__hint{ display:none; }
+  #vipRide-{{ section.id }} .vipRide__slotGrid{ grid-template-columns:repeat(3,1fr); }
+  #vipRide-{{ section.id }} .vipRide__timeAccordion.is-open{ max-height:58vh; }
+}
+
+@media (min-width:900px){
+  .vipRide__wrap{ max-width:none; padding:0; display:block; }
+  .vipRide__map{ height:100vh; min-height:0; }
+  .vipRide__sheet{ margin-top:0; border-radius:18px; height:auto !important; min-height:0 !important; scrollbar-width:thin; scrollbar-color:transparent transparent; }
+  .vipRide__sheet::-webkit-scrollbar{ width:8px; }
+  .vipRide__sheet::-webkit-scrollbar-track{ background:transparent; }
+  .vipRide__sheet::-webkit-scrollbar-thumb{ background:transparent; border-radius:10px; }
+  .vipRide__title{ font-size:22px; }
+  #vipRide-{{ section.id }} .vipRide__timeTrigger{ cursor:default; pointer-events:none; }
+  #vipRide-{{ section.id }} .vipRide__timeTrigger__arrow{ display:none; }
+  #vipRide-{{ section.id }} .vipRide__timeAccordion{ max-height:none !important; opacity:1 !important; border:1px solid rgba(212,175,55,.25); border-radius:14px; margin-top:8px; }
+  #vipRide-{{ section.id }} .vipRide__timeAccordion:not([hidden]){ display:block !important; }
+  #vipRide-{{ section.id }} .vipRide__timeTrigger[aria-expanded="true"]{ border-bottom-left-radius:12px; border-bottom-right-radius:12px; border-bottom-color:rgba(255,255,255,.18); }
+}
+
+@supports (-webkit-touch-callout:none){
+  #vipRide-{{ section.id }} input,
+  #vipRide-{{ section.id }} select,
+  #vipRide-{{ section.id }} textarea{ transform:translateZ(0); }
+}
+.template-index #vipRide-{{ section.id }}{ margin-top:calc(var(--header-height,60px) * -1); padding-top:var(--header-height,60px); }
+#vipRide-{{ section.id }} .vipRide__form[data-vipride-mode="hourly"] [data-vipride-dropoff-field]{ display:none !important; }
+
+@media (prefers-reduced-motion:reduce){
+  #vipRide-{{ section.id }} .vipRide__sheet,
+  #vipRide-{{ section.id }} .vipRide__rideCard,
+  #vipRide-{{ section.id }} .vipRide__timeAccordion,
+  #vipRide-{{ section.id }} .vipRide__modeToggle{ animation:none !important; transition:none !important; }
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ── Vuelta de WhatsApp: fade-out rápido y redirige a inicio ── */
+  function __vipCheckReturn(){
+    try{
+      if(localStorage.getItem('vip_booking_sent')!=='1') return;
+      localStorage.removeItem('vip_booking_sent');
+      document.body.style.transition='opacity .4s ease';
+      document.body.style.opacity='0';
+      setTimeout(function(){ window.location.href='/'; },420);
+    }catch(e){}
+  }
+  __vipCheckReturn();
+  window.addEventListener('pageshow',function(e){ if(e.persisted) __vipCheckReturn(); });
+  window.addEventListener('visibilitychange',function(){ if(!document.hidden) __vipCheckReturn(); });
+
+  var root = document.getElementById('vipRide-{{ section.id }}');
+  if(!root) return;
+
+  var MAPBOX_TOKEN = '{{ section.settings.mapbox_access_token | escape }}';
+
+  var MIN_LEAD_MINUTES = 30;
+  var SLOT_START_H     = 6;
+  var SLOT_END_H       = 22;
+  var SLOT_STEP_M      = 60;
+  var MIN_HOURS        = {{ section.settings.min_hours | default: 3 }};
+  var MAX_HOURS        = {{ section.settings.max_hours | default: 12 }};
+  var DEFAULT_HOURS    = {{ section.settings.default_hours | default: 4 }};
+
+  var defaultLat  = parseFloat('{{ section.settings.default_lat | default: "33.5207" }}') || 33.5207;
+  var defaultLng  = parseFloat('{{ section.settings.default_lng | default: "-86.8025" }}') || -86.8025;
+  var defaultZoom = parseInt('{{ section.settings.default_zoom | default: 11 }}',10) || 11;
+
+  var VEHICLE_VARIANTS = window.__VIP_VEHICLE_VARIANTS__ || {};
+
+  // ══ TRANSLATIONS ══
+  var TRANSLATIONS = {
+    en: {
+      pickupLabel: 'Pickup location',
+      dropoffLabel: 'Dropoff location',
+      serviceLocationLabel: 'Service location',
+      dateLabel: 'Date',
+      timeLabel: 'Time',
+      selectTimeSlot: 'Select a time slot',
+      seePrices: 'See prices',
+      chooseRide: 'Choose a ride',
+      chooseHourly: 'Choose your vehicle',
+      duration: 'Duration',
+      hours: 'hours',
+      hoursHint: 'Minimum {{min}} hours, maximum {{max}} hours',
+      estimatedTime: 'Estimated time:',
+      requestNow: 'REQUEST NOW',
+      checkout: 'Checkout',
+      ctaHint: 'Enter pickup and dropoff, then choose a vehicle.',
+      enterLocation: 'Enter location.',
+      enterPickupDestination: 'Enter pickup and destination.',
+      chooseVehicle: 'Choose a vehicle.',
+      selectTime: 'Select a time slot.',
+      sending: 'Sending...',
+      requestSent: '✓ Request sent!',
+      processing: 'Processing…',
+      bookingId: 'Booking',
+      pickup: 'Pickup',
+      dropoff: 'Dropoff',
+      serviceLocation: 'Service Location',
+      destination: 'Destination',
+      date: 'Date',
+      time: 'Time',
+      vehicle: 'Vehicle',
+      estimatedPrice: 'Estimated Price',
+      durationLabel: 'Duration',
+      hoursLabel: 'hours',
+      pointToPoint: 'Point to Point',
+      byTheHour: 'By the Hour',
+      morning: 'Morning',
+      afternoon: 'Afternoon',
+      evening: 'Evening',
+      night: 'Night',
+      alreadyBooked: 'Already booked',
+      tooSoon: 'Too soon',
+      chooseDateFirst: 'Choose a date first',
+      changeLocation: 'Change location',
+      changeDatetime: 'Change date & time',
+      hoursLabel2: 'Duration',
+      continue: 'Continue'
+    },
+    es: {
+      pickupLabel: 'Ubicación de recogida',
+      dropoffLabel: 'Ubicación de destino',
+      serviceLocationLabel: 'Ubicación del servicio',
+      dateLabel: 'Fecha',
+      timeLabel: 'Hora',
+      selectTimeSlot: 'Selecciona un horario',
+      seePrices: 'Ver precios',
+      chooseRide: 'Elige un vehículo',
+      chooseHourly: 'Elige tu vehículo',
+      duration: 'Duración',
+      hours: 'horas',
+      hoursHint: 'Mínimo {{min}} horas, máximo {{max}} horas',
+      estimatedTime: 'Tiempo estimado:',
+      requestNow: 'SOLICITAR AHORA',
+      checkout: 'Pagar',
+      ctaHint: 'Ingresa recogida y destino, luego elige un vehículo.',
+      enterLocation: 'Ingresa la ubicación.',
+      enterPickupDestination: 'Ingresa recogida y destino.',
+      chooseVehicle: 'Elige un vehículo.',
+      selectTime: 'Selecciona un horario.',
+      sending: 'Enviando...',
+      requestSent: '✓ ¡Solicitud enviada!',
+      processing: 'Procesando…',
+      bookingId: 'Reserva',
+      pickup: 'Recogida',
+      dropoff: 'Destino',
+      serviceLocation: 'Ubicación del Servicio',
+      destination: 'Destino',
+      date: 'Fecha',
+      time: 'Hora',
+      vehicle: 'Vehículo',
+      estimatedPrice: 'Precio Estimado',
+      durationLabel: 'Duración',
+      hoursLabel: 'horas',
+      pointToPoint: 'Punto a Punto',
+      byTheHour: 'Por Hora',
+      morning: 'Mañana',
+      afternoon: 'Tarde',
+      evening: 'Noche',
+      night: 'Madrugada',
+      alreadyBooked: 'Ya reservado',
+      tooSoon: 'Muy pronto',
+      chooseDateFirst: 'Elige una fecha primero',
+      changeLocation: 'Cambiar ubicación',
+      changeDatetime: 'Cambiar fecha y hora',
+      dropoffLabel: 'Lugar de entrega',
+      hoursLabel2: 'Duración',
+      continue: 'Continuar'
+    }
+  };
+
+  var currentLang = 'en';
+  
+  function detectLanguage() {
+    var shopifyLocale = '{{ request.locale.iso_code | default: "" }}'.toLowerCase();
+    if (shopifyLocale.startsWith('es')) return 'es';
+    if (shopifyLocale && shopifyLocale !== '') return 'en';
+    var lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+    if (lang.startsWith('es')) return 'es';
+    return 'en';
+  }
+  
+  function t(key, replacements) {
+    var text = TRANSLATIONS[currentLang][key] || TRANSLATIONS['en'][key] || key;
+    if (replacements) {
+      for (var k in replacements) {
+        text = text.replace('{{' + k + '}}', replacements[k]);
+      }
+    }
+    return text;
+  }
+  
+  function setLanguage(lang) {
+    currentLang = lang === 'es' ? 'es' : 'en';
+    updateUIText();
+  }
+  
+  function updateUIText() {
+    if(pickupLabel) pickupLabel.textContent = currentMode === 'hourly' ? t('serviceLocationLabel') : t('pickupLabel');
+    var dropoffLabelEl = root.querySelector('[data-vipride-dropoff-field] .vipRide__label');
+    if(dropoffLabelEl) dropoffLabelEl.textContent = t('dropoffLabel');
+
+    var dateLabelEl = root.querySelector('label[for="vipDate-{{ section.id }}"]');
+    if(dateLabelEl) dateLabelEl.textContent = t('dateLabel');
+    var timeLabelEl = root.querySelector('[data-vipride-time-field] .vipRide__label');
+    if(timeLabelEl) timeLabelEl.textContent = t('timeLabel');
+
+    var step1NextEl = root.querySelector('[data-vipride-step1-next]');
+    if(step1NextEl) step1NextEl.textContent = t('continue') + ' \u203a';
+
+    var stepbackLabel = root.querySelector('[data-vipride-stepback-label]');
+    if(stepbackLabel) stepbackLabel.textContent = t('changeLocation');
+    var stepback2Label = root.querySelector('[data-vipride-stepback2-label]');
+    if(stepback2Label) stepback2Label.textContent = t('changeDatetime');
+
+    var slotHintEl = root.querySelector('[data-vipride-slot-hint]');
+    if(slotHintEl) slotHintEl.textContent = t('chooseDateFirst');
+    var seePricesEl = root.querySelector('[data-vipride-seeprices]');
+    if(seePricesEl) seePricesEl.textContent = t('seePrices');
+    var slotDisplayEl = root.querySelector('[data-vipride-slot-display]');
+    if(slotDisplayEl && !timeEl.value) slotDisplayEl.textContent = t('selectTimeSlot');
+
+    modeBtns.forEach(function(btn) {
+      var mode = btn.getAttribute('data-mode');
+      if(mode === 'ride') btn.textContent = t('pointToPoint');
+      if(mode === 'hourly') btn.textContent = t('byTheHour');
+    });
+
+    var hoursHintEl = root.querySelector('[data-vipride-hours-hint]');
+    if(hoursHintEl) hoursHintEl.textContent = t('hoursHint', {min: MIN_HOURS, max: MAX_HOURS});
+    var hoursUnitEl = root.querySelector('[data-vipride-hours-unit]');
+    if(hoursUnitEl) hoursUnitEl.textContent = t('hours');
+    var hoursLabelEl = root.querySelector('[data-vipride-hours-field] .vipRide__label');
+    if(hoursLabelEl) hoursLabelEl.textContent = t('hoursLabel2');
+
+    if(ctaBtn && !selectedRide) ctaBtn.textContent = t('requestNow');
+    if(checkoutBtn && !selectedRide) checkoutBtn.textContent = t('checkout');
+
+    if(hint) hint.textContent = t('ctaHint');
+
+    if(pricesTitle) pricesTitle.textContent = currentMode === 'hourly' ? t('chooseHourly') : t('chooseRide');
+
+    var routeEstimateLabel = root.querySelector('.vipRide__routeEstimateLabel');
+    if(routeEstimateLabel) routeEstimateLabel.textContent = t('estimatedTime');
+
+    if(dateEl.value) buildSlotPicker(dateEl.value);
+  }
+
+  // Mode toggle elements
+  var modeBtns        = Array.from(root.querySelectorAll('[data-vipride-mode-btn]'));
+  var currentMode     = 'ride';
+  
+  // Form elements
+  var pickupEl        = root.querySelector('[data-vipride-pickup]');
+  var dropoffEl       = root.querySelector('[data-vipride-dropoff]');
+  var dropoffField    = root.querySelector('[data-vipride-dropoff-field]');
+  var hoursField      = root.querySelector('[data-vipride-hours-field]');
+  var hoursValueEl    = root.querySelector('[data-vipride-hours-value]');
+  var hoursInput      = root.querySelector('[data-vipride-hours-input]');
+  var hoursMinusBtn   = root.querySelector('[data-vipride-hours-minus]');
+  var hoursPlusBtn    = root.querySelector('[data-vipride-hours-plus]');
+  var pickupLabel     = root.querySelector('[data-vipride-pickup-label]');
+  var dateEl          = root.querySelector('[data-vipride-date]');
+  var timeEl          = root.querySelector('[data-vipride-time]');
+  var timeTrigger     = root.querySelector('[data-vipride-time-trigger]');
+  var slotDisplay     = root.querySelector('[data-vipride-slot-display]');
+  var slotPicker      = root.querySelector('[data-vipride-slotpicker]');
+  var slotHint        = root.querySelector('[data-vipride-slot-hint]');
+  var pickupPill      = root.querySelector('[data-vipride-pickup-pill]');
+  var dropoffPill     = root.querySelector('[data-vipride-dropoff-pill]');
+  var clearBtns       = root.querySelectorAll('[data-vipride-clear]');
+  var seePricesBtn    = root.querySelector('[data-vipride-seeprices]');
+  var pricesWrap      = root.querySelector('[data-vipride-prices]');
+  var pricesTitle     = root.querySelector('[data-vipride-prices-title]');
+  var routeEstimate   = root.querySelector('[data-vipride-route-estimate]');
+  var routeTimeText   = root.querySelector('[data-vipride-route-time]');
+  var cards           = Array.from(root.querySelectorAll('[data-vipride-card]'));
+  var bookingVariant  = root.querySelector('[data-vipride-booking-variant]');
+  var ctaBtn          = root.querySelector('[data-vipride-cta]');
+  var checkoutBtn     = root.querySelector('[data-vipride-checkout]');
+  var hint            = root.querySelector('[data-vipride-hint]');
+  var form            = root.querySelector('[data-vipride-form]');
+  var propBookingType = root.querySelector('[data-vipride-prop="bookingType"]');
+  var propPickup      = root.querySelector('[data-vipride-prop="pickup"]');
+  var propDropoff     = root.querySelector('[data-vipride-prop="dropoff"]');
+  var propHours       = root.querySelector('[data-vipride-prop="hours"]');
+  var propDate        = root.querySelector('[data-vipride-prop="date"]');
+  var propTime        = root.querySelector('[data-vipride-prop="time"]');
+  var propVehicle     = root.querySelector('[data-vipride-prop="vehicle"]');
+  var propPrice       = root.querySelector('[data-vipride-prop="price"]');
+  var timeField       = root.querySelector('[data-vipride-time-field]');
+
+  if(!pickupEl||!dateEl||!timeEl||!ctaBtn||!form) return;
+
+  // ══ STEP NAVIGATION ══
+  var sheet        = root.querySelector('[data-vipride-sheet]');
+  var stepPanels   = Array.from(root.querySelectorAll('[data-vipride-step-panel]'));
+  var step1NextBtn = root.querySelector('[data-vipride-step1-next]');
+  var stepBackBtn  = root.querySelector('[data-vipride-step-back]');
+  var stepBack2Btn = root.querySelector('[data-vipride-step-back2]');
+  var currentStep  = 1;
+
+  function goToStep(n, dir){
+    var prev = root.querySelector('[data-vipride-step-panel="'+currentStep+'"]');
+    var next = root.querySelector('[data-vipride-step-panel="'+n+'"]');
+    if(!next || n === currentStep) return;
+    var enterClass = dir === 'back' ? 'is-entering-back' : 'is-entering';
+    currentStep = n;
+    if(sheet) sheet.setAttribute('data-vipride-step', String(n));
+    updateStepDots();
+    // Close any open suggestions
+    closeSuggestions();
+    if(prev){
+      prev.style.transition = 'opacity 280ms ease-in, transform 280ms ease-in';
+      prev.style.opacity = '0';
+      prev.style.transform = dir === 'back' ? 'translateX(16px)' : 'translateX(-16px)';
+      setTimeout(function(){
+        prev.hidden = true;
+        prev.style.transition = '';
+        prev.style.opacity = '';
+        prev.style.transform = '';
+        next.hidden = false;
+        next.classList.remove('is-entering','is-entering-back');
+        void next.offsetWidth;
+        next.classList.add(enterClass);
+      }, 280);
+    } else {
+      next.hidden = false;
+      next.classList.remove('is-entering','is-entering-back');
+      void next.offsetWidth;
+      next.classList.add(enterClass);
+    }
+  }
+
+  function updateStepDots(){
+    root.querySelectorAll('.vipRide__stepDot').forEach(function(d,i){
+      d.classList.toggle('is-active', i+1 === currentStep);
+      d.classList.toggle('is-done', i+1 < currentStep);
+    });
+  }
+
+  if(step1NextBtn){
+    step1NextBtn.addEventListener('click', function(){
+      goToStep(2, 'forward');
+    });
+  }
+  if(stepBackBtn){
+    stepBackBtn.addEventListener('click', function(){
+      goToStep(1, 'back');
+    });
+  }
+  if(stepBack2Btn){
+    stepBack2Btn.addEventListener('click', function(){
+      goToStep(2, 'back');
+    });
+  }
+
+  var map;
+  var pickupMarker=null, dropoffMarker=null;
+  var pickupPlace=null, dropoffPlace=null;
+  var routeDurationSec=null, selectedRide=null;
+  var routeReq=0, accordionOpen=false;
+  var currentHours = DEFAULT_HOURS;
+  var _mapLocked=false, _savedCenter, _savedZoom;
+  function lockMap(){ if(!map||_mapLocked) return; _mapLocked=true; _savedCenter=map.getCenter(); _savedZoom=map.getZoom(); }
+  function unlockMap(){ _mapLocked=false; }
+
+  var ALL_BOOKED = Array.isArray(window.__VIP_BOOKED_SLOTS__)
+    ? window.__VIP_BOOKED_SLOTS__ : [];
+
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function toHHMM(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+  function roundUpToStep(d,step){
+    var r=new Date(d); r.setSeconds(0,0);
+    var m=r.getMinutes()%step; if(m) r.setMinutes(r.getMinutes()+(step-m)); return r;
+  }
+  function moneyUSD(n){
+    return Math.max(0,Number(n)||0).toLocaleString('en-US',{style:'currency',currency:'USD'});
+  }
+  function formatMinutes(sec){
+    var m=Math.max(1,Math.round((Number(sec)||0)/60));
+    return m<60?m+' min':Math.floor(m/60)+' hr '+(m%60)+' min';
+  }
+
+  // ══ MAPBOX MARKER HELPERS ══
+  function createPickupMarkerEl(){
+    var el=document.createElement('div');
+    el.className='vipRide__marker vipRide__marker--pickup';
+    el.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="32" height="44" viewBox="0 0 32 44"><defs><radialGradient id="pg" cx="40%" cy="35%"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient></defs><path d="M16 0C7.163 0 0 7.163 0 16c0 10.8 16 28 16 28S32 26.8 32 16C32 7.163 24.837 0 16 0z" fill="url(#pg)"/><circle cx="16" cy="16" r="6" fill="#fff"/><circle cx="16" cy="16" r="3" fill="#D4AF37"/></svg>';
+    return el;
+  }
+  function createDropoffMarkerEl(){
+    var el=document.createElement('div');
+    el.className='vipRide__marker vipRide__marker--dropoff';
+    el.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26"><defs><radialGradient id="dg" cx="40%" cy="35%"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient></defs><rect x="3" y="3" width="20" height="20" rx="5" fill="url(#dg)"/><rect x="8" y="8" width="10" height="10" rx="3" fill="#fff"/><rect x="11" y="11" width="4" height="4" rx="1" fill="#D4AF37"/></svg>';
+    return el;
+  }
+
+  // ══ AUTOCOMPLETE VIA MAPBOX GEOCODING ══
+  var _suggestionContainers=[];
+  var _acDebounceTimers={};
+  function closeSuggestions(){
+    _suggestionContainers.forEach(function(c){ c.style.display='none'; });
+  }
+
+  function attachAutocomplete(inputEl,which){
+    var field=inputEl.closest('.vipRide__field');
+    var container=document.createElement('div');
+    container.className='vipRide__suggestions';
+    field.appendChild(container);
+    _suggestionContainers.push(container);
+
+    inputEl.addEventListener('input',function(){
+      clearTimeout(_acDebounceTimers[which]);
+      var query=inputEl.value.trim();
+      if(query.length<3){ container.style.display='none'; return; }
+      _acDebounceTimers[which]=setTimeout(function(){
+        var center=map?map.getCenter():{lng:defaultLng,lat:defaultLat};
+        var url='https://api.mapbox.com/geocoding/v5/mapbox.places/'
+          +encodeURIComponent(query)+'.json'
+          +'?access_token='+encodeURIComponent(MAPBOX_TOKEN)
+          +'&limit=5'
+          +'&types=address,poi,place,locality,neighborhood'
+          +'&proximity='+center.lng+','+center.lat
+          +'&language='+(currentLang==='es'?'es':'en');
+        fetch(url)
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            container.innerHTML='';
+            if(!data.features||!data.features.length){ container.style.display='none'; return; }
+            data.features.forEach(function(feat){
+              var item=document.createElement('div');
+              item.className='vipRide__suggestion';
+              var parts=feat.place_name.split(',');
+              var main=parts[0]||feat.text||'';
+              var sub=parts.slice(1).join(',').trim();
+              item.innerHTML='<span class="vipRide__suggestionIcon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1C5.24 1 3 3.24 3 6c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5z" fill="currentColor"/><circle cx="8" cy="6" r="2" fill="#000" opacity=".3"/></svg></span>'
+                +'<span class="vipRide__suggestionText"><span class="vipRide__suggestionMain">'+main+'</span>'
+                +(sub?'<span class="vipRide__suggestionSub">'+sub+'</span>':'')+'</span>';
+              item.addEventListener('click',function(){
+                inputEl.value=feat.place_name;
+                container.style.display='none';
+                var lng=feat.center[0], lat=feat.center[1];
+                var obj={label:feat.place_name,lat:lat,lng:lng};
+                if(which==='pickup')  pickupPlace=obj;
+                if(which==='dropoff') dropoffPlace=obj;
+                inputEl.blur();
+                afterInputChange(); setMarker(which,lat,lng); computeRoute();
+              });
+              container.appendChild(item);
+            });
+            container.style.display='block';
+          })
+          .catch(function(){ container.style.display='none'; });
+      },300);
+    });
+
+    inputEl.addEventListener('focus',function(){
+      if(container.children.length>0) container.style.display='block';
+    });
+    document.addEventListener('click',function(e){
+      if(!inputEl.contains(e.target)&&!container.contains(e.target)){
+        container.style.display='none';
+      }
+    });
+  }
+
+  // ══ MAPBOX ROUTE DRAWING ══
+  function clearRoute(){
+    if(!map) return;
+    try{
+      if(map.getLayer('route-glow'))  map.removeLayer('route-glow');
+      if(map.getLayer('route-line'))  map.removeLayer('route-line');
+      if(map.getSource('route'))      map.removeSource('route');
+    }catch(e){}
+  }
+  function drawRoute(geometry){
+    clearRoute();
+    if(!map||!geometry) return;
+    map.addSource('route',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:[geometry.coordinates[0]]}},lineMetrics:true});
+    // Glow layer
+    map.addLayer({
+      id:'route-glow', type:'line', source:'route',
+      layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':'#D4AF37','line-width':16,'line-opacity':0.2,'line-blur':12}
+    });
+    // Main line with gradient
+    map.addLayer({
+      id:'route-line', type:'line', source:'route',
+      layout:{'line-cap':'round','line-join':'round'},
+      paint:{
+        'line-width':5,
+        'line-opacity':0.92,
+        'line-gradient':[
+          'interpolate',['linear'],['line-progress'],
+          0,'#D4AF37',
+          0.5,'#FFD700',
+          1,'#E8C547'
+        ]
+      }
+    });
+    // Animate drawing
+    var coords=geometry.coordinates;
+    var total=coords.length;
+    var idx=0;
+    var step=Math.max(1,Math.ceil(total/80));
+    function tick(){
+      idx=Math.min(idx+step,total);
+      var src=map.getSource('route');
+      if(src) src.setData({type:'Feature',geometry:{type:'LineString',coordinates:coords.slice(0,idx)}});
+      if(idx<total) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ══ MODE TOGGLE FUNCTIONS ══
+  function setMode(mode) {
+    currentMode = mode;
+    modeBtns.forEach(function(btn) {
+      if(btn.getAttribute('data-mode') === mode) btn.classList.add('is-active');
+      else btn.classList.remove('is-active');
+    });
+    if(propBookingType) propBookingType.value = mode;
+    var formEl = root.querySelector('.vipRide__form');
+    if(formEl) formEl.setAttribute('data-vipride-mode', mode);
+    
+    if(mode === 'hourly') {
+      if(dropoffField) dropoffField.hidden = true;
+      if(hoursField) hoursField.hidden = false;
+      if(dropoffPill) dropoffPill.parentElement.hidden = true;
+      if(pricesTitle) pricesTitle.textContent = t('chooseHourly');
+      if(pickupLabel) pickupLabel.textContent = t('serviceLocationLabel');
+      if(dropoffEl) {
+        dropoffEl.value = '';
+        dropoffPlace = null;
+        if(dropoffMarker){ dropoffMarker.remove(); dropoffMarker=null; }
+      }
+      clearRoute();
+      routeDurationSec = null;
+      if(routeEstimate) routeEstimate.hidden = true;
+    } else {
+      if(dropoffField) dropoffField.hidden = false;
+      if(hoursField) hoursField.hidden = true;
+      if(dropoffPill) dropoffPill.parentElement.hidden = false;
+      if(pricesTitle) pricesTitle.textContent = t('chooseRide');
+      if(pickupLabel) pickupLabel.textContent = t('pickupLabel');
+    }
+    if(currentStep !== 1) goToStep(1, 'back');
+    updateCardPrices();
+    afterInputChange();
+  }
+
+  modeBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setMode(btn.getAttribute('data-mode'));
+    });
+  });
+
+  // ══ HOURS SELECTOR FUNCTIONS ══
+  function updateHoursDisplay() {
+    if(hoursValueEl) hoursValueEl.textContent = currentHours;
+    if(hoursInput) hoursInput.value = currentHours;
+    if(hoursMinusBtn) hoursMinusBtn.disabled = currentHours <= MIN_HOURS;
+    if(hoursPlusBtn) hoursPlusBtn.disabled = currentHours >= MAX_HOURS;
+    updateCardPrices();
+    afterInputChange();
+  }
+
+  if(hoursMinusBtn) {
+    hoursMinusBtn.addEventListener('click', function() {
+      if(currentHours > MIN_HOURS) { currentHours--; updateHoursDisplay(); }
+    });
+  }
+  if(hoursPlusBtn) {
+    hoursPlusBtn.addEventListener('click', function() {
+      if(currentHours < MAX_HOURS) { currentHours++; updateHoursDisplay(); }
+    });
+  }
+
+  function vipScrollTo(el){
+    if(!el) return;
+    if(window.innerWidth>=900){
+      var container=root.querySelector('[data-vipride-sheet]');
+      if(container){
+        var targetTop=el.offsetTop-20;
+        container.scrollTo({top:targetTop,behavior:'smooth'});
+      }
+      return;
+    }
+    var rect=el.getBoundingClientRect();
+    var absTop=rect.top+window.pageYOffset-20;
+    window.scrollTo({top:absTop,behavior:'smooth'});
+  }
+
+  function openAccordion(doScroll){
+    if(!slotPicker) return;
+    slotPicker.removeAttribute('hidden');
+    slotPicker.getBoundingClientRect();
+    slotPicker.classList.add('is-open');
+    if(timeTrigger) timeTrigger.setAttribute('aria-expanded','true');
+    accordionOpen=true;
+    if(doScroll && window.innerWidth<900 && timeField){
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){ vipScrollTo(timeField); });
+      });
+    }
+  }
+  function closeAccordion(){
+    if(!slotPicker) return;
+    slotPicker.classList.remove('is-open');
+    if(timeTrigger) timeTrigger.setAttribute('aria-expanded','false');
+    accordionOpen=false;
+    slotPicker.addEventListener('transitionend',function h(){
+      if(!accordionOpen) slotPicker.setAttribute('hidden','');
+      slotPicker.removeEventListener('transitionend',h);
+    });
+  }
+  function toggleAccordion(){
+    if(accordionOpen) closeAccordion(); else openAccordion(true);
+  }
+  if(timeTrigger) timeTrigger.addEventListener('click',toggleAccordion);
+
+  var PERIOD_LABELS = [
+    { labelKey:'morning',   from:6,  to:12 },
+    { labelKey:'afternoon', from:12, to:17 },
+    { labelKey:'evening',   from:17, to:20 },
+    { labelKey:'night',     from:20, to:22 }
+  ];
+
+  function buildSlotPicker(dateStr){
+    if(!slotPicker) return;
+    var inner=slotPicker.querySelector('.vipRide__timeAccordion__inner');
+    if(!inner) return;
+    var bookedSet=new Set(
+      ALL_BOOKED
+        .filter(function(s){return typeof s==='string'&&s.startsWith(dateStr);})
+        .map(function(s){return s.length>=16?s.slice(11,16):s.slice(0,5);})
+    );
+    var now=new Date();
+    var todayStr=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-'+pad2(now.getDate());
+    var isToday=dateStr===todayStr;
+    var minHHMM=isToday
+      ? toHHMM(roundUpToStep(new Date(Date.now()+MIN_LEAD_MINUTES*60000),SLOT_STEP_M))
+      : '00:00';
+    inner.innerHTML='';
+    PERIOD_LABELS.forEach(function(period){
+      var slots=[];
+      for(var h=period.from;h<period.to;h++){
+        for(var m=0;m<60;m+=SLOT_STEP_M){
+          var hhmm=pad2(h)+':'+pad2(m);
+          var isBooked=bookedSet.has(hhmm);
+          var isPast=isToday&&hhmm<minHHMM;
+          if(!isBooked&&!isPast) slots.push({hhmm:hhmm});
+        }
+      }
+      if(!slots.length) return;
+      var sec=document.createElement('div');
+      sec.className='vipRide__slotSection';
+      var title=document.createElement('p');
+      title.className='vipRide__slotSectionTitle';
+      title.textContent=t(period.labelKey);
+      sec.appendChild(title);
+      var grid=document.createElement('div');
+      grid.className='vipRide__slotGrid';
+      slots.forEach(function(slot){
+        var btn=document.createElement('button');
+        btn.type='button';
+        btn.textContent=slot.hhmm;
+        btn.className='vipRide__slot';
+        btn.addEventListener('click',function(){
+          slotPicker.querySelectorAll('.vipRide__slot--active')
+            .forEach(function(b){b.classList.remove('vipRide__slot--active');});
+          btn.classList.add('vipRide__slot--active');
+          timeEl.value=slot.hhmm;
+          if(slotDisplay){
+            slotDisplay.textContent=slot.hhmm;
+            slotDisplay.classList.add('has-value');
+          }
+          afterInputChange();
+          if(window.innerWidth<900) closeAccordion();
+        });
+        grid.appendChild(btn);
+      });
+      sec.appendChild(grid);
+      inner.appendChild(sec);
+    });
+    if(slotHint) slotHint.style.display='none';
+  }
+
+  function resetSlotPicker(){
+    if(slotPicker){
+      var inner=slotPicker.querySelector('.vipRide__timeAccordion__inner');
+      if(inner){
+        inner.innerHTML='';
+        if(slotHint){ inner.appendChild(slotHint); slotHint.style.display=''; }
+      }
+    }
+    closeAccordion();
+    if(slotDisplay){ slotDisplay.textContent='Select a time slot'; slotDisplay.classList.remove('has-value'); }
+    timeEl.value='';
+  }
+
+  function syncPills(){
+    if(pickupPill)  pickupPill.textContent=pickupEl.value.trim()||'{{ section.settings.pickup_pill_default }}';
+    if(dropoffPill) dropoffPill.textContent=dropoffEl.value.trim()||'{{ section.settings.dropoff_pill_default }}';
+  }
+  function syncProps(sel){
+    if(propPickup)  propPickup.value=pickupEl.value.trim();
+    if(propDropoff) propDropoff.value=currentMode === 'hourly' ? '' : dropoffEl.value.trim();
+    if(propHours)   propHours.value=currentMode === 'hourly' ? currentHours : '';
+    if(propDate)    propDate.value=dateEl.value;
+    if(propTime)    propTime.value=timeEl.value;
+    if(propVehicle) propVehicle.value=sel?sel.title||'' : '';
+    if(propPrice)   propPrice.value=sel?sel.price||'' : '';
+  }
+  function setClearVisibility(){
+    var pc=root.querySelector('[data-vipride-clear="pickup"]');
+    var dc=root.querySelector('[data-vipride-clear="dropoff"]');
+    if(pc) pc.style.display=pickupEl.value.trim()?'block':'none';
+    if(dc) dc.style.display=dropoffEl.value.trim()?'block':'none';
+  }
+  function updateSeePricesBtn(){
+    var locReady;
+    if(currentMode === 'hourly') {
+      locReady = pickupEl.value.trim().length > 0;
+    } else {
+      locReady = pickupEl.value.trim().length > 0 && dropoffEl.value.trim().length > 0;
+    }
+    if(step1NextBtn) step1NextBtn.disabled = !locReady;
+    var dtReady = locReady && dateEl.value && timeEl.value;
+    if(seePricesBtn){
+      seePricesBtn.disabled = !dtReady;
+      if(currentMode === 'ride' && pickupEl.value.trim().length > 0 && dropoffEl.value.trim().length === 0){
+        seePricesBtn.textContent = currentLang === 'es' ? 'Agrega destino para ver precios' : 'Add destination to see prices';
+      } else {
+        seePricesBtn.textContent = t('seePrices');
+      }
+    }
+  }
+  function validateCTA(sel){
+    var ok;
+    if(currentMode === 'hourly') {
+      ok = pickupEl.value.trim() && timeEl.value && !!sel;
+    } else {
+      ok = pickupEl.value.trim() && dropoffEl.value.trim() && timeEl.value && !!sel;
+    }
+    ctaBtn.disabled=!ok;
+    if(checkoutBtn) checkoutBtn.disabled=!ok;
+    if(form) form.hidden = !sel;
+    if(ok){
+      if(hint) hint.style.display='none';
+      var priceText = sel && sel.price ? ' — ' + sel.price : '';
+      ctaBtn.textContent='{{ section.settings.cta_default_text }}' + priceText;
+      if(checkoutBtn) checkoutBtn.textContent='Checkout' + priceText;
+    } else {
+      if(hint) hint.style.display='none';
+      ctaBtn.textContent='{{ section.settings.cta_default_text }}';
+      if(checkoutBtn) checkoutBtn.textContent='Checkout';
+    }
+  }
+  function afterInputChange(){
+    setClearVisibility(); syncPills(); syncProps(selectedRide);
+    updateSeePricesBtn(); validateCTA(selectedRide);
+    var locReady = currentMode === 'hourly'
+      ? pickupEl.value.trim().length > 0
+      : pickupEl.value.trim().length > 0 && dropoffEl.value.trim().length > 0;
+    if(step1NextBtn) step1NextBtn.disabled = !locReady;
+    if(currentStep === 2 && locReady && dateEl.value && timeEl.value){
+      if(routeDurationSec){
+        updateCardPrices(routeDurationSec);
+      } else {
+        computeRoute();
+        updateCardPrices();
+      }
+      goToStep(3, 'forward');
+      setTimeout(function(){
+        var firstAvail=cards.find(function(c){return !c.disabled&&!c.getAttribute('data-disabled');});
+        if(!selectedRide&&firstAvail) selectCard(firstAvail);
+      }, 200);
+    }
+  }
+
+  function fitRouteBounds(){
+    if(!map||!pickupPlace||!dropoffPlace) return;
+    var bounds=new mapboxgl.LngLatBounds();
+    bounds.extend([pickupPlace.lng,pickupPlace.lat]);
+    bounds.extend([dropoffPlace.lng,dropoffPlace.lat]);
+    var mapEl = document.getElementById('vipRideMap-{{ section.id }}');
+    var mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
+    var sheetH = sheet ? sheet.offsetHeight : 240;
+    var padBottom = Math.min(sheetH + 30, mapH * 0.55);
+    map.fitBounds(bounds, {
+      padding:{top:80, right:50, bottom:padBottom, left:50},
+      pitch:55,
+      bearing:map.getBearing(),
+      duration:1400,
+      maxZoom:16
+    });
+  }
+
+  function setMarker(which,lat,lng){
+    if(which==='pickup'){
+      if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
+      pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
+        .setLngLat([lng,lat]).addTo(map);
+    }
+    if(which==='dropoff'){
+      if(dropoffMarker){ dropoffMarker.remove(); dropoffMarker=null; }
+      dropoffMarker=new mapboxgl.Marker({element:createDropoffMarkerEl(),anchor:'center'})
+        .setLngLat([lng,lat]).addTo(map);
+    }
+    unlockMap();
+    if(currentMode === 'ride' && pickupPlace&&dropoffPlace&&map){
+      fitRouteBounds();
+    } else if(map){
+      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:55,duration:1200});
+    }
+  }
+
+  function findBestVariant(blockId,targetCents){
+    var variants=VEHICLE_VARIANTS[blockId];
+    if(!variants||!variants.length) return null;
+    var best=variants[0], bestDiff=Math.abs(variants[0].price-targetCents);
+    for(var i=0;i<variants.length;i++){
+      var diff=Math.abs(variants[i].price-targetCents);
+      if(diff<bestDiff){ bestDiff=diff; best=variants[i]; }
+    }
+    return best;
+  }
+
+  function updateCardPrices(sec){
+    if(!cards.length) return;
+    cards.forEach(function(card){
+      var rate = Number(card.getAttribute('data-rate')) || 0;
+      var hourlyRate = Number(card.getAttribute('data-hourly-price')) || rate;
+      var est, text, cents;
+      if(currentMode === 'hourly') {
+        est = currentHours * hourlyRate;
+        text = moneyUSD(est);
+        cents = Math.round(est * 100);
+        var etaEl = card.querySelector('[data-vipride-eta]');
+        if(etaEl) etaEl.textContent = currentHours + ' hours';
+      } else {
+        var durationSec = sec || routeDurationSec || 0;
+        var hours = durationSec > 0 ? (durationSec / 3600) : 0;
+        if(hours > 0 && rate > 0){
+          est = hours * rate;
+          text = moneyUSD(est);
+          cents = Math.round(est * 100);
+        } else {
+          text = card.getAttribute('data-price') || '--';
+          cents = Number(card.getAttribute('data-price-cents') || 0);
+          est = cents / 100;
+        }
+        var etaEl = card.querySelector('[data-vipride-eta]');
+        if(etaEl) etaEl.textContent = routeDurationSec ? formatMinutes(routeDurationSec) : '--';
+      }
+      card.setAttribute('data-price',text);
+      card.setAttribute('data-price-cents',String(cents));
+      var priceEl=card.querySelector('[data-vipride-card-price]');
+      if(priceEl) priceEl.textContent=text;
+    });
+    if(selectedRide){
+      var active=root.querySelector('.vipRide__rideCard.is-active');
+      if(active){
+        selectedRide.price=active.getAttribute('data-price')||'';
+        selectedRide.priceCents=Number(active.getAttribute('data-price-cents')||0);
+        syncProps(selectedRide); validateCTA(selectedRide);
+      }
+    }
+  }
+
+  function computeRoute(){
+    if(currentMode === 'hourly') return;
+    if(!pickupPlace||!dropoffPlace||!map) return;
+    var req=++routeReq;
+    var url='https://api.mapbox.com/directions/v5/mapbox/driving/'
+      +pickupPlace.lng+','+pickupPlace.lat+';'
+      +dropoffPlace.lng+','+dropoffPlace.lat
+      +'?geometries=geojson&overview=full&access_token='+encodeURIComponent(MAPBOX_TOKEN);
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(req!==routeReq) return;
+        if(!data.routes||!data.routes[0]){
+          routeDurationSec=null; if(routeEstimate) routeEstimate.hidden=true; return;
+        }
+        var route=data.routes[0];
+        routeDurationSec=route.duration||null;
+        var etaText=routeDurationSec?formatMinutes(routeDurationSec):'--';
+        routeTimeText.textContent=etaText;
+        if(routeEstimate) routeEstimate.hidden=false;
+        drawRoute(route.geometry);
+        requestAnimationFrame(function(){ fitRouteBounds(); });
+        updateCardPrices(routeDurationSec);
+        if(currentStep === 3) validateCTA(selectedRide);
+      })
+      .catch(function(err){
+        console.warn('[VIP Ride] Directions error:',err);
+      });
+  }
+
+  function selectCard(card){
+    if(!card) return;
+    cards.forEach(function(c){c.classList.remove('is-active');});
+    card.classList.add('is-active');
+    selectedRide={
+      title:      card.getAttribute('data-title')||'',
+      price:      card.getAttribute('data-price')||'',
+      priceCents: Number(card.getAttribute('data-price-cents')||0),
+      variantId:  card.getAttribute('data-variant-id')||'',
+      blockId:    card.getAttribute('data-block-id')||''
+    };
+    if(bookingVariant&&selectedRide.variantId) bookingVariant.value=selectedRide.variantId;
+    syncProps(selectedRide); validateCTA(selectedRide);
+  }
+
+  async function doCheckout(triggerBtn){
+    if(!selectedRide){ alert(t('chooseVehicle')); return; }
+    if(!timeEl.value){ alert(t('selectTime')); return; }
+    var cents=Number(selectedRide.priceCents)||0;
+    if(cents<=0){
+      cents=Math.round(
+        Number(String(selectedRide.price||'').replace(/[^0-9.]/g,''))*100
+      )||0;
+    }
+    if(cents<=0){ alert(t('enterLocation')); return; }
+    var pickup=pickupEl.value.trim();
+    var dropoff=currentMode === 'hourly' ? '' : dropoffEl.value.trim();
+    if(!pickup){ alert(t('enterLocation')); return; }
+    if(currentMode === 'ride' && !dropoff){ alert(t('enterPickupDestination')); return; }
+    var priceReadable=moneyUSD(cents/100);
+    var bestVariant=findBestVariant(selectedRide.blockId,cents);
+    var variantId, quantity;
+    if(bestVariant&&Math.abs(bestVariant.price-cents)<100){
+      variantId=bestVariant.id; quantity=1;
+    } else {
+      variantId=window.__VIP_CENT_VARIANT_ID__; quantity=cents;
+    }
+    var savedText=triggerBtn.textContent;
+    triggerBtn.disabled=true; ctaBtn.disabled=true;
+    if(checkoutBtn) checkoutBtn.disabled=true;
+    triggerBtn.textContent=t('processing');
+    try{
+      await fetch('/cart/clear.js',{method:'POST'});
+      var props = {
+        Pickup:pickup, Date:dateEl.value, Time:timeEl.value,
+        Vehicle:selectedRide.title||'',
+        'Estimated Price':priceReadable,
+        'Booking Type': currentMode === 'hourly' ? 'Hourly Service' : 'Point to Point'
+      };
+      if(currentMode === 'hourly') {
+        props['Hours'] = currentHours;
+        props['Service Type'] = 'Hourly Chauffeur Service';
+      } else {
+        props.Dropoff = dropoff;
+      }
+      var res=await fetch('/cart/add.js',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          id:variantId, quantity:quantity,
+          properties: props
+        })
+      });
+      if(!res.ok){
+        var err=await res.json().catch(function(){return {};});
+        throw new Error(err.description||'add to cart failed');
+      }
+      window.location.href='/checkout';
+    }catch(err){
+      console.error('[VIP Ride] checkout error:',err);
+      alert(t('checkout') + ': ' + err.message);
+      triggerBtn.textContent=savedText;
+      triggerBtn.disabled=false; ctaBtn.disabled=false;
+      if(checkoutBtn) checkoutBtn.disabled=false;
+      validateCTA(selectedRide);
+    }
+  }
+
+  cards.forEach(function(c){c.addEventListener('click',function(){selectCard(c);});});
+
+  dateEl.addEventListener('change',function(){
+    var today=new Date();
+    var todayStr=today.getFullYear()+'-'+pad2(today.getMonth()+1)+'-'+pad2(today.getDate());
+    if(dateEl.value&&dateEl.value<todayStr){ dateEl.value=todayStr; }
+    if(dateEl.value){
+      buildSlotPicker(dateEl.value);
+      if(window.innerWidth<900) openAccordion(true);
+    } else {
+      resetSlotPicker();
+    }
+    afterInputChange();
+  });
+
+  [pickupEl,dropoffEl].forEach(function(el){el.addEventListener('input',function(){afterInputChange();});});
+
+  clearBtns.forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var which=btn.getAttribute('data-vipride-clear');
+      if(which==='pickup') { pickupEl.value=''; pickupPlace=null; if(pickupMarker){pickupMarker.remove();pickupMarker=null;} }
+      if(which==='dropoff'){ dropoffEl.value=''; dropoffPlace=null; if(dropoffMarker){dropoffMarker.remove();dropoffMarker=null;} }
+      afterInputChange();
+      routeDurationSec=null;
+      if(routeEstimate) routeEstimate.hidden=true;
+      clearRoute();
+    });
+  });
+
+  (function setDateMin(){
+    try{
+      var now=new Date();
+      var todayStr=now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-'+pad2(now.getDate());
+      dateEl.min=todayStr;
+      if(!dateEl.value){ dateEl.value=todayStr; buildSlotPicker(todayStr); }
+      if(window.innerWidth>=900) openAccordion(false);
+    }catch(e){ console.warn('date init:',e); }
+  })();
+
+  setMode('ride');
+  updateStepDots();
+  updateHoursDisplay();
+  updateSeePricesBtn();
+  setLanguage(detectLanguage());
+
+  var EMAILJS_SERVICE_ID  = 'service_mhj1mcp';
+  var EMAILJS_TEMPLATE_ID = 'template_yo0y14n';
+  var EMAILJS_PUBLIC_KEY  = '5R65y1qr1-lXDwGRb';
+
+  if(typeof emailjs !== 'undefined') emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+
+  function isSpanish(){
+    var lang=(navigator.language||navigator.userLanguage||'').toLowerCase();
+    return lang.startsWith('es');
+  }
+
+  function showCtaState(btn,text,color,durationMs){
+    var orig={text:btn.textContent,bg:btn.style.background,disabled:btn.disabled};
+    btn.textContent=text; btn.style.background=color; btn.disabled=true;
+    if(durationMs) setTimeout(function(){ btn.textContent=orig.text; btn.style.background=orig.bg; btn.disabled=orig.disabled; },durationMs);
+    return orig;
+  }
+
+  form.addEventListener('submit',async function(e){
+    e.preventDefault();
+    if(!selectedRide){ alert(isSpanish()?'Elige un vehículo.':'Choose a vehicle.'); return; }
+    if(!timeEl.value){ alert(isSpanish()?'Selecciona un horario.':'Select a time slot.'); return; }
+    var pickup=pickupEl.value.trim();
+    var dropoff=currentMode === 'hourly' ? '' : dropoffEl.value.trim();
+    if(!pickup){ alert(isSpanish()?'Ingresa la ubicación.':'Enter location.'); return; }
+    if(currentMode === 'ride' && !dropoff){ alert(isSpanish()?'Ingresa recogida y destino.':'Enter pickup and destination.'); return; }
+    var vehicle=selectedRide.title||'';
+    var price=selectedRide.price||'';
+    var ctaBtn=form.querySelector('[data-vipride-cta]');
+    var ts=Date.now().toString(36).toUpperCase();
+    var rand=Math.random().toString(36).slice(2,7).toUpperCase();
+    var requestId='VIP-'+ts+'-'+rand;
+    showCtaState(ctaBtn, isSpanish()?'Enviando...':'Sending...','#888',0);
+    try{
+      if(typeof emailjs !== 'undefined'){
+        var emailData = {
+          request_id:requestId, vehicle:vehicle, pickup:pickup,
+          date:dateEl.value, time:timeEl.value, price:price,
+          to_email:'bookpremiumblackcar@gmail.com',
+          booking_type: currentMode === 'hourly' ? 'Hourly Service' : 'Point to Point'
+        };
+        if(currentMode === 'hourly') {
+          emailData.hours = currentHours;
+          emailData.dropoff = 'N/A (Hourly Service)';
+        } else {
+          emailData.dropoff = dropoff;
+        }
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, emailData);
+      }
+    }catch(err){ console.warn('EmailJS error:',err); }
+    showCtaState(ctaBtn, isSpanish()?'✓ Solicitud enviada!':'✓ Request sent!','#22c55e',4000);
+
+    try{ localStorage.setItem('vip_booking_sent','1'); }catch(e){}
+
+    var msg;
+    if(isSpanish()) {
+      msg = 'Hola, reserva *'+requestId+'*:\n\n';
+      msg += '📍 ' + (currentMode === 'hourly' ? 'Ubicación' : 'Recogida') + ': '+pickup+'\n';
+      if(currentMode === 'ride') msg += '📍 Destino: '+dropoff+'\n';
+      else msg += '⏰ Duración: '+currentHours+' horas\n';
+      msg += '📅 Fecha: '+dateEl.value+'\n';
+      msg += '🕐 Hora: '+timeEl.value+'\n';
+      msg += '🚗 Vehículo: '+vehicle+'\n';
+      msg += '💰 Precio estimado: '+price;
+    } else {
+      msg = 'Booking *'+requestId+'*:\n\n';
+      msg += '📍 ' + (currentMode === 'hourly' ? 'Service Location' : 'Pickup') + ': '+pickup+'\n';
+      if(currentMode === 'ride') msg += '📍 Dropoff: '+dropoff+'\n';
+      else msg += '⏰ Duration: '+currentHours+' hours\n';
+      msg += '📅 Date: '+dateEl.value+'\n';
+      msg += '🕐 Time: '+timeEl.value+'\n';
+      msg += '🚗 Vehicle: '+vehicle+'\n';
+      msg += '💰 Estimated Price: '+price;
+    }
+    setTimeout(function(){ window.location.href='https://api.whatsapp.com/send?phone=16593052974&text='+encodeURIComponent(msg); },600);
+  });
+
+  if(checkoutBtn){
+    checkoutBtn.addEventListener('click',async function(){
+      await doCheckout(checkoutBtn);
+    });
+  }
+
+  // ══ MAPBOX MAP INITIALIZATION ══
+  function initMapbox(){
+    if(typeof mapboxgl==='undefined'){
+      setTimeout(initMapbox,100); return;
+    }
+    try{
+      mapboxgl.accessToken=MAPBOX_TOKEN;
+      var isDesktop=window.innerWidth>=900;
+      // Custom dark style matching original VIP design:
+      // Deep navy-black (#0a0e1a) background, gold highways (#E8C547),
+      // invisible local roads, dark water (#060a14), muted parks
+      var VIP_DARK_STYLE = {
+        version:8,
+        name:'VIP Dark Gold',
+        sources:{
+          'mapbox-streets':{
+            type:'vector',
+            url:'mapbox://mapbox.mapbox-streets-v8'
+          }
+        },
+        glyphs:'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
+        sprite:'mapbox://sprites/mapbox/dark-v11',
+        layers:[
+          // Background
+          {id:'background',type:'background',paint:{'background-color':'#0a0e1a'}},
+          // Water
+          {id:'water',type:'fill',source:'mapbox-streets','source-layer':'water',paint:{'fill-color':'#060a14'}},
+          // Parks / green areas
+          {id:'landuse-park',type:'fill',source:'mapbox-streets','source-layer':'landuse',
+            filter:['==',['get','class'],'park'],
+            paint:{'fill-color':'#0a1a12','fill-opacity':0.8}},
+          // All landuse
+          {id:'landuse',type:'fill',source:'mapbox-streets','source-layer':'landuse',
+            filter:['!=',['get','class'],'park'],
+            paint:{'fill-color':'#0d1220','fill-opacity':0.5}},
+          // Buildings
+          {id:'building',type:'fill',source:'mapbox-streets','source-layer':'building',
+            paint:{'fill-color':'#121832','fill-opacity':0.6}},
+          {id:'building-outline',type:'line',source:'mapbox-streets','source-layer':'building',
+            paint:{'line-color':'#1a2548','line-width':0.5,'line-opacity':0.4}},
+          // Roads — local (invisible, matching original)
+          {id:'road-local',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['all',['==',['get','class'],'street'],['!=',['get','structure'],'tunnel']],
+            layout:{'line-cap':'round','line-join':'round'},
+            paint:{'line-color':'#0d1220','line-width':['interpolate',['linear'],['zoom'],12,0.5,16,4],'line-opacity':0.6}},
+          {id:'road-secondary',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['all',['any',['==',['get','class'],'secondary'],['==',['get','class'],'tertiary']],['!=',['get','structure'],'tunnel']],
+            layout:{'line-cap':'round','line-join':'round'},
+            paint:{'line-color':'#0d1220','line-width':['interpolate',['linear'],['zoom'],10,0.8,16,6],'line-opacity':0.7}},
+          {id:'road-primary',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['all',['==',['get','class'],'primary'],['!=',['get','structure'],'tunnel']],
+            layout:{'line-cap':'round','line-join':'round'},
+            paint:{'line-color':'#141c30','line-width':['interpolate',['linear'],['zoom'],8,1,16,8],'line-opacity':0.8}},
+          // Highways — casing
+          {id:'road-motorway-casing',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['all',['any',['==',['get','class'],'motorway'],['==',['get','class'],'trunk']],['!=',['get','structure'],'tunnel']],
+            layout:{'line-cap':'round','line-join':'round'},
+            paint:{'line-color':'#B8972E','line-width':['interpolate',['linear'],['zoom'],6,1.5,16,14],'line-opacity':0.5,'line-gap-width':0}},
+          // Highways — gold fill
+          {id:'road-motorway',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['all',['any',['==',['get','class'],'motorway'],['==',['get','class'],'trunk']],['!=',['get','structure'],'tunnel']],
+            layout:{'line-cap':'round','line-join':'round'},
+            paint:{'line-color':'#E8C547','line-width':['interpolate',['linear'],['zoom'],6,1,16,10],'line-opacity':0.9}},
+          // Admin boundaries
+          {id:'admin-boundary',type:'line',source:'mapbox-streets','source-layer':'admin',
+            filter:['>=',['get','admin_level'],2],
+            paint:{'line-color':'#1a2040','line-width':1,'line-opacity':0.4}},
+          // Transit
+          {id:'transit',type:'line',source:'mapbox-streets','source-layer':'road',
+            filter:['any',['==',['get','class'],'major_rail'],['==',['get','class'],'minor_rail']],
+            paint:{'line-color':'#101828','line-width':1,'line-opacity':0.3}},
+          // Place labels — major
+          {id:'place-city',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
+            filter:['any',['==',['get','class'],'city'],['==',['get','class'],'town']],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Medium','Arial Unicode MS Regular'],
+              'text-size':['interpolate',['linear'],['zoom'],6,10,14,20],'text-max-width':8},
+            paint:{'text-color':'#8090b0','text-halo-color':'#1a1d2c','text-halo-width':2,'text-opacity':0.85}},
+          // Place labels — neighborhoods
+          {id:'place-neighborhood',type:'symbol',source:'mapbox-streets','source-layer':'place_label',
+            filter:['==',['get','class'],'neighbourhood'],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Regular','Arial Unicode MS Regular'],
+              'text-size':['interpolate',['linear'],['zoom'],12,10,16,14],'text-max-width':7},
+            paint:{'text-color':'#5a6a88','text-halo-color':'#0a0e1a','text-halo-width':1.5,'text-opacity':0.7}},
+          // Highway labels
+          {id:'road-motorway-label',type:'symbol',source:'mapbox-streets','source-layer':'road',
+            filter:['any',['==',['get','class'],'motorway'],['==',['get','class'],'trunk']],
+            layout:{'text-field':['coalesce',['get','ref'],['get','name']],'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],
+              'text-size':11,'symbol-placement':'line','text-rotation-alignment':'map'},
+            paint:{'text-color':'#ffffff','text-halo-color':'#0a0e1a','text-halo-width':2,'text-opacity':0.8}},
+          // Transit stations
+          {id:'transit-label',type:'symbol',source:'mapbox-streets','source-layer':'transit_stop_label',
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Regular','Arial Unicode MS Regular'],
+              'text-size':10,'text-max-width':6},
+            paint:{'text-color':'#c0a050','text-halo-color':'#0a0e1a','text-halo-width':1,'text-opacity':0.6}},
+          // POI labels
+          {id:'poi-label',type:'symbol',source:'mapbox-streets','source-layer':'poi_label',
+            minzoom:13,
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Regular','Arial Unicode MS Regular'],
+              'text-size':10,'text-max-width':6,'icon-allow-overlap':false,'text-optional':true},
+            paint:{'text-color':'#c0c8d8','text-halo-color':'#0a0e1a','text-halo-width':1,'text-opacity':0.55}},
+          // Water labels
+          {id:'water-label',type:'symbol',source:'mapbox-streets','source-layer':'natural_label',
+            filter:['==',['get','class'],'water'],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Italic','Arial Unicode MS Regular'],
+              'text-size':['interpolate',['linear'],['zoom'],8,10,14,14]},
+            paint:{'text-color':'#3a5a8a','text-halo-color':'#060a14','text-halo-width':1,'text-opacity':0.6}},
+          // Park labels
+          {id:'park-label',type:'symbol',source:'mapbox-streets','source-layer':'natural_label',
+            filter:['==',['get','class'],'park_like'],
+            layout:{'text-field':['get','name'],'text-font':['DIN Pro Regular','Arial Unicode MS Regular'],
+              'text-size':10},
+            paint:{'text-color':'#5a9a6a','text-halo-color':'#0a1a12','text-halo-width':1,'text-opacity':0.6}}
+        ]
+      };
+
+      map=new mapboxgl.Map({
+        container:'vipRideMap-{{ section.id }}',
+        style:VIP_DARK_STYLE,
+        center:[defaultLng,defaultLat],
+        zoom:isDesktop?Math.max(defaultZoom,14):defaultZoom,
+        pitch:0,
+        bearing:-17.6,
+        attributionControl:false,
+        antialias:true
+      });
+      map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
+
+      // Camera tilt-in animation on load
+      map.on('load',function(){
+        map.easeTo({
+          pitch:60,
+          bearing:-17.6,
+          duration:2400,
+          easing:function(t){ return 1-Math.pow(1-t,3); }
+        });
+      });
+
+      // Keyboard/viewport handling
+      if(window.visualViewport){
+        window.visualViewport.addEventListener('resize',function(){
+          if(_mapLocked&&map&&_savedCenter){
+            map.setCenter(_savedCenter);
+            map.setZoom(_savedZoom);
+          }
+        });
+      }
+      // Lock section height on mobile
+      var sectionEl = root.closest('.vipRide') || root;
+      if(window.innerWidth < 900){
+        var lockedH = window.innerHeight + 'px';
+        sectionEl.style.setProperty('--vip-locked-h', lockedH);
+        sectionEl.classList.add('js-height-locked');
+        window.addEventListener('orientationchange', function(){
+          setTimeout(function(){
+            lockedH = window.innerHeight + 'px';
+            sectionEl.style.setProperty('--vip-locked-h', lockedH);
+          }, 300);
+        });
+      }
+      // iOS zoom fix
+      (function(){
+        var metaVP = document.querySelector('meta[name="viewport"]');
+        if(!metaVP) return;
+        var origContent = metaVP.getAttribute('content') || '';
+        function disableIOSZoom(){
+          if(origContent.indexOf('maximum-scale') === -1){
+            metaVP.setAttribute('content', origContent + ', maximum-scale=1');
+          }
+        }
+        function enableIOSZoom(){
+          metaVP.setAttribute('content', origContent);
+        }
+        document.addEventListener('focusin', function(e){
+          if(e.target && e.target.tagName === 'INPUT') disableIOSZoom();
+        });
+        document.addEventListener('focusout', function(e){
+          if(e.target && e.target.tagName === 'INPUT') setTimeout(enableIOSZoom, 300);
+        });
+      })();
+      // Lock map on input focus
+      root.querySelectorAll('input[type=text],input[type=date]').forEach(function(inp){
+        inp.addEventListener('focus', lockMap);
+        inp.addEventListener('blur', function(){ setTimeout(unlockMap, 400); });
+      });
+
+      attachAutocomplete(pickupEl,'pickup');
+      if(dropoffEl) attachAutocomplete(dropoffEl,'dropoff');
+      setClearVisibility(); syncPills(); validateCTA(null);
+
+      // Locate button
+      var locateBtn=document.getElementById('vipLocate-{{ section.id }}');
+      function reverseGeocode(lat,lng,callback){
+        var url='https://api.mapbox.com/geocoding/v5/mapbox.places/'
+          +lng+','+lat+'.json?access_token='+encodeURIComponent(MAPBOX_TOKEN)
+          +'&limit=1&language='+(currentLang==='es'?'es':'en');
+        fetch(url)
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            if(data.features&&data.features[0]) callback(data.features[0].place_name);
+            else callback(null);
+          })
+          .catch(function(){ callback(null); });
+      }
+      function doGeolocate(onSuccess,onError){
+        navigator.geolocation.getCurrentPosition(
+          function(pos){
+            var lat=pos.coords.latitude, lng=pos.coords.longitude;
+            map.flyTo({center:[lng,lat],zoom:15,pitch:55,duration:1200});
+            if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
+            pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
+              .setLngLat([lng,lat]).addTo(map);
+            reverseGeocode(lat,lng,function(placeName){
+              if(placeName){
+                pickupEl.value=placeName;
+                pickupPlace={label:placeName,lat:lat,lng:lng};
+                afterInputChange();
+              }
+              if(onSuccess) onSuccess();
+            });
+          },
+          function(){ if(onError) onError(); },
+          {timeout:10000,enableHighAccuracy:true}
+        );
+      }
+      if(navigator.geolocation){
+        if(locateBtn) locateBtn.classList.add('is-locating');
+        doGeolocate(
+          function(){ if(locateBtn) locateBtn.classList.remove('is-locating'); },
+          function(){ if(locateBtn) locateBtn.classList.remove('is-locating'); }
+        );
+        if(locateBtn){
+          locateBtn.addEventListener('click',function(){
+            locateBtn.classList.add('is-locating');
+            doGeolocate(
+              function(){ locateBtn.classList.remove('is-locating'); },
+              function(){ locateBtn.classList.remove('is-locating'); }
+            );
+          });
+        }
+      } else if(locateBtn){ locateBtn.style.display='none'; }
+    }catch(err){
+      console.error('[VIP Ride] Maps init error:',err);
+    }
+  }
+
+  initMapbox();
+
+})();
+</script>
+
+{% schema %}
+{
+  "name": "VIP Ride Booker",
+  "settings": [
+    {
+      "type": "text",
+      "id": "mapbox_access_token",
+      "label": "Mapbox Access Token",
+      "info": "Paste your Mapbox public access token here (pk.xxxxx)",
+      "default": "YOUR_MAPBOX_ACCESS_TOKEN"
+    },
+    { "type": "range",   "id": "hourly_rate",          "label": "Hourly rate ($/hr)",        "min": 25,  "max": 300, "step": 5,  "default": 100 },
+    { "type": "text",    "id": "heading",               "label": "Heading",                   "default": "Request a ride" },
+    
+    { "type": "header",  "content": "Booking Mode Settings" },
+    { "type": "text",    "id": "ride_mode_text",        "label": "Ride mode button text",     "default": "Point to Point" },
+    { "type": "text",    "id": "hourly_mode_text",      "label": "Hourly mode button text",   "default": "By the Hour" },
+    { "type": "range",   "id": "min_hours",             "label": "Minimum hours",             "min": 1,   "max": 8,   "step": 1,  "default": 3 },
+    { "type": "range",   "id": "max_hours",             "label": "Maximum hours",             "min": 4,   "max": 24,  "step": 1,  "default": 12 },
+    { "type": "range",   "id": "default_hours",         "label": "Default hours",             "min": 1,   "max": 12,  "step": 1,  "default": 4 },
+    { "type": "text",    "id": "hours_label",           "label": "Hours field label",         "default": "Duration" },
+    { "type": "text",    "id": "hours_unit",            "label": "Hours unit text",           "default": "hours" },
+    { "type": "text",    "id": "hours_hint",            "label": "Hours hint text",           "default": "Minimum 3 hours, maximum 12 hours" },
+    { "type": "text",    "id": "service_location_label","label": "Service location label (hourly)", "default": "Service location" },
+    
+    { "type": "header",  "content": "Form Labels" },
+    { "type": "text",    "id": "pickup_label",          "label": "Pickup label",              "default": "Pickup location" },
+    { "type": "text",    "id": "pickup_placeholder",    "label": "Pickup placeholder",        "default": "Enter pickup address" },
+    { "type": "text",    "id": "pickup_pill_default",   "label": "Pickup pill default",       "default": "Pickup" },
+    { "type": "text",    "id": "dropoff_label",         "label": "Dropoff label",             "default": "Dropoff location" },
+    { "type": "text",    "id": "dropoff_placeholder",   "label": "Dropoff placeholder",       "default": "Enter destination address" },
+    { "type": "text",    "id": "dropoff_pill_default",  "label": "Dropoff pill default",      "default": "Dropoff" },
+    { "type": "text",    "id": "date_label",            "label": "Date label",                "default": "Date" },
+    { "type": "text",    "id": "time_label",            "label": "Time label",                "default": "Time" },
+    { "type": "text",    "id": "see_prices_text",       "label": "See prices button",         "default": "See prices" },
+    { "type": "text",    "id": "choose_ride_text",      "label": "Choose ride text",          "default": "Choose a ride" },
+    { "type": "text",    "id": "choose_hourly_text",    "label": "Choose hourly text",        "default": "Choose your vehicle" },
+    { "type": "text",    "id": "cta_default_text",      "label": "CTA default text",          "default": "REQUEST NOW" },
+    { "type": "text",    "id": "cta_prefix",            "label": "CTA prefix",                "default": "Reserve" },
+    { "type": "text",    "id": "cta_hint_text",         "label": "CTA hint text",             "default": "Enter pickup and dropoff, then choose a vehicle." },
+    { "type": "product", "id": "booking_product",       "label": "Booking product (optional)" },
+    { "type": "text",    "id": "default_lat",           "label": "Map default latitude",      "default": "25.7617" },
+    { "type": "text",    "id": "default_lng",           "label": "Map default longitude",     "default": "-80.1918" },
+    { "type": "range",   "id": "default_zoom",          "label": "Map default zoom",          "min": 3, "max": 18, "step": 1, "default": 11 },
+    { "type": "video",   "id": "bg_video",              "label": "Background video" },
+    {
+      "type": "text",
+      "id": "bg_video_url",
+      "label": "Background video URL (MP4 fallback)",
+      "default": "https://example.com/your-video.mp4"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "vehicle",
+      "name": "Vehicle option",
+      "settings": [
+        { "type": "text",         "id": "title",         "label": "Title",              "default": "VIP Sedan" },
+        { "type": "range",        "id": "seats",         "label": "Seats",              "min": 1, "max": 8, "step": 1, "default": 4 },
+        { "type": "text",         "id": "badge",         "label": "Badge (optional)",   "default": "Popular" },
+        { "type": "text",         "id": "desc",          "label": "Description",        "default": "Premium service with newer vehicles." },
+        { "type": "text",         "id": "manual_price",  "label": "Manual price label", "default": "From $50" },
+        { "type": "image_picker", "id": "image",         "label": "Image" },
+        { "type": "product",      "id": "product",       "label": "Vehicle product (optional)" },
+        { "type": "number",       "id": "vehicle_rate",  "label": "Price per hour ($)", "default": 100 },
+        { "type": "number",       "id": "hourly_rate",   "label": "Hourly service rate ($/hr)", "default": 100, "info": "Specific rate for hourly bookings (defaults to vehicle_rate if empty)" },
+        { "type": "checkbox",     "id": "disabled",      "label": "Disable this vehicle", "default": false }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "VIP Ride Booker",
+      "blocks": [
+        { "type": "vehicle" },
+        { "type": "vehicle" },
+        { "type": "vehicle" }
+      ]
+    }
+  ]
+}
+{% endschema %}

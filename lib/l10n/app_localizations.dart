@@ -18,7 +18,7 @@ class S {
   String get appName => 'Cruise';
   String get continueButton => _es ? 'Continuar' : 'Continue';
   String get next => _es ? 'Siguiente' : 'Next';
-  String get skip => _es ? 'Saltar' : 'Skip';
+  String get skip => _es ? 'Omitir' : 'Skip';
   String get cancel => _es ? 'Cancelar' : 'Cancel';
   String get delete => _es ? 'Eliminar' : 'Delete';
   String get save => _es ? 'Guardar' : 'Save';

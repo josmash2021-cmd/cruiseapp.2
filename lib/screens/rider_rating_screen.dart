@@ -151,6 +151,16 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
     AnalyticsService.instance.logRideCompleted('', widget.fare, 0, 0);
 
     if (!mounted) return;
+    _navigateToHome();
+  }
+
+  void _skip() {
+    if (_submitting) return;
+    HapticFeedback.lightImpact();
+    _navigateToHome();
+  }
+
+  void _navigateToHome() {
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const HomeScreen(),
@@ -710,6 +720,25 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                       color: Colors.black,
                                     ),
                                   ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── Skip link ──
+                    Center(
+                      child: GestureDetector(
+                        onTap: _submitting ? null : _skip,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            s.skip,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
                           ),
                         ),
                       ),

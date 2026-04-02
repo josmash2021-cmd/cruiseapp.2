@@ -564,8 +564,25 @@ workflows:
             exit 1
           fi
           echo "✅ IPA created: $IPA_PATH ($(du -sh "$IPA_PATH" | cut -f1))"
+      - name: Upload dSYMs to Firebase Crashlytics
+        script: |
+          DSYM_DIR="build/ios/archive/Runner.xcarchive/dSYMs"
+          GSP="ios/Runner/GoogleService-Info.plist"
+          UPLOAD_SCRIPT=$(find ios/Pods -name "upload-symbols" -path "*/FirebaseCrashlytics/*" 2>/dev/null | head -1)
+          if [ -z "$UPLOAD_SCRIPT" ]; then
+            echo "⚠️  upload-symbols not found in Pods — skipping dSYM upload"
+            exit 0
+          fi
+          if [ ! -d "$DSYM_DIR" ]; then
+            echo "⚠️  dSYM directory not found at $DSYM_DIR — skipping"
+            exit 0
+          fi
+          echo "Uploading dSYMs from $DSYM_DIR …"
+          "$UPLOAD_SCRIPT" -gsp "$GSP" -p ios "$DSYM_DIR"
+          echo "✅ dSYMs uploaded to Firebase Crashlytics"
     artifacts:
       - build/ios/ipa/*.ipa
+      - build/ios/archive/Runner.xcarchive/dSYMs/*.dSYM
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:

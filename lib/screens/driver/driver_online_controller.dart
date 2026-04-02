@@ -65,7 +65,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Start a periodic timer to refresh earnings every 45 seconds.
   void _startEarningsRefresh() {
     _earningsRefreshTimer?.cancel();
-    _earningsRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+    _earningsRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       _loadAllEarnings();
     });
   }
@@ -910,8 +910,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _pollT = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       pollTick++;
-      // When SSE is delivering, poll every 5th tick (15s) as safety net
-      if (_sseActive && pollTick % 5 != 0) return;
+      // When SSE is delivering, poll every 7th tick (21s) as safety net
+      if (_sseActive && pollTick % 7 != 0) return;
       _poll();
     });
   }

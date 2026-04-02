@@ -355,10 +355,10 @@ async def driver_pending_sse(
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
                     yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
                 except asyncio.TimeoutError:
-                    # Send keepalive ping every 25s to prevent proxy timeout
+                    # Send keepalive ping every 20s to prevent proxy timeout
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
         finally:
             event_bus.unsubscribe_driver(driver_id, queue)
@@ -401,7 +401,7 @@ async def trip_status_sse(
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
                     yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
                 except asyncio.TimeoutError:
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
@@ -627,7 +627,7 @@ async def reject_offer(
 
 # â”€â”€ In-memory cache for accepted dispatch status â”€â”€
 _dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
-_DISPATCH_STATUS_CACHE_TTL = 1.5  # seconds — fast response to driver accepting
+_DISPATCH_STATUS_CACHE_TTL = 1.0  # seconds — fast response to driver accepting
 
 @router.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -698,7 +698,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
 
 # ── Public photo lookup (for displaying other user's photo in trip UI) ──
 _photo_cache: dict = {}  # user_id -> (photo_url, timestamp)
-_PHOTO_CACHE_TTL = 30  # seconds
+_PHOTO_CACHE_TTL = 60  # seconds
 
 @router.get("/dispatch/user/{user_id}/photo", dependencies=[Depends(_verify_api_key)])
 async def get_user_photo(user_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

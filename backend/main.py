@@ -322,7 +322,7 @@ _CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIG
     "http://localhost:3000",
     "http://localhost:8000",
 ]
-app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(GZipMiddleware, minimum_size=300)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -337,7 +337,7 @@ async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     _path = request.url.path
     # Skip heavy header computation on high-frequency API paths
-    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX) or (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")):
+    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX) or (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")) or _path.startswith(_PHOTO_PREFIX):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -430,6 +430,7 @@ _HOT_PATHS = {
 }
 _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
 _LOCATION_PREFIX = "/drivers/"  # matches /drivers/{id}/location
+_PHOTO_PREFIX = "/dispatch/user/"  # matches /dispatch/user/{id}/photo
 
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
@@ -437,7 +438,7 @@ async def crash_protection_middleware(request: Request, call_next):
         response = await call_next(request)
         # Skip SHA-256 checksum for high-frequency hot paths and SSE streams
         _path = request.url.path
-        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX) and not (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")):
+        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX) and not (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")) and not _path.startswith(_PHOTO_PREFIX):
             if hasattr(response, 'body'):
                 body_bytes = response.body
                 checksum = hashlib.sha256(body_bytes).hexdigest()
@@ -459,7 +460,7 @@ async def health(x_api_key: str = Header(default="")):
     db_latency_ms = 0.0
     try:
         t0 = time.time()
-        async with asyncio.timeout(5):
+        async with asyncio.timeout(2):
             async with SessionLocal() as db:
                 await db.execute(text("SELECT 1"))
         db_latency_ms = round((time.time() - t0) * 1000, 1)

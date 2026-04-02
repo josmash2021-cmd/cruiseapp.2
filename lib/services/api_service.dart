@@ -56,7 +56,7 @@ class ApiService {
   static Future<http.Response> _cachedGet(
     Uri url, {
     Map<String, String>? headers,
-    Duration cacheTtl = const Duration(seconds: 5),
+    Duration cacheTtl = const Duration(seconds: 3),
     bool useCache = true,
   }) async {
     final cacheKey = url.toString();
@@ -77,7 +77,7 @@ class ApiService {
     
     // Make the request and track it
     final requestFuture = _client.get(url, headers: headers).timeout(
-      const Duration(seconds: 6),
+      const Duration(seconds: 4),
       onTimeout: () {
         _inFlightRequests.remove(cacheKey);
         throw TimeoutException('Request to \${url.path} timed out');
@@ -108,9 +108,9 @@ class ApiService {
   static final http.Client _client = () {
     final inner = HttpClient()
       ..autoUncompress = true
-      ..connectionTimeout = const Duration(seconds: 5)
-      ..idleTimeout = const Duration(seconds: 90)
-      ..maxConnectionsPerHost = 12;
+      ..connectionTimeout = const Duration(seconds: 3)
+      ..idleTimeout = const Duration(seconds: 60)
+      ..maxConnectionsPerHost = 14;
     return IOClient(inner);
   }();
 
@@ -230,7 +230,7 @@ class ApiService {
   /// hit the tunnel URL in <1 s instead of waiting for production to timeout).
   static Future<String?> probeAndSetBestUrl({
     List<String>? candidates,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 3),
   }) async {
     const probeHeaders = {
       'Accept': 'application/json',
@@ -1427,7 +1427,7 @@ class ApiService {
           headers: h,
           body: jsonEncode({'lat': lat, 'lng': lng, 'is_online': isOnline}),
         )
-        .timeout(const Duration(seconds: 4));
+        .timeout(const Duration(seconds: 3));
     return _parse(res);
   }
 
@@ -1928,7 +1928,7 @@ class ApiService {
           Uri.parse('$_baseUrl/dispatch/driver/pending?driver_id=$driverId'),
           headers: h,
         )
-        .timeout(const Duration(seconds: 5));
+        .timeout(const Duration(seconds: 3));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final body = jsonDecode(res.body);
       if (body is List) {
@@ -1987,7 +1987,7 @@ class ApiService {
           Uri.parse('$_baseUrl/dispatch/trip/status?trip_id=$tripId'),
           headers: h,
         )
-        .timeout(const Duration(seconds: 5));
+        .timeout(const Duration(seconds: 3));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -2005,7 +2005,7 @@ class ApiService {
             Uri.parse('$_baseUrl/dispatch/user/$userId/photo'),
             headers: h,
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 3));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final url = data['photo_url']?.toString() ?? '';

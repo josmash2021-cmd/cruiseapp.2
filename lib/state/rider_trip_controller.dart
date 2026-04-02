@@ -652,8 +652,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _tripSseSub?.cancel();
     _sseConnected = false;
 
-    // Safety-net timeout — 10 minutes max searching (backend handles expiry at 5 min)
-    _timeoutTimer = Timer(const Duration(minutes: 10), () {
+    // Safety-net timeout — 7 minutes max searching (backend handles expiry at 5 min)
+    _timeoutTimer = Timer(const Duration(minutes: 7), () {
       _pollTimer?.cancel();
       _tripSseSub?.cancel();
       _isRequesting = false;
@@ -715,8 +715,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // If driver already matched (e.g. via SSE), ignore stale poll responses
       if (_driverMatched) { timer?.cancel(); return; }
       pollTick++;
-      // When SSE is delivering, poll every 3rd tick (~9s) as safety net
-      if (_sseConnected && pollTick % 3 != 0) return;
+      // When SSE is delivering, poll every 4th tick (~8s) as safety net
+      if (_sseConnected && pollTick % 4 != 0) return;
       try {
         final status = await ApiService.getDispatchStatus(tripId);
         final tripStatus = status['status']?.toString() ?? '';

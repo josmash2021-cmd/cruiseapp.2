@@ -340,7 +340,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _animatingOfferId = oid;
       _tappedCardIds.add(oid);
     });
-    await _clearAllAnnotations();
+
+    // Clear old annotations (fire-and-forget — don't block tap response)
+    _clearAllAnnotations();
 
     // Load from cache (pre-fetched on offer arrival)
     final cached = _routeCache[oid];
@@ -358,56 +360,45 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1: Smooth zoom out to show full route (instant) ──
+    // ── PHASE 1: Camera zoom to fit route (immediate) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
-    // ── PHASE 3: Pins pop in (after one frame for camera to settle) ──
-    await Future.delayed(const Duration(milliseconds: 50));
-    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-
-    // Place pins using pre-built images (or build now as fallback)
+    // ── PHASE 2: Place pins + start route draw in parallel ──
     final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
     final placeType = cached?.dropoffPlaceType ?? _detectPlaceType(dropoffAddr);
     Uint8List? pickupPinImg = cached?.pickupPin;
     Uint8List? dropoffPinImg = cached?.dropoffPin;
     if (pickupPinImg == null || dropoffPinImg == null) {
       final pinResults = await Future.wait([
-        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // pickup
-        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // dropoff
+        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
+        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32),
       ]);
       pickupPinImg ??= pinResults[0];
       dropoffPinImg ??= pinResults[1];
     }
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     final pointMgr = _pinAnnotMgr;
     if (pointMgr != null && mounted) {
-      // Pickup pin — person icon (BOTTOM anchor = pin tip sits exactly at coordinate)
       _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
         image: pickupPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
-      // Dropoff pin — smart icon (house/store/airplane)
       _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
         image: dropoffPinImg, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
-
-      // Animate pin pop: scale 0.01 → 1.2 → 0.9 → 1.0 over 600ms
-      await _animatePinPop();
     }
 
-    // Do NOT force raw pin coordinates onto road-snapped route endpoints.
-    // The Directions API returns geometry that follows actual roads — overriding
-    // the first/last points with user-tap coordinates creates off-road zigzags.
-
-    // ── PHASE 4 (t=700ms): Gold gloss route draws ──
+    // ── PHASE 3: Pin pop + route draw run in parallel ──
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
     final fullRoute = [..._fullSegOne, ..._fullSegTwo];
+    // Fire pin pop (non-blocking) and route draw simultaneously
+    _animatePinPop(); // runs on its own ticker — don't await
     await _drawGoldGlossRoute(fullRoute);
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 5: Route shown ──
-
+    // ── PHASE 4: Route shown ──
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);
     }
@@ -446,11 +437,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
     }
 
-    _routeDrawTicker?.stop();
-    _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
+    _pinPopTicker?.stop();
+    _pinPopTicker?.dispose();
+    _pinPopTicker = createTicker((_) async {
       if (!mounted) {
-        _routeDrawTicker?.stop();
+        _pinPopTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;
       }
@@ -466,11 +457,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
 
       if (progress >= 1.0) {
-        _routeDrawTicker?.stop();
+        _pinPopTicker?.stop();
         if (!completer.isCompleted) completer.complete();
       }
     });
-    _routeDrawTicker!.start();
+    _pinPopTicker!.start();
     return completer.future;
   }
 

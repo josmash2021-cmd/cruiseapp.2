@@ -180,6 +180,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   List<LatLng> _fullSegOne = [];
   List<LatLng> _fullSegTwo = [];
   Ticker? _routeDrawTicker;
+  Ticker? _pinPopTicker;
 
   // ── Pre-fetched route cache (offerId → segments) ──
   final Map<String, _CachedOfferRoute> _routeCache = {};
@@ -409,6 +410,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _rejectSlideCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _pinPopTicker?.stop();
+    _pinPopTicker?.dispose();
     _map?.dispose();
     super.dispose();
   }

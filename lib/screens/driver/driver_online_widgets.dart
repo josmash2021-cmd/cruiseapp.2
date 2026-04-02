@@ -1040,10 +1040,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── ROW 1: Service badge (left) · X reject (right) ──
-        Row(
+        // ── ROW 1: Service badge (centered) · X reject (top-right) ──
+        Stack(
+          alignment: Alignment.center,
           children: [
-            // Service tier badge (Comfort/VIP/Premium)
+            // Service tier badge (Comfort/VIP/Premium) — centered
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -1070,26 +1071,29 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ],
               ),
             ),
-            const Spacer(),
-            // X Reject button — RED
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _rejectOffer(offer);
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
+            // X Reject button — RED (top-right)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _rejectOffer(offer);
+                },
                 child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2A2A2A),
-                    shape: BoxShape.circle,
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF2A2A2A),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: rejectRed, size: 16),
                   ),
-                  child: const Icon(Icons.close, color: rejectRed, size: 16),
                 ),
               ),
             ),

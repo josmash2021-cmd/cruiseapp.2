@@ -194,9 +194,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
     });
 
-    // Periodic stats refresh (every 30s) for real-time chips
+    // Periodic stats refresh (every 60s) for real-time chips
     _statsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 60),
       (_) => _refreshStats(),
     );
 
@@ -1569,8 +1569,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final arrivedAtPickup = (status == 'arrived' || status == 'driver_arrived');
     final rideStarted = (status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard');
 
-    // Extract rider SQL integer ID from passengerId ("sql_123" → 123)
-    final passengerIdRaw = _pickString(trip, ['passengerId', 'passenger_id']);
+    // Extract rider SQL integer ID from riderId/passengerId ("sql_123" → 123)
+    final passengerIdRaw = _pickString(trip, ['riderId', 'rider_id', 'passengerId', 'passenger_id']);
     final resumeRiderId = int.tryParse(passengerIdRaw.replaceFirst('sql_', ''));
 
     await Navigator.of(context).push(

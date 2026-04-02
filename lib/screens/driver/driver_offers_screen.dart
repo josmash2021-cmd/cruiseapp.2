@@ -120,7 +120,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       if (offers.isEmpty || !offers.any((o) => o.secondsRemaining == 5)) {
         _warningHaptic5Played = false;
       }
-      setState(() {}); // Refresh UI to update countdown displays
+      // Only rebuild when offers are visible (avoids empty-state jank)
+      if (mounted && offers.isNotEmpty) setState(() {});
     });
   }
 

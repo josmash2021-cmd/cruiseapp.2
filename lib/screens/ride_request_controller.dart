@@ -273,8 +273,8 @@ extension _RideRequestController on _RideRequestScreenState {
             }
           });
           _searchElapsedTimer?.cancel();
-          _searchElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-            if (mounted) _setState(() => _searchElapsedSec++);
+          _searchElapsedTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+            if (mounted) _setState(() => _searchElapsedSec += 2);
           });
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
@@ -314,7 +314,7 @@ extension _RideRequestController on _RideRequestScreenState {
           _dfMsgIndex = 0;
           _dfMsgTimer?.cancel();
           _dfMsgTimer = Timer.periodic(
-            const Duration(milliseconds: 1200),
+            const Duration(milliseconds: 2500),
             (_) {
               if (mounted) _setState(() => _dfMsgIndex = (_dfMsgIndex + 1) % 3);
             },

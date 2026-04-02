@@ -587,6 +587,7 @@ class _MessagesTabState extends State<_MessagesTab> {
                   photoUrl: driverPhoto.isNotEmpty ? driverPhoto : null,
                   radius: 22,
                   fallbackName: driverName,
+                  uid: (chat['driverId'] ?? chat['driver_id'])?.toString(),
                   role: 'driver',
                   isVerified: false,
                 ),

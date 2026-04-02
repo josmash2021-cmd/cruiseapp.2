@@ -82,68 +82,74 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _loadAllEarnings() async {
-    // ── Instant: load from SharedPreferences cache first ──
+    // ── Instant: load from SharedPreferences cache first (single setState) ──
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Use same key as driver_home_screen for shared cache
       final cachedToday = prefs.getDouble('driver_cached_earnings');
       final cachedWeekly = prefs.getDouble('driver_online_weekly');
       final cachedLastTrip = prefs.getDouble('driver_online_last_trip');
-      if (mounted && _earnings == 0 && cachedToday != null && cachedToday > 0) {
+      bool changed = false;
+      double newEarnings = _earnings;
+      double newWeekly = _weeklyEarnings;
+      double newLastTrip = _lastTripEarnings;
+      if (_earnings == 0 && cachedToday != null && cachedToday > 0) {
+        newEarnings = cachedToday; changed = true;
+      }
+      if (_weeklyEarnings == 0 && cachedWeekly != null && cachedWeekly > 0) {
+        newWeekly = cachedWeekly; changed = true;
+      }
+      if (_lastTripEarnings == 0 && cachedLastTrip != null && cachedLastTrip > 0) {
+        newLastTrip = cachedLastTrip; changed = true;
+      }
+      if (mounted && changed) {
         _setState(() {
           _prevEarnings = _earnings;
-          _earnings = cachedToday;
-        });
-      }
-      if (mounted && _weeklyEarnings == 0 && cachedWeekly != null && cachedWeekly > 0) {
-        _setState(() {
+          _earnings = newEarnings;
           _prevWeeklyEarnings = _weeklyEarnings;
-          _weeklyEarnings = cachedWeekly;
-        });
-      }
-      if (mounted && _lastTripEarnings == 0 && cachedLastTrip != null && cachedLastTrip > 0) {
-        _setState(() {
+          _weeklyEarnings = newWeekly;
           _prevLastTripEarnings = _lastTripEarnings;
-          _lastTripEarnings = cachedLastTrip;
+          _lastTripEarnings = newLastTrip;
         });
       }
     } catch (_) {}
 
-    // ── Background: fetch fresh data from API ──
+    // ── Background: fetch fresh data from API (single setState) ──
     try {
-      // Load weekly earnings
-      final weekData = await ApiService.getDriverEarnings(period: 'week');
-      if (mounted) {
-        final weekTotal = (weekData['total'] as num?)?.toDouble() ?? 0;
-        if (weekTotal != _weeklyEarnings) {
-          _setState(() {
+      final results = await Future.wait([
+        ApiService.getDriverEarnings(period: 'week'),
+        ApiService.getDriverEarnings(period: 'today'),
+      ]);
+      if (!mounted) return;
+
+      final weekData = results[0];
+      final todayData = results[1];
+      final weekTotal = (weekData['total'] as num?)?.toDouble() ?? 0;
+      final todayTotal = (todayData['total'] as num?)?.toDouble() ?? 0;
+      final txns = todayData['transactions'] as List<dynamic>?;
+      final lastFare = (txns != null && txns.isNotEmpty)
+          ? (txns.first['fare'] as num?)?.toDouble() ?? 0.0
+          : 0.0;
+
+      bool changed = false;
+      if (weekTotal != _weeklyEarnings) changed = true;
+      if (todayTotal > _earnings) changed = true;
+      if (_lastTripEarnings == 0 && lastFare > 0) changed = true;
+
+      if (changed) {
+        _setState(() {
+          if (weekTotal != _weeklyEarnings) {
             _prevWeeklyEarnings = _weeklyEarnings;
             _weeklyEarnings = weekTotal;
-          });
-        }
-      }
-      // Load today's earnings (accumulated from all completed trips today)
-      final todayData = await ApiService.getDriverEarnings(period: 'today');
-      if (mounted) {
-        final todayTotal = (todayData['total'] as num?)?.toDouble() ?? 0;
-        // Only set if we haven't already earned more in this session
-        if (todayTotal > _earnings) {
-          _setState(() {
+          }
+          if (todayTotal > _earnings) {
             _prevEarnings = _earnings;
             _earnings = todayTotal;
-          });
-        }
-        // Last trip fare from the latest transaction
-        final txns = todayData['transactions'] as List<dynamic>?;
-        if (txns != null && txns.isNotEmpty) {
-          final lastFare = (txns.first['fare'] as num?)?.toDouble() ?? 0;
-          if (_lastTripEarnings == 0 && lastFare > 0) {
-            _setState(() {
-              _prevLastTripEarnings = _lastTripEarnings;
-              _lastTripEarnings = lastFare;
-            });
           }
-        }
+          if (_lastTripEarnings == 0 && lastFare > 0) {
+            _prevLastTripEarnings = _lastTripEarnings;
+            _lastTripEarnings = lastFare;
+          }
+        });
       }
       // Save fresh data to cache
       _cacheEarnings();

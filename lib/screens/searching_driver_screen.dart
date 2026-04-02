@@ -94,9 +94,10 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       phase: rng.nextDouble(),
     ));
 
-    // Individual twinkle controllers per particle
-    _twinkleControllers = List.generate(20, (i) {
-      final ms = 800 + rng.nextInt(1200);
+    // 4 shared twinkle controllers — each serves 5 particles (visually indistinguishable
+    // from 20 individual controllers, but 5× fewer animation tickers)
+    _twinkleControllers = List.generate(4, (i) {
+      final ms = 800 + (i * 300); // staggered: 800, 1100, 1400, 1700
       return AnimationController(
         vsync: this,
         duration: Duration(milliseconds: ms),
@@ -258,7 +259,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
                 painter: _ParticlePainter(
                   particles: _particles,
                   drift: _particleCtrl.value,
-                  twinkleValues: _twinkleControllers.map((c) => c.value).toList(),
+                  twinkleValues: List.generate(20, (i) => _twinkleControllers[i % 4].value),
                   color: _gold,
                 ),
               ),

@@ -1633,13 +1633,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final prevPitch = _camPitchAnim?.value ?? _tiltAnim.value;
     final prevBearing = _camBearingAnim?.value ?? 0.0;
 
+    // Reuse existing controller instead of disposing & re-creating each cycle
     _camCycleCtrl?.removeListener(_applyCamCycle);
-    _camCycleCtrl?.dispose();
-
-    _camCycleCtrl = AnimationController(
+    _camCycleCtrl ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
+    _camCycleCtrl!.reset();
     _camPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
       CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
     );
@@ -2570,7 +2570,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 _routeAnnot = null;
               }
               final driverPos = await Geolocator.getCurrentPosition(
-                locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+                locationSettings: const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  timeLimit: Duration(seconds: 5),
+                ),
               ).timeout(const Duration(seconds: 5));
               final origin = LatLng(driverPos.latitude, driverPos.longitude);
               final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng);

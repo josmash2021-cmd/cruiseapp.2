@@ -2171,7 +2171,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               _driverCar = dispatch['vehicle_type']?.toString() ?? '';
               _driverPlate = dispatch['driver_plate']?.toString() ?? '';
               _driverPhone = dispatch['driver_phone']?.toString() ?? '';
-              _driverPhotoUrl = dispatch['driver_photo_url']?.toString() ?? '';
+              final rawPhoto = dispatch['driver_photo_url']?.toString() ?? '';
+              _driverPhotoUrl = (rawPhoto.isNotEmpty && rawPhoto != 'null' && rawPhoto != 'None' && rawPhoto != 'undefined')
+                  ? (rawPhoto.startsWith('http') ? rawPhoto : '${ApiService.publicBaseUrl}${rawPhoto.startsWith('/') ? '' : '/'}$rawPhoto')
+                  : '';
               _driverRating =
                   (dispatch['driver_rating'] as num?)?.toDouble() ?? 4.9;
               // Calculate real initial ETA from driver distance
@@ -3051,7 +3054,7 @@ class _AnimatedSearchTextState extends State<_AnimatedSearchText> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+    _timer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (mounted) setState(() => _dotCount = (_dotCount + 1) % 4);
     });
   }

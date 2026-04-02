@@ -24,7 +24,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       child: Text(
         widget.driverName.isNotEmpty ? widget.driverName[0].toUpperCase() : 'D',
         style: TextStyle(
-          color: const AppColors.kGold, fontSize: Responsive.sp(18), fontWeight: FontWeight.w700,
+          color: AppColors.kGold, fontSize: Responsive.sp(18), fontWeight: FontWeight.w700,
         ),
       ),
     ),
@@ -83,7 +83,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               Flexible(
                 child: Text(
                   statusLabel,
-                  style: TextStyle(color: const AppColors.kGold, fontSize: Responsive.sp(11), fontWeight: FontWeight.w600, letterSpacing: 0.6),
+                  style: TextStyle(color: AppColors.kGold, fontSize: Responsive.sp(11), fontWeight: FontWeight.w600, letterSpacing: 0.6),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -118,7 +118,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Icon(Icons.star_rounded, color: const AppColors.kGold, size: Responsive.sp(14)),
+                        Icon(Icons.star_rounded, color: AppColors.kGold, size: Responsive.sp(14)),
                         SizedBox(width: Responsive.w(3)),
                         Text(
                           widget.driverRating.toStringAsFixed(1),
@@ -194,7 +194,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         decoration: BoxDecoration(
                           color: const Color(0xFF262626),
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: const AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+                          border: Border.all(color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
                         ),
                         child: Text(
                           S.of(context).typeMessage,
@@ -258,7 +258,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         decoration: BoxDecoration(
           color: const Color(0xFF262626),
           shape: BoxShape.circle,
-          border: Border.all(color: const AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+          border: Border.all(color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
         ),
         child: Icon(icon, color: Colors.white60, size: Responsive.sp(18)),
       ),
@@ -324,9 +324,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
         decoration: BoxDecoration(
           color: _showMoreMenu ? const Color(0xFF333333) : const Color(0xFF262626),
           shape: BoxShape.circle,
-          border: Border.all(color: _showMoreMenu ? const AppColors.kGold.withValues(alpha: 0.8) : const AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+          border: Border.all(color: _showMoreMenu ? AppColors.kGold.withValues(alpha: 0.8) : AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
         ),
-        child: Icon(Icons.more_horiz_rounded, color: _showMoreMenu ? const AppColors.kGold : Colors.white60, size: Responsive.sp(18)),
+        child: Icon(Icons.more_horiz_rounded, color: _showMoreMenu ? AppColors.kGold : Colors.white60, size: Responsive.sp(18)),
       ),
     );
   }
@@ -350,7 +350,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           decoration: BoxDecoration(
             color: const Color(0xFF1E1E1E),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const AppColors.kGold.withValues(alpha: 0.2)),
+            border: Border.all(color: AppColors.kGold.withValues(alpha: 0.2)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.5),
@@ -365,7 +365,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               _buildMenuItem(
                 icon: Icons.headset_mic_outlined,
                 label: 'Contactar soporte',
-                color: const AppColors.kGold,
+                color: AppColors.kGold,
                 onTap: () {
                   _setState(() => _showMoreMenu = false);
                   _openSupportChat();
@@ -405,7 +405,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               Text(
                 label,
                 style: TextStyle(
-                  color: color == const AppColors.kGold ? Colors.white : color,
+                  color: color == AppColors.kGold ? Colors.white : color,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),

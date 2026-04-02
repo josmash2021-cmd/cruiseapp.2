@@ -276,15 +276,16 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Start GpsService for real-time position sync to Firebase (rider tracking)
     _initGpsService();
 
-    // Periodic ETA refresh every 30 seconds
+    // Periodic ETA refresh every 45 seconds
     _etaRefreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 45),
       (_) => _refreshEtaRoute(),
     );
 
-    // Driver icon pulse glow (oscillate size)
+    // Driver icon pulse glow (oscillate size) – 200 ms keeps visually smooth
+    // while reducing Mapbox annotation updates from 12.5/s → 5/s.
     _iconPulseTimer = Timer.periodic(
-      const Duration(milliseconds: 80),
+      const Duration(milliseconds: 200),
       (_) => _tickIconPulse(),
     );
   }
@@ -336,7 +337,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _gpsSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1, // 1 meter for maximum smooth movement
+          distanceFilter: 5, // 5 meters – smooth yet battery-friendly
         ),
       ).listen(_onGps);
     } catch (_) {}
@@ -839,7 +840,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _tickIconPulse() {
     if (!mounted) return;
-    final step = 0.008;
+    final step = 0.02; // Larger step compensates for slower 200 ms interval
     if (_iconPulseUp) {
       _iconPulseScale += step;
       if (_iconPulseScale >= 1.75) _iconPulseUp = false;
@@ -1144,6 +1145,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           riderName:       widget.riderName,
           riderPhotoUrl:   widget.riderPhotoUrl,
           riderRating:     widget.riderRating,
+          riderId:         widget.riderId,
           pickupLatLng:    widget.pickupLatLng,
           dropoffLatLng:   widget.dropoffLatLng,
           pickupAddress:   widget.pickupAddress,
@@ -1431,6 +1433,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           riderName:       widget.riderName,
           riderPhotoUrl:   widget.riderPhotoUrl,
           riderRating:     widget.riderRating,
+          riderId:         widget.riderId,
           pickupLatLng:    widget.pickupLatLng,
           dropoffLatLng:   widget.dropoffLatLng,
           pickupAddress:   widget.pickupAddress,

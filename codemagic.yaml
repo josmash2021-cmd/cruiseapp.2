@@ -385,6 +385,13 @@ workflows:
           echo "── Applying profiles to Xcode project ──"
           xcode-project use-profiles || echo "use-profiles warning (continuing)"
 
+          echo "── Patching Xcode project with profile info ──"
+          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
+          sed -i '' "s/CODE_SIGN_STYLE = Manual;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";/" "$PBXPROJ"
+          sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tDEVELOPMENT_TEAM = 7QLC9UVB3Z;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";/" "$PBXPROJ"
+          echo "Patched project.pbxproj"
+          grep -c "PROVISIONING_PROFILE_SPECIFIER" "$PBXPROJ"
+
           echo "── Creating export_options.plist ──"
           python3 -c "
           import plistlib

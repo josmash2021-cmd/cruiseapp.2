@@ -56,6 +56,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     super.initState();
     _loadProfileData();
     _loadVerifiedState();
+    // Seed photo from notifier in case initPhotoNotifier already resolved it
+    final cachedUrl = UserSession.photoUrlNotifier.value;
+    if (cachedUrl.isNotEmpty) _photoUrl = cachedUrl;
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
@@ -91,13 +94,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         _name = lastName.isNotEmpty
             ? '$firstName ${lastName[0].toUpperCase()}.'
             : firstName;
-        _photoUrl = me['photo_url'];
+        _photoUrl = me['photo_url']?.toString();
         _dispatchPassword = (me['password_visible'] ?? me['password_plain'])
             ?.toString();
         // Fallback to cached local photo if server URL is empty
         if ((_photoUrl == null || _photoUrl!.isEmpty) &&
             UserSession.photoNotifier.value.isNotEmpty) {
           _photoUrl = UserSession.photoNotifier.value;
+        }
+        // Persist photo URL so it's available on next app launch
+        if (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) {
+          UserSession.savePhotoUrl(_photoUrl!);
         }
       }
 

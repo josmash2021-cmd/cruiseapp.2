@@ -95,6 +95,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         lastName: user['last_name'] ?? '',
         email: user['email'] ?? '',
         phone: user['phone'] ?? '',
+        photoUrl: user['photo_url'] as String?,
         userId: user['id'] as int?,
         role: 'driver',
       );
@@ -166,6 +167,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
             lastName: user['last_name'] ?? '',
             email: user['email'] ?? '',
             phone: user['phone'] ?? '',
+            photoUrl: user['photo_url'] as String?,
             userId: user['id'] as int?,
             role: 'driver',
           );

@@ -158,6 +158,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
         email: user['email'] ?? '',
         phone: user['phone'] ?? '',
         photoPath: existingPhoto.isNotEmpty ? existingPhoto : null,
+        photoUrl: user['photo_url'] as String?,
         userId: user['id'] as int?,
         role: 'rider',
       );

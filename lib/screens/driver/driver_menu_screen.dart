@@ -70,6 +70,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     _loadCachedProfile(); // instant from SharedPreferences
     _loadProfile();       // refresh from API in background
     _loadVerifiedState();
+    // Seed photo from notifier in case initPhotoNotifier already resolved it
+    final cachedUrl = UserSession.photoUrlNotifier.value;
+    if (cachedUrl.isNotEmpty) _photoUrl = cachedUrl;
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
@@ -128,6 +131,10 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           if ((_photoUrl == null || _photoUrl!.isEmpty) &&
               UserSession.photoNotifier.value.isNotEmpty) {
             _photoUrl = UserSession.photoNotifier.value;
+          }
+          // Persist photo URL so it's available on next app launch
+          if (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) {
+            UserSession.savePhotoUrl(_photoUrl!);
           }
           // Calculate tier from stats
           final sat =

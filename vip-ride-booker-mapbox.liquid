@@ -400,7 +400,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   border-radius:18px; overflow:hidden;
   background:rgba(0,0,0,.35);
   border:1px solid rgba(255,255,255,.16);
-  touch-action:auto;
+  touch-action:none;
   min-height:320px;
 }
 @media (max-width:899px){
@@ -414,6 +414,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-attrib{ font-size:9px; opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-logo{ opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; touch-action:none; }
+#vipRideMap-{{ section.id }} .mapboxgl-canvas-container{ touch-action:none; }
 /* Mapbox zoom controls — dark theme */
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group{ background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15); border-radius:12px; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.4); }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button{ width:36px; height:36px; background:transparent; border:none; color:#fff; }
@@ -2251,22 +2252,16 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         attributionControl:false,
         antialias:true,
         dragRotate:false,
-        touchPitch:false
+        touchPitch:false,
+        scrollZoom:true,
+        touchZoomRotate:true,
+        doubleClickZoom:true,
+        boxZoom:true,
+        cooperativeGestures:false
       });
-      // Force zoom to always work — even when tilted
-      map.scrollZoom.enable({around:'center'});
+      // Zoom around center so tilted views don't fly off
       map.scrollZoom.setWheelZoomRate(1/5);
       map.scrollZoom.setZoomRate(1/5);
-      map.touchZoomRotate.enable();
-      map.doubleClickZoom.enable();
-      // Re-force scroll zoom after any animation ends (easeTo/flyTo can disable it)
-      map.on('moveend', function(){
-        if(!map.scrollZoom.isEnabled()){
-          map.scrollZoom.enable({around:'center'});
-          map.scrollZoom.setWheelZoomRate(1/5);
-          map.scrollZoom.setZoomRate(1/5);
-        }
-      });
       // Smooth drag-pan
       map.dragPan.enable({linearity:0.2,deceleration:2500,maxSpeed:1000});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');

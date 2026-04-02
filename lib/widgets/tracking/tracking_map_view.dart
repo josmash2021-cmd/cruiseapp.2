@@ -938,14 +938,47 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Fast path: update only the car GeoJSON (called every 60fps frame) ──
   void _updateCarSmooth() {
-    if (_carUpdateInProgress) return; // skip frame if previous update still running
     if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+
+    final lng = _animPos.longitude;
+    final lat = _animPos.latitude;
+    final brg = _animBearing;
+
+    // ── Sync hot path: zero async overhead when sources are cached ──
+    if (_cachedCarSource != null) {
+      try {
+        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
+        _cachedCarSource!.updateGeoJSON(geoJson);
+        if (!_navArrowMode && _cachedShadowSource != null) {
+          _cachedShadowSource!.updateGeoJSON(
+            '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}',
+          );
+        }
+      } catch (_) {
+        // Stale source (e.g. map style reload) — clear cache, re-create next frame
+        _cachedCarSource = null;
+        _cachedShadowSource = null;
+        _carImageAdded = false;
+        _carShadowAdded = false;
+        _lastNavArrowModeRendered = !_navArrowMode; // force re-init
+      }
+      // Only do async layer-property updates when something actually changes
+      final needsAsync = !_carEntranceComplete || (_navArrowMode != _lastNavArrowModeRendered);
+      if (needsAsync && !_carLayerPropsUpdating) {
+        _carLayerPropsUpdating = true;
+        _updateCarLayerProperties().whenComplete(() => _carLayerPropsUpdating = false);
+      }
+      return;
+    }
+
+    // First-time setup or recovery path (async)
+    if (_carUpdateInProgress) return;
     _carUpdateInProgress = true;
     _updateCarGeoJsonOnly().whenComplete(() => _carUpdateInProgress = false);
   }
 
-  // Update only the car/shadow GeoJSON source positions (no layer recreation)
+  // Handles first-time source/layer creation and caches source references for the sync hot path.
   Future<void> _updateCarGeoJsonOnly() async {
     if (_map == null) return;
     final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
@@ -954,8 +987,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       final style = _map!.style;
       final imageId = _navArrowMode ? _arrowImageId : _carImageId;
       final isArrow = _navArrowMode;
+      final lng = _animPos.longitude;
+      final lat = _animPos.latitude;
+      final brg = _animBearing;
+      final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
 
-      // ── First time: add image + create source + layer ──
+      // ── Add images if not yet added ──
       if (isArrow && !_arrowImageAdded && _arrowIconBytes != null) {
         await style.addStyleImage(_arrowImageId, 1.0,
           mapbox.MbxImage(width: 100, height: 100, data: _arrowIconBytes!),
@@ -966,7 +1003,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           mapbox.MbxImage(width: 64, height: 64, data: _carIconBytes!),
           false, [], [], null);
         _carImageAdded = true;
-        // Shadow image
         _carShadowBytes ??= await _generateShadowImage();
         if (_carShadowBytes != null && !_carShadowAdded) {
           await style.addStyleImage(_carShadowImageId, 1.0,
@@ -975,11 +1011,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           _carShadowAdded = true;
         }
       }
-
-      final lng = _animPos.longitude;
-      final lat = _animPos.latitude;
-      final brg = _animBearing;
-      final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
 
       final sourceExists = await style.styleSourceExists(_carSourceId);
       if (!sourceExists) {
@@ -995,39 +1026,58 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           ));
         }
         // Create car source + layer
-        await style.addSource(mapbox.GeoJsonSource(id: _carSourceId, data: geoJson));
         final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
+        await style.addSource(mapbox.GeoJsonSource(id: _carSourceId, data: geoJson));
         await style.addLayer(mapbox.SymbolLayer(
           id: _carLayerId, sourceId: _carSourceId,
           iconImage: imageId,
           iconSize: scale,
           iconOpacity: 1.0,
-          iconRotate: isArrow ? 0.0 : brg,
+          iconRotate: brg,
           iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
           iconAllowOverlap: true, iconIgnorePlacement: true,
         ));
+        // Data-driven bearing: rotation is driven by GeoJSON properties — no per-frame async call needed
+        if (!isArrow) {
+          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', ['get', 'bearing']);
+        }
         try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
         if (!isArrow) _startCarEntranceAnimation();
-      } else {
-        // ── Hot path: just update position + rotation in existing source ──
-        final source = await style.getSource(_carSourceId);
-        if (source != null) (source as mapbox.GeoJsonSource).updateGeoJSON(geoJson);
+        _lastRenderedScale = scale;
+        _lastNavArrowModeRendered = isArrow;
+      }
 
-        final layerExists = await style.styleLayerExists(_carLayerId);
-        if (layerExists) {
-          await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
-          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', isArrow ? 0.0 : brg);
-          final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
-          await style.setStyleLayerProperty(_carLayerId, 'icon-size', scale);
-          try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
-        }
+      // Cache source references for the sync fast path
+      final src = await style.getSource(_carSourceId);
+      if (src != null) _cachedCarSource = src as mapbox.GeoJsonSource;
+      if (!isArrow) {
+        final shadowSrc = await style.getSource(_carShadowSourceId);
+        if (shadowSrc != null) _cachedShadowSource = shadowSrc as mapbox.GeoJsonSource;
+      }
+    } catch (_) {}
+  }
 
-        // Update shadow position
-        if (!isArrow) {
-          final shadowGeo = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}';
-          final shadowSrc = await style.getSource(_carShadowSourceId);
-          if (shadowSrc != null) (shadowSrc as mapbox.GeoJsonSource).updateGeoJSON(shadowGeo);
-        }
+  /// Update layer visual properties — icon-size during entrance animation, icon-image on mode change.
+  /// Only called when something actually changes (not every 60fps frame).
+  Future<void> _updateCarLayerProperties() async {
+    if (_map == null) return;
+    try {
+      final style = _map!.style;
+      final isArrow = _navArrowMode;
+      final imageId = isArrow ? _arrowImageId : _carImageId;
+      final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
+
+      if (isArrow != _lastNavArrowModeRendered) {
+        await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
+        // Data expression for car bearing, static 0 for arrow
+        await style.setStyleLayerProperty(
+          _carLayerId, 'icon-rotate', isArrow ? 0.0 : ['get', 'bearing'],
+        );
+        _lastNavArrowModeRendered = isArrow;
+      }
+      if ((scale - _lastRenderedScale).abs() > 0.001) {
+        await style.setStyleLayerProperty(_carLayerId, 'icon-size', scale);
+        _lastRenderedScale = scale;
       }
     } catch (_) {}
   }

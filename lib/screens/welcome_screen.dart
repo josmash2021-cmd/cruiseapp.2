@@ -4,7 +4,6 @@ import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import 'login_screen.dart';
-import 'login_password_screen.dart';
 import 'driver/driver_login_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -218,22 +217,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       ),
                     ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
-                  // Already have an account? button
+                  // ── Sign up to drive ──
                   FadeTransition(
                     opacity: _btnFade,
                     child: SizedBox(
                       width: double.infinity,
                       height: 58,
-                      child: OutlinedButton(
+                      child: OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0a0a0a),
-                          foregroundColor: const Color(0xFFc8a951),
-                          side: const BorderSide(
-                            color: Color(0xFFc8a951),
-                            width: 1,
-                          ),
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: _gold, width: 1.5),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(30),
                           ),
@@ -241,72 +237,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                         onPressed: () {
                           Navigator.of(context)
-                              .push(slideUpFadeRoute(const LoginPasswordScreen()));
+                              .push(slideUpFadeRoute(const DriverLoginScreen()));
                         },
-                        child: Text(
-                          S.of(context).alreadyHaveAccount,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.2,
-                            color: Color(0xFFc8a951),
-                          ),
+                        icon: Icon(
+                          Icons.directions_car_filled_rounded,
+                          color: _gold,
+                          size: 20,
                         ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ── Drive with Cruise ──
-                  FadeTransition(
-                    opacity: _btnFade,
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.of(
-                            context,
-                          ).push(slideUpFadeRoute(const DriverLoginScreen()));
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white24, width: 1),
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.directions_car_filled_rounded,
-                                color: _gold,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text.rich(
-                                TextSpan(
-                                  text: 'Want to drive? ',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.white60,
-                                  ),
-                                  children: const [
-                                    TextSpan(
-                                      text: 'Sign up to drive',
-                                      style: TextStyle(
-                                        color: _gold,
-                                        fontWeight: FontWeight.w700,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor: _gold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                        label: const Text(
+                          'Sign up to drive',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                            color: Colors.white,
                           ),
                         ),
                       ),

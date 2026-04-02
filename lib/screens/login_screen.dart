@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -351,11 +352,13 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
 
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,24 +382,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 32),
 
               // ── Title ──
               Text(
-                'Welcome to Cruise',
-                style: GoogleFonts.cinzel(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
+                'Create account',
+                style: GoogleFonts.poppins(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
                   color: c.textPrimary,
-                  letterSpacing: 0.5,
+                  height: 1.15,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 _usePhone
-                    ? 'Enter your US phone number to sign up or log in.'
-                    : 'Enter your email to sign up or log in.',
-                style: TextStyle(fontSize: 15, color: c.textSecondary),
+                    ? 'Enter your phone number to sign up.'
+                    : 'Enter your email to sign up.',
+                style: GoogleFonts.inter(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
 
@@ -544,9 +547,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   Expanded(child: Divider(color: c.divider, thickness: 1)),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // ── Toggle Phone / Email button ──
+              // ── Toggle Phone / Email ──
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -574,45 +577,42 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
-
-              // ── Google Sign-In ──
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: c.textPrimary,
-                    side: BorderSide(color: c.border, width: 1.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+              // ── Google Sign-In (Android only) ──
+              if (isAndroid) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: c.textPrimary,
+                      side: BorderSide(color: c.border, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
                     ),
-                  ),
-                  onPressed: _socialLoading ? null : _signInWithGoogle,
-                  icon: Image.asset(
-                    'assets/images/google_logo.png',
-                    width: 22,
-                    height: 22,
-                    errorBuilder: (_, __, ___) => Icon(
-                      Icons.g_mobiledata,
-                      size: 28,
-                      color: c.textPrimary,
+                    onPressed: _socialLoading ? null : _signInWithGoogle,
+                    icon: Image.asset(
+                      'assets/images/google_logo.png',
+                      width: 22,
+                      height: 22,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.g_mobiledata,
+                        size: 28,
+                        color: c.textPrimary,
+                      ),
                     ),
-                  ),
-                  label: const Text(
-                    'Continue with Google',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                    label: const Text(
+                      'Continue with Google',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
-              ),
+              ],
 
-              const SizedBox(height: 12),
-
-              // ── Apple Sign-In (iOS / macOS only) ──
-              if (AppleAuthService.instance.isAvailable)
+              // ── Apple Sign-In (iOS only) ──
+              if (isIOS) ...[
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -625,24 +625,62 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     onPressed: _socialLoading ? null : _signInWithApple,
-                    icon: Icon(
-                      Icons.apple,
-                      size: 24,
-                      color: c.textPrimary,
-                    ),
+                    icon: Icon(Icons.apple, size: 24, color: c.textPrimary),
                     label: const Text(
                       'Continue with Apple',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
+              ],
 
-              const Spacer(),
+              const SizedBox(height: 28),
 
-              // ── Terms & Privacy link ──
+              // ── Sign in divider ──
+              Row(
+                children: [
+                  Expanded(child: Divider(color: c.divider, thickness: 1)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: c.divider, thickness: 1)),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // ── Sign in button ──
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _gold,
+                    side: const BorderSide(color: _gold, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                    slideFromRightRoute(const LoginPasswordScreen()),
+                  ),
+                  child: const Text(
+                    'Sign in',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // ── Terms & Privacy ──
               Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -654,11 +692,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontSize: 13, color: c.textTertiary),
                       ),
                       GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            slideUpFadeRoute(const TermsConditionsScreen()),
-                          );
-                        },
+                        onTap: () => Navigator.of(context).push(
+                          slideUpFadeRoute(const TermsConditionsScreen()),
+                        ),
                         child: const Text(
                           'Terms',
                           style: TextStyle(
@@ -675,11 +711,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontSize: 13, color: c.textTertiary),
                       ),
                       GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            slideUpFadeRoute(const TermsConditionsScreen()),
-                          );
-                        },
+                        onTap: () => Navigator.of(context).push(
+                          slideUpFadeRoute(const TermsConditionsScreen()),
+                        ),
                         child: const Text(
                           'Privacy Policy',
                           style: TextStyle(
@@ -695,7 +729,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
             ],
           ),
         ),

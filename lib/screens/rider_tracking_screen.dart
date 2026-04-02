@@ -159,6 +159,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _carImageAdded = false;
   bool _carShadowAdded = false;
   bool _carUpdateInProgress = false; // guard: prevents 60fps async race conditions
+  // ── Cached GeoJSON source refs — make hot path sync (zero async overhead at 60fps) ──
+  mapbox.GeoJsonSource? _cachedCarSource;
+  mapbox.GeoJsonSource? _cachedShadowSource;
+  bool _carLayerPropsUpdating = false;
+  double _lastRenderedScale = -1;
+  bool _lastNavArrowModeRendered = false;
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
   bool _arrowImageAdded = false;

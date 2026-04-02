@@ -145,11 +145,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _onRealDriverLocation(LatLng ll, {double? bearing}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
 
-    // FIX 4: Smooth marker animation - start interpolation to new position
-    if (_shouldFollowDriver) {
-      _startSmoothMarkerAnimation(ll, bearing);
-    }
-
     // Always try to snap GPS onto the route polyline.
     // Only fall back to raw GPS lerp when we truly have no route.
     if (_segDist.isNotEmpty && _routePts.length >= 2) {
@@ -824,7 +819,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   // Called every vsync frame via Ticker — GPU-synchronized, zero-jolt movement
   void _interpolate() {
-    if (!mounted || _segDist.isEmpty) return;
+    if (!mounted) return;
+
+    // No route yet — use direct GPS lerp so car still moves before route arrives
+    if (_segDist.isEmpty) {
+      final tgt = _directTargetPos;
+      if (tgt != null) {
+        const factor = 0.16;
+        final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * factor;
+        final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * factor;
+        _animPos = LatLng(newLat, newLng);
+        _driverPos = _animPos;
+        final tgtBrg = _directTargetBearing;
+        if (tgtBrg != null) {
+          double d = tgtBrg - _animBearing;
+          if (d > 180) d -= 360;
+          if (d < -180) d += 360;
+          _animBearing = (_animBearing + d * 0.18) % 360;
+          _driverBearing = _animBearing;
+        }
+        _updateCarSmooth();
+      }
+      return;
+    }
 
     // ── Smooth exponential advance — buttery motion ──
     // Use exponential decay so the car accelerates toward the target

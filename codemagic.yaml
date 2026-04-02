@@ -233,8 +233,8 @@ workflows:
       groups:
         - Default
       flutter: stable
-      xcode: 16.2
-      cocoapods: 1.15.2
+      xcode: 26.0
+      cocoapods: 1.16.2
       vars:
         <<: *shared_vars
         FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
@@ -292,8 +292,8 @@ workflows:
       groups:
         - Default
       flutter: stable
-      xcode: 16.2
-      cocoapods: 1.15.2
+      xcode: 26.0
+      cocoapods: 1.16.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
@@ -400,8 +400,8 @@ workflows:
       groups:
         - Default
       flutter: stable
-      xcode: 16.2
-      cocoapods: 1.15.2
+      xcode: 26.0
+      cocoapods: 1.16.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"

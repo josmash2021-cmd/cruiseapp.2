@@ -1044,37 +1044,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         Stack(
           alignment: Alignment.center,
           children: [
-            // Service tier badge (Comfort/VIP/Premium) — centered
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: goldAccent.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.person_rounded, size: 14, color: goldAccent),
-                  const SizedBox(width: 6),
-                  Text(
-                    vehicleType,
-                    style: const TextStyle(
-                      color: goldAccent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // X Reject button — RED (top-right)
+            // Service tier badge (Comfort/VIP/Premium) — centered with shimmer
+            _ShimmerBadge(label: vehicleType),
+            // X Reject button — top-right corner of card
             Positioned(
-              right: 0,
-              top: 0,
+              right: -4,
+              top: -4,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
@@ -1082,17 +1057,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   _rejectOffer(offer);
                 },
                 child: Container(
-                  width: 44,
-                  height: 44,
+                  width: 36,
+                  height: 36,
                   alignment: Alignment.center,
                   child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF2A2A2A),
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
                       shape: BoxShape.circle,
+                      border: Border.all(
+                        color: rejectRed.withValues(alpha: 0.4),
+                        width: 1,
+                      ),
                     ),
-                    child: const Icon(Icons.close, color: rejectRed, size: 16),
+                    child: const Icon(Icons.close, color: rejectRed, size: 14),
                   ),
                 ),
               ),
@@ -3562,4 +3541,122 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       Text(l, style: TextStyle(color: lColor, fontSize: 10)),
     ],
   );
+}
+
+/// A self-contained VIP/Comfort/Premium badge with a professional
+/// shimmer sweep animation (light streak moves left→right).
+class _ShimmerBadge extends StatefulWidget {
+  const _ShimmerBadge({required this.label});
+  final String label;
+
+  @override
+  State<_ShimmerBadge> createState() => _ShimmerBadgeState();
+}
+
+class _ShimmerBadgeState extends State<_ShimmerBadge>
+    with SingleTickerProviderStateMixin {
+  static const _gold = Color(0xFFE8C547);
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        // Sweep position across the badge width
+        final sweep = -0.3 + (_ctrl.value * 1.6);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Color.lerp(
+                _gold.withValues(alpha: 0.30),
+                _gold.withValues(alpha: 0.65),
+                _shimmerIntensity(sweep),
+              )!,
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _gold.withValues(alpha: 0.08 + _shimmerIntensity(sweep) * 0.15),
+                blurRadius: 8 + _shimmerIntensity(sweep) * 6,
+                spreadRadius: _shimmerIntensity(sweep) * 2,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                // Normal badge content
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person_rounded, size: 14, color: _gold),
+                    const SizedBox(width: 6),
+                    Text(
+                      widget.label,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                // Shimmer light streak overlay
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ShaderMask(
+                      shaderCallback: (bounds) {
+                        return LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Colors.transparent,
+                            Colors.white.withValues(alpha: 0.5),
+                            Colors.transparent,
+                          ],
+                          stops: [
+                            (sweep - 0.12).clamp(0.0, 1.0),
+                            sweep.clamp(0.0, 1.0),
+                            (sweep + 0.12).clamp(0.0, 1.0),
+                          ],
+                        ).createShader(bounds);
+                      },
+                      blendMode: BlendMode.srcIn,
+                      child: Container(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  double _shimmerIntensity(double sweep) {
+    // Returns 0..1 based on how centered the sweep is (peak at 0.5)
+    final dist = (sweep - 0.5).abs();
+    return (1.0 - dist * 2.0).clamp(0.0, 1.0);
+  }
 }

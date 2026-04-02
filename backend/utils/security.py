@@ -134,7 +134,7 @@ def _record_violation(client_ip: str):
 
 _used_nonces: collections.OrderedDict[str, float] = collections.OrderedDict()
 _NONCE_TTL = 600
-_MAX_NONCE_CACHE = 50000
+_MAX_NONCE_CACHE = 100000
 
 
 def _check_nonce_replay(nonce: str) -> bool:
@@ -156,7 +156,7 @@ def _check_nonce_replay(nonce: str) -> bool:
 
 # In-memory revoked JTI set (fast path â€” survives until restart)
 _revoked_jtis: collections.OrderedDict[str, float] = collections.OrderedDict()
-_MAX_REVOKED_CACHE = 100_000
+_MAX_REVOKED_CACHE = 200_000
 
 # Password reset rate limiting per email
 _password_reset_attempts: dict[str, list] = {}  # email â†’ [timestamps]

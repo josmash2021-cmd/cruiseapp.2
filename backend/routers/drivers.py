@@ -68,6 +68,11 @@ _driver_locations: dict = {}  # driver_id -> {"lat": float, "lng": float, "is_on
 _driver_active_trip: dict = {}  # driver_id -> (monotonic_ts, trip_id_or_None)
 _ACTIVE_TRIP_CACHE_TTL = 5.0  # seconds
 
+# Throttle DB writes: only persist location to DB every N seconds per driver
+# In-memory location is ALWAYS updated instantly (real-time for SSE/nearby)
+_driver_last_db_write: dict = {}  # driver_id -> monotonic_ts
+_DB_WRITE_THROTTLE = 3.0  # seconds — DB write at most every 3s per driver
+
 @router.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Ownership check: only the driver themselves can update their location
@@ -82,11 +87,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     }
 
     # Update DB (lightweight â€” no SELECT needed, use the authenticated user object)
-    user.lat = body.lat
-    user.lng = body.lng
-    user.is_online = body.is_online
-    user.last_active_at = utc_now()
-    await db.commit()
+    # Throttle DB writes: persist at most every 3s per driver (in-memory is always fresh)
+    _last_write = _driver_last_db_write.get(driver_id, 0.0)
+    if (_now - _last_write) >= _DB_WRITE_THROTTLE:
+        user.lat = body.lat
+        user.lng = body.lng
+        user.is_online = body.is_online
+        user.last_active_at = utc_now()
+        await db.commit()
+        _driver_last_db_write[driver_id] = _now
 
     # Invalidate nearby cache cells near this driver's new position
     _stale = [k for k in _nearby_cache if abs(k[0] - round(body.lat, 3)) < 0.01 and abs(k[1] - round(body.lng, 3)) < 0.01]

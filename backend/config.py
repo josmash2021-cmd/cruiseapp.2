@@ -22,18 +22,18 @@ _HAS_CLAUDE = bool(ANTHROPIC_API_KEY)
 # ── OTP ──
 _otp_store: dict = {}
 _OTP_TTL = 300
-_MAX_OTP_ENTRIES = 3000  # cap for memory safety
+_MAX_OTP_ENTRIES = 5000  # cap for memory safety
 
 # ── Dispatch cache ──
 _pending_cache: dict = {}
 _PENDING_CACHE_TTL = 1.5  # Short TTL — offers are time-critical; invalidated on accept/reject
-_MAX_PENDING_CACHE = 2000
+_MAX_PENDING_CACHE = 5000
 OFFER_TIMEOUT_SECONDS = 45  # seconds — UI countdown for driver to tap Accept
 
 # ── Nearby drivers cache (in-memory, short TTL) ──
 _nearby_cache: dict = {}  # key=(lat_rounded, lng_rounded, radius) -> (timestamp, result)
 _NEARBY_CACHE_TTL = 3.0  # seconds — invalidated per-cell on driver location update
-_MAX_NEARBY_CACHE = 1000
+_MAX_NEARBY_CACHE = 3000
 
 # ── EmailJS ──
 EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")

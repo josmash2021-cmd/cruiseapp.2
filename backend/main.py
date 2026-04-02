@@ -365,10 +365,10 @@ async def security_headers_middleware(request: Request, call_next):
 
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _rate_buckets: dict[str, collections.deque] = {}
-_RATE_LIMIT = 1200        # max requests per IP per window (1500 users + SSE + polling)
+_RATE_LIMIT = 3000        # max requests per IP per window (1500+ users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
 _rate_cleanup_ts = 0.0    # last bucket cleanup timestamp
-_MAX_RATE_BUCKETS = 5000  # cap bucket dict to prevent memory leak
+_MAX_RATE_BUCKETS = 10000  # cap bucket dict to prevent memory leak
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -712,6 +712,6 @@ if __name__ == "__main__":
         log_level="info",
         access_log=True,
         timeout_keep_alive=75,
-        limit_concurrency=1000,
+        limit_concurrency=2000,
         workers=1,
     )

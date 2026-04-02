@@ -601,7 +601,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (_driverId == null) return;
     }
     await _refreshActiveTripStatus();
-    if (_activeTripData != null) return;
+    if (_activeTripData != null) {
+      // Active trip found — auto-resume it immediately
+      _stopTripPolling();
+      if (mounted) _resumeActiveTrip();
+      return;
+    }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
       if (!mounted || !_isStillOnline) return;
@@ -1596,6 +1601,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
       ),
     );
+
+    // After trip screen pops, re-check if the trip is still active.
+    // If completed/cancelled, clear state and resume polling for new trips.
+    if (!mounted) return;
+    await _refreshActiveTripStatus();
+    if (_activeTripData != null) {
+      // Trip still active — go back immediately
+      _resumeActiveTrip();
+    } else if (_isStillOnline) {
+      _startTripPolling();
+    }
   }
 
   double? _pickDouble(Map<String, dynamic> data, List<String> keys) {

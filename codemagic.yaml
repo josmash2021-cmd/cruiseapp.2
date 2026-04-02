@@ -48,6 +48,8 @@ definitions:
         if [ -z "$TOKEN" ]; then
           echo "ERROR: ENV_MAPBOX_TOKEN is not set. Add it as a secret variable in Codemagic app settings."; exit 1
         fi
+        # Strip any accidental whitespace/newlines from the token
+        TOKEN="$(echo "$TOKEN" | tr -d '[:space:]')"
         if echo "$TOKEN" | grep -q '^pk\.'; then
           echo "ERROR: ENV_MAPBOX_TOKEN starts with 'pk.' — this is a PUBLIC token and cannot download the SDK."
           echo "Create a SECRET token (sk.) with Downloads:Read scope at account.mapbox.com/access-tokens"; exit 1
@@ -55,23 +57,43 @@ definitions:
         # Android SDK: Gradle reads MAPBOX_DOWNLOADS_TOKEN from ~/.gradle/gradle.properties
         mkdir -p ~/.gradle
         printf 'MAPBOX_DOWNLOADS_TOKEN=%s\n' "$TOKEN" >> ~/.gradle/gradle.properties
-        # iOS / CocoaPods: reads from ~/.netrc
-        printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "$TOKEN" > ~/.netrc
+        # iOS / CocoaPods: reads from ~/.netrc (write to both $HOME and explicit /Users paths)
+        NETRC_CONTENT="machine api.mapbox.com
+        login mapbox
+        password ${TOKEN}
+        "
+        echo "$NETRC_CONTENT" > ~/.netrc
         chmod 0600 ~/.netrc
+        # Also write to root's home in case HOME differs during pod install
+        if [ -d "/Users/builder" ]; then
+          echo "$NETRC_CONTENT" > /Users/builder/.netrc
+          chmod 0600 /Users/builder/.netrc
+        fi
         echo "Mapbox downloads token configured (sk. token OK)"
-        # Verify .netrc was written and token is non-empty (show first 12 chars only)
+        echo "HOME=$HOME  |  .netrc path: $(ls -la ~/.netrc)"
         PREVIEW="${TOKEN:0:12}…"
         echo "Token preview: $PREVIEW  |  .netrc size: $(wc -c < ~/.netrc) bytes"
-        # Quick auth test against Mapbox API
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-          -u "mapbox:$TOKEN" \
+        # Verify .netrc is readable by curl with --netrc flag (same as CocoaPods uses)
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --netrc \
           "https://api.mapbox.com/downloads/v2/mapbox-common/releases/ios/packages/24.20.0/MapboxCommon.zip" \
           --range 0-0 --retry 0 2>/dev/null || echo "000")
         if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "206" ]; then
           echo "✅ Mapbox auth test passed (HTTP $HTTP_CODE)"
         else
-          echo "❌ Mapbox auth test FAILED (HTTP $HTTP_CODE) — check ENV_MAPBOX_TOKEN in Codemagic"
-          exit 1
+          echo "⚠️ --netrc test returned HTTP $HTTP_CODE, trying -u basic auth..."
+          HTTP_CODE2=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "mapbox:$TOKEN" \
+            "https://api.mapbox.com/downloads/v2/mapbox-common/releases/ios/packages/24.20.0/MapboxCommon.zip" \
+            --range 0-0 --retry 0 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE2" = "200" ] || [ "$HTTP_CODE2" = "206" ]; then
+            echo "✅ Basic auth works (HTTP $HTTP_CODE2) — .netrc format issue, re-writing..."
+            printf "machine api.mapbox.com\n  login mapbox\n  password %s\n" "$TOKEN" > ~/.netrc
+            chmod 0600 ~/.netrc
+            [ -d "/Users/builder" ] && cp ~/.netrc /Users/builder/.netrc && chmod 0600 /Users/builder/.netrc
+          else
+            echo "❌ Both auth methods FAILED — token is invalid. Check ENV_MAPBOX_TOKEN in Codemagic"
+            exit 1
+          fi
         fi
 
     - &generate_env

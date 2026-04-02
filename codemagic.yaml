@@ -383,72 +383,46 @@ workflows:
           echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
 
           echo "── Applying profiles to Xcode project ──"
-          xcode-project use-profiles || echo "use-profiles returned non-zero, continuing with manual setup"
+          xcode-project use-profiles || echo "use-profiles warning (continuing)"
 
-          echo "── Verifying export_options.plist ──"
-          if [ ! -f "$HOME/export_options.plist" ]; then
-            echo "Creating export_options.plist manually"
-            plutil -create xml1 "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :method string app-store" "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :teamID string 7QLC9UVB3Z" "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$HOME/export_options.plist"
-            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.cruiseinride.app string $PROFILE_UUID" "$HOME/export_options.plist"
-          fi
+          echo "── Creating export_options.plist ──"
+          python3 -c "
+          import plistlib
+          opts = {
+              'method': 'app-store',
+              'teamID': '7QLC9UVB3Z',
+              'signingStyle': 'manual',
+              'uploadSymbols': True,
+              'provisioningProfiles': {
+                  'com.cruiseinride.app': '$PROFILE_UUID'
+              }
+          }
+          import os
+          path = os.path.expanduser('~/export_options.plist')
+          with open(path, 'wb') as f:
+              plistlib.dump(opts, f)
+          print('export_options.plist created at', path)
+          "
           cat "$HOME/export_options.plist"
 
           echo "── Code signing identities ──"
           security find-identity -v -p codesigning
-
-          echo "── Saving profile info for build step ──"
-          echo "$PROFILE_UUID" > /tmp/CM_PROFILE_UUID
-          echo "$PROFILE_NAME" > /tmp/CM_PROFILE_NAME
-
           echo "✅ Code signing setup complete"
       - name: Build IPA (App Store)
         script: |
-          set -e
           mkdir -p /tmp/xcodebuild_logs
 
-          PROFILE_UUID=$(cat /tmp/CM_PROFILE_UUID)
-          PROFILE_NAME=$(cat /tmp/CM_PROFILE_NAME)
-          echo "Using profile: $PROFILE_NAME ($PROFILE_UUID)"
-
-          echo "── Step 1: Flutter build (no codesign) ──"
-          flutter build ios \
+          flutter build ipa \
             --release \
             --no-tree-shake-icons \
-            --no-codesign \
             --build-number=$BUILD_NUMBER \
+            --export-options-plist=$HOME/export_options.plist \
             2>&1 | tee /tmp/xcodebuild_logs/flutter_build.log
-
-          echo "── Step 2: Xcode archive with manual signing ──"
-          xcodebuild archive \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath /tmp/Runner.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM=7QLC9UVB3Z \
-            CODE_SIGN_IDENTITY="iPhone Distribution" \
-            PROVISIONING_PROFILE="$PROFILE_UUID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            -allowProvisioningUpdates \
-            2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
-
-          echo "── Step 3: Export IPA ──"
-          mkdir -p build/ios/ipa
-          xcodebuild -exportArchive \
-            -archivePath /tmp/Runner.xcarchive \
-            -exportPath build/ios/ipa \
-            -exportOptionsPlist $HOME/export_options.plist \
-            2>&1 | tee -a /tmp/xcodebuild_logs/flutter_build.log
 
           IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
           if [ -z "$IPA_PATH" ]; then
             echo "ERROR: No IPA file found"
+            ls -laR build/ios/ipa/ 2>/dev/null || true
             exit 1
           fi
           echo "✅ IPA created: $IPA_PATH"

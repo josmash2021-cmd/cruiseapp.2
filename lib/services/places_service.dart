@@ -139,6 +139,7 @@ class PlacesService {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
         'address': clean,
         'key': apiKey,
+        'components': 'country:us',
       });
       final res = await http.get(uri).timeout(const Duration(seconds: 5));
       final data = jsonDecode(res.body);
@@ -374,6 +375,7 @@ class PlacesService {
   }) async {
     final params = <String, String>{
       'input': input,
+      'country': 'us',
     };
     if (lat != null && lon != null) {
       params['lat'] = lat.toString();
@@ -426,12 +428,12 @@ class PlacesService {
       'fuzzyMatch': 'true',
       'types': 'country,region,postcode,district,place,locality,neighborhood,address,poi',
       'routing': 'true',
+      'country': 'us', // US-only results
     };
     if (lat != null && lon != null) {
+      // proximity = soft relevance bias (nearby results ranked higher)
+      // NO bbox — that was a hard filter limiting results to ~55km radius
       params['proximity'] = '$lon,$lat';
-      // ~55 km bounding box around user to prioritise nearby results
-      params['bbox'] =
-          '${lon - 0.5},${lat - 0.5},${lon + 0.5},${lat + 0.5}';
     }
 
     final uri = Uri.https(
@@ -502,6 +504,7 @@ class PlacesService {
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
+      'components': 'country:us', // US-only results
     };
     if (types != null && types.isNotEmpty) {
       params['types'] = types;
@@ -668,6 +671,7 @@ class PlacesService {
     final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
       'address': query,
       'key': apiKey,
+      'components': 'country:us',
     });
     try {
       final res = await http.get(uri).timeout(const Duration(seconds: 5));

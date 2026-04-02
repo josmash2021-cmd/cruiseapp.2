@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, FareSplit, Rating, ChatMessage, SurgeZone,
-    RiderPaymentMethod,
+    RiderPaymentMethod, Notification,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (

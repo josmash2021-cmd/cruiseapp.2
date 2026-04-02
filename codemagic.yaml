@@ -305,10 +305,18 @@ workflows:
       - *pod_install
       - name: Set up code signing (Ad Hoc)
         script: |
+          if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
+            echo "❌ CERTIFICATE_PRIVATE_KEY not set"; exit 1
+          fi
           keychain initialize
+          app-store-connect certificates delete \
+            --type IOS_DISTRIBUTION \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            2>/dev/null || true
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
             --create \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
           keychain add-certificates
 
@@ -400,11 +408,27 @@ workflows:
       - *pod_install
       - name: Set up iOS code signing
         script: |
+          # ── Validate CERTIFICATE_PRIVATE_KEY ──────────────────────────────
+          if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
+            echo "❌ CERTIFICATE_PRIVATE_KEY is not set!"
+            echo "   Add it as an encrypted variable in Codemagic UI → Default group"
+            echo "   This is the RSA private key used for Apple Distribution certificates"
+            exit 1
+          fi
+          echo "✅ CERTIFICATE_PRIVATE_KEY is set ($(echo "$CERTIFICATE_PRIVATE_KEY" | wc -c | tr -d ' ') bytes)"
+
           keychain initialize
+
+          # Delete stale certs that don't match our private key
+          app-store-connect certificates delete \
+            --type IOS_DISTRIBUTION \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            2>/dev/null || true
 
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
 
           keychain add-certificates

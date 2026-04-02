@@ -394,8 +394,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   }
 
   String? _normalizedPhotoUrl(String? rawUrl) {
-    final raw = (rawUrl ?? '').trim();
+    final raw = (rawUrl ?? '').replaceAll('"', '').trim();
     if (raw.isEmpty) return null;
+    if (raw == 'null' || raw == 'None' || raw == 'undefined' || raw == 'none') return null;
     if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
     if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
     return '${ApiService.publicBaseUrl}/$raw';

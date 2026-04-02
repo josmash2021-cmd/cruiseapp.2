@@ -7,8 +7,10 @@ part of 'driver_online_screen.dart';
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
   String _normalizePhotoUrl(dynamic rawUrl) {
-    final raw = (rawUrl ?? '').toString().trim();
+    final raw = (rawUrl ?? '').toString().replaceAll('"', '').trim();
     if (raw.isEmpty) return '';
+    // Filter Python/JS sentinel strings that backend may send
+    if (raw == 'null' || raw == 'None' || raw == 'undefined' || raw == 'none') return '';
     if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
     if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
     return '${ApiService.publicBaseUrl}/$raw';

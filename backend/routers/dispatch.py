@@ -655,6 +655,19 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         return {"status": "not_found"}
 
     trip, accepted, driver, veh = result
+
+    # Fetch rider info so driver screens can display the rider's photo
+    rider_info = {}
+    if trip.rider_id:
+        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_result.scalar_one_or_none()
+        if rider:
+            rider_info = {
+                "rider_id": rider.id,
+                "rider_name": f"{rider.first_name} {rider.last_name}",
+                "rider_photo_url": rider.photo_url or "",
+            }
+
     if accepted and driver:
         flat_driver = {
             "driver_id": driver.id,
@@ -672,14 +685,37 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         response = {
             "status": trip.status,
             **flat_driver,
+            **rider_info,
             "driver": _user_dict(driver) if driver else None,
             "trip": _trip_dict(trip),
         }
     else:
-        response = {"status": trip.status, "driver": None, "trip": _trip_dict(trip)}
+        response = {"status": trip.status, "driver": None, **rider_info, "trip": _trip_dict(trip)}
 
     _dispatch_status_cache[trip_id] = (response, _now)
     return response
+
+
+# ── Public photo lookup (for displaying other user's photo in trip UI) ──
+_photo_cache: dict = {}  # user_id -> (photo_url, timestamp)
+_PHOTO_CACHE_TTL = 30  # seconds
+
+@router.get("/dispatch/user/{user_id}/photo", dependencies=[Depends(_verify_api_key)])
+async def get_user_photo(user_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return a user's photo URL. Used by Flutter to display other user's avatar
+    when the dispatch response doesn't include a photo URL."""
+    _now = time.monotonic()
+    _cached = _photo_cache.get(user_id)
+    if _cached and (_now - _cached[1]) < _PHOTO_CACHE_TTL:
+        return {"photo_url": _cached[0]}
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        return {"photo_url": ""}
+    url = target.photo_url or ""
+    _photo_cache[user_id] = (url, _now)
+    return {"photo_url": url}
+
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  ADMIN / DISPATCH ENDPOINTS

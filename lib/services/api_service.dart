@@ -1213,17 +1213,17 @@ class ApiService {
   }
 
   /// Notify the backend of a Firebase Storage photo URL so the DB stays in sync.
+  /// Rethrows on failure so callers can decide to retry.
   static Future<void> _syncPhotoUrlToBackend(String url, String token) async {
-    try {
-      await _client
-          .post(
-            Uri.parse('$_baseUrl/auth/photo-url'),
-            headers: _jsonHeaders(token),
-            body: jsonEncode({'photo_url': url}),
-          )
-          .timeout(const Duration(seconds: 10));
-    } catch (e) {
-      debugPrint('[ApiService] _syncPhotoUrlToBackend failed (non-fatal): $e');
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/photo-url'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({'photo_url': url}),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode >= 400) {
+      throw Exception('Backend photo sync returned ${response.statusCode}');
     }
   }
 
@@ -1992,6 +1992,29 @@ class ApiService {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
     return {'status': 'error'};
+  }
+
+  /// Fetch a user's photo URL from the backend DB.
+  /// Used as a fallback when the dispatch response doesn't include a photo URL
+  /// and Firebase recovery chain fails (e.g., for Google social-login photos).
+  static Future<String?> getUserPhotoUrl(int userId) async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/dispatch/user/$userId/photo'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final url = data['photo_url']?.toString() ?? '';
+        return url.isNotEmpty ? url : null;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getUserPhotoUrl($userId) failed: $e');
+    }
+    return null;
   }
 
   /// Get a route from Google Directions API (or OSRM fallback).

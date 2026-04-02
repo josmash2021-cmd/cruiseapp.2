@@ -113,7 +113,7 @@ const int _maxPollFailsBeforeBanner = 3;
 String? _normalizeRemotePhotoUrl(String? rawUrl) {
   var raw = (rawUrl ?? '').trim();
   if (raw.isEmpty) return null;
-  if (raw == 'null' || raw == 'None' || raw == 'undefined') return null;
+  if (raw == 'null' || raw == 'None' || raw == 'none' || raw == 'undefined') return null;
   if ((raw.startsWith('"') && raw.endsWith('"')) ||
       (raw.startsWith("'") && raw.endsWith("'"))) {
     raw = raw.substring(1, raw.length - 1).trim();

@@ -3,15 +3,17 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'api_service.dart';
 
-/// 4-source recovery chain for profile photos — ensures photos are
+/// 5-source recovery chain for profile photos — ensures photos are
 /// NEVER lost across sessions, logouts, app updates, or device changes.
 ///
 /// Recovery priority (cascading fallback):
 ///   1. Local SharedPreferences cache (fastest — instant)
 ///   2. Firebase Auth photoURL (fast — already in memory)
-///   3. Firestore users doc (network — reliable &permanent)
+///   3. Firestore users doc (network — reliable & permanent)
 ///   4. Firebase Storage direct URL (accurate — source of truth)
+///   5. Backend API lookup (nuclear fallback — covers Google social photos)
 ///
 /// ROLE ISOLATION: Every operation includes role ('rider' or 'driver')
 /// to prevent photos from one role contaminating the other.
@@ -103,6 +105,22 @@ class PhotoRecoveryService {
       }
     } catch (e) {
       debugPrint('[PhotoRecovery] Firebase Storage lookup failed (non-critical): $e');
+    }
+
+    // ─── SOURCE 5: Backend API (nuclear fallback — covers Google/Apple photos) ──
+    try {
+      final userId = int.tryParse(uid);
+      if (userId != null) {
+        final backendUrl = await ApiService.getUserPhotoUrl(userId);
+        if (backendUrl != null && backendUrl.isNotEmpty && backendUrl.startsWith('http')) {
+          debugPrint('[PhotoRecovery] ✅ Found in Backend API: $backendUrl');
+          // Backfill to all faster tiers
+          await _cachePhotoUrl(uid, role, backendUrl);
+          return backendUrl;
+        }
+      }
+    } catch (e) {
+      debugPrint('[PhotoRecovery] Backend API lookup failed (non-critical): $e');
     }
 
     // ─── NO PHOTO FOUND ──────────────────────────────────────────────────────

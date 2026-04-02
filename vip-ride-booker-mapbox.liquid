@@ -1777,36 +1777,43 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     var mapEl = document.getElementById('vipRideMap-{{ section.id }}');
     var mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
     var sheetH = sheet ? sheet.offsetHeight : 240;
-    // Bottom padding: full sheet height + generous extra so both pins are visible above
-    var padBottom = sheetH + 80;
-    if(window.innerWidth < 900) padBottom = Math.max(padBottom, mapH * 0.50);
-    // Step 1: Fly to fit both points flat (pitch=0, bearing=0)
-    map.flyTo({
-      center:[
-        (pickupPlace.lng + dropoffPlace.lng) / 2,
-        (pickupPlace.lat + dropoffPlace.lat) / 2
-      ],
-      zoom: map.cameraForBounds(bounds, {
-        padding:{top:100, right:70, bottom:padBottom, left:70},
-        maxZoom:15
-      }).zoom,
-      pitch:0,
-      bearing:0,
-      duration:2000,
-      essential:true,
-      easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
+    // Bottom padding: push route above panel
+    var padBottom = sheetH + 100;
+    if(window.innerWidth < 900) padBottom = Math.max(padBottom, mapH * 0.55);
+    // Compute camera that fits route in the TOP portion of the map (above panel)
+    var cam = map.cameraForBounds(bounds, {
+      padding:{top:60, right:60, bottom:padBottom, left:60},
+      maxZoom:14.5
     });
-    // Step 2: After fly completes, cinematic tilt + rotation
+    // Step 1: Fly to fit route flat (pitch=0, bearing=0)
+    map.flyTo({
+      center: cam.center,
+      zoom: cam.zoom,
+      pitch: 0,
+      bearing: 0,
+      duration: 1800,
+      essential: true,
+      easing: function(t){ var t1=t-1; return t1*t1*t1+1; }
+    });
+    // Step 2: Tilt to 55° (cinematic inclination)
     map.once('moveend', function(){
       setTimeout(function(){
-        // Zoom out slightly before tilting to ensure everything stays visible
-        var currentZoom = map.getZoom();
+        var z = map.getZoom();
         map.easeTo({
-          pitch: 45,
-          bearing: 20,
-          zoom: Math.max(currentZoom - 0.5, 10),
-          duration: 3000,
-          easing: function(t){ return t*(2-t); } // ease-out quad — very smooth
+          pitch: 55,
+          zoom: Math.max(z - 0.7, 9),
+          duration: 2500,
+          easing: function(t){ return t*(2-t); }
+        });
+        // Step 3: After tilt completes, rotate 20° keeping everything centered
+        map.once('moveend', function(){
+          setTimeout(function(){
+            map.easeTo({
+              bearing: 20,
+              duration: 2000,
+              easing: function(t){ return t*(2-t); }
+            });
+          }, 200);
         });
       }, 300);
     });

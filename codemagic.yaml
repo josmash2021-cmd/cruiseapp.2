@@ -326,6 +326,7 @@ workflows:
 
           # ── Extract profile info ──
           PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
             -name "*.mobileprovision" 2>/dev/null | head -1)
           if [ -z "$PROFILE_PATH" ]; then
             echo "❌ No provisioning profile downloaded"; exit 1
@@ -461,10 +462,12 @@ workflows:
 
           # ── Extract profile info ──────────────────────────────────────────
           PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
             -name "*.mobileprovision" 2>/dev/null | head -1)
           if [ -z "$PROFILE_PATH" ]; then
             echo "❌ No provisioning profile downloaded"
-            ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null
+            echo "Checking MobileDevice:" && ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null || true
+            echo "Checking Xcode UserData:" && ls -la "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/" 2>/dev/null || true
             exit 1
           fi
           echo "Profile file: $PROFILE_PATH"
@@ -538,7 +541,8 @@ workflows:
           echo "── Signing identities ──"
           security find-identity -v -p codesigning
           echo "── Profiles ──"
-          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null || true
+          ls -la "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/" 2>/dev/null || true
           echo "── pbxproj signing fields ──"
           grep -E 'PROVISIONING_PROFILE|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY' "$PBXPROJ" | head -24
           echo "── FLUTTER_XCODE env vars ──"

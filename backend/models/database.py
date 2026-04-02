@@ -34,6 +34,7 @@ else:
     _engine_kwargs["pool_pre_ping"] = True
     _engine_kwargs["pool_recycle"] = 1800
     _engine_kwargs["pool_timeout"] = 10
+    _engine_kwargs["connect_args"] = {"timeout": 10, "command_timeout": 10}
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

@@ -17,7 +17,10 @@ try:
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text
 
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        DATABASE_URL, echo=False,
+        connect_args={"timeout": 10, "command_timeout": 10},
+    )
 except Exception as _e:
     log.error("migrate.py setup failed: %s", _e)
     sys.exit(0)

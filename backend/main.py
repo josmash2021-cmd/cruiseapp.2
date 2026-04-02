@@ -458,8 +458,9 @@ async def health(x_api_key: str = Header(default="")):
     db_latency_ms = 0.0
     try:
         t0 = time.time()
-        async with SessionLocal() as db:
-            await db.execute(text("SELECT 1"))
+        async with asyncio.timeout(5):
+            async with SessionLocal() as db:
+                await db.execute(text("SELECT 1"))
         db_latency_ms = round((time.time() - t0) * 1000, 1)
     except Exception as e:
         db_status = f"error: {str(e)[:80]}"

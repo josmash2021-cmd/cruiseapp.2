@@ -204,6 +204,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<Map<String, dynamic>>? _tripSseSub; // SSE stream sub
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
   bool _sseConnected = false; // true when SSE stream is active
+  bool _driverMatched = false; // true once driver match is confirmed — blocks stale polls
   double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
   /// True while RiderTrackingScreen is on the navigation stack.
   /// Prevents _refreshActiveTripOnResume from falsely transitioning to cancelled.
@@ -263,9 +264,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Skip if the tracking screen is active — it manages its own real-time listeners
     if (isOnTrackingScreen) { return; }
     final phase = _state.phase;
-    if (phase != RiderPhase.onTrip &&
-        phase != RiderPhase.driverAssigned &&
-        phase != RiderPhase.driverArriving) { return; }
+    // Only refresh when actively on-trip. Skip driverAssigned/driverArriving —
+    // those phases already have a confirmed match and the UI is transitioning
+    // to the tracking screen. Re-checking here causes false cancellations
+    // (e.g. when an FCM push triggers a lifecycle resumed event).
+    if (phase != RiderPhase.onTrip) { return; }
     try {
       final status = await ApiService.getDispatchStatus(tripId);
       final tripStatus = status['status']?.toString() ?? '';
@@ -516,6 +519,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Fix 2: prevent double-tap from spawning duplicate requests
     if (_isRequesting) return;
     _isRequesting = true;
+    _driverMatched = false; // Reset for new ride request
 
     // Fix 4: validate GPS coords before sending to backend
     final pickup = _state.pickup;
@@ -708,6 +712,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // ── Polling fallback (slower when SSE is active, never fully skipped) ──
     int pollTick = 0;
     Future<void> checkStatus(Timer? timer) async {
+      // If driver already matched (e.g. via SSE), ignore stale poll responses
+      if (_driverMatched) { timer?.cancel(); return; }
       pollTick++;
       // When SSE is delivering, poll every 3rd tick (~9s) as safety net
       if (_sseConnected && pollTick % 3 != 0) return;
@@ -759,6 +765,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onDriverMatched(Map<String, dynamic> data, int tripId) {
+    // Prevent duplicate processing from in-flight polls after SSE match
+    if (_driverMatched) return;
+    _driverMatched = true;
+
     // Validate driver_id exists before creating MatchedDriver
     final driverId = data['driver_id']?.toString();
     if (driverId == null || driverId.isEmpty) {
@@ -857,7 +867,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _tripSseSub?.cancel();
     _isRequesting = false;
+    _driverMatched = false;
     _state = const RiderTripState();
     notifyListeners();
     

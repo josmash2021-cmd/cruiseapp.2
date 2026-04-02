@@ -368,8 +368,9 @@ extension _RideRequestController on _RideRequestScreenState {
                 actions: [
                   TextButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
                       _ctrl.reset();
+                      // Pop dialog + ride request screen → back to homescreen
+                      Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                     child: Text(S.of(context).okBtn),
                   ),
@@ -400,8 +401,9 @@ extension _RideRequestController on _RideRequestScreenState {
                 actions: [
                   TextButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
                       _ctrl.reset();
+                      // Pop dialog + ride request screen → back to homescreen
+                      Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                     child: Text(S.of(context).okBtn),
                   ),

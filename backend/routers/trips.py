@@ -229,7 +229,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         trip.payment_status = "failed"
         await db.commit()
         logging.error("[Charge] Stripe error for trip %s: %s", trip.id, e)
-        return {"status": "failed", "error": str(e.user_message or e)}
+        return {"status": "failed", "error": str(getattr(e, "user_message", None) or e)}
 
 
 @router.post("/trips/{trip_id}/charge", dependencies=[Depends(_verify_api_key)])

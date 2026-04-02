@@ -104,7 +104,7 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
             "currency": intent.currency,
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(e.user_message or e))
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
 @router.get("/payments/intent/{intent_id}", dependencies=[Depends(_verify_api_key)])
@@ -121,7 +121,7 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
             "currency": intent.currency,
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(e.user_message or e))
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
 @router.post("/payments/capture/{intent_id}", dependencies=[Depends(_verify_api_key)])
@@ -139,7 +139,7 @@ async def capture_payment_intent(intent_id: str, user: User = Depends(_get_curre
             "captured": intent.status == "succeeded",
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(e.user_message or e))
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
 # -- PayPal token exchange (proxied through backend — never expose secret to client) --

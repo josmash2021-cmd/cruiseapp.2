@@ -10,6 +10,7 @@ from models.database import (
     SupportChat, SupportMessage, ActionRequest,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
+from jose import jwt, JWTError
 from utils.security import (
     pwd, _get_current_user, _verify_api_key, _require_dispatch_auth,
     _dispatch_sessions, _security_audit_log,

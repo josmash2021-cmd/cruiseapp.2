@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, B
 from jose import jwt, JWTError
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip,

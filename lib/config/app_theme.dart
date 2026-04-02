@@ -100,13 +100,14 @@ class AppColors {
 
 // ── Theme data builders ──
 
+// Fade + subtle slide-up — consistent across all platforms
 const _pageTransitions = PageTransitionsTheme(
   builders: {
-    TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
     TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
     TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
   },
 );
 
@@ -133,6 +134,32 @@ TextTheme _cinzelHeadlines(TextTheme base) {
   );
 }
 
+// Shared button theme: scale-down on press, fast response
+final _elevatedButtonTheme = ElevatedButtonThemeData(
+  style: ButtonStyle(
+    animationDuration: const Duration(milliseconds: 100),
+    overlayColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.pressed)) {
+        return Colors.white.withValues(alpha: 0.12);
+      }
+      return null;
+    }),
+    splashFactory: InkRipple.splashFactory,
+  ),
+);
+
+final _textButtonTheme = TextButtonThemeData(
+  style: ButtonStyle(
+    animationDuration: const Duration(milliseconds: 100),
+    overlayColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.pressed)) {
+        return Colors.white.withValues(alpha: 0.08);
+      }
+      return null;
+    }),
+  ),
+);
+
 final ThemeData darkTheme = ThemeData.dark().copyWith(
   scaffoldBackgroundColor: const Color(0xFF08090C),
   brightness: Brightness.dark,
@@ -144,6 +171,8 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
     GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
   ),
   pageTransitionsTheme: _pageTransitions,
+  elevatedButtonTheme: _elevatedButtonTheme,
+  textButtonTheme: _textButtonTheme,
 );
 
 final ThemeData lightTheme = ThemeData.light().copyWith(
@@ -157,4 +186,6 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
     GoogleFonts.interTextTheme(ThemeData.light().textTheme),
   ),
   pageTransitionsTheme: _pageTransitions,
+  elevatedButtonTheme: _elevatedButtonTheme,
+  textButtonTheme: _textButtonTheme,
 );

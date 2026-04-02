@@ -1083,6 +1083,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _acceptingCardId = null;
     });
 
+    // Write accepted status to Firestore immediately — bypasses the 2-second
+    // backend→Firestore sync delay so the rider's listener fires instantly.
+    if (tripId != null) {
+      final fsDocId = 'sql_$tripId';
+      final driverUser = await UserSession.getUser();
+      final driverFirstName = driverUser?['firstName']?.toString() ?? '';
+      unawaited(
+        FirebaseFirestore.instance
+            .collection('trips')
+            .doc(fsDocId)
+            .set({
+          'status': 'accepted',
+          'driverId': _driverId?.toString() ?? '',
+          'driverName': driverFirstName,
+          'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
+          'acceptedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true)).catchError((_) {}),
+      );
+    }
+
     if (!mounted) return;
     final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;

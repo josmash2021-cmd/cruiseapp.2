@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/lat_lng.dart';
 
 import '../services/api_service.dart';
@@ -194,7 +195,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState _state = const RiderTripState();
   RiderTripState get state => _state;
 
-  static const Duration _dispatchPollInterval = Duration(seconds: 2);
+  static const Duration _dispatchPollInterval = Duration(seconds: 1);
 
   final DirectionsService _directions = DirectionsService(ApiKeys.webServices);
 
@@ -202,6 +203,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
   StreamSubscription<Map<String, dynamic>>? _tripSseSub; // SSE stream sub
+  StreamSubscription<DocumentSnapshot>? _fsMatchSub; // Firestore trip doc watcher
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
   bool _sseConnected = false; // true when SSE stream is active
   bool _driverMatched = false; // true once driver match is confirmed — blocks stale polls
@@ -654,7 +656,46 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _tripSseSub?.cancel();
+    _fsMatchSub?.cancel();
     _sseConnected = false;
+
+    // ── Firestore real-time listener: instant detection when driver accepts ──
+    // Fires within ~100ms of driver writing to Firestore, bypassing HTTP latency.
+    _fsMatchSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc('sql_$tripId')
+        .snapshots()
+        .listen((snap) {
+      if (_driverMatched) return;
+      final data = snap.data();
+      if (data == null) return;
+      final status = (data['status']?.toString() ?? '').toLowerCase();
+      if (status == 'accepted' || status == 'driver_en_route') {
+        debugPrint('🔴 Firestore trip doc: status=$status → driver matched!');
+        _fsMatchSub?.cancel();
+        _pollTimer?.cancel();
+        _tripSseSub?.cancel();
+        _timeoutTimer?.cancel();
+        _isRequesting = false;
+        _onDriverMatched(data, tripId);
+      } else if (status == 'cancelled' || status == 'no_drivers' || status == 'expired') {
+        _fsMatchSub?.cancel();
+        _pollTimer?.cancel();
+        _tripSseSub?.cancel();
+        _timeoutTimer?.cancel();
+        _isRequesting = false;
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: status == 'no_drivers'
+              ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
+              : 'Tu viaje fue cancelado.',
+        );
+        notifyListeners();
+        unawaited(CacheService.clearActiveTrip());
+      }
+    }, onError: (e) {
+      debugPrint('[RiderTrip] Firestore match listener error: $e');
+    });
 
     // Safety-net timeout — 7 minutes max searching (backend handles expiry at 5 min)
     _timeoutTimer = Timer(const Duration(minutes: 7), () {
@@ -853,6 +894,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _tripSseSub?.cancel();
+    _fsMatchSub?.cancel();
     _sseConnected = false;
     _isRequesting = false;
 
@@ -877,6 +919,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _tripSseSub?.cancel();
+    _fsMatchSub?.cancel();
     _isRequesting = false;
     _driverMatched = false;
     _state = const RiderTripState();
@@ -893,6 +936,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _tripSseSub?.cancel();
+    _fsMatchSub?.cancel();
     super.dispose();
   }
 }

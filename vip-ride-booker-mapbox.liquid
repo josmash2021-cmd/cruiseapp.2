@@ -961,7 +961,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   // ══ TRANSLATIONS ══
   var TRANSLATIONS = {
     en: {
-      pickupLabel: 'Pickup location',
+      pickupLabel: 'Pickup',
       dropoffLabel: 'Dropoff location',
       serviceLocationLabel: 'Service location',
       dateLabel: 'Date',
@@ -1010,7 +1010,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       continue: 'Continue'
     },
     es: {
-      pickupLabel: 'Ubicación de recogida',
+      pickupLabel: 'Recogida',
       dropoffLabel: 'Ubicación de destino',
       serviceLocationLabel: 'Ubicación del servicio',
       dateLabel: 'Fecha',
@@ -2306,8 +2306,11 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       if(dropoffEl) attachAutocomplete(dropoffEl,'dropoff');
       setClearVisibility(); syncPills(); validateCTA(null);
 
-      // Locate button
+      // Locate button + real-time pickup location
       var locateBtn=document.getElementById('vipLocate-{{ section.id }}');
+      var _geoWatchId=null;
+      var _pickupManuallySet=false; // true when user types or selects an address
+      var _lastGeoLat=null, _lastGeoLng=null;
       function reverseGeocode(lat,lng,callback){
         var url='https://api.mapbox.com/geocoding/v5/mapbox.places/'
           +lng+','+lat+'.json?access_token='+encodeURIComponent(MAPBOX_TOKEN)
@@ -2320,35 +2323,60 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
           })
           .catch(function(){ callback(null); });
       }
+      // Mark pickup as manual when user types or picks from autocomplete
+      if(pickupEl){
+        pickupEl.addEventListener('input',function(){ _pickupManuallySet=true; });
+      }
+      function updatePickupFromGeo(lat,lng,flyToMap){
+        // Skip if user already entered a custom address
+        if(_pickupManuallySet) return;
+        // Skip if position hasn't changed significantly (~50m)
+        if(_lastGeoLat!==null && Math.abs(lat-_lastGeoLat)<0.0005 && Math.abs(lng-_lastGeoLng)<0.0005) return;
+        _lastGeoLat=lat; _lastGeoLng=lng;
+        if(flyToMap){
+          map.flyTo({center:[lng,lat],zoom:15,pitch:0,bearing:0,duration:2200,easing:function(t){var t1=t-1;return t1*t1*t1+1;}});
+        }
+        if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
+        pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
+          .setLngLat([lng,lat]).addTo(map);
+        reverseGeocode(lat,lng,function(placeName){
+          if(placeName && !_pickupManuallySet){
+            pickupEl.value=placeName;
+            pickupPlace={label:placeName,lat:lat,lng:lng};
+            afterInputChange();
+          }
+        });
+      }
       function doGeolocate(onSuccess,onError){
         navigator.geolocation.getCurrentPosition(
           function(pos){
-            var lat=pos.coords.latitude, lng=pos.coords.longitude;
-            map.flyTo({center:[lng,lat],zoom:15,pitch:0,bearing:0,duration:2200,easing:function(t){var t1=t-1;return t1*t1*t1+1;}});
-            if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
-            pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
-              .setLngLat([lng,lat]).addTo(map);
-            reverseGeocode(lat,lng,function(placeName){
-              if(placeName){
-                pickupEl.value=placeName;
-                pickupPlace={label:placeName,lat:lat,lng:lng};
-                afterInputChange();
-              }
-              if(onSuccess) onSuccess();
-            });
+            updatePickupFromGeo(pos.coords.latitude, pos.coords.longitude, true);
+            if(onSuccess) onSuccess();
           },
           function(){ if(onError) onError(); },
           {timeout:10000,enableHighAccuracy:true}
         );
       }
       if(navigator.geolocation){
+        // Show loading state
+        if(pickupEl && !pickupEl.value) pickupEl.placeholder=currentLang==='es'?'Detectando tu ubicación...':'Detecting your location...';
         if(locateBtn) locateBtn.classList.add('is-locating');
         doGeolocate(
           function(){ if(locateBtn) locateBtn.classList.remove('is-locating'); },
-          function(){ if(locateBtn) locateBtn.classList.remove('is-locating'); }
+          function(){
+            if(locateBtn) locateBtn.classList.remove('is-locating');
+            if(pickupEl) pickupEl.placeholder=currentLang==='es'?'Ingresa dirección de recogida':'Enter pickup address';
+          }
+        );
+        // Watch position for real-time updates (only updates when user hasn't manually set pickup)
+        _geoWatchId=navigator.geolocation.watchPosition(
+          function(pos){ updatePickupFromGeo(pos.coords.latitude, pos.coords.longitude, false); },
+          function(){},
+          {enableHighAccuracy:true, maximumAge:15000, timeout:20000}
         );
         if(locateBtn){
           locateBtn.addEventListener('click',function(){
+            _pickupManuallySet=false; // reset manual flag — user wants auto-detect
             locateBtn.classList.add('is-locating');
             doGeolocate(
               function(){ locateBtn.classList.remove('is-locating'); },
@@ -2379,7 +2407,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       "default": "YOUR_MAPBOX_ACCESS_TOKEN"
     },
     { "type": "range",   "id": "hourly_rate",          "label": "Hourly rate ($/hr)",        "min": 25,  "max": 300, "step": 5,  "default": 100 },
-    { "type": "text",    "id": "heading",               "label": "Heading",                   "default": "Request a ride" },
+    { "type": "text",    "id": "heading",               "label": "Heading",                   "default": "Where to?" },
     
     { "type": "header",  "content": "Booking Mode Settings" },
     { "type": "text",    "id": "ride_mode_text",        "label": "Ride mode button text",     "default": "Point to Point" },
@@ -2393,8 +2421,8 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     { "type": "text",    "id": "service_location_label","label": "Service location label (hourly)", "default": "Service location" },
     
     { "type": "header",  "content": "Form Labels" },
-    { "type": "text",    "id": "pickup_label",          "label": "Pickup label",              "default": "Pickup location" },
-    { "type": "text",    "id": "pickup_placeholder",    "label": "Pickup placeholder",        "default": "Enter pickup address" },
+    { "type": "text",    "id": "pickup_label",          "label": "Pickup label",              "default": "Pickup" },
+    { "type": "text",    "id": "pickup_placeholder",    "label": "Pickup placeholder",        "default": "Detecting your location..." },
     { "type": "text",    "id": "pickup_pill_default",   "label": "Pickup pill default",       "default": "Pickup" },
     { "type": "text",    "id": "dropoff_label",         "label": "Dropoff label",             "default": "Dropoff location" },
     { "type": "text",    "id": "dropoff_placeholder",   "label": "Dropoff placeholder",       "default": "Enter destination address" },

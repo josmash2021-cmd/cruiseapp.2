@@ -334,11 +334,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     try {
       final status = await ApiService.getDispatchStatus(widget.tripId);
       if (!mounted) return;
+      // Check top-level fields first, then nested trip object
       final trip = (status['trip'] is Map)
           ? Map<String, dynamic>.from((status['trip'] as Map).cast<String, dynamic>())
           : <String, dynamic>{};
       final recovered = _normalizedPhotoUrl(
-        trip['rider_photo_url']?.toString() ??
+        status['rider_photo_url']?.toString() ??
+            trip['rider_photo_url']?.toString() ??
             trip['riderPhotoUrl']?.toString() ??
             trip['passenger_photo_url']?.toString(),
       );

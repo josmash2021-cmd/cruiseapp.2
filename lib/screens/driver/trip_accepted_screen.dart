@@ -167,11 +167,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       _routePoints = await _fetchRoutePoints(widget.driverPos, widget.pickupLatLng);
       if (mounted) setState(() => _routeFetching = false);
     }
-    // Cap route endpoints to exact pin coordinates so polyline meets the pins
-    if (_routePoints.length >= 2) {
-      _routePoints[0] = widget.driverPos;
-      _routePoints[_routePoints.length - 1] = widget.pickupLatLng;
-    }
+    // Do NOT force raw pin coordinates onto road-snapped route endpoints.
+    // The Directions API returns geometry that follows actual roads — overriding
+    // the first/last points with user-tap coordinates creates off-road zigzags.
   }
 
   /// Fetch route via OSRM → Mapbox → straight line fallback.
@@ -546,9 +544,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                     ],
                   ),
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
                     children: [
-                      // Rider avatar
+                      // Rider avatar (centered)
                       VerifiedAvatar(
                         uid: widget.riderId?.toString(),
                         role: 'rider',
@@ -557,45 +555,41 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                         isVerified: widget.riderVerified,
                         radius: 28,
                       ),
-                      const SizedBox(width: 12),
-                      // Rider info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.riderName,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.star_rounded,
-                                    color: _gold, size: 14),
-                                const SizedBox(width: 4),
-                                Text(
-                                  widget.riderRating.toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  '${widget.etaMinutes} min · ${widget.distToPickupKm.toStringAsFixed(1)} km',
-                                  style: const TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                      const SizedBox(height: 10),
+                      // Rider name (centered)
+                      Text(
+                        widget.riderName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 6),
+                      // Rating + ETA + distance (centered, miles)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              color: _gold, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.riderRating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${widget.etaMinutes} min · ${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

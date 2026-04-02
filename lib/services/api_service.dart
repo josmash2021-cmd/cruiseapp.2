@@ -443,7 +443,7 @@ class ApiService {
           ? SecurityService.deviceFingerprint.substring(0, 16)
           : SecurityService.deviceFingerprint,
       'X-Client-Version': '1.0.0',
-      'ngrok-skip-browser-warning': 'true',
+      if (kDebugMode) 'ngrok-skip-browser-warning': 'true',
     };
     return requestHeaders;
   }
@@ -2352,10 +2352,11 @@ class ApiService {
     String currency = 'USD',
     String description = 'Cruise ride payment',
   }) async {
+    final h = await _authHeaders();
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/paypal/create-order'),
-          headers: _jsonHeaders(),
+          headers: h,
           body: jsonEncode({
             'amount': amount,
             'currency': currency,

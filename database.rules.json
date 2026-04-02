@@ -3,34 +3,34 @@
     "chats": {
       "$rideId": {
         "messages": {
-          ".read": true,
-          ".write": true,
+          ".read": "auth != null",
+          ".write": "auth != null",
           ".indexOn": ["timestamp", "read"]
         },
         "typing": {
-          ".read": true,
-          ".write": true
+          ".read": "auth != null",
+          ".write": "auth != null"
         },
         "lastMessage": {
-          ".read": true,
-          ".write": true
+          ".read": "auth != null",
+          ".write": "auth != null"
         },
         "lastTimestamp": {
-          ".read": true,
-          ".write": true
+          ".read": "auth != null",
+          ".write": "auth != null"
         }
       }
     },
     "driver_locations": {
       "$driverId": {
-        ".read": true,
-        ".write": true
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $driverId"
       }
     },
     "drivers": {
       "$driverId": {
-        ".read": true,
-        ".write": true
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $driverId"
       }
     }
   }

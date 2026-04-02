@@ -11,7 +11,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'royalpurplecorp@gmail.com';
+      return request.auth != null && request.auth.token.admin == true;
     }
 
     // Config collection — read-only for all authenticated users
@@ -23,42 +23,52 @@ service cloud.firestore {
     match /verifications/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
+      allow update: if isOwnDoc(docId) || isAdmin();
     }
+
     match /clients/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
+      allow update: if isOwnDoc(docId) || isAdmin();
     }
+
     match /drivers/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isOwnDoc(docId) || isAdmin();
+      allow write: if isOwnDoc(docId) || isAdmin();
     }
+
     match /trips/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      // Allow any authenticated user to update trips.
-      // Real authorization is enforced at the backend API level;
-      // Firestore acts as a real-time sync channel, not the source of truth.
-      allow update: if isAuthenticated();
+      // Only the rider (resource owner) or assigned driver may update a trip.
+      // Falls back to admin for ops overrides.
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.rider_uid ||
+        request.auth.uid == resource.data.driver_uid ||
+        isAdmin()
+      );
       allow delete: if isAdmin();
     }
+
     match /users/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() || isAdmin();
-      allow update: if isAuthenticated() || isAdmin();
+      // Only the account owner may update their own profile.
+      allow update: if isOwnDoc(docId) || isAdmin();
       allow delete: if isAdmin();
 
-      // Subcollections: transactions, inbox_chats, and any future subcollections
+      // Subcollections: only the account owner may write.
       match /{subcollection}/{docId2} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() || isAdmin();
+        allow write: if isOwnDoc(docId) || isAdmin();
       }
     }
+
     match /riders/{docId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
+
     match /admins/{docId} {
       allow read: if isAdmin();
       allow write: if isAdmin();

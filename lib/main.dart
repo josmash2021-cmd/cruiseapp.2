@@ -14,6 +14,7 @@ import 'config/smooth_transitions.dart';
 import 'config/page_transitions.dart';
 import 'config/api_keys.dart';
 import 'config/app_theme.dart';
+import 'config/env.dart';
 import 'config/theme_notifier.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
@@ -102,6 +103,19 @@ void main() async {
             ),
           );
         };
+      }
+
+      // Guard: fail loudly in release mode if dev placeholder credentials slipped through.
+      // This catches a failed Codemagic env injection before the app reaches users.
+      if (kReleaseMode) {
+        assert(
+          Env.apiKey != 'dev-api-key-change-in-production',
+          'FATAL: dev API key in production build. Check Codemagic generate_env step.',
+        );
+        assert(
+          Env.hmacSecret != 'dev-hmac-secret-change-in-production',
+          'FATAL: dev HMAC secret in production build. Check Codemagic generate_env step.',
+        );
       }
 
       // ── Parallel startup: independent inits run concurrently ──

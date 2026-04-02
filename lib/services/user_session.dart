@@ -338,16 +338,19 @@ class UserSession {
     _cachedUid = '';
   }
 
-  /// Temporarily save a password during registration flow.
+  /// Temporarily save a password during registration flow (encrypted at rest).
   static Future<void> savePendingPassword(String password) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_password', password);
+    final encrypted = SecurityService.encryptForPrefs(password, 'pending_pw');
+    await prefs.setString('pending_password', encrypted);
   }
 
-  /// Get the temporarily saved password.
+  /// Get the temporarily saved password (decrypted).
   static Future<String?> getPendingPassword() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('pending_password');
+    final raw = prefs.getString('pending_password');
+    if (raw == null || raw.isEmpty) return null;
+    return SecurityService.decryptFromPrefs(raw, 'pending_pw') ?? raw;
   }
 
   /// Copy a picked image to the app’s permanent documents directory.

@@ -1806,28 +1806,20 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       maxZoom:16,
       easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
-    // Smooth cinematic tilt — wait for fitBounds to fully settle, then ease in gradually
+    // Cinematic tilt — native easeTo for buttery smooth animation + won't block zoom
     map.once('moveend', function(){
-      // Small pause before starting tilt for visual rest
       setTimeout(function(){
-        var startPitch=0, endPitch=50;
-        var startBearing=0, endBearing=-10;
-        var dur=4000; // 4 seconds total
-        var startTime=null;
-        function smoothTilt(ts){
-          if(!startTime) startTime=ts;
-          var elapsed=ts-startTime;
-          var t=Math.min(elapsed/dur,1);
-          // Smooth ease-out (decelerate) — feels natural
-          var ease=1-Math.pow(1-t,4);
-          map.jumpTo({
-            pitch:startPitch+(endPitch-startPitch)*ease,
-            bearing:startBearing+(endBearing-startBearing)*ease
-          });
-          if(t<1) requestAnimationFrame(smoothTilt);
-        }
-        requestAnimationFrame(smoothTilt);
-      }, 300);
+        map.easeTo({
+          pitch:45,
+          bearing:15,
+          duration:3500,
+          easing:function(t){ return 1-Math.pow(1-t,3); } // cubic ease-out
+        });
+        // Re-enable scroll zoom around center after tilt settles
+        map.once('moveend', function(){
+          map.scrollZoom.enable({around:'center'});
+        });
+      }, 250);
     });
   }
 

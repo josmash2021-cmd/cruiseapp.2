@@ -174,6 +174,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   bool _rideStarted = false;
   bool _startRideSlidDone = false;
 
+  // ── Rider pickup confirmation listener ──
+  StreamSubscription? _riderConfirmSub;
+  bool _riderConfirmedPickup = false;
+
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
   StreamSubscription<Position>? _dropoffGpsSub;
@@ -297,6 +301,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _shimmerAnim = Tween<double>(begin: -1.0, end: 2.0).animate(
       CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut),
     );
+
+    // Listen for rider confirming pickup in Firestore
+    _listenForRiderConfirmation();
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -345,6 +352,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void dispose() {
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
+    _riderConfirmSub?.cancel();
     _finishNavTimer?.cancel();
     _camCycleTimer?.cancel();
     _camCycleCtrl?.dispose();
@@ -513,7 +521,44 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  // ── Update trip status to in_trip when second Start Trip is slid ────────
+  // ── Listen for rider confirming they are with the driver ────────────────
+  void _listenForRiderConfirmation() {
+    _riderConfirmSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(_fsDocId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted || _riderConfirmedPickup || _rideStarted) return;
+      final data = snap.data();
+      if (data == null) return;
+      if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
+        _riderConfirmedPickup = true;
+        HapticFeedback.mediumImpact();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'El pasajero ha confirmado que está en tu vehículo',
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              backgroundColor: const Color(0xFFD4A843),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    });
+  }
+
+  // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
     try {
       await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip');

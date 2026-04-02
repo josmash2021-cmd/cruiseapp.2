@@ -164,7 +164,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       } catch (_) {}
     }
 
-    // Fade out then call callback
+    // Show confirmed animation briefly, then transition
+    await Future.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
     await _fadeOutCtrl.forward();
     if (mounted) widget.onConfirmed();
   }
@@ -215,8 +217,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                             animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
                             builder: (context, child) {
                               final isActive = _pressed || _driverStarted;
-                              return Transform.scale(
-                                scale: isActive ? 1.0 : _pulseAnim.value,
+                              return AnimatedScale(
+                                scale: _pressed ? 1.15 : (isActive ? 1.0 : _pulseAnim.value),
+                                duration: const Duration(milliseconds: 400),
+                                curve: Curves.elasticOut,
                                 child: SizedBox(
                                   width: 72,
                                   height: 72,
@@ -230,10 +234,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                         height: 60,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: _bg,
+                                          color: _pressed ? _gold.withValues(alpha: 0.15) : _bg,
                                           border: Border.all(
-                                            color: _gold.withValues(alpha: 0.25),
-                                            width: 1,
+                                            color: _pressed ? _gold : _gold.withValues(alpha: 0.25),
+                                            width: _pressed ? 2.0 : 1,
                                           ),
                                         ),
                                         child: AnimatedSwitcher(
@@ -249,7 +253,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                                   Icons.check_rounded,
                                                   key: const ValueKey('check'),
                                                   color: _pressed ? _gold : Colors.white,
-                                                  size: 28,
+                                                  size: _pressed ? 32 : 28,
                                                 ),
                                         ),
                                       ),
@@ -268,7 +272,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           child: _driverStarted
                               ? const Text(
                                   'Tu conductor ha confirmado\nque ya estás en el carro',
-                                  key: ValueKey('confirmed'),
+                                  key: ValueKey('driver_confirmed'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _gold,
@@ -277,17 +281,29 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                     height: 1.3,
                                   ),
                                 )
-                              : const Text(
-                                  'Tu conductor ha llegado',
-                                  key: ValueKey('arrived'),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _gold,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.3,
-                                  ),
-                                ),
+                              : _pressed
+                                  ? const Text(
+                                      '¡Viaje confirmado!',
+                                      key: ValueKey('rider_confirmed'),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _gold,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.3,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Tu conductor ha llegado',
+                                      key: ValueKey('arrived'),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _gold,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.3,
+                                      ),
+                                    ),
                         ),
                         const SizedBox(height: 8),
 
@@ -304,16 +320,41 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                     fontSize: 15,
                                   ),
                                 )
-                              : Text(
-                                  '$firstName está esperando',
-                                  key: const ValueKey('sub_waiting'),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.45),
-                                    fontSize: 15,
-                                  ),
-                                ),
+                              : _pressed
+                                  ? Text(
+                                      'Transitando a tu viaje…',
+                                      key: const ValueKey('sub_transitioning'),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.45),
+                                        fontSize: 15,
+                                      ),
+                                    )
+                                  : Text(
+                                      '$firstName está esperando',
+                                      key: const ValueKey('sub_waiting'),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.45),
+                                        fontSize: 15,
+                                      ),
+                                    ),
                         ),
+
+                        // ── CTA instruction ──
+                        if (!_driverStarted && !_pressed)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 18),
+                            child: Text(
+                              'Presiona para comenzar\ntu viaje hacia tu destino',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.35),
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
 
                         const Spacer(flex: 3),
 
@@ -382,65 +423,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           ),
                         ),
 
-                        // ── Confirm button ──
-                        if (!_driverStarted && !_pressed) ...[
-                          const SizedBox(height: 12),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: GestureDetector(
-                              onTap: _onConfirmPressed,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFE8C547),
-                                      Color(0xFFD4AF37),
-                                      Color(0xFFC49B30),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(28),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _gold.withValues(alpha: 0.25),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.location_on_rounded,
-                                      size: 16,
-                                      color: Colors.black.withValues(alpha: 0.7),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    const Text(
-                                      'Presiona cuando estés con el driver',
-                                      style: TextStyle(
-                                        color: Colors.black87,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+
 
                         // ── Bottom hint ──
-                        if (!_driverStarted) ...[
+                        if (!_driverStarted && !_pressed) ...[
                           const SizedBox(height: 14),
                           Text(
                             'El viaje comenzará automáticamente\nsi no confirmas',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: _gold.withValues(alpha: 0.2),
+                              color: _gold.withValues(alpha: 0.55),
                               fontSize: 12,
                               height: 1.4,
                             ),

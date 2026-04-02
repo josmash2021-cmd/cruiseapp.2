@@ -326,17 +326,30 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                   ),
                                 ),
                         ),
-                        if (!isConfirmed) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '$firstName está esperando',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.40),
-                              fontSize: 14,
+                        AnimatedOpacity(
+                          opacity: isConfirmed ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOut,
+                          child: AnimatedSlide(
+                            offset: isConfirmed ? const Offset(0, -0.3) : Offset.zero,
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOut,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(height: 6),
+                                Text(
+                                  '$firstName está esperando',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.40),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
 
                         const Spacer(),
 
@@ -347,24 +360,29 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Ripple wave 1
-                              if (!isConfirmed)
-                                AnimatedBuilder(
-                                  animation: _ripple1Ctrl,
-                                  builder: (_, __) => _buildRippleRing(_ripple1Ctrl.value),
+                              // Ripple waves — fade out smoothly on confirm
+                              AnimatedOpacity(
+                                opacity: isConfirmed ? 0.0 : 1.0,
+                                duration: const Duration(milliseconds: 500),
+                                curve: Curves.easeOut,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    AnimatedBuilder(
+                                      animation: _ripple1Ctrl,
+                                      builder: (_, __) => _buildRippleRing(_ripple1Ctrl.value),
+                                    ),
+                                    AnimatedBuilder(
+                                      animation: _ripple2Ctrl,
+                                      builder: (_, __) => _buildRippleRing(_ripple2Ctrl.value),
+                                    ),
+                                    AnimatedBuilder(
+                                      animation: _ripple3Ctrl,
+                                      builder: (_, __) => _buildRippleRing(_ripple3Ctrl.value),
+                                    ),
+                                  ],
                                 ),
-                              // Ripple wave 2
-                              if (!isConfirmed)
-                                AnimatedBuilder(
-                                  animation: _ripple2Ctrl,
-                                  builder: (_, __) => _buildRippleRing(_ripple2Ctrl.value),
-                                ),
-                              // Ripple wave 3
-                              if (!isConfirmed)
-                                AnimatedBuilder(
-                                  animation: _ripple3Ctrl,
-                                  builder: (_, __) => _buildRippleRing(_ripple3Ctrl.value),
-                                ),
+                              ),
                               // The button
                               GestureDetector(
                                 onTap: isConfirmed ? null : _onConfirmPressed,
@@ -457,9 +475,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                   },
                                 ),
                               ),
-                              // ── Hand tap hint — realistic pressing gesture ──
-                              if (!isConfirmed)
-                                Positioned(
+                              // ── Hand tap hint — fades out on confirm ──
+                              Positioned(
                                   bottom: 6,
                                   right: 24,
                                   child: AnimatedBuilder(
@@ -473,8 +490,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                         child: Transform.rotate(
                                           angle: -tiltAngle,
                                           alignment: Alignment.bottomCenter,
-                                          child: Opacity(
-                                            opacity: _handOpacity.value,
+                                          child: AnimatedOpacity(
+                                            opacity: isConfirmed ? 0.0 : _handOpacity.value,
+                                            duration: const Duration(milliseconds: 350),
                                             child: Column(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
@@ -605,19 +623,27 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           ),
                         ),
 
-                        // ── Bottom hint ──
-                        if (!isConfirmed) ...[
-                          const SizedBox(height: 14),
-                          Text(
-                            'Confirma que ya estás\nen el vehículo',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _gold.withValues(alpha: 0.55),
-                              fontSize: 12,
-                              height: 1.4,
-                            ),
+                        // ── Bottom hint — fades out on confirm ──
+                        AnimatedOpacity(
+                          opacity: isConfirmed ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOut,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(height: 14),
+                              Text(
+                                isConfirmed ? '' : 'El viaje comenzará automáticamente\nsi no confirmas',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: _gold.withValues(alpha: 0.55),
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
 
                         SizedBox(height: pad.bottom + 16),
                       ],

@@ -590,8 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           ).listen((Position p) {
             if (!mounted) return;
             final ll = LatLng(p.latitude, p.longitude);
-            setState(() => _currentLatLng = ll);
-            // Smoothly animate pin + camera to new position
+            _currentLatLng = ll; // Update without setState — map pins move via annotations
             _animateToLocation(ll);
           });
     } catch (e) {

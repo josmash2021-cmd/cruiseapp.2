@@ -681,12 +681,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Update camera target bounds (called from sim tick) ──
   void _throttleCam() {
-    // During onTrip, throttle camera updates to every 3s for smooth panning
-    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-    if (isOnTrip) {
-      final now = DateTime.now();
-      if (now.difference(_lastBoundsFit).inMilliseconds < 3000) return;
-      _lastBoundsFit = now;
+    final now = DateTime.now();
+    if (now.difference(_lastBoundsFit).inMilliseconds < 2000) return;
+    _lastBoundsFit = now;
+    // Chase mode: follow driver with close-up camera
+    if (_shouldFollowDriver && _animPos.latitude != 0) {
+      _followDriver(_animPos, _animBearing);
+      return;
     }
     _updateCamTarget();
   }

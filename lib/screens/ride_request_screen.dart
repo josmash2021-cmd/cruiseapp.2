@@ -192,6 +192,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Guard: only navigate to tracking once ──
   bool _navigatingToTracking = false;
+  // ── Guard: rider initiated the cancel (skip redundant dialog) ──
+  bool _riderInitiatedCancel = false;
 
   // ── Payment state ──
   String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';

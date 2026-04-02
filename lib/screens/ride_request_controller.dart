@@ -344,6 +344,13 @@ extension _RideRequestController on _RideRequestScreenState {
         _splashTimer = null;
         // Clean up route/pins immediately on cancellation
         _cleanupMapAnnotations();
+        // Rider already confirmed cancellation — just go home, no extra dialog
+        if (_riderInitiatedCancel) {
+          _riderInitiatedCancel = false;
+          _ctrl.reset();
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          break;
+        }
         // Only show cancel dialog if there's a specific cancel reason from dispatch
         // (not just "no drivers available" which is automatic)
         if (s.cancelReason != null && s.cancelReason!.isNotEmpty) {
@@ -1425,6 +1432,7 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   void _cancelSearching() {
+    _riderInitiatedCancel = true;
     _searchMapTimer?.cancel();
     _searchMapTimer = null;
     _splashTimer?.cancel();

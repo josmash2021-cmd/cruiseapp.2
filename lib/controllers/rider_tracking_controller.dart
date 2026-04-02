@@ -136,6 +136,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
       _startRtdbDriverListener(did);
     }
+
+    // Start chase camera follow timer (backs up per-GPS-update follow)
+    _startCameraFollowTracking();
   }
 
   /// Process real-time driver location from RTDB.
@@ -917,9 +920,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every location update
+  /// Start real-time camera tracking - follows driver every 2s
   void _startCameraFollowTracking() {
-    if (!_shouldFollowDriver || _map == null) return;
+    if (_map == null) return;
     
     _cameraFollowTimer?.cancel();
     _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) {
@@ -928,10 +931,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
   }
 
-  /// Smooth camera follow for driver position
+  /// Smooth chase camera: follows driver at close zoom with bearing + tilt
   void _followDriver(LatLng position, double bearing) {
-    // Always show full route overview so route stays centered between panels
-    _fitRouteBounds();
+    if (_map == null || !mounted) return;
+    final mq = MediaQuery.of(context).padding;
+    final topInset = mq.top + 10 + _topCardHeight + 32;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
+    _map!.easeTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(position.longitude, position.latitude),
+        ),
+        zoom: 15.5,
+        bearing: bearing,
+        pitch: 45.0,
+        padding: mapbox.MbxEdgeInsets(
+          top: topInset,
+          bottom: bottomInset,
+          left: 40,
+          right: 40,
+        ),
+      ),
+      mapbox.MapAnimationOptions(duration: 1500),
+    );
   }
 
   void _navigateToHome() {

@@ -341,9 +341,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _saveStateTimer;
 
   // Smooth camera follow (for real-time tracking after animation)
-  final bool _shouldFollowDriver = false;
+  final bool _shouldFollowDriver = true;
   Timer? _cameraFollowTimer;
-  final bool _useNavCamera = false; // When true: follow driver at 45° pitch
+  final bool _useNavCamera = true; // When true: follow driver at 45° pitch
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;

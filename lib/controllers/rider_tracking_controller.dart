@@ -144,6 +144,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Process real-time driver location from RTDB.
   void _onRealDriverLocation(LatLng ll, {double? bearing}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
+    // Wake up the ticker if it was idling — new GPS data means new animation to run
+    if (_interpIdle) {
+      _interpIdle = false;
+      if (_interpTicker != null && !_interpTicker!.isActive) {
+        _interpTicker!.start();
+      }
+    }
 
     // Always try to snap GPS onto the route polyline.
     // Only fall back to raw GPS lerp when we truly have no route.
@@ -826,8 +833,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final tgt = _directTargetPos;
       if (tgt != null) {
         const factor = 0.16;
-        final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * factor;
-        final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * factor;
+        final dLat = tgt.latitude - _animPos.latitude;
+        final dLng = tgt.longitude - _animPos.longitude;
+        final newLat = _animPos.latitude + dLat * factor;
+        final newLng = _animPos.longitude + dLng * factor;
         _animPos = LatLng(newLat, newLng);
         _driverPos = _animPos;
         final tgtBrg = _directTargetBearing;
@@ -837,6 +846,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           if (d < -180) d += 360;
           _animBearing = (_animBearing + d * 0.18) % 360;
           _driverBearing = _animBearing;
+          // Idle when position AND bearing have both converged
+          if (dLat.abs() < 0.000002 && dLng.abs() < 0.000002 && d.abs() < 0.3) {
+            _interpIdle = true;
+            _interpTicker?.stop();
+            return;
+          }
         }
         _updateCarSmooth();
       }
@@ -894,6 +909,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
     _updateApproachLine(); // dashed approach line driver→pickup
+
+    // ── Idle detection: pause ticker when animation has fully converged ──
+    // With factor 0.20/frame, diff decays to <0.05m in ~20-25 frames (~400ms).
+    // After convergence there is nothing left to animate — parking the ticker
+    // eliminates ~60 CPU wakeups/sec until the next real GPS update arrives.
+    final diff2 = (_tgtTraveledM - _traveledM).abs();
+    double db2 = _animBearing - (_driverBearing);
+    if (db2 > 180) db2 -= 360;
+    if (db2 < -180) db2 += 360;
+    if (diff2 < 0.05 && db2.abs() < 0.3 && _directTargetPos == null) {
+      _interpIdle = true;
+      _interpTicker?.stop();
+    }
   }
 
   /// ──────────────────────────────────────────────────────────────────────────

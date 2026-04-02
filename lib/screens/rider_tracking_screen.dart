@@ -220,6 +220,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _traveledM = 0;
 
   Ticker? _interpTicker;
+  /// True when animation has converged — ticker is paused to save CPU/battery.
+  /// Restarted automatically when new GPS data arrives.
+  bool _interpIdle = false;
 
   /// Target traveled distance (set by sim timer, approached smoothly by interp ticker)
   double _tgtTraveledM = 0;

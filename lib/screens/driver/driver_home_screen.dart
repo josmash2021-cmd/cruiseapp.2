@@ -393,7 +393,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
+          accuracy: LocationAccuracy.high,
           timeLimit: Duration(seconds: 15),
         ),
       );
@@ -408,12 +408,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         mapbox.MapAnimationOptions(duration: 800),
       );
 
-      // ── Real-time GPS stream (3m filter, best accuracy) ──
+      // ── Real-time GPS stream (high accuracy, 10m filter — battery-friendly) ──
+      // bestForNavigation uses the most expensive GPS mode continuously.
+      // 'high' is accurate enough for showing driver position on map
+      // while generating significantly less heat.
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 5, // 5 meters — battery-friendly, still smooth
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10, // 10 meters — driver home screen, not active nav
         ),
       ).listen((p) {
         if (!mounted) return;

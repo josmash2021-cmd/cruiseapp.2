@@ -76,7 +76,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     return renderCircularPinBytes(
       icon: _pinIconToCircular(icon),
       isPickup: isPickup,
-      radius: 32,
+      radius: 28,
     );
   }
 
@@ -938,7 +938,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       ));
       _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
-        image: _goldPinIcon!,
+        image: _goldDropoffPinIcon ?? _goldPinIcon!,
         iconSize: 0.85,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
@@ -1029,7 +1029,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       } else if (_dropoffPinOnly != null) {
         bytes = _dropoffPinOnly!.$1;
       } else {
-        bytes = _goldPinIcon;
+        bytes = _goldDropoffPinIcon ?? _goldPinIcon;
       }
       if (bytes != null) {
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(

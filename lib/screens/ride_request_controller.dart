@@ -8,18 +8,23 @@ extension _RideRequestController on _RideRequestScreenState {
 
   Future<void> _loadPinIcon() async {
     _goldPinIcon = await renderCircularPinBytes(
-      icon: CircularPinIcon.dot,
+      icon: CircularPinIcon.person,
       isPickup: true,
-      radius: 44,
+      radius: 36,
+    );
+    _goldDropoffPinIcon = await renderCircularPinBytes(
+      icon: CircularPinIcon.home,
+      isPickup: false,
+      radius: 36,
     );
     if (mounted) _setState(() {});
   }
 
   Future<Uint8List?> _buildGoldPinBytes() async {
     return renderCircularPinBytes(
-      icon: CircularPinIcon.dot,
+      icon: CircularPinIcon.person,
       isPickup: true,
-      radius: 44,
+      radius: 36,
     );
   }
 

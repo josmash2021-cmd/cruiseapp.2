@@ -163,6 +163,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Map elements (raw bytes) ──
   Uint8List? _goldPinIcon;
+  Uint8List? _goldDropoffPinIcon;
 
   // ── Searching animation ──
   late AnimationController _pulseCtrl;

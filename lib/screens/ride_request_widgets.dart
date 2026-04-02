@@ -187,12 +187,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
     // Keep the ride options panel compact so map route remains visible.
-    final sheetH = (screenH * 0.35).clamp(250.0, 420.0) + bottomPad;
+    final sheetH = (screenH * 0.42).clamp(300.0, 520.0) + bottomPad;
 
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: 12,
+      right: 12,
+      bottom: 8,
       child: AnimatedBuilder(
         animation: _sheetCtrl,
         builder: (context, child) {
@@ -206,11 +206,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 20,
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 24,
                 offset: const Offset(0, -4),
               ),
             ],
@@ -429,7 +429,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 ),
                               ),
                               if (i < displayOptions.length - 1)
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 4),
                             ],
                         ],
                       ),
@@ -645,7 +645,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         // Gold crystal / glass effect when selected
         color: selected
@@ -714,7 +714,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         children: [
           // Left — Badge above car
           SizedBox(
-            width: 130,
+            width: 100,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -861,10 +861,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     );
                   },
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 // Car image
                 SizedBox(
-                  height: 80,
+                  height: 56,
                   child: Image.asset(
                     _carAssetForOption(opt.name),
                     fit: BoxFit.contain,
@@ -893,12 +893,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 Text(
                   opt.description,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     color: Color(0xFFE8C547),
                     fontWeight: FontWeight.w400,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 // Trip time + arrival time
                 Builder(
                   builder: (_) {
@@ -934,7 +934,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ],
             ),
           ),
-          const SizedBox(width: 60),
+          const SizedBox(width: 48),
         ],   // Row children
       ),     // Row
           // Price + est. fare — top-right corner

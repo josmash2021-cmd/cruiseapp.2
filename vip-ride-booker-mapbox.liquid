@@ -1799,12 +1799,12 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       essential: true,
       easing: function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
-    // Step 3: Tilt to 55° (cinematic inclination)
+    // Step 3: Tilt to 70° (cinematic inclination)
     map.once('moveend', function(){
       setTimeout(function(){
         var z = map.getZoom();
         map.easeTo({
-          pitch: 55,
+          pitch: 70,
           zoom: Math.max(z - 0.7, 9),
           duration: 2500,
           easing: function(t){ return t*(2-t); }
@@ -2354,25 +2354,19 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
           }, 300);
         });
       }
-      // iOS zoom fix
+      // Block page-level pinch-zoom permanently — pinch must only zoom the map
       (function(){
         var metaVP = document.querySelector('meta[name="viewport"]');
-        if(!metaVP) return;
-        var origContent = metaVP.getAttribute('content') || '';
-        function disableIOSZoom(){
-          if(origContent.indexOf('maximum-scale') === -1){
-            metaVP.setAttribute('content', origContent + ', maximum-scale=1');
-          }
+        if(metaVP){
+          var orig = metaVP.getAttribute('content') || '';
+          // Strip any existing scale settings then lock them
+          var locked = orig
+            .replace(/,?\s*maximum-scale=[^,]*/gi,'')
+            .replace(/,?\s*minimum-scale=[^,]*/gi,'')
+            .replace(/,?\s*user-scalable=[^,]*/gi,'')
+            .trim();
+          metaVP.setAttribute('content', locked + ', maximum-scale=1.0, user-scalable=no');
         }
-        function enableIOSZoom(){
-          metaVP.setAttribute('content', origContent);
-        }
-        document.addEventListener('focusin', function(e){
-          if(e.target && e.target.tagName === 'INPUT') disableIOSZoom();
-        });
-        document.addEventListener('focusout', function(e){
-          if(e.target && e.target.tagName === 'INPUT') setTimeout(enableIOSZoom, 300);
-        });
       })();
       // Lock map on input focus
       root.querySelectorAll('input[type=text],input[type=date]').forEach(function(inp){

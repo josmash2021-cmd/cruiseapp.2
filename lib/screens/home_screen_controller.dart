@@ -146,7 +146,7 @@ extension _HomeScreenController on _HomeScreenState {
 
         // Animate driver car to new position
         _animateDriverCar(LatLng(newLat, newLng), bearing);
-      });
+      }, onError: (_) {});
     });
 
     // Also listen for trip completion

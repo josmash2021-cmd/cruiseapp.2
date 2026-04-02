@@ -22,6 +22,7 @@ import '../services/notification_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_keys.dart';

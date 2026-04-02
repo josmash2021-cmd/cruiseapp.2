@@ -493,9 +493,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.
-  void _startRtdbDriverListener(String driverId) {
+  void _startRtdbDriverListener(String driverId) async {
     _rtdbDriverLocSub?.cancel();
     _rtdbDriverId = driverId;
+    // Ensure Firebase Auth so RTDB rules (auth != null) pass
+    if (FirebaseAuth.instance.currentUser == null) {
+      try { await FirebaseAuth.instance.signInAnonymously(); }
+      catch (_) { debugPrint('[RiderTracking] Firebase anonymous auth failed'); }
+    }
     DateTime? lastRtdbUpdate;
     _rtdbDriverLocSub = FirebaseDatabase.instance
         .ref('driver_locations/$driverId')

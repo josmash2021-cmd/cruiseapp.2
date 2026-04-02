@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx claude-code-templates@latest --agent development-team/ui-ux-designer)",
+      "Bash(npx claude-code-templates@latest --agent development-team/backend-architect)",
+      "Bash(grep -rn \"driver_id.*query\\\\|driverId.*query\\\\|driver_id=\\\\$\\\\|rider_id=\\\\$\" /c/Users/Puma/cruiseapp.2/lib --include=\"*.dart\")",
+      "Bash(git -C /c/Users/Puma/cruiseapp.2 log --oneline --all -- certificate_private_key.pem)",
+      "Bash(find \"C:/Users/Puma/cruiseapp.2/android\" -name \"build.gradle\" -exec echo \"=== {} ===\" \\\\; -exec cat {} \\\\;)",
+      "Bash(find \"C:/Users/Puma/cruiseapp.2/android/app/src/main\" -name \"AndroidManifest.xml\" -exec cat {} \\\\;)",
+      "Bash(grep -v \"//.*import\\\\|\\\\.dart:\")",
+      "Bash(ls android/app/src/main/res/mipmap-*)",
+      "Bash(ls lib/screens/*.dart)",
+      "Bash(ls lib/screens/driver/*.dart)",
+      "Bash(grep -iv \"//.*test\\\\|flutter_test\\\\|unit test\\\\|widget test\")",
+      "Bash(grep -iv \"//.*import\")",
+      "Bash(curl -s --max-time 8 https://cruiseapp2-production.up.railway.app/auth/register -X POST -H \"Content-Type: application/json\" -d '{\"test\":true}')",
+      "Bash(curl -s --max-time 8 https://cruiseapp2-production.up.railway.app/dispatch/status)",
+      "Bash(cp assets/images/logoapp.png assets/launcher_icon.png)",
+      "Bash(cp assets/images/logoapp.png assets/launcher_icon_foreground.png)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(python -m py_compile /c/Users/Puma/cruiseapp.2/backend/routers/dispatch.py)",
+      "Bash(python -m py_compile /c/Users/Puma/cruiseapp.2/backend/routers/auth.py)",
+      "Bash(python -c \"from routers.dispatch import router\")",
+      "Bash(find \"/c/Users/Puma/cruiseapp.2\" -name \"*.dart\" -type f -exec grep -l \"LocalDataService\\\\|local_data_service\" {} \\\\;)",
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(grep -E \"\\\\.\\(rules|json\\)$\")",
+      "Bash(grep -n \"app.mount\\\\|StaticFiles\\\\|/photos\" c:/Users/Puma/cruiseapp.2/backend/*.py)",
+      "Bash(grep -rn \"photos.*get\\\\|GET.*photos\\\\|/photos/\" c:/Users/Puma/cruiseapp.2/backend/routers/*.py)"
+    ]
+  }
+}

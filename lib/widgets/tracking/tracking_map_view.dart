@@ -564,10 +564,30 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topPad = mq.top;   // safe area top
     final bottomPad = mq.bottom; // safe area bottom
     
-    // Always include ALL points: pickup, dropoff, driver, full route
-    final pts = <LatLng>[widget.pickupLatLng, widget.dropoffLatLng];
-    if (_animPos.latitude != 0) pts.add(_animPos);
-    pts.addAll(_routePts);
+    final pts = <LatLng>[];
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    
+    if (isOnTrip && _animPos.latitude != 0) {
+      // Chase-style: show only driver → dropoff (remaining route)
+      pts.add(_animPos);
+      pts.add(widget.dropoffLatLng);
+      // Add remaining route points ahead of the driver
+      if (_segDist.isNotEmpty) {
+        for (int i = 0; i < _routePts.length; i++) {
+          if (_segDist[i] >= _traveledM) {
+            pts.add(_routePts[i]);
+          }
+        }
+      }
+    } else {
+      // Overview: show full route (pickup + dropoff + driver + all route pts)
+      pts.add(widget.pickupLatLng);
+      pts.add(widget.dropoffLatLng);
+      if (_animPos.latitude != 0) pts.add(_animPos);
+      pts.addAll(_routePts);
+    }
+    
+    if (pts.isEmpty) return;
     
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
     double minLng = pts[0].longitude, maxLng = pts[0].longitude;
@@ -593,9 +613,18 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ),
       null, null,
     ).then((cam) {
-      if (mounted && _map != null) {
-        _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
-      }
+      if (!mounted || _map == null) return;
+      // Clamp max zoom to prevent over-zooming when driver is near destination
+      final zoom = cam.zoom ?? 14.0;
+      final clampedCam = mapbox.CameraOptions(
+        center: cam.center,
+        zoom: zoom > 16.5 ? 16.5 : zoom,
+        bearing: cam.bearing,
+        pitch: cam.pitch,
+        padding: cam.padding,
+        anchor: cam.anchor,
+      );
+      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
     });
   }
 

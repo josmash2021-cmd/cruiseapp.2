@@ -518,10 +518,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _checkTripStatusFallback();
         }
       });
-      // Throttle: max 2 updates/sec to avoid excessive rebuilds
+      // Throttle: max 5 updates/sec for smoother car animation
       final now = DateTime.now();
       if (lastRtdbUpdate != null &&
-          now.difference(lastRtdbUpdate!).inMilliseconds < 250) {
+          now.difference(lastRtdbUpdate!).inMilliseconds < 200) {
         return;
       }
       lastRtdbUpdate = now;
@@ -812,9 +812,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Use exponential decay so the car accelerates toward the target
     // and decelerates as it approaches — no jolts, no teleports.
     final diff = _tgtTraveledM - _traveledM;
-    // Exponential catch-up: 15% of remaining distance per frame.
+    // Exponential catch-up: 20% of remaining distance per frame.
     // Capped to prevent teleporting on large GPS jumps (>50m).
-    final step = (diff * 0.15).clamp(-1.2, 1.2);
+    final step = (diff * 0.20).clamp(-2.5, 2.5);
     if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {
@@ -823,11 +823,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: smooth 18% rotation per frame — responsive yet fluid ──
+    // ── Bearing: smooth 22% rotation per frame — responsive yet fluid ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.18) % 360;
+    final newBearing = (_animBearing + db * 0.22) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
@@ -837,7 +837,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
-      const lerpFactor = 0.12; // smooth catch-up, never teleport
+      const lerpFactor = 0.16; // smooth catch-up, never teleport
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
       final fallbackBearing = _directTargetBearing;

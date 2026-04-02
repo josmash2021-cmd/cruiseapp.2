@@ -400,21 +400,21 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   border-radius:18px; overflow:hidden;
   background:rgba(0,0,0,.35);
   border:1px solid rgba(255,255,255,.16);
-  touch-action:none;
+  touch-action:none !important;
   min-height:320px;
 }
 @media (max-width:899px){
   .vipRide__map{ position:absolute; inset:0; height:100% !important; min-height:0 !important; border-radius:0; border:none; }
 }
-.vipRide__mapInner{ height:100%; width:100%; }
+.vipRide__mapInner{ height:100%; width:100%; touch-action:none !important; }
 #vipRideMap-{{ section.id }},
 #vipRideMap-{{ section.id }} > div{ height:100% !important; width:100% !important; border-radius:inherit; }
 
 /* Mapbox attribution — keep compact */
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-attrib{ font-size:9px; opacity:.35; }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-logo{ opacity:.35; }
-#vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; touch-action:none; }
-#vipRideMap-{{ section.id }} .mapboxgl-canvas-container{ touch-action:none; }
+#vipRideMap-{{ section.id }} .mapboxgl-canvas{ border-radius:inherit; touch-action:none !important; }
+#vipRideMap-{{ section.id }} .mapboxgl-canvas-container{ touch-action:none !important; }
 /* Mapbox zoom controls — dark theme */
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group{ background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15); border-radius:12px; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.4); }
 #vipRideMap-{{ section.id }} .mapboxgl-ctrl-group button{ width:36px; height:36px; background:transparent; border:none; color:#fff; }
@@ -2266,6 +2266,36 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       map.dragPan.enable({linearity:0.2,deceleration:2500,maxSpeed:1000});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
       map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'bottom-right');
+
+      // ── FORCE ZOOM ON MOBILE ──────────────────────────────────
+      // Walk up from map canvas to <body> and force touch-action:none on every ancestor
+      // so Shopify theme / browser never steals pinch-zoom from Mapbox.
+      (function(){
+        var mapContainer = map.getContainer();
+        var el = mapContainer;
+        while(el && el !== document.documentElement){
+          el.style.touchAction = 'none';
+          el.style.webkitOverflowScrolling = 'auto';
+          el = el.parentElement;
+        }
+        // Also force on canvas and its container
+        var cc = map.getCanvasContainer();
+        if(cc) cc.style.touchAction = 'none';
+        var cv = map.getCanvas();
+        if(cv) cv.style.touchAction = 'none';
+
+        // Prevent browser from intercepting multi-touch on the map area
+        mapContainer.addEventListener('touchmove', function(e){
+          if(e.touches && e.touches.length >= 2){
+            e.preventDefault(); // stop page scroll/zoom when pinching on map
+          }
+        }, {passive:false});
+
+        // Also prevent wheel event from scrolling the page
+        mapContainer.addEventListener('wheel', function(e){
+          e.preventDefault();
+        }, {passive:false});
+      })();
 
       // Keyboard/viewport handling
       if(window.visualViewport){

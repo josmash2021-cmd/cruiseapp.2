@@ -59,6 +59,20 @@ definitions:
         printf 'machine api.mapbox.com\nlogin mapbox\npassword %s\n' "$TOKEN" > ~/.netrc
         chmod 0600 ~/.netrc
         echo "Mapbox downloads token configured (sk. token OK)"
+        # Verify .netrc was written and token is non-empty (show first 12 chars only)
+        PREVIEW="${TOKEN:0:12}…"
+        echo "Token preview: $PREVIEW  |  .netrc size: $(wc -c < ~/.netrc) bytes"
+        # Quick auth test against Mapbox API
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          -u "mapbox:$TOKEN" \
+          "https://api.mapbox.com/downloads/v2/mapbox-common/releases/ios/packages/24.20.0/MapboxCommon.zip" \
+          --range 0-0 --retry 0 2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "206" ]; then
+          echo "✅ Mapbox auth test passed (HTTP $HTTP_CODE)"
+        else
+          echo "❌ Mapbox auth test FAILED (HTTP $HTTP_CODE) — check ENV_MAPBOX_TOKEN in Codemagic"
+          exit 1
+        fi
 
     - &generate_env
       name: Generate env.dart
@@ -234,7 +248,7 @@ workflows:
         - Default
       flutter: stable
       xcode: 26.0
-      cocoapods: 1.16.2
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         FLUTTER_XCODE_CODE_SIGNING_ALLOWED: "NO"
@@ -293,7 +307,7 @@ workflows:
         - Default
       flutter: stable
       xcode: 26.0
-      cocoapods: 1.16.2
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
@@ -401,7 +415,7 @@ workflows:
         - Default
       flutter: stable
       xcode: 26.0
-      cocoapods: 1.16.2
+      cocoapods: 1.15.2
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"

@@ -2267,33 +2267,45 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         cooperativeGestures:false
       });
       // Zoom around center so tilted views don't fly off
-      map.scrollZoom.setWheelZoomRate(1/5);
-      map.scrollZoom.setZoomRate(1/5);
+      map.scrollZoom.setWheelZoomRate(1/2);
+      map.scrollZoom.setZoomRate(1/2);
       // Smooth drag-pan
       map.dragPan.enable({linearity:0.2,deceleration:2500,maxSpeed:1000});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
       map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'bottom-right');
 
       // ── FORCE ZOOM ON MOBILE ──────────────────────────────────
-      // Ensure touch-action:none on map elements so the browser doesn't
-      // intercept pinch gestures. Do NOT call preventDefault on touchmove
-      // because that blocks Mapbox's own touchZoomRotate handler.
+      // Mapbox's touchZoomRotate handler listens on canvasContainer (bubble).
+      // We listen on mapContainer (parent) in bubble phase — so Mapbox fires
+      // FIRST (canvasContainer sees defaultPrevented=false → processes zoom),
+      // THEN our handler fires and calls preventDefault to block page scroll.
+      // This is why we must NOT use capture:true or listen below canvasContainer.
       (function(){
         var mapContainer = map.getContainer();
         var cc = map.getCanvasContainer();
         var cv = map.getCanvas();
-        // Force touch-action on Mapbox's own elements
-        mapContainer.style.touchAction = 'none';
-        if(cc) cc.style.touchAction = 'none';
+        // touch-action:none on all Mapbox elements
         if(cv) cv.style.touchAction = 'none';
-        // Walk up to section root only (not body) to prevent Shopify theme interference
+        if(cc) cc.style.touchAction = 'none';
+        mapContainer.style.touchAction = 'none';
+        // Walk ancestors up through Shopify's section wrapper so no ancestor
+        // with touch-action:pan-y can intercept the pinch before it reaches canvas.
         var el = mapContainer.parentElement;
-        var sectionRoot = mapContainer.closest('.vipRide');
-        while(el && el !== sectionRoot && el !== document.body){
+        var stopAt = document.body;
+        while(el && el !== stopAt){
           el.style.touchAction = 'none';
           el = el.parentElement;
         }
-        if(sectionRoot) sectionRoot.style.touchAction = 'none';
+        // After Mapbox processes pinch at canvasContainer (bubble phase),
+        // prevent the Shopify page scroll from stealing 2-finger moves.
+        // capture:false = bubble phase = fires AFTER Mapbox's canvasContainer handler.
+        mapContainer.addEventListener('touchmove', function(e){
+          if(e.touches.length >= 2){ try{ e.preventDefault(); }catch(ex){} }
+        }, {passive:false, capture:false});
+        // Also stop 2-finger touchstart from bubbling to Shopify body listeners.
+        mapContainer.addEventListener('touchstart', function(e){
+          if(e.touches.length >= 2) e.stopPropagation();
+        }, {passive:true, capture:false});
       })();
       // Explicitly enable pinch-zoom after load (belt and suspenders)
       map.on('load', function(){

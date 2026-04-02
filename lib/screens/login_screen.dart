@@ -144,25 +144,17 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Generate OTP on backend (stores code server-side)
-    final otpResult = await ApiService.sendOtp(email: email);
+    // Generate code client-side so EmailJS can send it independently of the backend
+    final code = List.generate(6, (_) => Random().nextInt(10)).join();
+
+    // Also notify backend (stores registration intent, may send its own email too)
+    ApiService.sendOtp(email: email);
 
     if (!mounted) return;
     setState(() => _sending = false);
 
-    final ok = otpResult['ok'] == true;
-    final backendCode = otpResult['code'] as String?;
-
-    if (!ok || backendCode == null) {
-      _showSnack(
-        'Failed to send code. Try again.',
-        Colors.white.withValues(alpha: 0.6),
-      );
-      return;
-    }
-
-    // Send the code to user's email via EmailJS
-    await EmailService.sendVerificationCode(toEmail: email, code: backendCode);
+    // Send the code via EmailJS
+    await EmailService.sendVerificationCode(toEmail: email, code: code);
     if (!mounted) return;
 
     _showSnack('Code sent to $email', const Color(0xFFE8C547));
@@ -171,8 +163,8 @@ class _LoginScreenState extends State<LoginScreen> {
       slideFromRightRoute(
         VerifyCodeScreen(
           email: email,
-          expectedCode: '',
-          useBackendVerify: true,
+          expectedCode: code,
+          useBackendVerify: false,
         ),
       ),
     );
@@ -577,8 +569,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              // ── Google Sign-In (Android only) ──
-              if (isAndroid) ...[
+              // ── Google Sign-In ──
+              if (isAndroid || isIOS) ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

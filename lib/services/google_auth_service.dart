@@ -44,6 +44,7 @@ class GoogleAuthService {
           userId: user['id'] as int?,
           role: user['role'] as String?,
         );
+        await UserSession.initPhotoNotifier();
       }
 
       AnalyticsService.instance.logLogin('google');

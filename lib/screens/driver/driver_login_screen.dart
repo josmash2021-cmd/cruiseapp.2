@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../forgot_password_screen.dart';
+import '../login_password_screen.dart';
 import 'driver_signup_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_pending_review_screen.dart';
@@ -100,6 +101,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         role: 'driver',
       );
       await UserSession.saveMode('driver');
+      await UserSession.initPhotoNotifier();
 
       // Check driver approval status
       final vStatus = user['verification_status'] as String? ?? 'none';
@@ -172,6 +174,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
             role: 'driver',
           );
           await UserSession.saveMode('driver');
+          await UserSession.initPhotoNotifier();
           final vStatus = user['verification_status'] as String? ?? 'none';
           if (!mounted) return;
           setState(() => _loading = false);
@@ -464,7 +467,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         // ── Back to rider ──
                         Center(
                           child: GestureDetector(
-                            onTap: () => Navigator.of(context).pop(),
+                            onTap: () => Navigator.of(context).pushReplacement(
+                              slideFromRightRoute(const LoginPasswordScreen()),
+                            ),
                             child: Text.rich(
                               TextSpan(
                                 text: S.of(context).lookingToRide,

@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/apple_auth_service.dart';
 import '../services/email_service.dart';
 import '../services/local_data_service.dart';
 import '../services/sms_service.dart';
@@ -14,6 +15,7 @@ import '../services/analytics_service.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
+import 'home_screen.dart';
 import 'map_screen.dart';
 
 /// Screen for users who already have an account — enter email/phone + password.
@@ -33,6 +35,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   bool _obscure = true;
   bool _canLogin = false;
   bool _loading = false;
+  bool _socialLoading = false;
   String? _errorText;
 
   @override
@@ -47,6 +50,20 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _signInWithApple() async {
+    if (_socialLoading) return;
+    setState(() => _socialLoading = true);
+    final ok = await AppleAuthService.instance.signIn();
+    if (!mounted) return;
+    setState(() => _socialLoading = false);
+    if (ok) {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const HomeScreen()),
+        (_) => false,
+      );
+    }
   }
 
   void _validate() {
@@ -442,13 +459,19 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               const SizedBox(height: 28),
 
               // ── Title ──
-              Text(
-                S.of(context).welcomeBack,
-                style: GoogleFonts.cinzel(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: c.textPrimary,
-                  letterSpacing: 0.5,
+              ShaderMask(
+                shaderCallback: (r) => const LinearGradient(
+                  colors: [Color(0xFFF5D990), Color(0xFFE8C547)],
+                ).createShader(r),
+                child: Text(
+                  S.of(context).welcomeBack,
+                  style: GoogleFonts.cinzel(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                    height: 1.2,
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -633,6 +656,54 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
 
               const SizedBox(height: 16),
+
+              // ── Apple Sign-In (iOS only) ──
+              if (Platform.isIOS) ...[
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: c.border, thickness: 1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'or',
+                        style: TextStyle(
+                          color: c.textTertiary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: c.border, thickness: 1)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: c.textPrimary,
+                      side: BorderSide(color: c.border, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    onPressed: _socialLoading ? null : _signInWithApple,
+                    icon: _socialLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.apple, size: 24),
+                    label: const Text(
+                      'Sign in with Apple',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
 
               // ── Quick Access removed (production) ──
               const Spacer(),

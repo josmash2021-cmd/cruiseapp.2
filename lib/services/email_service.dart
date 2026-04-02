@@ -78,8 +78,10 @@ class EmailService {
           'accessToken': _privateKey,
           'template_params': {
             'to_email': toEmail,
+            'to_name': toName,
             'name': toName,
             'code': code,
+            'verification_code': code,
           },
         }),
       ).timeout(const Duration(seconds: 8));

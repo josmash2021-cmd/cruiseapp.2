@@ -322,7 +322,7 @@ _CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIG
     "http://localhost:3000",
     "http://localhost:8000",
 ]
-app.add_middleware(GZipMiddleware, minimum_size=300)
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -332,23 +332,25 @@ app.add_middleware(
 )
 
 # -- LAYER 2: Security Headers -------------------------
+# Paths served to browsers (dispatch dashboard, photos, uploads)
+_BROWSER_PATHS = ("/dispatch", "/photos", "/uploads")
+
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     _path = request.url.path
-    # Skip heavy header computation on high-frequency API paths
-    if _is_hot_path(_path):
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
     response.headers["X-Content-Type-Options"] = "nosniff"
+    # API paths (mobile app) — minimal headers, skip CSP/HSTS/cache overhead
+    if _path.startswith("/api/") or _path.startswith("/auth/") or _path.startswith("/drivers/") or _path.startswith("/dispatch/") or _path.startswith("/trips/") or _is_hot_path(_path):
+        return response
+    # Browser-facing paths — full security headers
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-    # Relaxed CSP for dispatch HTML and media endpoints
-    if request.url.path in ("/dispatch",) or request.url.path.startswith("/photos") or request.url.path.startswith("/uploads"):
+    if any(_path.startswith(p) for p in _BROWSER_PATHS):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
@@ -373,11 +375,14 @@ _MAX_RATE_BUCKETS = 10000  # cap bucket dict to prevent memory leak
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     global _rate_cleanup_ts
+    client_ip = request.client.host if request.client else "unknown"
+    # IP blacklist check (merged — avoid extra middleware hop)
+    if client_ip in _ip_blacklist:
+        return JSONResponse({"detail": "Access denied"}, status_code=403)
     _path = request.url.path
     # Skip rate limiting for SSE streams and hot paths (they're high-frequency)
     if _path.endswith("/stream") or _is_hot_path(_path):
         return await call_next(request)
-    client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     bucket = _rate_buckets.setdefault(client_ip, collections.deque())
     while bucket and bucket[0] < now - _RATE_WINDOW:
@@ -405,8 +410,8 @@ _LARGE_BODY_PATHS = {"/auth/verify-request"}
 
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):
-    # GET/HEAD requests never have meaningful bodies — skip entirely
-    if request.method in ("GET", "HEAD"):
+    # GET/HEAD/hot paths never have meaningful bodies — skip entirely
+    if request.method in ("GET", "HEAD") or _is_hot_path(request.url.path):
         return await call_next(request)
     limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
     content_length = request.headers.get("content-length")
@@ -418,12 +423,6 @@ async def request_size_limit_middleware(request: Request, call_next):
             return JSONResponse({"detail": "Invalid content-length"}, status_code=400)
     return await call_next(request)
 
-@app.middleware("http")
-async def ip_blacklist_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
-    if client_ip in _ip_blacklist:
-        return JSONResponse({"detail": "Access denied"}, status_code=403)
-    return await call_next(request)
 
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
 _HOT_PATHS = {
@@ -446,15 +445,7 @@ def _is_hot_path(path: str) -> bool:
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
     try:
-        response = await call_next(request)
-        # Skip SHA-256 checksum for high-frequency hot paths and SSE streams
-        _path = request.url.path
-        if not _is_hot_path(_path):
-            if hasattr(response, 'body'):
-                body_bytes = response.body
-                checksum = hashlib.sha256(body_bytes).hexdigest()
-                response.headers["X-Response-Checksum"] = checksum
-        return response
+        return await call_next(request)
     except Exception as e:
         import traceback as _tb
         client_ip = request.client.host if request.client else "unknown"

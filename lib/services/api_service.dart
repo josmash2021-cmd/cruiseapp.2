@@ -501,19 +501,7 @@ class ApiService {
 
   /// Parse response — returns decoded JSON map.
   /// Throws [ApiException] on non-2xx.
-  /// Verifies response integrity via X-Checksum header (L8).
   static Map<String, dynamic> _parse(http.Response res) {
-    // L8: Verify response integrity if checksum header present
-    final checksum = res.headers['x-response-checksum'];
-    if (checksum != null &&
-        !SecurityService.verifyResponseIntegrity(res.body, checksum)) {
-      SecurityService.logSecurityEvent(
-        'integrity_violation',
-        details: 'Response tampered: ${res.request?.url.path}',
-      );
-      throw const ApiException(0, 'Response integrity check failed');
-    }
-
     // Guard against non-JSON responses (e.g. Cloudflare HTML error pages)
     dynamic body;
     try {

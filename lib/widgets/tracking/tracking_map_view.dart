@@ -1293,8 +1293,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _cinematicPitch = 0;
     _cinematicBearing = 0;
 
-    // Always show full route overview instantly
+    // Fit camera to full route overview
     _fitRouteBounds();
+
+    // Progressively draw the gold route on top of the dimmed background
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _startAnimatedRouteDraw();
+    });
   }
 
   void _applyCinematicCamera() {

@@ -320,13 +320,13 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     // Add smart pins immediately (pickup + dropoff)
     _addSmartPins();
 
-    // Wait for route to be ready, then draw it instantly (no animation)
+    // Wait for route to be ready, then draw with smooth animation
     while (_routeFetching && mounted) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
     if (!mounted) return;
     if (_routePoints.length >= 2) {
-      await _drawRouteInstant();
+      await _animateRouteDraw();
     }
   }
 

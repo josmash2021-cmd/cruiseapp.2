@@ -1776,28 +1776,27 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     var mapEl = document.getElementById('vipRideMap-{{ section.id }}');
     var mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
     var sheetH = sheet ? sheet.offsetHeight : 240;
-    var padBottom = Math.min(sheetH + 30, mapH * 0.55);
+    // Generous bottom padding: full sheet height + extra margin so pins sit well above it
+    var padBottom = sheetH + 60;
+    // On mobile, ensure at least 40% of map height as bottom pad (sheet covers more)
+    if(window.innerWidth < 900) padBottom = Math.max(padBottom, mapH * 0.45);
     // First fit bounds flat, then cinematic tilt
     map.fitBounds(bounds, {
-      padding:{top:80, right:50, bottom:padBottom, left:50},
+      padding:{top:90, right:60, bottom:padBottom, left:60},
       pitch:0,
       bearing:0,
       duration:2200,
-      maxZoom:16,
+      maxZoom:15.5,
       easing:function(t){ var t1=t-1; return t1*t1*t1+1; }
     });
-    // Cinematic tilt — native easeTo for buttery smooth animation + won't block zoom
+    // Cinematic tilt — native easeTo for buttery smooth animation
     map.once('moveend', function(){
       setTimeout(function(){
         map.easeTo({
           pitch:45,
           bearing:15,
           duration:3500,
-          easing:function(t){ return 1-Math.pow(1-t,3); } // cubic ease-out
-        });
-        // Re-enable scroll zoom around center after tilt settles
-        map.once('moveend', function(){
-          map.scrollZoom.enable({around:'center'});
+          easing:function(t){ return 1-Math.pow(1-t,3); }
         });
       }, 250);
     });
@@ -2247,8 +2246,8 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       });
       // Zoom around center so tilted/pitched views don't fly off
       map.scrollZoom.enable({around:'center'});
-      map.scrollZoom.setWheelZoomRate(1/25);
-      map.scrollZoom.setZoomRate(1/25);
+      map.scrollZoom.setWheelZoomRate(1/10);
+      map.scrollZoom.setZoomRate(1/10);
       // Smooth drag-pan
       map.dragPan.enable({linearity:0.2,deceleration:2500,maxSpeed:1000});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');

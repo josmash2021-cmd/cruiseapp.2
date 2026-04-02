@@ -64,11 +64,10 @@ class PhotoRecoveryService {
     try {
       final firestore = FirebaseFirestore.instance;
       // Try both possible paths: users/{uid} and users/sql_{uid}
-      DocumentSnapshot userDoc;
-      try {
-        userDoc = await firestore.collection('users').doc(uid).get();
-      } catch (_) {
-        // Try with sql_ prefix
+      // Note: Firestore .get() does NOT throw on missing docs — it returns
+      // exists==false. So we must check .exists and fall through, not catch.
+      DocumentSnapshot userDoc = await firestore.collection('users').doc(uid).get();
+      if (!userDoc.exists) {
         userDoc = await firestore.collection('users').doc('sql_$uid').get();
       }
 

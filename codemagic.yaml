@@ -340,6 +340,9 @@ workflows:
     integrations:
       app_store_connect: CruiseinRide
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.cruiseinride.app
       groups:
         - Default
       flutter: stable
@@ -348,115 +351,21 @@ workflows:
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
-        FLUTTER_XCODE_DEVELOPMENT_TEAM: "7QLC9UVB3Z"
     scripts:
       - *generate_env
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
-      - *delete_stale_profiles
-      - name: Set up code signing identities
+      - name: Verify signing setup
         script: |
-          keychain initialize
-
-          echo "── Fetching signing files from App Store Connect ──"
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create \
-            --verbose
-
-          echo "── Adding certificates to keychain ──"
-          keychain add-certificates
-
-          echo "── Listing downloaded profiles ──"
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ || {
-            echo "❌ ERROR: No provisioning profiles were downloaded!"
-            exit 1
-          }
-
-          echo "── Reading profile info ──"
-          PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
-          echo "Profile file: $PROFILE_PATH"
-          echo "Profile file size: $(wc -c < "$PROFILE_PATH") bytes"
-
-          # Decode the provisioning profile CMS envelope
-          security cms -D -i "$PROFILE_PATH" -o /tmp/profile_info.plist 2>/tmp/cms_err.txt
-          CMS_EXIT=$?
-          if [ $CMS_EXIT -ne 0 ] || [ ! -s /tmp/profile_info.plist ]; then
-            echo "security cms failed (exit=$CMS_EXIT), trying alternative method..."
-            cat /tmp/cms_err.txt 2>/dev/null
-            # Alternative: extract XML plist directly from the binary
-            sed -n '/<?xml/,/<\/plist>/p' "$PROFILE_PATH" > /tmp/profile_info.plist
-          fi
-
-          echo "Decoded plist size: $(wc -c < /tmp/profile_info.plist) bytes"
-          echo "Plist contents (first 5 lines):"
-          head -5 /tmp/profile_info.plist
-
-          # Read UUID and Name with error checking
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile_info.plist 2>&1)
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /tmp/profile_info.plist 2>&1)
-
-          # Validate the values aren't error messages
-          if echo "$PROFILE_UUID" | grep -qi "error"; then
-            echo "ERROR: Failed to read UUID from profile plist: $PROFILE_UUID"
-            echo "Full plist dump:"
-            cat /tmp/profile_info.plist
-            exit 1
-          fi
-          if echo "$PROFILE_NAME" | grep -qi "error"; then
-            echo "ERROR: Failed to read Name from profile plist: $PROFILE_NAME"
-            echo "Full plist dump:"
-            cat /tmp/profile_info.plist
-            exit 1
-          fi
-
-          echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
-
-          echo "── Applying profiles to Xcode project ──"
-          xcode-project use-profiles --verbose || echo "use-profiles warning (continuing)"
-
-          echo "── Injecting PROVISIONING_PROFILE_SPECIFIER into pbxproj ──"
-          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          python3 -c "
-          import re, sys, os
-          pbxproj = os.environ.get('PBXPROJ', 'ios/Runner.xcodeproj/project.pbxproj')
-          profile_name = sys.argv[1]
-          with open(pbxproj, 'r') as f: content = f.read()
-          if 'PROVISIONING_PROFILE_SPECIFIER' not in content:
-              content = content.replace('CODE_SIGN_STYLE = Manual;', 'CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"' + profile_name + '\";')
-              print('Injected PROVISIONING_PROFILE_SPECIFIER = ' + profile_name)
-          else:
-              content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\"', 'PROVISIONING_PROFILE_SPECIFIER = \"' + profile_name + '\"', content)
-              print('Updated PROVISIONING_PROFILE_SPECIFIER = ' + profile_name)
-          with open(pbxproj, 'w') as f: f.write(content)
-          print('PROVISIONING_PROFILE_SPECIFIER count: ' + str(content.count('PROVISIONING_PROFILE_SPECIFIER')))
-          " "$PROFILE_NAME"
-
-          echo "── Creating export_options.plist ──"
-          python3 -c "
-          import plistlib
-          opts = {
-              'method': 'app-store',
-              'teamID': '7QLC9UVB3Z',
-              'signingStyle': 'manual',
-              'uploadSymbols': True,
-              'provisioningProfiles': {
-                  'com.cruiseinride.app': '$PROFILE_UUID'
-              }
-          }
-          import os
-          path = os.path.expanduser('~/export_options.plist')
-          with open(path, 'wb') as f:
-              plistlib.dump(opts, f)
-          print('export_options.plist created at', path)
-          "
-          cat "$HOME/export_options.plist"
-
-          echo "── Code signing identities ──"
+          echo "── Keychain identities ──"
           security find-identity -v -p codesigning
-          echo "✅ Code signing setup complete"
+          echo "── Provisioning profiles ──"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ || echo "No profiles dir"
+          echo "── Xcode project signing ──"
+          grep -A2 "CODE_SIGN_STYLE\|PROVISIONING_PROFILE\|DEVELOPMENT_TEAM" ios/Runner.xcodeproj/project.pbxproj | head -30
+          echo "✅ Signing verification complete"
       - name: Build IPA (App Store)
         script: |
           mkdir -p /tmp/xcodebuild_logs

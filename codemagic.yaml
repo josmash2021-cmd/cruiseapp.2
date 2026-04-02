@@ -291,23 +291,32 @@ workflows:
     environment:
       groups:
         - Default
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.cruiseinride.app
       flutter: stable
       xcode: 16.2
       cocoapods: 1.15.2
       vars:
         <<: *shared_vars
+        BUNDLE_ID: "com.cruiseinride.app"
     scripts:
       - *generate_env
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
+      - name: Set up code signing (Ad Hoc)
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+          security find-identity -v -p codesigning
+          echo "✅ Ad Hoc signing ready"
       - name: Flutter build IPA (Ad Hoc)
         script: |
-          xcode-project use-profiles
+          flutter build ipa --release --no-tree-shake-icons \
+            --export-options-plist=~/export_options.plist || \
           flutter build ipa --release --no-tree-shake-icons
     artifacts:
       - build/ios/ipa/*.ipa
@@ -331,9 +340,6 @@ workflows:
     integrations:
       app_store_connect: CruiseinRide
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.cruiseinride.app
       groups:
         - Default
       flutter: stable

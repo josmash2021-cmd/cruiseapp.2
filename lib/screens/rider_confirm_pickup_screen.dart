@@ -120,20 +120,33 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       if (mounted && !_pressed && !_driverStarted) _ripple3Ctrl.repeat();
     });
 
-    // Hand tap animation — taps down and up repeatedly
+    // Hand tap animation — realistic press-down gesture
     _handCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
+    // Finger presses down then lifts with a natural bounce
     _handScale = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85).chain(CurveTween(curve: Curves.easeInOut)), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.85, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)), weight: 30),
+      // Hover / approach
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.96).chain(CurveTween(curve: Curves.easeIn)), weight: 12),
+      // Press down firmly
+      TweenSequenceItem(tween: Tween(begin: 0.96, end: 0.78).chain(CurveTween(curve: Curves.easeInQuart)), weight: 14),
+      // Hold pressed
+      TweenSequenceItem(tween: ConstantTween(0.78), weight: 8),
+      // Lift off with bounce
+      TweenSequenceItem(tween: Tween(begin: 0.78, end: 1.04).chain(CurveTween(curve: Curves.easeOutBack)), weight: 18),
+      // Settle
+      TweenSequenceItem(tween: Tween(begin: 1.04, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 8),
+      // Pause before next tap
       TweenSequenceItem(tween: ConstantTween(1.0), weight: 40),
     ]).animate(_handCtrl);
     _handOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.7, end: 1.0), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.7), weight: 30),
-      TweenSequenceItem(tween: ConstantTween(0.7), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 0.6, end: 0.95), weight: 12),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 14),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 8),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85), weight: 18),
+      TweenSequenceItem(tween: Tween(begin: 0.85, end: 0.6), weight: 8),
+      TweenSequenceItem(tween: ConstantTween(0.6), weight: 40),
     ]).animate(_handCtrl);
 
     // Listen for driver starting the trip
@@ -444,24 +457,57 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                   },
                                 ),
                               ),
-                              // ── Hand tap hint ──
+                              // ── Hand tap hint — realistic pressing gesture ──
                               if (!isConfirmed)
                                 Positioned(
-                                  bottom: 10,
-                                  right: 30,
+                                  bottom: 6,
+                                  right: 24,
                                   child: AnimatedBuilder(
                                     animation: _handCtrl,
-                                    builder: (_, __) => Opacity(
-                                      opacity: _handOpacity.value,
-                                      child: Transform.scale(
-                                        scale: _handScale.value,
-                                        child: Icon(
-                                          Icons.touch_app_rounded,
-                                          size: 36,
-                                          color: _gold.withValues(alpha: 0.7),
+                                    builder: (_, __) {
+                                      final pressProgress = (1.0 - _handScale.value).clamp(0.0, 1.0);
+                                      final yOffset = pressProgress * 10.0; // moves down when pressing
+                                      final tiltAngle = pressProgress * 0.08; // slight wrist tilt on press
+                                      return Transform.translate(
+                                        offset: Offset(0, yOffset),
+                                        child: Transform.rotate(
+                                          angle: -tiltAngle,
+                                          alignment: Alignment.bottomCenter,
+                                          child: Opacity(
+                                            opacity: _handOpacity.value,
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                // The hand
+                                                Transform.scale(
+                                                  scale: _handScale.value,
+                                                  alignment: Alignment.bottomCenter,
+                                                  child: const Text(
+                                                    '👆',
+                                                    style: TextStyle(fontSize: 34),
+                                                  ),
+                                                ),
+                                                // Press shadow — grows when finger is down
+                                                Container(
+                                                  width: 16 + (pressProgress * 10),
+                                                  height: 4 + (pressProgress * 2),
+                                                  decoration: BoxDecoration(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: _gold.withValues(alpha: 0.15 + pressProgress * 0.25),
+                                                        blurRadius: 6 + (pressProgress * 4),
+                                                        spreadRadius: pressProgress * 2,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
                                 ),
                             ],

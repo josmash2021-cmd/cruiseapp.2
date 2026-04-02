@@ -284,7 +284,7 @@ try:
 except ImportError:
     _default_response_class = JSONResponse
 
-app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, default_response_class=_default_response_class)
+app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None, default_response_class=_default_response_class)
 
 # ── Router modules ─────────────────────────────────────────────
 from routers.auth import router as auth_router

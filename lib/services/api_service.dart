@@ -108,9 +108,9 @@ class ApiService {
   static final http.Client _client = () {
     final inner = HttpClient()
       ..autoUncompress = true
-      ..connectionTimeout = const Duration(seconds: 8)
-      ..idleTimeout = const Duration(seconds: 60)
-      ..maxConnectionsPerHost = 10;
+      ..connectionTimeout = const Duration(seconds: 5)
+      ..idleTimeout = const Duration(seconds: 90)
+      ..maxConnectionsPerHost = 12;
     return IOClient(inner);
   }();
 
@@ -181,13 +181,13 @@ class ApiService {
             .timeout(const Duration(seconds: 1));
       } catch (_) {}
 
-      // Then try server for freshest data
+      // Then try server for freshest data (2s max — don't block startup)
       try {
         doc = await FirebaseFirestore.instance
             .collection('config')
             .doc('server')
             .get(const GetOptions(source: Source.server))
-            .timeout(const Duration(seconds: 4));
+            .timeout(const Duration(seconds: 2));
       } catch (_) {
         // Cache version is fine
       }

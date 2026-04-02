@@ -28,7 +28,7 @@ _MAX_OTP_ENTRIES = 3000  # cap for memory safety
 _pending_cache: dict = {}
 _PENDING_CACHE_TTL = 2.0  # Short TTL — offers are time-critical; invalidated on accept/reject
 _MAX_PENDING_CACHE = 2000
-OFFER_TIMEOUT_SECONDS = 20
+OFFER_TIMEOUT_SECONDS = 45  # seconds — UI countdown for driver to tap Accept
 
 # ── Nearby drivers cache (in-memory, short TTL) ──
 _nearby_cache: dict = {}  # key=(lat_rounded, lng_rounded, radius) -> (timestamp, result)

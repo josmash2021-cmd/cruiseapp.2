@@ -920,7 +920,7 @@ class DispatchTimeoutAgent:
         self._db_session_maker = sm
 
     async def monitor(self):
-        await asyncio.sleep(90)
+        await asyncio.sleep(30)  # start sooner — 90s was too long
         while True:
             try:
                 await self._expire_pending_offers()

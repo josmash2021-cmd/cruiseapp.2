@@ -627,7 +627,7 @@ async def reject_offer(
 
 # â”€â”€ In-memory cache for accepted dispatch status â”€â”€
 _dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
-_DISPATCH_STATUS_CACHE_TTL = 3.0  # seconds
+_DISPATCH_STATUS_CACHE_TTL = 1.5  # seconds — fast response to driver accepting
 
 @router.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

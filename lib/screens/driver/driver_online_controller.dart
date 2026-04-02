@@ -688,9 +688,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
           }
 
-          // Throttle backend location updates to max once per 3 seconds
+          // Throttle backend location updates to max once per 2 seconds
           final now = DateTime.now();
-          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 3) {
+          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 2) {
             _lastBackendLocSend = now;
             ApiService.updateDriverLocation(
               driverId: _driverId!,
@@ -905,11 +905,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Polling fallback (slower when SSE is active, never fully skipped)
     _poll();
     int pollTick = 0;
-    _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       pollTick++;
-      // When SSE is delivering, poll every 3rd tick (15s) as safety net
-      if (_sseActive && pollTick % 3 != 0) return;
+      // When SSE is delivering, poll every 5th tick (15s) as safety net
+      if (_sseActive && pollTick % 5 != 0) return;
       _poll();
     });
   }
@@ -955,7 +955,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Heartbeat: keep last_active_at fresh so dispatch doesn't skip us.
     // Only send if GPS stream hasn't already sent recently (avoid duplicates).
     final now = DateTime.now();
-    if (_driverId != null && _pos != null && now.difference(_lastBackendLocSend).inSeconds >= 3) {
+    if (_driverId != null && _pos != null && now.difference(_lastBackendLocSend).inSeconds >= 2) {
       _lastBackendLocSend = now;
       ApiService.updateDriverLocation(
         driverId: _driverId!,

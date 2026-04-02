@@ -112,6 +112,7 @@ void main() async {
         LocalDataService.init(),
         LocalCache.init(),
         _initFirebase(),
+        ApiService.preResolveDns(), // warm DNS cache early — eliminates first-request latency
       ]);
 
       // Group 2: depend on Firebase being ready

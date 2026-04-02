@@ -1,8 +1,22 @@
 """Cruise App — Helper functions: datetime, haversine, dict converters."""
 
 import math
+import os
 import re
 from datetime import datetime, timedelta, timezone
+
+_PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")
+
+
+def _abs_photo_url(url: str | None) -> str | None:
+    """Convert a relative /photos/... path to a full https:// URL.
+    Firebase Storage download URLs (https://firebasestorage.googleapis.com/...)
+    are returned as-is. Returns None if url is None or empty."""
+    if not url:
+        return url
+    if url.startswith('/'):
+        return f"{_PUBLIC_URL}{url}"
+    return url
 
 
 # ═══════════════════════════════════════════════════════
@@ -57,7 +71,7 @@ def _user_dict(u) -> dict:
         "last_name": u.last_name,
         "email": u.email,
         "phone": u.phone,
-        "photo_url": u.photo_url,
+        "photo_url": _abs_photo_url(u.photo_url),
         "role": u.role,
         "is_verified": u.is_verified or False,
         "id_document_type": u.id_document_type,

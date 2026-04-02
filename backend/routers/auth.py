@@ -885,8 +885,9 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
     # Update user photo_url in DB
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
+    full_photo_url = f"{PUBLIC_URL}/photos/{filename}"
     if db_user:
-        db_user.photo_url = f"/photos/{filename}"
+        db_user.photo_url = full_photo_url
         await db.commit()
         await db.refresh(db_user)
         # Sync to Firestore
@@ -896,7 +897,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                 firestore_sync.sync_client(
                     user_id=db_user.id, first_name=db_user.first_name,
                     last_name=db_user.last_name, phone=db_user.phone or "",
-                    email=db_user.email, photo_url=db_user.photo_url,
+                    email=db_user.email, photo_url=full_photo_url,
                     role=db_user.role, created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
                     is_verified=db_user.is_verified or False,
@@ -906,7 +907,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                 ) if collection == "clients" else firestore_sync.sync_driver(
                     user_id=db_user.id, first_name=db_user.first_name,
                     last_name=db_user.last_name, phone=db_user.phone or "",
-                    email=db_user.email, photo_url=db_user.photo_url,
+                    email=db_user.email, photo_url=full_photo_url,
                     is_online=db_user.is_online or False,
                     created_at=db_user.created_at,
                     password_hash=db_user.password_hash,
@@ -916,7 +917,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                 )
             except Exception as e:
                 logging.error("Firestore photo sync failed: %s", e)
-    return {"photo_url": f"/photos/{filename}"}
+    return {"photo_url": full_photo_url}
 
 @router.post("/auth/photo-url", dependencies=[Depends(_verify_api_key)])
 async def save_photo_url(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -998,7 +999,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
         filepath = os.path.join(PHOTOS_DIR, filename)
         with open(filepath, "wb") as f:
             f.write(photo_bytes)
-        photo_url = f"/photos/{filename}"
+        photo_url = f"{PUBLIC_URL}/photos/{filename}"
         logging.warning("Firebase Storage upload failed, using local storage: %s", photo_url)
     else:
         photo_url = firebase_url

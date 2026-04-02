@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import '../services/api_service.dart';
 import '../services/photo_recovery_service.dart';
 
 /// Robust profile photo widget that loads from URL first (cross-device),
@@ -135,11 +136,18 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
     );
   }
 
+  /// Converts relative backend paths like /photos/user_1.jpg to full https:// URLs.
+  String _resolveUrl(String url) {
+    if (url.isEmpty) return url;
+    if (url.startsWith('/')) return '${ApiService.activeServerUrl}$url';
+    return url;
+  }
+
   Widget _buildContent() {
     // 1) Primary remote URL from payload
     // 2) Recovered URL chain if primary fails/missing
-    final primaryUrl = (widget.photoUrl ?? '').trim();
-    final recoveredUrl = (_recoveredPhotoUrl ?? '').trim();
+    final primaryUrl = _resolveUrl((widget.photoUrl ?? '').trim());
+    final recoveredUrl = _resolveUrl((_recoveredPhotoUrl ?? '').trim());
     final primaryFailed = _failedPrimaryUrl != null && _failedPrimaryUrl == primaryUrl;
     final urlToUse = primaryFailed && recoveredUrl.isNotEmpty
         ? recoveredUrl

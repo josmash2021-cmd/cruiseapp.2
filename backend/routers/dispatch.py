@@ -16,7 +16,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict
+from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url
 from services.fcm_service import _send_fcm_push
 from config import (
     OWNER_EMAIL, OWNER_PASSWORD_HASH, OWNER_PASSWORD,
@@ -212,7 +212,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
                 dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
                 status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
-                rider_photo_url=user.photo_url or "",
+                rider_photo_url=_abs_photo_url(user.photo_url) or "",
                 created_at=trip.created_at,
                 scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
                 airport_code=trip.airport_code, terminal=trip.terminal,
@@ -275,7 +275,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             "offer_id": offer.id,
             "rider_name": f"{user.first_name} {user.last_name}",
             "rider_phone": user.phone or "",
-            "rider_photo_url": user.photo_url or "",
+            "rider_photo_url": _abs_photo_url(user.photo_url) or "",
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             **_trip_dict(trip),
@@ -314,7 +314,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     for offer, trip, rider in result.all():
         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
         rider_phone = (rider.phone or "") if rider else ""
-        rider_photo_url = (rider.photo_url or "") if rider else ""
+        rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         offers.append({
             "offer_id": offer.id,
@@ -459,7 +459,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                         driver_id=driver_id,
                         driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
                         driver_phone=drv.phone if drv else None,
-                        driver_photo_url=(drv.photo_url or "") if drv else None,
+                        driver_photo_url=(_abs_photo_url(drv.photo_url) or "") if drv else None,
                     )
             except Exception as e:
                 logging.error("Firestore sync on accept_offer failed: %s", e)
@@ -480,7 +480,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     "driver_id": driver_id,
                     "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
                     "driver_phone": (drv.phone or "") if drv else "",
-                    "driver_photo_url": (drv.photo_url or "") if drv else "",
+                    "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
                     "driver_rating": 4.9,
                     "driver_trips": 0,
                     "vehicle_make": veh.make if veh else "",
@@ -603,7 +603,7 @@ async def reject_offer(
             rider = rider_result.scalar_one_or_none()
             rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
             rider_phone = (rider.phone or "") if rider else ""
-            rider_photo = (rider.photo_url or "") if rider else ""
+            rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
             asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
                 "offer_id": new_offer.id,
                 "rider_name": rider_name,
@@ -666,7 +666,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
             rider_info = {
                 "rider_id": rider.id,
                 "rider_name": f"{rider.first_name} {rider.last_name}",
-                "rider_photo_url": rider.photo_url or "",
+                "rider_photo_url": _abs_photo_url(rider.photo_url) or "",
             }
 
     if accepted and driver:
@@ -674,7 +674,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
             "driver_id": driver.id,
             "driver_name": f"{driver.first_name} {driver.last_name}",
             "driver_phone": driver.phone,
-            "driver_photo_url": driver.photo_url or "",
+            "driver_photo_url": _abs_photo_url(driver.photo_url) or "",
             "driver_rating": 4.9,
             "driver_trips": 0,
             "vehicle_make": veh.make if veh else "",
@@ -713,7 +713,7 @@ async def get_user_photo(user_id: int, user: User = Depends(_get_current_user), 
     target = result.scalar_one_or_none()
     if not target:
         return {"photo_url": ""}
-    url = target.photo_url or ""
+    url = _abs_photo_url(target.photo_url) or ""
     _photo_cache[user_id] = (url, _now)
     return {"photo_url": url}
 

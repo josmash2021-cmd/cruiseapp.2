@@ -831,11 +831,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
     _pos = LatLng(lat, lng);
 
-    // Super smooth bearing interpolation
+    // Smooth bearing interpolation — exponential decay toward target
     double diff = _targetHeading - _heading;
     while (diff > 180) { diff -= 360; }
     while (diff < -180) { diff += 360; }
-    _heading += diff * (t * 0.25).clamp(0.0, 1.0);
+    _heading += diff * 0.15;
 
     // Unified camera following (single source of truth for all phases)
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;

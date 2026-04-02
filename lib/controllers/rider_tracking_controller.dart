@@ -232,64 +232,64 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// FIX 4: Smooth animate driver marker from current position to new position
-  /// Called on each driver location update to create fluid motion
+  /// Uses Ticker (vsync‑synced 60fps) for buttery smooth car movement.
   void _startSmoothMarkerAnimation(LatLng targetPos, double? targetBearing) {
     if (_map == null || !mounted) return;
     
-    // Cancel any existing marker animation
-    _markerAnimTimer?.cancel();
-    
-    _markerLastPos = _animPos; // Current position
-    _markerTargetPos = targetPos; // New target position
-    _markerAnimStep = 0;
+    _markerLastPos = _animPos; // Current interpolated position
+    _markerTargetPos = targetPos;
     _markAnimatingToTarget = true;
-    
-    const steps = 45;
-    const duration = Duration(milliseconds: 1200);
-    final stepDuration = duration ~/ steps;
-    
-    _markerAnimTimer = Timer.periodic(stepDuration, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      
-      _markerAnimStep++;
-      final t = (_markerAnimStep / steps).clamp(0.0, 1.0);
-      
-      // Smooth interpolation using easing curve
-      final easedT = _smoothstep(t);
-      
-      // Interpolate position
-      final lat = _markerLastPos.latitude +
-          (_markerTargetPos.latitude - _markerLastPos.latitude) * easedT;
-      final lng = _markerLastPos.longitude +
-          (_markerTargetPos.longitude - _markerLastPos.longitude) * easedT;
-      
-      _animPos = LatLng(lat, lng);
-      
-      // Interpolate bearing if available
-      if (targetBearing != null) {
-        final bearingDiff = (targetBearing - _animBearing + 360) % 360;
-        final interpBearing = bearingDiff > 180
-            ? (_animBearing - (360 - bearingDiff) * easedT) % 360
-            : (_animBearing + bearingDiff * easedT) % 360;
-        _animBearing = interpBearing;
-      }
-      
-      _setState(() {}); // Trigger marker update
-      
-      if (t >= 1.0) {
-        timer.cancel();
-        _markAnimatingToTarget = false;
-      }
-    });
+
+    // Store target bearing for interpolation inside tick
+    _markerTargetBearing = targetBearing;
+
+    // Reuse ticker, just reset start time
+    if (_markerAnimTicker != null && _markerAnimTicker!.isActive) {
+      _markerAnimNeedsRestart = true;
+    } else {
+      _markerAnimNeedsRestart = true;
+      _markerAnimTicker?.dispose();
+      _markerAnimTicker = createTicker(_onMarkerAnimTickWrapper);
+      _markerAnimTicker!.start();
+    }
   }
 
-  /// Smoothstep interpolation for smooth acceleration/deceleration
-  /// Creates smooth ease-in-out effect: 3t² - 2t³
-  double _smoothstep(double t) {
-    return t * t * (3.0 - 2.0 * t);
+  void _onMarkerAnimTickWrapper(Duration elapsed) {
+    if (_markerAnimNeedsRestart) {
+      _markerAnimStart = elapsed;
+      _markerAnimNeedsRestart = false;
+    }
+    _onMarkerAnimTick(elapsed);
+  }
+
+  void _onMarkerAnimTick(Duration elapsed) {
+    final dt = (elapsed - _markerAnimStart).inMilliseconds;
+    final t = (dt / _RiderTrackingScreenState._markerAnimDurationMs).clamp(0.0, 1.0);
+
+    // Smooth ease-in-out: 3t² - 2t³
+    final easedT = t * t * (3.0 - 2.0 * t);
+
+    // Interpolate position
+    final lat = _markerLastPos.latitude +
+        (_markerTargetPos.latitude - _markerLastPos.latitude) * easedT;
+    final lng = _markerLastPos.longitude +
+        (_markerTargetPos.longitude - _markerLastPos.longitude) * easedT;
+
+    _animPos = LatLng(lat, lng);
+
+    // Interpolate bearing if available
+    if (_markerTargetBearing != null) {
+      double diff = (_markerTargetBearing! - _animBearing) % 360;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      _animBearing += diff * easedT.clamp(0.0, 1.0);
+    }
+
+    _setState(() {}); // Trigger map marker update
+
+    if (t >= 1.0) {
+      _markAnimatingToTarget = false;
+    }
   }
 
   /// Process trip status changes from Firestore.

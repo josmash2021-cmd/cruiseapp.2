@@ -19,8 +19,8 @@ extension _HomeScreenMap on _HomeScreenState {
     if (_locAnimFrom == null || _locAnimTo == null) return;
     final dt = (elapsed - _locAnimStart).inMilliseconds;
     _locAnimProgress = (dt / _locAnimDurationMs).clamp(0.0, 1.0);
-    // Throttle annotation updates to ~15fps (every 66ms) to avoid async backpressure
-    if (dt - _lastAnnotUpdateMs >= 66) {
+    // Update annotation at ~60fps (every 16ms) for buttery smooth movement
+    if (dt - _lastAnnotUpdateMs >= 16) {
       _lastAnnotUpdateMs = dt;
       _updateMiniMapAnnotation();
     }

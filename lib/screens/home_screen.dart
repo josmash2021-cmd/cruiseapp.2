@@ -70,7 +70,7 @@ const _gold = Color(0xFFE8C547);
 const _goldLight = Color(0xFFFBE47A);
 const double _kMinSheet = 0.42;
 const double _kMaxSheet = 1.0; // Full screen when expanded
-const int _locAnimDurationMs = 2800; // smooth glide between updates
+const int _locAnimDurationMs = 1200; // smooth glide between updates
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   void _setState(VoidCallback fn) { setState(fn); }

@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/verified_avatar.dart';
+
 /// Full-screen confirmation shown to the rider when the driver arrives.
 /// The rider presses the big gold button to confirm they are with the driver,
 /// then the app fades into the active trip tracking screen.
@@ -19,12 +21,20 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     required this.firestoreTripId,
     required this.onConfirmed,
     this.tripId,
+    this.driverPhotoUrl,
+    this.driverId,
+    this.driverRating,
+    this.vehiclePlate,
   });
 
   final String driverName;
   final String vehicleDesc;
   final String? firestoreTripId;
   final int? tripId;
+  final String? driverPhotoUrl;
+  final String? driverId;
+  final double? driverRating;
+  final String? vehiclePlate;
 
   /// Called when the rider presses the confirm button OR when the driver
   /// starts the trip from their side.
@@ -163,7 +173,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Widget build(BuildContext context) {
     final firstName = widget.driverName.split(' ').first;
     final pad = MediaQuery.of(context).padding;
-    final screenH = MediaQuery.of(context).size.height;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -192,288 +201,255 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   ),
                 ),
 
-                // ── Centered icon + text (positioned at ~45% of screen) ──
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: screenH * 0.33,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ── Gold ring icon (matches Photo 2 size) ──
-                      GestureDetector(
-                        onTap: _driverStarted ? null : _onConfirmPressed,
-                        child: AnimatedBuilder(
-                          animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
-                          builder: (context, child) {
-                            final isActive = _pressed || _driverStarted;
-                            return Transform.scale(
-                              scale: isActive ? 1.0 : _pulseAnim.value,
-                              child: SizedBox(
-                                width: 72,
-                                height: 72,
-                                child: CustomPaint(
-                                  painter: _GoldenRingPainter(
-                                    rotation: _rotateCtrl.value * 2 * math.pi,
-                                  ),
-                                  child: Center(
-                                    child: Container(
-                                      width: 60,
-                                      height: 60,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: _bg,
-                                        border: Border.all(
-                                          color: _gold.withValues(alpha: 0.25),
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 300),
-                                        child: _driverStarted
-                                            ? Icon(
-                                                Icons.directions_car_rounded,
-                                                key: const ValueKey('car'),
-                                                color: _gold,
-                                                size: 24,
-                                              )
-                                            : Icon(
-                                                Icons.check_rounded,
-                                                key: const ValueKey('check'),
-                                                color: _pressed ? _gold : Colors.white,
-                                                size: 28,
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 18),
+                // ── Centered content (icon + text + card + button) ──
+                Positioned.fill(
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        const Spacer(flex: 3),
 
-                      // ── Title ──
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: _driverStarted
-                            ? const Text(
-                                'Tu conductor ha confirmado\nque ya estás en el carro',
-                                key: ValueKey('confirmed'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _gold,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.3,
-                                ),
-                              )
-                            : const Text(
-                                'Tu conductor ha llegado',
-                                key: ValueKey('arrived'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _gold,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.3,
-                                ),
-                              ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      // ── Subtitle ──
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: _driverStarted
-                            ? Text(
-                                'El viaje ha comenzado',
-                                key: const ValueKey('sub_started'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                  fontSize: 15,
-                                ),
-                              )
-                            : Text(
-                                '$firstName está esperando',
-                                key: const ValueKey('sub_waiting'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                  fontSize: 15,
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // ── Bottom section: driver card + hint ──
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: pad.bottom + 16,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ── Driver info card (matches Photo 2 style) ──
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF14142a),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.18),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                blurRadius: 20,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              // Avatar circle
-                              Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _bg,
-                                  border: Border.all(
-                                    color: _gold.withValues(alpha: 0.5),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    firstName.isNotEmpty
-                                        ? firstName[0].toUpperCase()
-                                        : 'D',
-                                    style: const TextStyle(
-                                      color: _gold,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
+                        // ── Gold ring icon ──
+                        GestureDetector(
+                          onTap: _driverStarted ? null : _onConfirmPressed,
+                          child: AnimatedBuilder(
+                            animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
+                            builder: (context, child) {
+                              final isActive = _pressed || _driverStarted;
+                              return Transform.scale(
+                                scale: isActive ? 1.0 : _pulseAnim.value,
+                                child: SizedBox(
+                                  width: 72,
+                                  height: 72,
+                                  child: CustomPaint(
+                                    painter: _GoldenRingPainter(
+                                      rotation: _rotateCtrl.value * 2 * math.pi,
                                     ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // Name + vehicle info
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.driverName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.star_rounded,
-                                          size: 14,
-                                          color: _gold,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          widget.vehicleDesc,
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(alpha: 0.45),
-                                            fontSize: 13,
+                                    child: Center(
+                                      child: Container(
+                                        width: 60,
+                                        height: 60,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: _bg,
+                                          border: Border.all(
+                                            color: _gold.withValues(alpha: 0.25),
+                                            width: 1,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ],
+                                        child: AnimatedSwitcher(
+                                          duration: const Duration(milliseconds: 300),
+                                          child: _driverStarted
+                                              ? Icon(
+                                                  Icons.directions_car_rounded,
+                                                  key: const ValueKey('car'),
+                                                  color: _gold,
+                                                  size: 24,
+                                                )
+                                              : Icon(
+                                                  Icons.check_rounded,
+                                                  key: const ValueKey('check'),
+                                                  color: _pressed ? _gold : Colors.white,
+                                                  size: 28,
+                                                ),
+                                        ),
+                                      ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 18),
 
-                      // ── Confirm button (below card, like gold pill) ──
-                      if (!_driverStarted && !_pressed) ...[
-                        const SizedBox(height: 12),
+                        // ── Title ──
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _driverStarted
+                              ? const Text(
+                                  'Tu conductor ha confirmado\nque ya estás en el carro',
+                                  key: ValueKey('confirmed'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _gold,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.3,
+                                  ),
+                                )
+                              : const Text(
+                                  'Tu conductor ha llegado',
+                                  key: ValueKey('arrived'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _gold,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.3,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // ── Subtitle ──
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _driverStarted
+                              ? Text(
+                                  'El viaje ha comenzado',
+                                  key: const ValueKey('sub_started'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                    fontSize: 15,
+                                  ),
+                                )
+                              : Text(
+                                  '$firstName está esperando',
+                                  key: const ValueKey('sub_waiting'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                    fontSize: 15,
+                                  ),
+                                ),
+                        ),
+
+                        const Spacer(flex: 3),
+
+                        // ── Driver info card ──
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: GestureDetector(
-                            onTap: _onConfirmPressed,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFFE8C547),
-                                    Color(0xFFD4AF37),
-                                    Color(0xFFC49B30),
-                                  ],
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14142a),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _gold.withValues(alpha: 0.18),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 6),
                                 ),
-                                borderRadius: BorderRadius.circular(28),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _gold.withValues(alpha: 0.25),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                // Driver avatar
+                                VerifiedAvatar(
+                                  photoUrl: widget.driverPhotoUrl,
+                                  uid: widget.driverId,
+                                  fallbackName: widget.driverName,
+                                  radius: 24,
+                                  role: 'driver',
+                                  isVerified: true,
+                                ),
+                                const SizedBox(width: 12),
+                                // Name + rating
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        widget.driverName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        widget.vehicleDesc,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.45),
+                                          fontSize: 13,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.location_on_rounded,
-                                    size: 16,
-                                    color: Colors.black.withValues(alpha: 0.7),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Text(
-                                    'Presiona cuando estés con el driver',
-                                    style: TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ],
 
-                      // ── Bottom hint ──
-                      if (!_driverStarted) ...[
-                        const SizedBox(height: 14),
-                        Text(
-                          'El viaje comenzará automáticamente\nsi no confirmas',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _gold.withValues(alpha: 0.2),
-                            fontSize: 12,
-                            height: 1.4,
+                        // ── Confirm button ──
+                        if (!_driverStarted && !_pressed) ...[
+                          const SizedBox(height: 12),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: GestureDetector(
+                              onTap: _onConfirmPressed,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFE8C547),
+                                      Color(0xFFD4AF37),
+                                      Color(0xFFC49B30),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(28),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _gold.withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.location_on_rounded,
+                                      size: 16,
+                                      color: Colors.black.withValues(alpha: 0.7),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'Presiona cuando estés con el driver',
+                                      style: TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
+
+                        // ── Bottom hint ──
+                        if (!_driverStarted) ...[
+                          const SizedBox(height: 14),
+                          Text(
+                            'El viaje comenzará automáticamente\nsi no confirmas',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _gold.withValues(alpha: 0.2),
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+
+                        SizedBox(height: pad.bottom + 16),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],

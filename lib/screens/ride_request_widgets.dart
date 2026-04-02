@@ -2016,8 +2016,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               fallbackName: firstName,
                               photoUrl: driver.photoUrl,
                               radius: 28,
+                              role: 'driver',
+                              isVerified: true,
                             ),
                             const SizedBox(width: 12),
+                            // Name + rating
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2029,6 +2032,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 4),
                                   Row(
@@ -2043,19 +2048,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           fontSize: 13,
                                         ),
                                       ),
-                                      if (driver.totalTrips > 0) ...[
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          '${driver.totalTrips} trips',
-                                          style: const TextStyle(
-                                            color: Colors.white38,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 4),
                                   // Vehicle info
                                   Text(
                                     '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
@@ -2063,34 +2058,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       color: Colors.white.withValues(alpha: 0.55),
                                       fontSize: 13,
                                     ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  // License plate pill (golden border)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: gold.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: gold.withValues(alpha: 0.3),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      driver.vehiclePlate,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.8,
-                                      ),
-                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
+                            // License plate pill (right side)
+                            if (driver.vehiclePlate.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: gold.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: gold.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  driver.vehiclePlate,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.8,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                     ),

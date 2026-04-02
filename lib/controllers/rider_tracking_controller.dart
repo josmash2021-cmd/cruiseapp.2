@@ -472,6 +472,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           vehicleDesc: vehicleDesc,
           firestoreTripId: widget.firestoreTripId,
           tripId: widget.tripId,
+          driverPhotoUrl: _driverPhotoUrl ?? widget.driverPhotoUrl,
+          driverId: widget.driverId,
+          driverRating: widget.driverRating,
+          vehiclePlate: widget.vehiclePlate,
           onConfirmed: () {
             _confirmPickupShown = false;
             if (mounted) Navigator.of(context).pop();

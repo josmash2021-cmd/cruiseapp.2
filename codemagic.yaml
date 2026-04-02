@@ -387,34 +387,20 @@ workflows:
 
           echo "── Injecting PROVISIONING_PROFILE_SPECIFIER into pbxproj ──"
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          python3 << PYEOF
-import re
-with open("$PBXPROJ", "r") as f:
-    content = f.read()
-# For every build config that has CODE_SIGN_STYLE = Manual and no PROVISIONING_PROFILE_SPECIFIER,
-# inject it right after CODE_SIGN_STYLE
-profile_name = "$PROFILE_NAME"
-profile_uuid = "$PROFILE_UUID"
-# Add PROVISIONING_PROFILE_SPECIFIER where missing
-if "PROVISIONING_PROFILE_SPECIFIER" not in content:
-    content = content.replace(
-        'CODE_SIGN_STYLE = Manual;',
-        f'CODE_SIGN_STYLE = Manual;\\n\\t\\t\\t\\tPROVISIONING_PROFILE_SPECIFIER = "{profile_name}";'
-    )
-    print(f"Injected PROVISIONING_PROFILE_SPECIFIER = {profile_name}")
-else:
-    # Update existing specifier
-    content = re.sub(
-        r'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"',
-        f'PROVISIONING_PROFILE_SPECIFIER = "{profile_name}"',
-        content
-    )
-    print(f"Updated PROVISIONING_PROFILE_SPECIFIER = {profile_name}")
-with open("$PBXPROJ", "w") as f:
-    f.write(content)
-count = content.count("PROVISIONING_PROFILE_SPECIFIER")
-print(f"PROVISIONING_PROFILE_SPECIFIER appears {count} times")
-PYEOF
+          python3 -c "
+          import re, sys, os
+          pbxproj = os.environ.get('PBXPROJ', 'ios/Runner.xcodeproj/project.pbxproj')
+          profile_name = sys.argv[1]
+          with open(pbxproj, 'r') as f: content = f.read()
+          if 'PROVISIONING_PROFILE_SPECIFIER' not in content:
+              content = content.replace('CODE_SIGN_STYLE = Manual;', 'CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"' + profile_name + '\";')
+              print('Injected PROVISIONING_PROFILE_SPECIFIER = ' + profile_name)
+          else:
+              content = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = \"[^\"]*\"', 'PROVISIONING_PROFILE_SPECIFIER = \"' + profile_name + '\"', content)
+              print('Updated PROVISIONING_PROFILE_SPECIFIER = ' + profile_name)
+          with open(pbxproj, 'w') as f: f.write(content)
+          print('PROVISIONING_PROFILE_SPECIFIER count: ' + str(content.count('PROVISIONING_PROFILE_SPECIFIER')))
+          " "$PROFILE_NAME"
 
           echo "── Creating export_options.plist ──"
           python3 -c "

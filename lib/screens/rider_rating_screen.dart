@@ -183,53 +183,50 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
         body: Stack(
           children: [
             // ── Blurred dark Mapbox map background ──
-            if (widget.dropoffLat != null && widget.dropoffLng != null)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: mapbox.MapWidget(
-                    styleUri: MapboxConfig.styleDark,
-                    cameraOptions: mapbox.CameraOptions(
-                      center: mapbox.Point(
-                        coordinates: mapbox.Position(
-                          widget.dropoffLng!,
-                          widget.dropoffLat!,
-                        ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: mapbox.MapWidget(
+                  styleUri: MapboxConfig.styleDark,
+                  cameraOptions: mapbox.CameraOptions(
+                    center: mapbox.Point(
+                      coordinates: mapbox.Position(
+                        widget.dropoffLng ?? -80.1918,
+                        widget.dropoffLat ?? 25.7617,
                       ),
-                      zoom: 13.5,
-                      pitch: 0,
                     ),
-                    onMapCreated: (ctrl) async {
-                      await MapTheme.applyNavyGold(ctrl);
-                      // Disable all gestures — purely decorative
-                      await ctrl.gestures.updateSettings(
-                        mapbox.GesturesSettings(
-                          scrollEnabled: false,
-                          rotateEnabled: false,
-                          pitchEnabled: false,
-                          doubleTapToZoomInEnabled: false,
-                          doubleTouchToZoomOutEnabled: false,
-                          quickZoomEnabled: false,
-                          pinchToZoomEnabled: false,
-                        ),
-                      );
-                      // Hide compass + logo
-                      await ctrl.compass.updateSettings(
-                        mapbox.CompassSettings(enabled: false),
-                      );
-                      await ctrl.scaleBar.updateSettings(
-                        mapbox.ScaleBarSettings(enabled: false),
-                      );
-                    },
+                    zoom: 14.0,
+                    pitch: 0,
                   ),
+                  onMapCreated: (ctrl) async {
+                    await MapTheme.applyNavyGold(ctrl);
+                    await ctrl.gestures.updateSettings(
+                      mapbox.GesturesSettings(
+                        scrollEnabled: false,
+                        rotateEnabled: false,
+                        pitchEnabled: false,
+                        doubleTapToZoomInEnabled: false,
+                        doubleTouchToZoomOutEnabled: false,
+                        quickZoomEnabled: false,
+                        pinchToZoomEnabled: false,
+                      ),
+                    );
+                    await ctrl.compass.updateSettings(
+                      mapbox.CompassSettings(enabled: false),
+                    );
+                    await ctrl.scaleBar.updateSettings(
+                      mapbox.ScaleBarSettings(enabled: false),
+                    );
+                  },
                 ),
               ),
-            // ── Blur + dark overlay on top of map ──
+            ),
+            // ── Soft blur + semi-transparent dark overlay ──
             Positioned.fill(
               child: ClipRect(
                 child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
                   child: Container(
-                    color: const Color(0xFF0d0d1a).withValues(alpha: 0.65),
+                    color: const Color(0xFF0d0d1a).withValues(alpha: 0.45),
                   ),
                 ),
               ),

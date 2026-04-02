@@ -1796,16 +1796,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             mapbox.AttributionSettings(enabled: false));
                         ctrl.logo.updateSettings(
                             mapbox.LogoSettings(enabled: false));
+                        // Enforce top-down view: disable pitch
+                        ctrl.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
 
-                        // Animate tilt 0° → 20°
-                        if (_dfTiltAnim != null && _dfTiltCtrl != null) {
-                          _dfTiltAnim!.addListener(() {
-                            _dfMapCtrl?.setCamera(
-                              mapbox.CameraOptions(pitch: _dfTiltAnim!.value),
-                            );
-                          });
-                          _dfTiltCtrl!.forward();
-                        }
+                        // Tilt animation disabled — keep top-down view
 
                         // Add route polyline
                         final routePts = _ctrl.state.route?.points;
@@ -1845,8 +1839,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           iconOffset: [0, 0],
                         ));
                         if (dropoff != null) {
+                          final dropLabel = _ctrl.state.dropoffLabel;
+                          final dropIcon = dropLabel.isNotEmpty
+                              ? detectCircularPinIcon(dropLabel)
+                              : CircularPinIcon.home;
                           final dropoffBytes =
-                              await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
+                              await renderCircularPinBytes(icon: dropIcon, isPickup: false, radius: 44);
                           await pointMgr.create(mapbox.PointAnnotationOptions(
                             geometry: mapbox.Point(
                               coordinates:

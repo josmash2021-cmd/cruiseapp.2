@@ -1389,7 +1389,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         ),
         zoom: 16.5,
         bearing: bearing,
-        pitch: 45.0,
+        pitch: 0, // Top-down view
         padding: mapbox.MbxEdgeInsets(
           top: topInset,
           bottom: bottomInset,

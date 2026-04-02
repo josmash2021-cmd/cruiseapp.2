@@ -37,6 +37,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
         ctrl.attribution
             .updateSettings(mapbox.AttributionSettings(enabled: false));
         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+        // Enforce top-down view: disable pitch so zoom stays flat
+        ctrl.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         _updateMiniMapAnnotation();
@@ -2357,6 +2359,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  // Enforce top-down view: disable pitch so zoom stays flat
+                  ctrl.gestures.updateSettings(mapbox.GesturesSettings(pitchEnabled: false));
                   _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
                   _updateMiniMapAnnotation();
                 },

@@ -58,6 +58,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   late final AnimationController _fadeOutCtrl;
   late final Animation<double> _fadeOutAnim;
 
+  // Ripple wave animations (3 staggered rings)
+  late final AnimationController _ripple1Ctrl;
+  late final AnimationController _ripple2Ctrl;
+  late final AnimationController _ripple3Ctrl;
+
+  // Hand tap animation
+  late final AnimationController _handCtrl;
+  late final Animation<double> _handScale;
+  late final Animation<double> _handOpacity;
+
   bool _pressed = false;
   bool _driverStarted = false; // true when driver slides "Start Trip"
   StreamSubscription? _tripSub;
@@ -88,6 +98,43 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
     _fadeOutAnim =
         CurvedAnimation(parent: _fadeOutCtrl, curve: Curves.easeInOut);
+
+    // Ripple waves — 3 staggered expanding rings
+    _ripple1Ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+    _ripple2Ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+    _ripple3Ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+    // Stagger ripple 2 and 3
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted && !_pressed && !_driverStarted) _ripple2Ctrl.repeat();
+    });
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted && !_pressed && !_driverStarted) _ripple3Ctrl.repeat();
+    });
+
+    // Hand tap animation — taps down and up repeatedly
+    _handCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+    _handScale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85).chain(CurveTween(curve: Curves.easeInOut)), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.85, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)), weight: 30),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 40),
+    ]).animate(_handCtrl);
+    _handOpacity = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.7, end: 1.0), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.7), weight: 30),
+      TweenSequenceItem(tween: ConstantTween(0.7), weight: 40),
+    ]).animate(_handCtrl);
 
     // Listen for driver starting the trip
     _listenForTripStart();
@@ -144,6 +191,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _pulseCtrl.dispose();
     _rotateCtrl.dispose();
     _fadeOutCtrl.dispose();
+    _ripple1Ctrl.dispose();
+    _ripple2Ctrl.dispose();
+    _ripple3Ctrl.dispose();
+    _handCtrl.dispose();
     super.dispose();
   }
 
@@ -151,6 +202,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (_pressed || _driverStarted) return;
     _pressed = true;
     HapticFeedback.heavyImpact();
+    // Stop hint animations
+    _handCtrl.stop();
+    _ripple1Ctrl.stop();
+    _ripple2Ctrl.stop();
+    _ripple3Ctrl.stop();
     setState(() {});
 
     // Write confirmation to Firestore
@@ -169,6 +225,23 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (!mounted) return;
     await _fadeOutCtrl.forward();
     if (mounted) widget.onConfirmed();
+  }
+
+  /// Builds a single expanding + fading golden ripple ring.
+  Widget _buildRippleRing(double progress) {
+    final size = 200 + (80 * progress); // expands from 200 to 280
+    final opacity = (1.0 - progress).clamp(0.0, 0.35); // fades out as it expands
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: _gold.withValues(alpha: opacity),
+          width: 2.0 - (progress * 1.2), // thins as it expands
+        ),
+      ),
+    );
   }
 
   @override
@@ -254,96 +327,144 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
                         const Spacer(),
 
-                        // ── Large gold ring CTA ──
-                        GestureDetector(
-                          onTap: isConfirmed ? null : _onConfirmPressed,
-                          child: AnimatedBuilder(
-                            animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
-                            builder: (context, child) {
-                              return AnimatedScale(
-                                scale: _pressed ? 0.92 : (isConfirmed ? 1.0 : _pulseAnim.value),
-                                duration: const Duration(milliseconds: 500),
-                                curve: Curves.easeOutCubic,
-                                child: SizedBox(
-                                  width: 200,
-                                  height: 200,
-                                  child: CustomPaint(
-                                    painter: _GoldenRingPainter(
-                                      rotation: _rotateCtrl.value * 2 * math.pi,
-                                    ),
-                                    child: Center(
-                                      child: Container(
-                                        width: 180,
-                                        height: 180,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: isConfirmed
-                                              ? _gold.withValues(alpha: 0.12)
-                                              : _bg,
-                                          border: Border.all(
-                                            color: isConfirmed
-                                                ? _gold.withValues(alpha: 0.5)
-                                                : _gold.withValues(alpha: 0.15),
-                                            width: isConfirmed ? 2.0 : 1.0,
+                        // ── Large gold ring CTA with ripple waves + hand hint ──
+                        SizedBox(
+                          width: 280,
+                          height: 280,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Ripple wave 1
+                              if (!isConfirmed)
+                                AnimatedBuilder(
+                                  animation: _ripple1Ctrl,
+                                  builder: (_, __) => _buildRippleRing(_ripple1Ctrl.value),
+                                ),
+                              // Ripple wave 2
+                              if (!isConfirmed)
+                                AnimatedBuilder(
+                                  animation: _ripple2Ctrl,
+                                  builder: (_, __) => _buildRippleRing(_ripple2Ctrl.value),
+                                ),
+                              // Ripple wave 3
+                              if (!isConfirmed)
+                                AnimatedBuilder(
+                                  animation: _ripple3Ctrl,
+                                  builder: (_, __) => _buildRippleRing(_ripple3Ctrl.value),
+                                ),
+                              // The button
+                              GestureDetector(
+                                onTap: isConfirmed ? null : _onConfirmPressed,
+                                child: AnimatedBuilder(
+                                  animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
+                                  builder: (context, child) {
+                                    return AnimatedScale(
+                                      scale: _pressed ? 0.92 : (isConfirmed ? 1.0 : _pulseAnim.value),
+                                      duration: const Duration(milliseconds: 500),
+                                      curve: Curves.easeOutCubic,
+                                      child: SizedBox(
+                                        width: 200,
+                                        height: 200,
+                                        child: CustomPaint(
+                                          painter: _GoldenRingPainter(
+                                            rotation: _rotateCtrl.value * 2 * math.pi,
+                                          ),
+                                          child: Center(
+                                            child: Container(
+                                              width: 180,
+                                              height: 180,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: isConfirmed
+                                                    ? _gold.withValues(alpha: 0.12)
+                                                    : _bg,
+                                                border: Border.all(
+                                                  color: isConfirmed
+                                                      ? _gold.withValues(alpha: 0.5)
+                                                      : _gold.withValues(alpha: 0.15),
+                                                  width: isConfirmed ? 2.0 : 1.0,
+                                                ),
+                                              ),
+                                              child: AnimatedSwitcher(
+                                                duration: const Duration(milliseconds: 400),
+                                                switchInCurve: Curves.easeOutBack,
+                                                child: isConfirmed
+                                                    ? Column(
+                                                        key: const ValueKey('confirmed_content'),
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          Icon(
+                                                            Icons.check_circle_rounded,
+                                                            color: _gold,
+                                                            size: 52,
+                                                          ),
+                                                          const SizedBox(height: 10),
+                                                          Text(
+                                                            _driverStarted
+                                                                ? 'Tu viaje\nconfirmado'
+                                                                : 'Tu viaje\nconfirmado',
+                                                            textAlign: TextAlign.center,
+                                                            style: const TextStyle(
+                                                              color: _gold,
+                                                              fontSize: 16,
+                                                              fontWeight: FontWeight.w700,
+                                                              height: 1.3,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      )
+                                                    : Column(
+                                                        key: const ValueKey('cta_content'),
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          const Icon(
+                                                            Icons.check_rounded,
+                                                            color: Colors.white,
+                                                            size: 40,
+                                                          ),
+                                                          const SizedBox(height: 12),
+                                                          Text(
+                                                            'Presiona cuando\nestés con el driver',
+                                                            textAlign: TextAlign.center,
+                                                            style: TextStyle(
+                                                              color: Colors.white.withValues(alpha: 0.60),
+                                                              fontSize: 13,
+                                                              fontWeight: FontWeight.w500,
+                                                              height: 1.4,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                        child: AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 400),
-                                          switchInCurve: Curves.easeOutBack,
-                                          child: isConfirmed
-                                              ? Column(
-                                                  key: const ValueKey('confirmed_content'),
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Icon(
-                                                      Icons.check_circle_rounded,
-                                                      color: _gold,
-                                                      size: 52,
-                                                    ),
-                                                    const SizedBox(height: 10),
-                                                    Text(
-                                                      _driverStarted
-                                                          ? 'Tu viaje\nconfirmado'
-                                                          : 'Tu viaje\nconfirmado',
-                                                      textAlign: TextAlign.center,
-                                                      style: const TextStyle(
-                                                        color: _gold,
-                                                        fontSize: 16,
-                                                        fontWeight: FontWeight.w700,
-                                                        height: 1.3,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                )
-                                              : Column(
-                                                  key: const ValueKey('cta_content'),
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons.check_rounded,
-                                                      color: Colors.white,
-                                                      size: 40,
-                                                    ),
-                                                    const SizedBox(height: 12),
-                                                    Text(
-                                                      'Presiona para\ncomenzar tu viaje\nhacia tu destino',
-                                                      textAlign: TextAlign.center,
-                                                      style: TextStyle(
-                                                        color: Colors.white.withValues(alpha: 0.60),
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w500,
-                                                        height: 1.4,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              // ── Hand tap hint ──
+                              if (!isConfirmed)
+                                Positioned(
+                                  bottom: 10,
+                                  right: 30,
+                                  child: AnimatedBuilder(
+                                    animation: _handCtrl,
+                                    builder: (_, __) => Opacity(
+                                      opacity: _handOpacity.value,
+                                      child: Transform.scale(
+                                        scale: _handScale.value,
+                                        child: Icon(
+                                          Icons.touch_app_rounded,
+                                          size: 36,
+                                          color: _gold.withValues(alpha: 0.7),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              );
-                            },
+                            ],
                           ),
                         ),
 

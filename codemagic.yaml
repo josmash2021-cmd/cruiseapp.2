@@ -316,12 +316,12 @@ workflows:
           keychain initialize
           app-store-connect certificates delete \
             --type IOS_DISTRIBUTION \
-            --certificate-key=/tmp/cert_key.pem \
+            --certificate-key=@file:/tmp/cert_key.pem \
             2>/dev/null || true
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
             --create \
-            --certificate-key=/tmp/cert_key.pem \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --verbose
           keychain add-certificates
 
@@ -432,13 +432,13 @@ workflows:
           # Delete stale certs that don't match our private key
           app-store-connect certificates delete \
             --type IOS_DISTRIBUTION \
-            --certificate-key=/tmp/cert_key.pem \
+            --certificate-key=@file:/tmp/cert_key.pem \
             2>/dev/null || true
 
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
-            --certificate-key=/tmp/cert_key.pem \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --verbose
 
           keychain add-certificates

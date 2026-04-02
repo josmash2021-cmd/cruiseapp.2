@@ -623,7 +623,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 1, // 1 meter for maximum smooth movement
+            distanceFilter: 10, // 10 meters — smooth movement without flooding backend
           ),
         ).listen((pos) {
           if (!mounted) return;
@@ -688,8 +688,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
           }
 
-          // Always update driver location to backend
-          if (_driverId != null) {
+          // Throttle backend location updates to max once per 3 seconds
+          final now = DateTime.now();
+          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 3) {
+            _lastBackendLocSend = now;
             ApiService.updateDriverLocation(
               driverId: _driverId!,
               lat: pos.latitude,
@@ -951,8 +953,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
     // Heartbeat: keep last_active_at fresh so dispatch doesn't skip us.
-    // Fires every poll cycle even if the driver is stationary (GPS silent).
-    if (_driverId != null && _pos != null) {
+    // Only send if GPS stream hasn't already sent recently (avoid duplicates).
+    final now = DateTime.now();
+    if (_driverId != null && _pos != null && now.difference(_lastBackendLocSend).inSeconds >= 3) {
+      _lastBackendLocSend = now;
       ApiService.updateDriverLocation(
         driverId: _driverId!,
         lat: _pos!.latitude,

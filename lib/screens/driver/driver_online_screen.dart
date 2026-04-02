@@ -116,6 +116,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<Position>? _posStream;
   final _gpsService = GpsService();
   DateTime _lastNavSetState = DateTime(0);
+  DateTime _lastBackendLocSend = DateTime(0);
   bool _lastStyleDark = true;
   // Cache: offerId → Future<String> static map URL (with real routed polyline)
   final Map<String, Future<String>> _offerMapUrlCache = {};

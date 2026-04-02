@@ -337,7 +337,7 @@ async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     _path = request.url.path
     # Skip heavy header computation on high-frequency API paths
-    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX):
+    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX) or (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -428,6 +428,7 @@ _HOT_PATHS = {
     "/drivers/vehicle", "/drivers/earnings",
 }
 _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
+_LOCATION_PREFIX = "/drivers/"  # matches /drivers/{id}/location
 
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
@@ -435,7 +436,7 @@ async def crash_protection_middleware(request: Request, call_next):
         response = await call_next(request)
         # Skip SHA-256 checksum for high-frequency hot paths and SSE streams
         _path = request.url.path
-        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX):
+        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX) and not (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")):
             if hasattr(response, 'body'):
                 body_bytes = response.body
                 checksum = hashlib.sha256(body_bytes).hexdigest()

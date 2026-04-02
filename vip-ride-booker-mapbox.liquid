@@ -543,7 +543,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   border-radius:20px;
   border:none;
   box-shadow:0 -4px 24px rgba(0,0,0,.5);
-  padding:12px 14px 16px;
+  padding:10px 12px 12px;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
   overflow-y:auto;
@@ -560,18 +560,18 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     border-radius:20px;
   }
 }
-.vipRide__handle{ width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.15); margin:0 auto 10px; }
-.vipRide__title{ margin:0; font-family:'Poppins',Inter,system-ui,sans-serif; font-size:18px; font-weight:800; letter-spacing:-.03em; text-transform:none; color:rgba(255,255,255,.9) !important; }
-.vipRide__form{ margin-top:10px; display:flex; flex-direction:column; gap:8px; }
-.vipRide__field{ display:flex; flex-direction:column; gap:6px; position:relative; }
+.vipRide__handle{ width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.15); margin:0 auto 6px; }
+.vipRide__title{ margin:0; font-family:'Poppins',Inter,system-ui,sans-serif; font-size:16px; font-weight:800; letter-spacing:-.03em; text-transform:none; color:rgba(255,255,255,.9) !important; }
+.vipRide__form{ margin-top:6px; display:flex; flex-direction:column; gap:5px; }
+.vipRide__field{ display:flex; flex-direction:column; gap:4px; position:relative; }
 .vipRide__field:focus-within{ z-index:99999; }
 .vipRide__field--hours{ margin-bottom:4px; }
 .vipRide__field--hours[hidden]{ display:none !important; }
-.vipRide__label{ font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:rgba(212,175,55,.7) !important; }
+.vipRide__label{ font-size:8px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:rgba(212,175,55,.7) !important; }
 .vipRide__inputWrap{
   display:flex; align-items:center; gap:8px;
   background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);
-  border-radius:12px; padding:10px 12px; position:relative; box-shadow:none !important;
+  border-radius:10px; padding:8px 10px; position:relative; box-shadow:none !important;
   transition:border-color 200ms ease, background 200ms ease;
 }
 .vipRide__inputWrap:focus-within{
@@ -582,11 +582,11 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 .vipRide__input{
   width:100%; border:0; outline:none;
   background:transparent !important; background-color:transparent !important;
-  font-size:16px; color:#fff !important;
+  font-size:14px; color:#fff !important;
   box-shadow:none !important; -webkit-appearance:none; appearance:none;
 }
-.vipRide__input::placeholder{ color:rgba(255,255,255,.55) !important; }
-.vipRide__input:focus{ box-shadow:none !important; outline:none !important; font-size:16px !important; }
+.vipRide__input::placeholder{ color:rgba(255,255,255,.55) !important; font-size:13px; }
+.vipRide__input:focus{ box-shadow:none !important; outline:none !important; font-size:14px !important; }
 .vipRide__input--dt{ color-scheme:dark; }
 .vipRide__input--dt::-webkit-datetime-edit,
 .vipRide__input--dt::-webkit-datetime-edit-text,
@@ -644,17 +644,17 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   cursor:pointer; font-size:18px; line-height:26px; display:none; color:#fff;
 }
 .vipRide__timeTrigger{
-  display:flex; align-items:center; gap:8px; width:100%;
+  display:flex; align-items:center; gap:6px; width:100%;
   background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
-  border-radius:12px; padding:10px 12px; cursor:pointer; color:#fff;
+  border-radius:10px; padding:8px 10px; cursor:pointer; color:#fff;
   text-align:left; transition:border-color 200ms, background 200ms;
 }
 .vipRide__timeTrigger:hover,
 .vipRide__timeTrigger[aria-expanded="true"]{ border-color:var(--vip-gold); background:rgba(212,175,55,.08); }
 .vipRide__timeTrigger[aria-expanded="true"]{ border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom-color:transparent; }
-.vipRide__timeTrigger__text{ flex:1; font-size:13px; color:rgba(255,255,255,.65); transition:color 200ms; }
+.vipRide__timeTrigger__text{ flex:1; font-size:12px; color:rgba(255,255,255,.65); transition:color 200ms; }
 .vipRide__timeTrigger__text.has-value{ color:#fff; font-weight:600; }
-.vipRide__timeTrigger__arrow{ font-size:14px; color:var(--vip-gold); transition:transform 300ms var(--vip-ease); flex-shrink:0; }
+.vipRide__timeTrigger__arrow{ font-size:12px; color:var(--vip-gold); transition:transform 300ms var(--vip-ease); flex-shrink:0; }
 .vipRide__timeTrigger[aria-expanded="true"] .vipRide__timeTrigger__arrow{ transform:rotate(180deg); }
 .vipRide__timeAccordion{
   overflow:hidden; max-height:0;
@@ -696,13 +696,13 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 .vipRide__slot--blocked{ background:rgba(255,255,255,.02) !important; border-color:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.18) !important; cursor:not-allowed !important; text-decoration:line-through; pointer-events:none; }
 .vipRide__slotHint{ font-size:12px; color:rgba(255,255,255,.4); margin:0; text-align:center; padding:8px 0; }
 .vipRide__seePrices{
-  margin-top:4px;
+  margin-top:2px;
   background:var(--vip-gold) !important;
   color:#000 !important;
   border:none !important;
-  border-radius:12px;
-  padding:13px 16px;
-  font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  border-radius:10px;
+  padding:10px 14px;
+  font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
   cursor:pointer;
   box-shadow:0 6px 20px rgba(212,175,55,.3), 0 2px 6px rgba(0,0,0,.35);
   transition:opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease;
@@ -718,15 +718,15 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 .vipRide__seePrices:not([disabled]):hover{ opacity:.9; transform:translateY(-1px); box-shadow:0 12px 40px rgba(212,175,55,.45); }
 .vipRide__prices{ margin-top:4px; }
 .vipRide__pricesHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.vipRide__pricesTitle{ font-family:'Poppins',Inter,system-ui,sans-serif; font-size:18px; font-weight:800; color:rgba(255,255,255,.9) !important; text-transform:none; letter-spacing:-.03em; }
-.vipRide__routeEstimate{ margin:6px 0 10px; padding:8px 12px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); display:flex; gap:6px; align-items:center; font-size:12px; color:rgba(255,255,255,.65); }
+.vipRide__pricesTitle{ font-family:'Poppins',Inter,system-ui,sans-serif; font-size:16px; font-weight:800; color:rgba(255,255,255,.9) !important; text-transform:none; letter-spacing:-.03em; }
+.vipRide__routeEstimate{ margin:4px 0 6px; padding:6px 10px; border-radius:10px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); display:flex; gap:5px; align-items:center; font-size:11px; color:rgba(255,255,255,.65); }
 .vipRide__routeEstimateLabel{ opacity:.7; }
-.vipRide__rideList{ display:flex; flex-direction:column; gap:8px; }
+.vipRide__rideList{ display:flex; flex-direction:column; gap:6px; }
 .vipRide__rideCard{
-  display:grid !important; grid-template-columns:100px 1fr;
+  display:grid !important; grid-template-columns:80px 1fr;
   align-items:center; gap:10px;
   width:100% !important; max-width:100% !important; overflow:hidden;
-  min-height:80px; padding:12px 14px !important;
+  min-height:64px; padding:8px 10px !important;
   border:1px solid rgba(255,255,255,.06); border-radius:16px;
   background:#1E1E1E !important; cursor:pointer; text-align:left; color:#fff;
   box-shadow:0 4px 8px rgba(0,0,0,.15) !important;
@@ -751,37 +751,37 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 .vipRide__rideCard--disabled{ opacity:.35 !important; pointer-events:none !important; cursor:not-allowed !important; filter:grayscale(.8) !important; position:relative; }
 .vipRide__rideCard--disabled::after{ content:'COMING SOON'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.7); color:var(--vip-gold); font-size:11px; font-weight:800; letter-spacing:.12em; padding:6px 14px; border-radius:8px; border:1px solid rgba(212,175,55,.4); text-transform:uppercase; pointer-events:none; z-index:2; }
 .vipRide__rideImg{ width:100%; overflow:hidden; }
-.vipRide__rideImgTag,.vipRide__rideCard img{ display:block; width:100% !important; max-width:100% !important; height:auto !important; object-fit:contain !important; transition:transform 260ms var(--vip-ease); }
+.vipRide__rideImgTag,.vipRide__rideCard img{ display:block; width:100% !important; max-width:100% !important; height:auto !important; max-height:56px !important; object-fit:contain !important; transition:transform 260ms var(--vip-ease); }
 .vipRide__rideImgPh{ background:transparent; border:none; }
 .vipRide__rideMeta{ min-width:0; }
 .vipRide__rideTop{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; box-sizing:border-box; }
-.vipRide__rideName{ font-size:14px; font-weight:700; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(255,255,255,.9); }
-.vipRide__ridePrice{ white-space:nowrap; font-weight:900; font-size:14px; margin-left:auto; color:#E8C547 !important; }
-.vipRide__rideEta{ font-size:11px; font-weight:600; white-space:nowrap; margin-top:2px; background:rgba(255,255,255,.06); padding:3px 8px; border-radius:6px; color:rgba(255,255,255,.50) !important; display:inline-block; }
-.vipRide__rideSub{ margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-.vipRide__seats{ background:rgba(255,255,255,.06); padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; color:rgba(255,255,255,.50) !important; display:inline-flex; align-items:center; gap:3px; }
+.vipRide__rideName{ font-size:13px; font-weight:700; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(255,255,255,.9); }
+.vipRide__ridePrice{ white-space:nowrap; font-weight:900; font-size:13px; margin-left:auto; color:#E8C547 !important; }
+.vipRide__rideEta{ font-size:10px; font-weight:600; white-space:nowrap; margin-top:1px; background:rgba(255,255,255,.06); padding:2px 6px; border-radius:5px; color:rgba(255,255,255,.50) !important; display:inline-block; }
+.vipRide__rideSub{ margin-top:3px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.vipRide__seats{ background:rgba(255,255,255,.06); padding:2px 6px; border-radius:5px; font-size:10px; font-weight:600; color:rgba(255,255,255,.50) !important; display:inline-flex; align-items:center; gap:2px; }
 .vipRide__personIcon{ color:rgba(255,255,255,.50) !important; text-shadow:none !important; font-size:11px; }
-.vipRide__badge{ padding:3px 10px; border-radius:8px; font-size:10px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; position:relative; overflow:hidden; }
+.vipRide__badge{ padding:2px 8px; border-radius:6px; font-size:9px; font-weight:800; letter-spacing:1px; text-transform:uppercase; position:relative; overflow:hidden; }
 .vipRide__badge--vip,.vipRide__badge:not([class*='--']){ background:linear-gradient(135deg,#E8C547,#D4A574); color:#000; border:none; }
 .vipRide__badge--premium{ background:linear-gradient(135deg,#E8E8E8,#B0B0B0); color:#000; border:none; }
 .vipRide__badge--comfort{ background:linear-gradient(135deg,#66BB6A,#388E3C); color:#fff; border:none; }
 /* Badge shimmer */
 .vipRide__badge::before{ content:''; position:absolute; top:0; left:-100%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent); animation:vipBadgeShimmer 1800ms ease-in-out infinite; }
 @keyframes vipBadgeShimmer{ 0%{ left:-100%; } 100%{ left:200%; } }
-.vipRide__rideDesc{ font-size:10px; color:#E8C547; opacity:.8; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; }
-.vipRide__ctaForm{ margin-top:14px; margin-bottom:0; }
+.vipRide__rideDesc{ font-size:9px; color:#E8C547; opacity:.8; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.02em; }
+.vipRide__ctaForm{ margin-top:8px; margin-bottom:0; }
 .vipRide__ctaForm[hidden]{ display:none !important; }
-.vipRide__cta{ width:100%; height:52px; background:linear-gradient(to bottom,#E8C547,#D4A520) !important; color:#000 !important; border:none !important; border-radius:14px; padding:0 16px; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif !important; font-size:17px; font-weight:800; letter-spacing:-.03em; text-transform:none; cursor:pointer; box-shadow:0 4px 12px rgba(212,165,32,.35) !important; transition:opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease; touch-action:manipulation; }
+.vipRide__cta{ width:100%; height:44px; background:linear-gradient(to bottom,#E8C547,#D4A520) !important; color:#000 !important; border:none !important; border-radius:12px; padding:0 14px; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif !important; font-size:15px; font-weight:800; letter-spacing:-.03em; text-transform:none; cursor:pointer; box-shadow:0 4px 12px rgba(212,165,32,.35) !important; transition:opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease; touch-action:manipulation; }
 .vipRide__cta[disabled]{ opacity:.35 !important; background:linear-gradient(to bottom,#E8C547,#D4A520) !important; color:#000 !important; cursor:not-allowed !important; transform:none !important; box-shadow:none !important; }
 .vipRide__cta:not([disabled]):hover{ transform:translateY(-2px); box-shadow:0 8px 24px rgba(212,165,32,.45) !important; }
-.vipRide__hint{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.75); }
+.vipRide__hint{ margin-top:4px; font-size:11px; color:rgba(255,255,255,.75); }
 .vipRide__checkout{
-  width:100%; margin-top:8px;
+  width:100%; margin-top:4px;
   background:rgba(255,255,255,.06) !important; color:rgba(255,255,255,.75) !important;
-  border:1px solid rgba(255,255,255,.10) !important; border-radius:14px;
-  padding:14px 16px; height:50px;
+  border:1px solid rgba(255,255,255,.10) !important; border-radius:12px;
+  padding:10px 14px; height:42px;
   font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif !important;
-  font-size:15px; font-weight:600; letter-spacing:0; text-transform:none;
+  font-size:13px; font-weight:600; letter-spacing:0; text-transform:none;
   cursor:pointer; box-shadow:none !important;
   transition:opacity 200ms ease, transform 200ms ease, background 200ms ease;
   touch-action:manipulation;

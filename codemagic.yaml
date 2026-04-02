@@ -377,9 +377,41 @@ workflows:
 
           echo "── Reading profile info ──"
           PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
-          security cms -D -i "$PROFILE_PATH" > /tmp/profile_info.plist
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile_info.plist)
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /tmp/profile_info.plist)
+          echo "Profile file: $PROFILE_PATH"
+          echo "Profile file size: $(wc -c < "$PROFILE_PATH") bytes"
+
+          # Decode the provisioning profile CMS envelope
+          security cms -D -i "$PROFILE_PATH" -o /tmp/profile_info.plist 2>/tmp/cms_err.txt
+          CMS_EXIT=$?
+          if [ $CMS_EXIT -ne 0 ] || [ ! -s /tmp/profile_info.plist ]; then
+            echo "security cms failed (exit=$CMS_EXIT), trying alternative method..."
+            cat /tmp/cms_err.txt 2>/dev/null
+            # Alternative: extract XML plist directly from the binary
+            sed -n '/<?xml/,/<\/plist>/p' "$PROFILE_PATH" > /tmp/profile_info.plist
+          fi
+
+          echo "Decoded plist size: $(wc -c < /tmp/profile_info.plist) bytes"
+          echo "Plist contents (first 5 lines):"
+          head -5 /tmp/profile_info.plist
+
+          # Read UUID and Name with error checking
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile_info.plist 2>&1)
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /tmp/profile_info.plist 2>&1)
+
+          # Validate the values aren't error messages
+          if echo "$PROFILE_UUID" | grep -qi "error"; then
+            echo "ERROR: Failed to read UUID from profile plist: $PROFILE_UUID"
+            echo "Full plist dump:"
+            cat /tmp/profile_info.plist
+            exit 1
+          fi
+          if echo "$PROFILE_NAME" | grep -qi "error"; then
+            echo "ERROR: Failed to read Name from profile plist: $PROFILE_NAME"
+            echo "Full plist dump:"
+            cat /tmp/profile_info.plist
+            exit 1
+          fi
+
           echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
 
           echo "── Applying profiles to Xcode project ──"

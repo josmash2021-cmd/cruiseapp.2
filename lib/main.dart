@@ -164,9 +164,9 @@ Future<void> heavyInit() async {
   // Probe + warm up the server BEFORE the user reaches the login screen.
   // DNS is pre-resolved in startup Group 1, so probes should resolve fast.
   await ApiService.probeAndSetBestUrl(
-    timeout: const Duration(seconds: 4),
+    timeout: const Duration(seconds: 2),
   ).timeout(
-    const Duration(seconds: 6),
+    const Duration(seconds: 3),
     onTimeout: () {
       debugPrint('[heavyInit] probe timed out — using production URL');
       return null;

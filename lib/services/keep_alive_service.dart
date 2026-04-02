@@ -44,13 +44,13 @@ class KeepAliveService {
     try {
       final res = await http
           .get(
-            Uri.parse('$url/health'),
+            Uri.parse('$url/ping'),
             headers: {
               'Accept': 'application/json',
               'ngrok-skip-browser-warning': 'true',
             },
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 3));
 
       if (res.statusCode == 200) {
         _consecutiveFailures = 0;

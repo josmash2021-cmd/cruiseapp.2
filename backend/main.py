@@ -337,7 +337,7 @@ async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     _path = request.url.path
     # Skip heavy header computation on high-frequency API paths
-    if _path in _HOT_PATHS or any(_path.startswith(p) for p in _SSE_PREFIX) or (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")) or _path.startswith(_PHOTO_PREFIX):
+    if _is_hot_path(_path):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -373,8 +373,9 @@ _MAX_RATE_BUCKETS = 5000  # cap bucket dict to prevent memory leak
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     global _rate_cleanup_ts
-    # Skip rate limiting for SSE streams (they're long-lived connections)
-    if request.url.path.endswith("/stream"):
+    _path = request.url.path
+    # Skip rate limiting for SSE streams and hot paths (they're high-frequency)
+    if _path.endswith("/stream") or _is_hot_path(_path):
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
@@ -404,6 +405,9 @@ _LARGE_BODY_PATHS = {"/auth/verify-request"}
 
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):
+    # GET/HEAD requests never have meaningful bodies — skip entirely
+    if request.method in ("GET", "HEAD"):
+        return await call_next(request)
     limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
     content_length = request.headers.get("content-length")
     if content_length:
@@ -423,7 +427,7 @@ async def ip_blacklist_middleware(request: Request, call_next):
 
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
 _HOT_PATHS = {
-    "/dispatch/driver/pending", "/drivers/nearby", "/health",
+    "/dispatch/driver/pending", "/drivers/nearby", "/health", "/ping",
     "/dispatch/trip/status", "/auth/me", "/auth/account-status",
     "/drivers/vehicle", "/drivers/earnings",
     "/dispatch/driver/accept", "/dispatch/driver/reject",
@@ -432,13 +436,20 @@ _SSE_PREFIX = "/dispatch/driver/pending/stream", "/dispatch/trip/"
 _LOCATION_PREFIX = "/drivers/"  # matches /drivers/{id}/location
 _PHOTO_PREFIX = "/dispatch/user/"  # matches /dispatch/user/{id}/photo
 
+def _is_hot_path(path: str) -> bool:
+    """Fast check: returns True for high-frequency paths that should skip heavy middleware."""
+    return (path in _HOT_PATHS
+            or any(path.startswith(p) for p in _SSE_PREFIX)
+            or (path.startswith(_LOCATION_PREFIX) and path.endswith("/location"))
+            or path.startswith(_PHOTO_PREFIX))
+
 @app.middleware("http")
 async def crash_protection_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         # Skip SHA-256 checksum for high-frequency hot paths and SSE streams
         _path = request.url.path
-        if _path not in _HOT_PATHS and not any(_path.startswith(p) for p in _SSE_PREFIX) and not (_path.startswith(_LOCATION_PREFIX) and _path.endswith("/location")) and not _path.startswith(_PHOTO_PREFIX):
+        if not _is_hot_path(_path):
             if hasattr(response, 'body'):
                 body_bytes = response.body
                 checksum = hashlib.sha256(body_bytes).hexdigest()
@@ -453,6 +464,11 @@ async def crash_protection_middleware(request: Request, call_next):
             {"detail": "Internal server error"},
             status_code=500,
         )
+
+@app.get("/ping")
+async def ping():
+    """Ultra-fast connectivity check — no DB, no auth, no overhead."""
+    return {"status": "ok"}
 
 @app.get("/health")
 async def health(x_api_key: str = Header(default="")):

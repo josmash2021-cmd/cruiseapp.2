@@ -64,6 +64,10 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
 # In-memory driver location store for ultra-fast reads (bypasses DB for location)
 _driver_locations: dict = {}  # driver_id -> {"lat": float, "lng": float, "is_online": bool, "ts": float}
 
+# Cache of active trip per driver - avoids DB query on every location update (~800ms interval)
+_driver_active_trip: dict = {}  # driver_id -> (monotonic_ts, trip_id_or_None)
+_ACTIVE_TRIP_CACHE_TTL = 5.0  # seconds
+
 @router.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Ownership check: only the driver themselves can update their location
@@ -71,9 +75,10 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         raise HTTPException(403, "Not authorized to update this driver's location")
 
     # Update in-memory location cache FIRST (instant for nearby reads)
+    _now = time.monotonic()
     _driver_locations[driver_id] = {
         "lat": body.lat, "lng": body.lng,
-        "is_online": body.is_online, "ts": time.monotonic(),
+        "is_online": body.is_online, "ts": _now,
     }
 
     # Update DB (lightweight â€” no SELECT needed, use the authenticated user object)
@@ -89,13 +94,18 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _nearby_cache.pop(k, None)
 
     # Push driver location to riders watching active trips via SSE (sub-second)
-    # Find active trip for this driver
-    active_trip = await db.execute(
-        select(Trip.id).where(
-            and_(Trip.driver_id == driver_id, Trip.status.in_(["driver_en_route", "arrived", "in_progress"]))
-        ).limit(1)
-    )
-    trip_row = active_trip.scalar_one_or_none()
+    # Use cached active-trip lookup to avoid DB query on every location update
+    _cached_trip = _driver_active_trip.get(driver_id)
+    if _cached_trip and (_now - _cached_trip[0]) < _ACTIVE_TRIP_CACHE_TTL:
+        trip_row = _cached_trip[1]
+    else:
+        active_trip = await db.execute(
+            select(Trip.id).where(
+                and_(Trip.driver_id == driver_id, Trip.status.in_(["driver_en_route", "arrived", "in_progress"]))
+            ).limit(1)
+        )
+        trip_row = active_trip.scalar_one_or_none()
+        _driver_active_trip[driver_id] = (_now, trip_row)
     if trip_row:
         asyncio.create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
 

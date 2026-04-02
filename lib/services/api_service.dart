@@ -254,7 +254,7 @@ class ApiService {
 
       for (final url in urls) {
         _client
-            .get(Uri.parse('$url/health'), headers: probeHeaders)
+            .get(Uri.parse('$url/ping'), headers: probeHeaders)
             .timeout(timeout)
             .then((res) {
               if (!completer.isCompleted && res.statusCode == 200) {

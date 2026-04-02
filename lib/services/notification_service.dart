@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -6,13 +7,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Handles local push notifications (scheduled ride reminders, etc.)
-/// and syncs with phone notification permissions.
+/// Handles local push notifications and in-app sounds.
+///
+/// Channels:
+///   cruise_premium   — general notifications (cruise_notification.wav)
+///   cruise_offers    — trip offer notifications (cruise_offer.wav, max priority)
+///   cruise_status    — driver online persistent/ongoing notification (silent)
+///   cruise_reminders — scheduled ride reminders
+///
+/// In-app sounds (audioplayers):
+///   cruise_online.wav — played when driver goes online
+///   cruise_offer.wav  — played when a new offer arrives while app is open
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
   static bool _initialized = false;
+
+  // Notification IDs (stable, so a second show() replaces the first)
+  static const int _offerBaseId = 9000;
+  static const int _driverOnlineId = 8888;
+
+  // AudioPlayer instances — one per sound so they can overlap if needed
+  static final AudioPlayer _onlinePlayer = AudioPlayer();
+  static final AudioPlayer _offerPlayer = AudioPlayer();
 
   /// Initialize the notification plugin. Call once at app startup.
   static Future<void> init() async {
@@ -40,14 +58,73 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    // Create all Android notification channels up-front so the OS
+    // registers their sounds before the first notification fires.
+    await _createChannels();
+
+    // Pre-load audio players so first playback is instant
+    await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+    await _offerPlayer.setSource(AssetSource('sounds/cruise_offer.wav'));
+
     _initialized = true;
     debugPrint('[NotificationService] initialized');
+  }
+
+  static Future<void> _createChannels() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+
+    // General notifications
+    await android.createNotificationChannel(AndroidNotificationChannel(
+      'cruise_premium',
+      'Cruise Notifications',
+      description: 'General notifications from Cruise',
+      importance: Importance.high,
+      sound: const RawResourceAndroidNotificationSound('cruise_notification'),
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 120, 80, 120]),
+    ));
+
+    // Trip offer notifications — max importance so they pop over other apps
+    await android.createNotificationChannel(AndroidNotificationChannel(
+      'cruise_offers',
+      'Trip Offers',
+      description: 'New trip offer alerts for drivers',
+      importance: Importance.max,
+      sound: const RawResourceAndroidNotificationSound('cruise_offer'),
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 200, 100, 200, 100, 200]),
+      playSound: true,
+      showBadge: true,
+    ));
+
+    // Driver online status — silent persistent notification
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      'cruise_status',
+      'Driver Status',
+      description: 'Keeps Cruise active while you are online',
+      importance: Importance.low,
+      playSound: false,
+      enableVibration: false,
+      showBadge: false,
+    ));
+
+    // Ride reminders
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      'cruise_reminders',
+      'Ride Reminders',
+      description: 'Scheduled ride reminders',
+      importance: Importance.high,
+      sound: RawResourceAndroidNotificationSound('cruise_notification'),
+      enableVibration: true,
+    ));
   }
 
   static String _guessTimezone() {
     try {
       final offset = DateTime.now().timeZoneOffset;
-      // Map common US offsets
       if (offset.inHours == -6) return 'America/Chicago';
       if (offset.inHours == -5) return 'America/New_York';
       if (offset.inHours == -7) return 'America/Denver';
@@ -60,31 +137,25 @@ class NotificationService {
     debugPrint('[Notification] tapped: ${response.payload}');
   }
 
-  // ── Permission management ──
+  // ── Permission management ──────────────────────────────────────────────
 
-  /// Check if notification permission is granted on the phone.
   static Future<bool> isPermissionGranted() async {
     final status = await Permission.notification.status;
     return status.isGranted;
   }
 
-  /// Request notification permission from the OS.
-  /// Returns true if granted.
   static Future<bool> requestPermission() async {
     final status = await Permission.notification.request();
     return status.isGranted;
   }
 
-  /// Open the phone's app notification settings so the user can toggle.
   static Future<void> openSystemSettings() async {
     await openAppSettings();
   }
 
-  // ── Show immediate notification ──
+  // ── General notification ───────────────────────────────────────────────
 
-  /// Show a notification immediately.
-  /// [type] can be 'ride', 'promo', 'safety', 'payment', or 'general'.
-  /// If the user has disabled that notification type, it won't show.
+  /// Show a general notification immediately.
   static Future<void> show({
     required int id,
     required String title,
@@ -96,15 +167,13 @@ class NotificationService {
 
     final prefs = await SharedPreferences.getInstance();
 
-    // Check if this notification type is enabled
     if (type == 'ride' && !(prefs.getBool('notif_ride') ?? true)) return;
     if (type == 'promo' && !(prefs.getBool('notif_promo') ?? true)) return;
     if (type == 'safety' && !(prefs.getBool('notif_safety') ?? true)) return;
     if (type == 'payment' && !(prefs.getBool('notif_payment') ?? true)) return;
-
-    // Driver sound preferences (from Sounds & Voice settings)
     if (type == 'ride' && !(prefs.getBool('sound_trips') ?? true)) return;
-    if ((type == 'chat' || type == 'chat_message') && !(prefs.getBool('sound_messages') ?? true)) return;
+    if ((type == 'chat' || type == 'chat_message') &&
+        !(prefs.getBool('sound_messages') ?? true)) { return; }
 
     final driverVolume = prefs.getDouble('sound_volume') ?? 0.8;
     final soundsEnabled =
@@ -135,29 +204,174 @@ class NotificationService {
       presentSound: true,
     );
 
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
     await _plugin.show(
       id: id,
       title: title,
       body: body,
-      notificationDetails: details,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
       payload: payload,
     );
 
-    // Extra haptic feedback when vibration is enabled
-    if (vibrateEnabled) {
-      HapticFeedback.mediumImpact();
+    if (vibrateEnabled) HapticFeedback.mediumImpact();
+  }
+
+  // ── Trip offer notification (driver) ─────────────────────────────────
+
+  /// Show a high-priority trip offer notification.
+  /// Plays cruise_offer.wav + strong vibration.
+  /// Works even when driver is in another app.
+  ///
+  /// [offerId] — used as the notification ID so duplicate offers replace each other.
+  static Future<void> showOfferNotification({
+    required String title,
+    required String body,
+    int offerId = 0,
+    String? payload,
+  }) async {
+    if (!_initialized) await init();
+
+    final prefs = await SharedPreferences.getInstance();
+    final soundsEnabled = prefs.getBool('sound_trips') ?? true;
+    final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
+
+    final androidDetails = AndroidNotificationDetails(
+      'cruise_offers',
+      'Trip Offers',
+      channelDescription: 'New trip offer alerts for drivers',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: soundsEnabled,
+      sound: soundsEnabled
+          ? const RawResourceAndroidNotificationSound('cruise_offer')
+          : null,
+      enableVibration: vibrateEnabled,
+      vibrationPattern: vibrateEnabled
+          ? Int64List.fromList([0, 200, 100, 200, 100, 200])
+          : null,
+      icon: '@mipmap/ic_launcher',
+      color: const Color(0xFFE8C547),
+      // Full-screen intent pops the notification over other apps on Android
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.call,
+      // Show as heads-up (peek) notification
+      styleInformation: const DefaultStyleInformation(true, true),
+    );
+
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: soundsEnabled,
+      sound: soundsEnabled ? 'cruise_offer.wav' : null,
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    );
+
+    await _plugin.show(
+      id: _offerBaseId + (offerId % 10),
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: payload ?? 'trip_offer',
+    );
+
+    if (vibrateEnabled) HapticFeedback.heavyImpact();
+    debugPrint('[NotificationService] offer notification shown: $title');
+  }
+
+  /// Cancel all pending offer notifications.
+  static Future<void> cancelOfferNotifications() async {
+    for (int i = 0; i < 10; i++) {
+      await _plugin.cancel(id: _offerBaseId + i);
     }
   }
 
-  // ── Schedule notification ──
+  // ── Driver online persistent notification ────────────────────────────
 
-  /// Schedule a notification at a specific DateTime.
-  /// Used for 30-minute ride reminders.
+  /// Show a silent ongoing notification when driver goes online.
+  /// This acts as a foreground-service anchor on Android, keeping the
+  /// app process alive so GPS and SSE keep working in the background.
+  static Future<void> showDriverOnlineNotification() async {
+    if (!_initialized) await init();
+
+    const androidDetails = AndroidNotificationDetails(
+      'cruise_status',
+      'Driver Status',
+      channelDescription: 'Keeps Cruise active while you are online',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,          // Cannot be dismissed by swipe
+      autoCancel: false,
+      playSound: false,
+      enableVibration: false,
+      icon: '@mipmap/ic_launcher',
+      color: Color(0xFFE8C547),
+      showProgress: false,
+      styleInformation: BigTextStyleInformation(
+        'You are online and receiving trip offers.',
+        contentTitle: 'Cruise — You\'re Online',
+        summaryText: 'Tap to open',
+      ),
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: false,
+      presentBadge: false,
+      presentSound: false,
+    );
+
+    await _plugin.show(
+      id: _driverOnlineId,
+      title: 'Cruise — You\'re Online',
+      body: 'You are online and receiving trip offers.',
+      notificationDetails: const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: 'driver_online',
+    );
+
+    debugPrint('[NotificationService] driver online notification shown');
+  }
+
+  /// Remove the driver online persistent notification.
+  static Future<void> cancelDriverOnlineNotification() async {
+    await _plugin.cancel(id: _driverOnlineId);
+    debugPrint('[NotificationService] driver online notification cancelled');
+  }
+
+  // ── In-app sounds (audioplayers) ──────────────────────────────────────
+
+  /// Play the "go online" chime inside the app.
+  static Future<void> playOnlineSound() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('notif_sounds') ?? true)) return;
+      await _onlinePlayer.stop();
+      await _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
+    } catch (e) {
+      debugPrint('[NotificationService] playOnlineSound error: $e');
+    }
+  }
+
+  /// Play the trip offer sound inside the app (when app is in foreground).
+  static Future<void> playOfferSound() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('sound_trips') ?? true)) return;
+      await _offerPlayer.stop();
+      await _offerPlayer.play(AssetSource('sounds/cruise_offer.wav'));
+    } catch (e) {
+      debugPrint('[NotificationService] playOfferSound error: $e');
+    }
+  }
+
+  // ── Schedule notification ─────────────────────────────────────────────
+
   static Future<void> scheduleAt({
     required int id,
     required String title,
@@ -166,8 +380,6 @@ class NotificationService {
     String? payload,
   }) async {
     if (!_initialized) await init();
-
-    // Don't schedule if time is in the past
     if (scheduledTime.isBefore(DateTime.now())) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -198,42 +410,32 @@ class NotificationService {
       presentSound: true,
     );
 
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    final tzTime = tz.TZDateTime.from(scheduledTime, tz.local);
-
     await _plugin.zonedSchedule(
       id: id,
-      scheduledDate: tzTime,
-      notificationDetails: details,
+      scheduledDate: tz.TZDateTime.from(scheduledTime, tz.local),
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       title: title,
       body: body,
       payload: payload,
     );
 
-    debugPrint(
-      '[NotificationService] scheduled #$id at $scheduledTime: $title',
-    );
+    debugPrint('[NotificationService] scheduled #$id at $scheduledTime: $title');
   }
 
-  /// Cancel a specific scheduled notification.
   static Future<void> cancel(int id) async {
     await _plugin.cancel(id: id);
   }
 
-  /// Cancel all scheduled notifications.
   static Future<void> cancelAll() async {
     await _plugin.cancelAll();
   }
 
-  // ── Ride reminder helpers ──
+  // ── Ride reminder helpers ─────────────────────────────────────────────
 
-  /// Schedule a 1-hour reminder for a scheduled ride.
-  /// Uses trip ID as notification ID for easy cancellation.
   static Future<void> scheduleRideReminder({
     required int tripId,
     required DateTime rideTime,
@@ -241,19 +443,16 @@ class NotificationService {
     required String dropoff,
   }) async {
     final reminderTime = rideTime.subtract(const Duration(hours: 1));
-    // Only schedule if reminder is still in the future
     if (reminderTime.isBefore(DateTime.now())) return;
-
     await scheduleAt(
       id: tripId,
-      title: '🚗 Your ride is in 1 hour',
+      title: 'Your ride is in 1 hour',
       body: 'From $pickup to $dropoff',
       scheduledTime: reminderTime,
       payload: 'ride_reminder:$tripId',
     );
   }
 
-  /// Cancel a ride reminder.
   static Future<void> cancelRideReminder(int tripId) async {
     await cancel(tripId);
   }

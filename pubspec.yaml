@@ -65,6 +65,7 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.1.4
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -112,6 +113,7 @@ flutter:
     - assets/google_fonts/
     - assets/fonts/
     - assets/pay/
+    - assets/sounds/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

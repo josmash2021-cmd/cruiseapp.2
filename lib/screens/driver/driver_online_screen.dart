@@ -48,6 +48,7 @@ import '../../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
+import '../../services/notification_service.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';

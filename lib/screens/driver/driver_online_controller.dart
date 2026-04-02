@@ -601,6 +601,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         .then((_) {
           debugPrint('âœ… Driver online successfully');
           AnalyticsService.instance.logDriverOnline();
+          // Play "you're live" chime + show persistent background notification
+          NotificationService.playOnlineSound();
+          NotificationService.showDriverOnlineNotification();
         })
         .catchError((e) {
           debugPrint('âŒ Failed to go online: $e');
@@ -610,6 +613,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _goOfflineBackend() {
     if (_driverId == null || _pos == null) return;
     AnalyticsService.instance.logDriverOffline();
+    NotificationService.cancelDriverOnlineNotification();
+    NotificationService.cancelOfferNotifications();
     ApiService.updateDriverLocation(
       driverId: _driverId!,
       lat: _pos!.latitude,
@@ -926,6 +931,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _applyOffers(List<Map<String, dynamic>> offers) {
     if (offers.isNotEmpty && _pendingOffers.isEmpty) {
       HapticFeedback.heavyImpact();
+      // Play offer sound in-app + show notification for background drivers
+      NotificationService.playOfferSound();
+      final firstOffer = offers.first;
+      final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
+      final fare = firstOffer['fare'] as num?;
+      final fareStr = fare != null ? ' — \$\${fare.toStringAsFixed(2)}' : '';
+      NotificationService.showOfferNotification(
+        title: 'New Trip Request$fareStr',
+        body: 'Pickup: \${pickup.length > 50 ? pickup.substring(0,50) + "..." : pickup}',
+        offerId: (firstOffer['id'] as num? ?? 0).toInt(),
+        payload: 'trip_offer',
+      );
     }
     final hadOffers = _pendingOffers.isNotEmpty;
     _setState(() {

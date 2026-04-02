@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'config/mapbox_config.dart';
 import 'package:flutter/services.dart';
@@ -45,6 +47,53 @@ final accessibilityNotifier = AccessibilityNotifier();
 
 /// M2: Global navigator key for imperative navigation (auto-logout on 401).
 final _navigatorKey = GlobalKey<NavigatorState>();
+
+/// Background FCM handler — runs in a separate Dart isolate when the app is
+/// killed or backgrounded. Shows a local offer notification with the distinct
+/// cruise_offer.wav sound so the driver is alerted even when not in the app.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  final type = message.data['type'] as String? ?? '';
+  if (type == 'trip_offer' || type == 'new_offer') {
+    final plugin = FlutterLocalNotificationsPlugin();
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await plugin.initialize(
+      settings: const InitializationSettings(android: androidSettings),
+    );
+    final title = message.notification?.title ?? 'New Trip Request';
+    final body = message.notification?.body ?? 'A rider needs a ride — open Cruise to accept.';
+    await plugin.show(
+      id: 9001,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'cruise_offers',
+          'Trip Offers',
+          channelDescription: 'New trip offer alerts for drivers',
+          importance: Importance.max,
+          priority: Priority.max,
+          playSound: true,
+          sound: const RawResourceAndroidNotificationSound('cruise_offer'),
+          enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 200, 100, 200, 100, 200]),
+          fullScreenIntent: true,
+          color: const Color(0xFFE8C547),
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'cruise_offer.wav',
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      ),
+      payload: 'trip_offer',
+    );
+  }
+}
 
 /// Navigate to DriverOnlineScreen when driver taps a "new_offer" FCM notification.
 void _handleDriverRideOffer(RemoteMessage message) {
@@ -234,6 +283,9 @@ Future<void> heavyInit() async {
         }
         try {
           await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
+
+          // Register background handler BEFORE any other messaging setup
+          FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
           final messaging = FirebaseMessaging.instance;
           await messaging.requestPermission(alert: true, badge: true, sound: true);

@@ -1346,6 +1346,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   // ══ AUTOCOMPLETE VIA MAPBOX GEOCODING ══
   var _suggestionContainers=[];
   var _acDebounceTimers={};
+  var _acSessionToken=crypto.randomUUID ? crypto.randomUUID() : (Date.now()+''+Math.random()).replace('.','');
   function closeSuggestions(){
     _suggestionContainers.forEach(function(c){ c.style.display='none'; });
   }
@@ -1363,36 +1364,63 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
       if(query.length<3){ container.style.display='none'; return; }
       _acDebounceTimers[which]=setTimeout(function(){
         var center=map?map.getCenter():{lng:defaultLng,lat:defaultLat};
-        var url='https://api.mapbox.com/geocoding/v5/mapbox.places/'
-          +encodeURIComponent(query)+'.json'
-          +'?access_token='+encodeURIComponent(MAPBOX_TOKEN)
-          +'&limit=5'
-          +'&types=address,poi,place,locality,neighborhood'
-          +'&proximity='+center.lng+','+center.lat
-          +'&language='+(currentLang==='es'?'es':'en');
+        // Use Mapbox Search Box API v1 for higher-quality verified addresses
+        var url='https://api.mapbox.com/search/searchbox/v1/suggest'
+          +'?q='+encodeURIComponent(query)
+          +'&access_token='+encodeURIComponent(MAPBOX_TOKEN)
+          +'&session_token='+_acSessionToken
+          +'&language='+(currentLang==='es'?'es':'en')
+          +'&limit=8'
+          +'&types=address,poi,street,place'
+          +'&proximity='+center.lng+','+center.lat;
         fetch(url)
           .then(function(r){ return r.json(); })
           .then(function(data){
             container.innerHTML='';
-            if(!data.features||!data.features.length){ container.style.display='none'; return; }
-            data.features.forEach(function(feat){
+            if(!data.suggestions||!data.suggestions.length){ container.style.display='none'; return; }
+            data.suggestions.forEach(function(sug){
               var item=document.createElement('div');
               item.className='vipRide__suggestion';
-              var parts=feat.place_name.split(',');
-              var main=parts[0]||feat.text||'';
-              var sub=parts.slice(1).join(',').trim();
-              item.innerHTML='<span class="vipRide__suggestionIcon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1C5.24 1 3 3.24 3 6c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5z" fill="currentColor"/><circle cx="8" cy="6" r="2" fill="#000" opacity=".3"/></svg></span>'
+              var main=sug.name||sug.full_address||'';
+              var sub=sug.full_address||sug.place_formatted||'';
+              // Don't repeat main in sub
+              if(sub.indexOf(main)===0) sub=sub.substring(main.length).replace(/^[\s,]+/,'');
+              var iconSvg;
+              if(sug.feature_type==='poi'){
+                iconSvg='<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="10" rx="1.5" fill="currentColor"/><rect x="5" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".6"/></svg>';
+              } else {
+                iconSvg='<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1C5.24 1 3 3.24 3 6c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5z" fill="currentColor"/><circle cx="8" cy="6" r="2" fill="#000" opacity=".3"/></svg>';
+              }
+              item.innerHTML='<span class="vipRide__suggestionIcon">'+iconSvg+'</span>'
                 +'<span class="vipRide__suggestionText"><span class="vipRide__suggestionMain">'+main+'</span>'
                 +(sub?'<span class="vipRide__suggestionSub">'+sub+'</span>':'')+'</span>';
               item.addEventListener('click',function(){
-                inputEl.value=feat.place_name;
-                container.style.display='none';
-                var lng=feat.center[0], lat=feat.center[1];
-                var obj={label:feat.place_name,lat:lat,lng:lng};
-                if(which==='pickup')  pickupPlace=obj;
-                if(which==='dropoff') dropoffPlace=obj;
-                inputEl.blur();
-                afterInputChange(); setMarker(which,lat,lng); computeRoute();
+                // Retrieve full details (exact coordinates) from Search Box API
+                if(sug.mapbox_id){
+                  var rUrl='https://api.mapbox.com/search/searchbox/v1/retrieve/'+sug.mapbox_id
+                    +'?access_token='+encodeURIComponent(MAPBOX_TOKEN)
+                    +'&session_token='+_acSessionToken;
+                  fetch(rUrl)
+                    .then(function(r){ return r.json(); })
+                    .then(function(rData){
+                      if(rData.features&&rData.features[0]){
+                        var feat=rData.features[0];
+                        var coords=feat.geometry.coordinates;
+                        var lng=coords[0], lat=coords[1];
+                        var name=feat.properties.full_address||feat.properties.name||sug.full_address||sug.name;
+                        inputEl.value=name;
+                        container.style.display='none';
+                        var obj={label:name,lat:lat,lng:lng};
+                        if(which==='pickup')  pickupPlace=obj;
+                        if(which==='dropoff') dropoffPlace=obj;
+                        inputEl.blur();
+                        afterInputChange(); setMarker(which,lat,lng); computeRoute();
+                        // Refresh session token for next search session
+                        _acSessionToken=crypto.randomUUID ? crypto.randomUUID() : (Date.now()+''+Math.random()).replace('.','');
+                      }
+                    })
+                    .catch(function(){});
+                }
               });
               container.appendChild(item);
             });

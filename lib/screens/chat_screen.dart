@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
@@ -93,10 +94,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _myRole = widget.currentRole ?? 'rider';
 
-    // Enable RTDB offline persistence so messages queue when disconnected
+    // Ensure Firebase Auth is signed in so RTDB rules (auth != null) pass
     try {
-      FirebaseDatabase.instance.setPersistenceEnabled(true);
-    } catch (_) {}
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('[Chat] Firebase Auth sign-in failed: $e');
+    }
 
     // Decide mode: RTDB for trip chats, polling for support
     if (!widget.isSupport && widget.tripId != null) {
@@ -169,6 +174,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       if (connected) _hadFirstConnect = true;
       setState(() => _rtdbConnected = connected);
+    }, onError: (e) {
+      debugPrint('[Chat] RTDB connection listener error: $e');
+      if (!mounted) return;
+      setState(() => _rtdbConnected = false);
     });
   }
 
@@ -195,6 +204,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
 
     if (_useRtdb) {
+      // Ensure userId is resolved before sending
+      if (_myUserId.isEmpty || _myUserId == '0') {
+        final id = await ApiService.getCurrentUserId();
+        if (id != null && id > 0) _myUserId = id.toString();
+      }
+      if (_rideId.isEmpty) {
+        debugPrint('[Chat] Cannot send: rideId is empty');
+        return;
+      }
       try {
         await _chat.sendMessage(
           rideId: _rideId,
@@ -362,7 +380,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? Icon(Icons.support_agent_rounded, size: Responsive.sp(18), color: _gold)
                   : Text(
                       widget.avatarInitial ??
-                          widget.recipientName[0].toUpperCase(),
+                          (widget.recipientName.isNotEmpty
+                              ? widget.recipientName[0].toUpperCase()
+                              : (_myRole == 'driver' ? 'R' : 'D')),
                       style: TextStyle(
                         fontSize: Responsive.sp(14),
                         fontWeight: FontWeight.w800,
@@ -378,7 +398,11 @@ class _ChatScreenState extends State<ChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.isSupport ? s.cruiseSupport : nh.displayName(widget.recipientName),
+                  widget.isSupport
+                      ? s.cruiseSupport
+                      : (widget.recipientName.isNotEmpty
+                          ? nh.displayName(widget.recipientName)
+                          : _myRole == 'driver' ? 'Rider' : 'Driver'),
                   style: TextStyle(
                     fontSize: Responsive.sp(16),
                     fontWeight: FontWeight.w700,
@@ -423,22 +447,59 @@ class _ChatScreenState extends State<ChatScreen> {
   // ── RTDB messages (StreamBuilder) ────────────────────────────────────
 
   Widget _buildRtdbMessages(S s) {
+    if (_rideId.isEmpty) {
+      return _buildEmptyState(s);
+    }
     return StreamBuilder<List<ChatMessage>>(
       stream: _chat.messagesStream(_rideId),
       initialData: const <ChatMessage>[],
       builder: (context, snapshot) {
         if (snapshot.hasError) {
+          debugPrint('[Chat] messagesStream error: ${snapshot.error}');
           return Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                S.of(context).connectionIssueRetrying,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.wifi_off_rounded, size: 36,
+                      color: Colors.white.withValues(alpha: 0.2)),
+                  const SizedBox(height: 12),
+                  Text(
+                    S.of(context).connectionIssueRetrying,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      // Force rebuild to retry the stream
+                      setState(() {});
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: _gold.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        'Retry',
+                        style: TextStyle(
+                          color: _gold,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -681,7 +742,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? Icon(Icons.support_agent_rounded, size: 13, color: _gold)
                     : Text(
                         widget.avatarInitial ??
-                            widget.recipientName[0].toUpperCase(),
+                            (widget.recipientName.isNotEmpty
+                                ? widget.recipientName[0].toUpperCase()
+                                : (_myRole == 'driver' ? 'R' : 'D')),
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,

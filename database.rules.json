@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "chats": {
+      "$rideId": {
+        "messages": {
+          ".read": true,
+          ".write": true,
+          ".indexOn": ["timestamp", "read"]
+        },
+        "typing": {
+          ".read": true,
+          ".write": true
+        },
+        "lastMessage": {
+          ".read": true,
+          ".write": true
+        },
+        "lastTimestamp": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    },
+    "driver_locations": {
+      "$driverId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "drivers": {
+      "$driverId": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

@@ -443,29 +443,27 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
 /* ══ Mapbox Custom Markers ══ */
 .vipRide__marker{ cursor:pointer; }
 .vipRide__markerInner{
-  display:block; width:50px; height:65px;
+  display:block; width:42px; height:60px;
   will-change:transform,opacity;
-  animation:vipMarkerPop 1200ms cubic-bezier(.22,.61,.36,1) forwards;
-  filter:drop-shadow(0 2px 8px rgba(232,197,71,.5)) drop-shadow(0 4px 12px rgba(0,0,0,.3));
+  animation:vipMarkerDrop 900ms cubic-bezier(.16,1,.3,1) forwards;
+  filter:drop-shadow(0 2px 10px rgba(212,175,55,.35)) drop-shadow(0 6px 16px rgba(0,0,0,.25));
   position:relative;
 }
-.vipRide__markerInner svg{ display:block; width:50px; height:65px; }
-@keyframes vipMarkerPop{
-  0%  { transform:scale(0) translateY(30px); opacity:0; }
-  35% { transform:scale(1.06) translateY(-2px); opacity:1; }
-  55% { transform:scale(0.98) translateY(1px); opacity:1; }
-  75% { transform:scale(1.02) translateY(0); opacity:1; }
-  100%{ transform:scale(1) translateY(0); opacity:1; }
+.vipRide__markerInner svg{ display:block; width:42px; height:60px; }
+@keyframes vipMarkerDrop{
+  0%  { transform:translateY(-20px) scale(0.6); opacity:0; }
+  60% { transform:translateY(2px) scale(1.02); opacity:1; }
+  100%{ transform:translateY(0) scale(1); opacity:1; }
 }
 .vipRide__markerInner::after{
-  content:''; position:absolute; bottom:-4px; left:50%; transform:translateX(-50%);
-  width:14px; height:6px; border-radius:50%;
-  background:rgba(212,175,55,.35);
-  animation:vipPinShadow 4s ease-in-out infinite;
+  content:''; position:absolute; bottom:-3px; left:50%; transform:translateX(-50%);
+  width:10px; height:4px; border-radius:50%;
+  background:rgba(212,175,55,.3);
+  animation:vipPinGlow 3s ease-in-out infinite;
 }
-@keyframes vipPinShadow{
-  0%,100%{ transform:translateX(-50%) scale(1); opacity:.35; }
-  50%{ transform:translateX(-50%) scale(1.6); opacity:.12; }
+@keyframes vipPinGlow{
+  0%,100%{ transform:translateX(-50%) scale(1); opacity:.3; }
+  50%{ transform:translateX(-50%) scale(1.4); opacity:.12; }
 }
 
 /* ══ Autocomplete Suggestions ══ */
@@ -1277,51 +1275,43 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
   }
 
   // ══ MAPBOX MARKER HELPERS ══
-  // Matching Flutter app's ride_request_map.dart _drawGoldPinAt: circle-head + cubicTo tail
+  // Minimalist luxury pins: frosted glass circle + thin gold rim + slim needle
   function createPickupMarkerEl(){
     var el=document.createElement('div');
     el.className='vipRide__marker vipRide__marker--pickup';
     var inner=document.createElement('div');
     inner.className='vipRide__markerInner';
-    // Luxury gold pin — transparent glass circle + glowing person icon
-    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="50" height="65" viewBox="0 0 50 65">'
+    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="42" height="60" viewBox="0 0 42 60">'
       +'<defs>'
-      // Drop shadow
-      +'<filter id="pu-sh" x="-30%" y="-20%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/></filter>'
-      // Rich bulb gradient (5-stop luxury gold)
-      +'<radialGradient id="pu-bg" cx="35%" cy="28%" r="68%">'
-      +'<stop offset="0%" stop-color="#FFF6D5"/>'
-      +'<stop offset="25%" stop-color="#F5D978"/>'
-      +'<stop offset="50%" stop-color="#E8C547"/>'
-      +'<stop offset="78%" stop-color="#C9A020"/>'
-      +'<stop offset="100%" stop-color="#9A7510"/>'
-      +'</radialGradient>'
-      // Outer golden halo
-      +'<radialGradient id="pu-halo" cx="50%" cy="36%" r="50%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.25"/><stop offset="50%" stop-color="#E8C547" stop-opacity="0.06"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
-      // Glass transparent fill (almost invisible)
-      +'<radialGradient id="pu-glass" cx="50%" cy="40%" r="50%"><stop offset="0%" stop-color="#fff" stop-opacity="0.06"/><stop offset="60%" stop-color="#fff" stop-opacity="0.02"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>'
-      // Icon fade-glow light
-      +'<filter id="pu-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="blur"/><feColorMatrix in="blur" type="matrix" values="1 0 0 0 1  0 1 0 0 1  0 0 1 0 1  0 0 0 0.6 0" result="glow"/><feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+      // Ambient glow beneath circle
+      +'<radialGradient id="pu-amb" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.12"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
+      // Frosted dark glass fill
+      +'<radialGradient id="pu-frost" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#2a2a3e" stop-opacity="0.92"/><stop offset="100%" stop-color="#12121e" stop-opacity="0.96"/></radialGradient>'
+      // Subtle inner light (top-left)
+      +'<radialGradient id="pu-spec" cx="35%" cy="30%" r="40%"><stop offset="0%" stop-color="#fff" stop-opacity="0.08"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>'
+      // Icon soft glow
+      +'<filter id="pu-ig" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/><feColorMatrix in="b" type="matrix" values="0.9 0 0 0 0.1  0.8 0 0 0 0.1  0.3 0 0 0 0  0 0 0 0.5 0" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
       +'</defs>'
-      // Halo glow
-      +'<ellipse cx="25" cy="22" rx="24" ry="24" fill="url(#pu-halo)"/>'
-      // Pin body: teardrop
-      +'<path d="M25 4C16.16 4 9 11.16 9 20c0 3.5 1.1 6.7 3 9.4C14.5 33.2 25 58 25 58s10.5-24.8 13-28.6c1.9-2.7 3-5.9 3-9.4 0-8.84-7.16-16-16-16z" fill="url(#pu-bg)" filter="url(#pu-sh)"/>'
-      // Thin white outer stroke
-      +'<path d="M25 4C16.16 4 9 11.16 9 20c0 3.5 1.1 6.7 3 9.4C14.5 33.2 25 58 25 58s10.5-24.8 13-28.6c1.9-2.7 3-5.9 3-9.4 0-8.84-7.16-16-16-16z" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>'
-      // Top-left specular highlight
-      +'<circle cx="19" cy="14" r="6" fill="rgba(255,255,255,0.15)" filter="blur(3px)"/>'
-      // Transparent glass inner circle (see-through)
-      +'<circle cx="25" cy="20" r="11" fill="url(#pu-glass)"/>'
-      // Thin luxe gold ring around inner circle
-      +'<circle cx="25" cy="20" r="11" fill="none" stroke="rgba(255,248,220,0.18)" stroke-width="0.6"/>'
-      // Person icon with fade-glow light
-      +'<g filter="url(#pu-glow)">'
-      +'<circle cx="25" cy="16" r="3.5" fill="#fff"/>'
-      +'<path d="M19.5 26.5c0-3.04 2.46-5.5 5.5-5.5s5.5 2.46 5.5 5.5" fill="#fff" stroke="none"/>'
+      // Ambient glow
+      +'<ellipse cx="21" cy="18" rx="20" ry="20" fill="url(#pu-amb)"/>'
+      // Needle (slim tapered line from circle bottom to tip)
+      +'<path d="M21 30 L22.2 30 L21 54 L19.8 30 Z" fill="#C9A020" opacity="0.7"/>'
+      +'<line x1="21" y1="30" x2="21" y2="54" stroke="url(#pu-frost)" stroke-width="0.5" opacity="0.3"/>'
+      // Frosted glass circle
+      +'<circle cx="21" cy="18" r="14" fill="url(#pu-frost)"/>'
+      // Inner light
+      +'<circle cx="21" cy="18" r="14" fill="url(#pu-spec)"/>'
+      // Gold rim
+      +'<circle cx="21" cy="18" r="14" fill="none" stroke="#D4AF37" stroke-width="0.8" opacity="0.6"/>'
+      // Second thin bright ring (inner)
+      +'<circle cx="21" cy="18" r="12.5" fill="none" stroke="rgba(232,197,71,0.1)" stroke-width="0.4"/>'
+      // Person icon — minimal, centered
+      +'<g filter="url(#pu-ig)" opacity="0.92">'
+      +'<circle cx="21" cy="14.5" r="3" fill="#E8C547"/>'
+      +'<path d="M16 23.5c0-2.76 2.24-5 5-5s5 2.24 5 5" fill="#E8C547" stroke="none"/>'
       +'</g>'
-      // Green status dot
-      +'<circle cx="25" cy="60" r="3" fill="#4CAF50" stroke="#1A1A1A" stroke-width="1"/>'
+      // Tip dot
+      +'<circle cx="21" cy="54" r="2" fill="#D4AF37" opacity="0.5"/>'
       +'</svg>';
     el.appendChild(inner);
     return el;
@@ -1331,40 +1321,30 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     el.className='vipRide__marker vipRide__marker--dropoff';
     var inner=document.createElement('div');
     inner.className='vipRide__markerInner';
-    // Luxury gold pin — transparent glass circle + glowing location icon
-    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="50" height="65" viewBox="0 0 50 65">'
+    inner.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="42" height="60" viewBox="0 0 42 60">'
       +'<defs>'
-      +'<filter id="do-sh" x="-30%" y="-20%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/></filter>'
-      // Rich bulb gradient (5-stop luxury gold)
-      +'<radialGradient id="do-bg" cx="35%" cy="28%" r="68%">'
-      +'<stop offset="0%" stop-color="#FFF6D5"/>'
-      +'<stop offset="25%" stop-color="#F5D978"/>'
-      +'<stop offset="50%" stop-color="#E8C547"/>'
-      +'<stop offset="78%" stop-color="#C9A020"/>'
-      +'<stop offset="100%" stop-color="#9A7510"/>'
-      +'</radialGradient>'
-      +'<radialGradient id="do-halo" cx="50%" cy="36%" r="50%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.25"/><stop offset="50%" stop-color="#E8C547" stop-opacity="0.06"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
-      // Glass transparent fill
-      +'<radialGradient id="do-glass" cx="50%" cy="40%" r="50%"><stop offset="0%" stop-color="#fff" stop-opacity="0.06"/><stop offset="60%" stop-color="#fff" stop-opacity="0.02"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>'
-      // Icon fade-glow light
-      +'<filter id="do-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="blur"/><feColorMatrix in="blur" type="matrix" values="1 0 0 0 1  0 1 0 0 1  0 0 1 0 1  0 0 0 0.6 0" result="glow"/><feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+      +'<radialGradient id="do-amb" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#E8C547" stop-opacity="0.12"/><stop offset="100%" stop-color="#E8C547" stop-opacity="0"/></radialGradient>'
+      +'<radialGradient id="do-frost" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#2a2a3e" stop-opacity="0.92"/><stop offset="100%" stop-color="#12121e" stop-opacity="0.96"/></radialGradient>'
+      +'<radialGradient id="do-spec" cx="35%" cy="30%" r="40%"><stop offset="0%" stop-color="#fff" stop-opacity="0.08"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>'
+      +'<filter id="do-ig" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/><feColorMatrix in="b" type="matrix" values="0.9 0 0 0 0.1  0.8 0 0 0 0.1  0.3 0 0 0 0  0 0 0 0.5 0" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
       +'</defs>'
-      +'<ellipse cx="25" cy="22" rx="24" ry="24" fill="url(#do-halo)"/>'
-      +'<path d="M25 4C16.16 4 9 11.16 9 20c0 3.5 1.1 6.7 3 9.4C14.5 33.2 25 58 25 58s10.5-24.8 13-28.6c1.9-2.7 3-5.9 3-9.4 0-8.84-7.16-16-16-16z" fill="url(#do-bg)" filter="url(#do-sh)"/>'
-      +'<path d="M25 4C16.16 4 9 11.16 9 20c0 3.5 1.1 6.7 3 9.4C14.5 33.2 25 58 25 58s10.5-24.8 13-28.6c1.9-2.7 3-5.9 3-9.4 0-8.84-7.16-16-16-16z" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>'
-      // Top-left specular highlight
-      +'<circle cx="19" cy="14" r="6" fill="rgba(255,255,255,0.15)" filter="blur(3px)"/>'
-      // Transparent glass inner circle
-      +'<circle cx="25" cy="20" r="11" fill="url(#do-glass)"/>'
-      // Thin luxe gold ring
-      +'<circle cx="25" cy="20" r="11" fill="none" stroke="rgba(255,248,220,0.18)" stroke-width="0.6"/>'
-      // Location icon with fade-glow light
-      +'<g filter="url(#do-glow)">'
-      +'<path d="M25 12c-3.87 0-7 3.13-7 7 0 4.6 7 12 7 12s7-7.4 7-12c0-3.87-3.13-7-7-7z" fill="#fff" fill-opacity="0.92"/>'
-      +'<circle cx="25" cy="19" r="2.8" fill="#E8C547"/>'
+      +'<ellipse cx="21" cy="18" rx="20" ry="20" fill="url(#do-amb)"/>'
+      // Needle
+      +'<path d="M21 30 L22.2 30 L21 54 L19.8 30 Z" fill="#C9A020" opacity="0.7"/>'
+      +'<line x1="21" y1="30" x2="21" y2="54" stroke="url(#do-frost)" stroke-width="0.5" opacity="0.3"/>'
+      // Frosted glass circle
+      +'<circle cx="21" cy="18" r="14" fill="url(#do-frost)"/>'
+      +'<circle cx="21" cy="18" r="14" fill="url(#do-spec)"/>'
+      // Gold rim
+      +'<circle cx="21" cy="18" r="14" fill="none" stroke="#D4AF37" stroke-width="0.8" opacity="0.6"/>'
+      +'<circle cx="21" cy="18" r="12.5" fill="none" stroke="rgba(232,197,71,0.1)" stroke-width="0.4"/>'
+      // Diamond / destination icon — minimal rhombus
+      +'<g filter="url(#do-ig)" opacity="0.92">'
+      +'<path d="M21 10 L27 18 L21 26 L15 18 Z" fill="none" stroke="#E8C547" stroke-width="1.2" stroke-linejoin="round"/>'
+      +'<circle cx="21" cy="18" r="2.2" fill="#E8C547"/>'
       +'</g>'
-      // Gold status dot
-      +'<circle cx="25" cy="60" r="3" fill="#E8C547" stroke="#1A1A1A" stroke-width="1"/>'
+      // Tip dot
+      +'<circle cx="21" cy="54" r="2" fill="#D4AF37" opacity="0.5"/>'
       +'</svg>';
     el.appendChild(inner);
     return el;

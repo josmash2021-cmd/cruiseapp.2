@@ -1418,6 +1418,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           status: 'completed',
         );
       } catch (_) {}
+      // Immediate Firestore sync so rider listener detects completion in real time
+      unawaited(TripFirestoreService.syncTripCompleted('sql_$_tripId'));
     }
     if (!mounted) return;
     _setState(() {

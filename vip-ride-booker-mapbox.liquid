@@ -1683,15 +1683,15 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     map.fitBounds(bounds, {
       padding:{top:80, right:50, bottom:padBottom, left:50},
       pitch:0,
-      bearing:map.getBearing(),
+      bearing:0,
       duration:1000,
       maxZoom:16
     });
     // Cinematic tilt after bounds settle
     setTimeout(function(){
       map.easeTo({
-        pitch:60,
-        bearing:map.getBearing()-8,
+        pitch:55,
+        bearing:-12,
         duration:2200,
         easing:function(t){ return 1-Math.pow(1-t,3); }
       });
@@ -1713,7 +1713,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
     if(currentMode === 'ride' && pickupPlace&&dropoffPlace&&map){
       fitRouteBounds();
     } else if(map){
-      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:0,duration:1200});
+      map.flyTo({center:[lng,lat],zoom:Math.max(defaultZoom,14),pitch:0,bearing:0,duration:1200});
     }
   }
 
@@ -2153,10 +2153,17 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         center:[defaultLng,defaultLat],
         zoom:isDesktop?Math.max(defaultZoom,14):defaultZoom,
         pitch:0,
-        bearing:-17.6,
+        bearing:0,
         attributionControl:false,
-        antialias:true
+        antialias:true,
+        dragRotate:false,
+        touchPitch:false
       });
+      // Reduce scroll-zoom sensitivity (need more scroll to zoom)
+      map.scrollZoom.setWheelZoomRate(1/200);
+      map.scrollZoom.setZoomRate(1/200);
+      // Reduce drag-pan sensitivity by adding linear deceleration
+      map.dragPan.enable({linearity:0.15,deceleration:2800,maxSpeed:800});
       map.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
       map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'bottom-right');
 
@@ -2230,7 +2237,7 @@ body:has(#vipRide-{{ section.id }}) [id*="footer"]{ display:none !important; }
         navigator.geolocation.getCurrentPosition(
           function(pos){
             var lat=pos.coords.latitude, lng=pos.coords.longitude;
-            map.flyTo({center:[lng,lat],zoom:15,pitch:0,duration:1200});
+            map.flyTo({center:[lng,lat],zoom:15,pitch:0,bearing:0,duration:1200});
             if(pickupMarker){ pickupMarker.remove(); pickupMarker=null; }
             pickupMarker=new mapboxgl.Marker({element:createPickupMarkerEl(),anchor:'bottom'})
               .setLngLat([lng,lat]).addTo(map);

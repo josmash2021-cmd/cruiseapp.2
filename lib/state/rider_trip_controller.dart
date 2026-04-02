@@ -445,13 +445,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final surge = _surgeMultiplier;
     final surgedBase = baseFare * surge;
 
+    // Use real route duration — parse "12 min" or "1 h 5 min" from Mapbox.
+    // Add small category offsets (VIP vehicles take slightly longer to arrive).
+    final baseDuration = _parseDurationMinutes(route.durationText).clamp(1, 120);
+
     return [
       RideOption(
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Snacks & Drinks',
         priceEstimate: _round(surgedBase * 2.20),
-        etaMinutes: 5 + math.Random().nextInt(8),
+        etaMinutes: baseDuration + 3,
         icon: '🚐',
         capacity: 7,
         surgeMultiplier: surge,
@@ -461,7 +465,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         name: 'Sedan',
         description: 'Comfort • Climate • Charger',
         priceEstimate: _round(surgedBase * 1.35),
-        etaMinutes: 4 + math.Random().nextInt(6),
+        etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 4,
         surgeMultiplier: surge,
@@ -471,7 +475,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         name: 'Comfort',
         description: 'Clean • Safe • Efficient',
         priceEstimate: _round(surgedBase),
-        etaMinutes: 3 + math.Random().nextInt(5),
+        etaMinutes: baseDuration,
         icon: '🚗',
         capacity: 4,
         surgeMultiplier: surge,

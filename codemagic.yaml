@@ -389,23 +389,11 @@ workflows:
             security cms -D -i "$PROFILE_PATH" > /tmp/profile_info.plist
             PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/profile_info.plist)
             echo "Profile UUID: $PROFILE_UUID"
-            cat > "$HOME/export_options.plist" <<'PLISTEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>app-store</string>
-  <key>teamID</key>
-  <string>7QLC9UVB3Z</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>uploadSymbols</key>
-  <true/>
-</dict>
-</plist>
-PLISTEOF
-            # Now inject the profile UUID using PlistBuddy
+            plutil -create xml1 "$HOME/export_options.plist"
+            /usr/libexec/PlistBuddy -c "Add :method string app-store" "$HOME/export_options.plist"
+            /usr/libexec/PlistBuddy -c "Add :teamID string 7QLC9UVB3Z" "$HOME/export_options.plist"
+            /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$HOME/export_options.plist"
+            /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" "$HOME/export_options.plist"
             /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$HOME/export_options.plist"
             /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.cruiseinride.app string $PROFILE_UUID" "$HOME/export_options.plist"
             echo "Created export_options.plist manually"

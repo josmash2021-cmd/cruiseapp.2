@@ -1,5 +1,6 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 /// Singleton analytics service wrapping Firebase Analytics.
 ///
@@ -25,8 +26,11 @@ class AnalyticsService {
   }
 
   /// Navigator observer for automatic screen tracking.
-  FirebaseAnalyticsObserver get observer =>
-      FirebaseAnalyticsObserver(analytics: _analytics);
+  /// Returns a no-op observer if analytics hasn't been initialized yet.
+  NavigatorObserver get observer {
+    if (!_initialized) return NavigatorObserver();
+    return FirebaseAnalyticsObserver(analytics: _analytics);
+  }
 
   // ── User identity ──────────────────────────────────────
 

@@ -318,6 +318,8 @@ workflows:
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
             --create \
+            --strict-match-identifier \
+            --delete-stale-profiles \
             --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
           keychain add-certificates
@@ -428,9 +430,30 @@ workflows:
             --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             2>/dev/null || true
 
+          # Delete ALL existing App Store profiles to prevent 409 duplicate name conflict
+          echo "── Cleaning up existing profiles ──"
+          app-store-connect profiles list \
+            --type IOS_APP_STORE \
+            --json 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for p in data:
+                  pid = p.get('id','')
+                  name = p.get('attributes',{}).get('name','?')
+                  print(f'{pid} {name}')
+          except: pass
+          " | while read -r pid name; do
+            echo "  Deleting profile: $name ($pid)"
+            app-store-connect profiles delete "$pid" 2>/dev/null || true
+          done
+          echo "── Profile cleanup done ──"
+
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
+            --strict-match-identifier \
             --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
 

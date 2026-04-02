@@ -330,7 +330,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
       }
     } catch (_) {}
-    // 2) Fallback: query dispatch status API for rider photo
+    // 2) Try Firestore users collection directly using rider's SQL ID
+    if (widget.riderId != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc('sql_${widget.riderId}')
+            .get();
+        if (doc.exists && mounted) {
+          final url = doc.data()?['photoUrl'] as String?;
+          final recovered = _normalizedPhotoUrl(url);
+          if (recovered != null && recovered.isNotEmpty) {
+            setState(() => _riderPhotoUrl = recovered);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    // 3) Fallback: query dispatch status API for rider photo
     try {
       final status = await ApiService.getDispatchStatus(widget.tripId);
       if (!mounted) return;

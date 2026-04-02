@@ -235,6 +235,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void initState() {
     super.initState();
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
+    // If no photo URL from dispatch, proactively fetch from Firestore user doc.
+    if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty) &&
+        widget.driverId != null &&
+        widget.driverId!.isNotEmpty) {
+      Future.microtask(() => _fetchDriverPhotoFromUserDoc(widget.driverId!));
+    }
     _etaPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),

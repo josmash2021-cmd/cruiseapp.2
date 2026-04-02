@@ -322,6 +322,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     );
     if (fsPhoto != null && fsPhoto.isNotEmpty && fsPhoto != _driverPhotoUrl) {
       _setState(() => _driverPhotoUrl = fsPhoto);
+    } else if ((fsPhoto == null || fsPhoto.isEmpty) && (_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty)) {
+      // Trip doc has no photo URL — fetch directly from driver's user doc in Firestore.
+      final dId = widget.driverId ?? did;
+      if (dId.isNotEmpty) {
+        unawaited(_fetchDriverPhotoFromUserDoc(dId));
+      }
     }
 
     final rawStatus = data['status']?.toString() ?? '';
@@ -972,5 +978,28 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       ),
       (_) => false,
     );
+  }
+
+  /// Fetch driver photo directly from Firestore users collection when trip doc
+  /// doesn't include it. Uses sql_{driverId} key matching the upload path.
+  Future<void> _fetchDriverPhotoFromUserDoc(String driverId) async {
+    if (!mounted) return;
+    try {
+      final docId = 'sql_$driverId';
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(docId)
+          .get();
+      if (!mounted) return;
+      if (doc.exists) {
+        final url = doc.data()?['photoUrl'] as String?;
+        final normalized = _normalizeRemotePhotoUrl(url);
+        if (normalized != null && normalized.isNotEmpty && (_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty)) {
+          _setState(() => _driverPhotoUrl = normalized);
+        }
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] Firestore driver photo fetch failed: $e');
+    }
   }
 }

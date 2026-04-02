@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'security_service.dart';
 import 'cache_service.dart';
+import 'firebase_storage_service.dart';
 import '../widgets/user_profile_photo.dart';
 
 /// Stores and retrieves the logged-in user's session.
@@ -196,6 +197,13 @@ class UserSession {
           photoUrlNotifier.value = resolvedUrl;
           if (profileUid.isNotEmpty) {
             await prefs0.setString(_photoUrlKeyForUid(profileUid), resolvedUrl);
+          }
+          // Sync photo URL to Firestore so it's available on all devices.
+          // This ensures cross-device photo recovery works even after logout/login.
+          final userId = int.tryParse(profileUid);
+          if (userId != null && userId > 0) {
+            final role = profile['role']?.toString() ?? 'rider';
+            unawaited(FirebaseStorageService.updateFirestorePhotoUrl(userId, resolvedUrl, role));
           }
         }
         // Fire photo download in background — does not block navigation

@@ -168,18 +168,23 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => Navigator.of(context).push(
-                    slideFromRightRoute(
-                      ChatScreen(
-                        recipientName: widget.driverName.split(' ').first,
-                        avatarInitial: widget.driverName.isNotEmpty
-                            ? widget.driverName[0].toUpperCase()
-                            : 'D',
-                        tripId: widget.tripId,
-                        currentRole: 'rider',
+                  onTap: () async {
+                    final userId = await ApiService.getCurrentUserId();
+                    if (!mounted) return;
+                    Navigator.of(context).push(
+                      slideFromRightRoute(
+                        ChatScreen(
+                          recipientName: widget.driverName.split(' ').first,
+                          avatarInitial: widget.driverName.isNotEmpty
+                              ? widget.driverName[0].toUpperCase()
+                              : 'D',
+                          tripId: widget.tripId,
+                          currentRole: 'rider',
+                          currentUserId: userId?.toString(),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [

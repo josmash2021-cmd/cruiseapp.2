@@ -106,7 +106,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
       _statusPollTimer?.cancel();
       _statusPollTimer = Timer.periodic(
-        const Duration(seconds: 8),
+        const Duration(seconds: 3),
         (_) => _pollBackendTripStatus(),
       );
       unawaited(_pollBackendTripStatus());
@@ -379,7 +379,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _tripJustStarted = true;
       });
       _tripStartedTimer?.cancel();
-      _tripStartedTimer = Timer(const Duration(seconds: 4), () {
+      _tripStartedTimer = Timer(const Duration(seconds: 2), () {
         if (mounted) _setState(() => _tripJustStarted = false);
       });
       _arrivedDotPulse.stop();
@@ -399,7 +399,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Save trip chat to inbox before navigating away
       _saveChatToInbox();
       // Let the rider see the "Trip completed" state briefly before rating
-      Future.delayed(const Duration(seconds: 3), () {
+      Future.delayed(const Duration(milliseconds: 1500), () {
         if (mounted) _goToRating();
       });
     } else if (isCancelledStatus) {
@@ -868,17 +868,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Start the ride start animation:
   /// 1. Camera zooms out to show full route (800ms flyTo)
   /// 2. Dropoff pin appears
-  /// Start the ride start animation sequence:
-  /// 1. Camera top-down showing full route (800 ms flyTo)
-  /// 2. Route draws progressively pickup → dropoff (2 s)
-  /// 3. Camera flies to 45° centred on driver (1.5 s)
-  /// 4. Route fades out (600 ms)
-  /// 5. Route redraws from driver position → dropoff (2 s)
-  /// 6. Enable 45° follow camera for real-time tracking
+  /// Simplified ride-start: draw remaining route + adaptive camera (no cinematic sequence).
   void _startStartRideAnimation() {
     if (_startRideAnimationDone) return;
     _startRideAnimationDone = true;
-    _startRidePhase = 1;
+    _startRidePhase = 5; // skip to follow mode immediately
 
     _routeFadeTimer?.cancel();
     _routeOpacity = 1.0;
@@ -888,44 +882,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _addDropoffPin();
     }
 
-    // Remove the dimmed route — we'll draw a bright gloss one instead
+    // Remove the dimmed route — draw a bright one instead
     _removeDimmedRoute();
 
-    // PHASE 2: Zoom out to top-down full route overview (800 ms flyTo)
-    Future.delayed(const Duration(milliseconds: 100), () {
+    // Draw the remaining route (driver → dropoff) immediately
+    _routeDrawDone = false;
+    _startAnimatedRouteDraw();
+
+    // Fit camera to remaining route with adaptive zoom
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) _fitRouteBounds();
-    });
-
-    // PHASE 3: Animated gloss route draw pickup → dropoff (2 s)
-    Future.delayed(const Duration(milliseconds: 1000), () {
-      if (!mounted) return;
-      _startRidePhase = 2;
-      _routeDrawDone = false;
-      _startAnimatedRouteDraw();
-    });
-
-    // PHASE 4: Fly camera to 45° on driver (1.5 s)
-    Future.delayed(const Duration(milliseconds: 3200), () {
-      if (!mounted) return;
-      _startRidePhase = 3;
-      _flyToDriverAt45();
-    });
-
-    // PHASE 5: Fade out route (600 ms)
-    Future.delayed(const Duration(milliseconds: 4800), () {
-      if (!mounted) return;
-      _startRidePhase = 4;
-      _fadeRouteForRideStart();
-    });
-
-    // PHASE 6: Redraw route + enable 45° follow camera
-    _startRidePhaseTimer?.cancel();
-    _startRidePhaseTimer = Timer(const Duration(milliseconds: 5600), () {
-      if (!mounted) return;
-      _routeDrawDone = false;
-      _startAnimatedRouteDraw(); // redraw from current driver position → dropoff
-      _useNavCamera = true;      // switch _followDriver() to tilt mode
-      _startRidePhase = 5;       // done — real-time tracking
     });
   }
 

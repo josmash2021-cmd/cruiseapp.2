@@ -551,7 +551,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   /// Fit route bounds applying precise padding for top and bottom cards.
-  /// Always shows the FULL overview: pickup + dropoff + driver + route.
+  /// During onTrip: adaptive zoom — short routes show full remaining route,
+  /// long routes show driver + enough ahead to see well (not zoomed out too far).
   void _fitRouteBounds() {
     if (_map == null || _routePts.isEmpty) return;
     
@@ -568,15 +569,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     
     if (isOnTrip && _animPos.latitude != 0) {
-      // Chase-style: show only driver → dropoff (remaining route)
-      pts.add(_animPos);
-      pts.add(widget.dropoffLatLng);
-      // Add remaining route points ahead of the driver
-      if (_segDist.isNotEmpty) {
-        for (int i = 0; i < _routePts.length; i++) {
-          if (_segDist[i] >= _traveledM) {
-            pts.add(_routePts[i]);
+      // Adaptive: compute remaining distance to dropoff
+      final remainMiles = _distanceMiles;
+      
+      if (remainMiles <= 2.5) {
+        // Short routes (< 2.5 mi): show full remaining route (driver → dropoff)
+        pts.add(_animPos);
+        pts.add(widget.dropoffLatLng);
+        if (_segDist.isNotEmpty) {
+          for (int i = 0; i < _routePts.length; i++) {
+            if (_segDist[i] >= _traveledM) {
+              pts.add(_routePts[i]);
+            }
           }
+        }
+      } else {
+        // Long routes (> 2.5 mi): show driver + next ~2 miles of route ahead
+        // This keeps the view readable instead of zooming way out
+        pts.add(_animPos);
+        final targetAheadM = _traveledM + 3200; // ~2 miles ahead
+        final capM = _segDist.isNotEmpty ? _segDist.last : double.infinity;
+        if (_segDist.isNotEmpty) {
+          for (int i = 0; i < _routePts.length; i++) {
+            if (_segDist[i] >= _traveledM && _segDist[i] <= targetAheadM.clamp(0, capM)) {
+              pts.add(_routePts[i]);
+            }
+          }
+        }
+        // Always include a point toward dropoff direction for context
+        if (pts.length < 2) {
+          pts.add(widget.dropoffLatLng);
         }
       }
     } else {
@@ -614,17 +636,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       null, null,
     ).then((cam) {
       if (!mounted || _map == null) return;
-      // Clamp max zoom to prevent over-zooming when driver is near destination
-      final zoom = cam.zoom ?? 14.0;
+      // Clamp zoom: min 13 (not too far), max 16 (not too close)
+      final zoom = (cam.zoom ?? 14.0).clamp(13.0, 16.0);
       final clampedCam = mapbox.CameraOptions(
         center: cam.center,
-        zoom: zoom > 16.5 ? 16.5 : zoom,
+        zoom: zoom,
         bearing: cam.bearing,
         pitch: cam.pitch,
         padding: cam.padding,
         anchor: cam.anchor,
       );
-      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
+      // Use easeTo for smooth continuous updates during trip
+      if (isOnTrip) {
+        _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: 1200));
+      } else {
+        _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
+      }
     });
   }
 
@@ -654,6 +681,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Update camera target bounds (called from sim tick) ──
   void _throttleCam() {
+    // During onTrip, throttle camera updates to every 3s for smooth panning
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    if (isOnTrip) {
+      final now = DateTime.now();
+      if (now.difference(_lastBoundsFit).inMilliseconds < 3000) return;
+      _lastBoundsFit = now;
+    }
     _updateCamTarget();
   }
 

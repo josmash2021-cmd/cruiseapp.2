@@ -179,7 +179,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     setState(() {});
 
     // Show the confirmation message briefly, then dismiss
-    await Future.delayed(const Duration(milliseconds: 1800));
+    await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
     await _fadeOutCtrl.forward();
     if (mounted) widget.onConfirmed();
@@ -221,7 +221,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
 
     // Show confirmed animation briefly, then transition
-    await Future.delayed(const Duration(milliseconds: 1600));
+    await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
     await _fadeOutCtrl.forward();
     if (mounted) widget.onConfirmed();

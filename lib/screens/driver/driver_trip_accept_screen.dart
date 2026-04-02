@@ -501,26 +501,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      setState(() => _arrivedConfirmed = true);
-    });
-    // Notify rider + update backend status to 'arrived'
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived');
-    } catch (_) {}
-    try {
-      await FirebaseFirestore.instance
+    setState(() => _arrivedConfirmed = true);
+    // Notify rider + update backend status to 'arrived' (parallel)
+    await Future.wait([
+      ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived')
+          .catchError((_) => <String, dynamic>{}),
+      FirebaseFirestore.instance
           .collection('trips')
           .doc(_fsDocId)
           .update({
         'status': 'arrived',
         'arrivedAt': FieldValue.serverTimestamp(),
-      });
-      debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
-    } catch (e) {
-      debugPrint('[Driver] Firestore arrived write FAILED: $e');
-    }
+      }).then((_) {
+        debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
+      }).catchError((e) {
+        debugPrint('[Driver] Firestore arrived write FAILED: $e');
+      }),
+    ]);
   }
 
   // ── Listen for rider confirming they are with the driver ────────────────
@@ -562,21 +559,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip');
-    } catch (_) {}
-    try {
-      await FirebaseFirestore.instance
+    await Future.wait([
+      ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip')
+          .catchError((_) => <String, dynamic>{}),
+      FirebaseFirestore.instance
           .collection('trips')
           .doc(_fsDocId)
           .update({
         'status': 'in_trip',
         'rideStartedAt': FieldValue.serverTimestamp(),
-      });
-      debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
-    } catch (e) {
-      debugPrint('[Driver] Firestore in_trip write FAILED: $e');
-    }
+      }).then((_) {
+        debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
+      }).catchError((e) {
+        debugPrint('[Driver] Firestore in_trip write FAILED: $e');
+      }),
+    ]);
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────
@@ -615,8 +612,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       } catch (_) {}
     }());
 
-    // After 3 seconds navigate to DriverRateRiderScreen
-    _finishNavTimer = Timer(const Duration(seconds: 3), () {
+    // After 1.5 seconds navigate to DriverRateRiderScreen
+    _finishNavTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(

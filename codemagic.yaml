@@ -308,16 +308,54 @@ workflows:
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
-            --create
+            --create \
+            --verbose
           keychain add-certificates
-          xcode-project use-profiles
+          xcode-project use-profiles || true
+
+          # ── Extract profile info ──
+          PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            -name "*.mobileprovision" 2>/dev/null | head -1)
+          if [ -z "$PROFILE_PATH" ]; then
+            echo "❌ No provisioning profile downloaded"; exit 1
+          fi
+          PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
+          PROFILE_NAME=$(echo "$PLIST" | grep -A1 '<key>Name</key>' | tail -1 \
+            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | xargs)
+          echo "✅ Profile: $PROFILE_NAME"
+
+          # ── Inject PROVISIONING_PROFILE_SPECIFIER ──
+          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
+          if ! grep -q 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ"; then
+            perl -i -pe \
+              "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";}" \
+              "$PBXPROJ"
+          fi
+
+          # ── Generate export_options.plist ──
+          export PROFILE_NAME
+          python3 - << 'PYEOF'
+          import plistlib, os, pathlib
+          name = os.environ["PROFILE_NAME"]
+          pl = {
+              "method": "ad-hoc",
+              "teamID": "7QLC9UVB3Z",
+              "signingStyle": "manual",
+              "provisioningProfiles": {
+                  "com.cruiseinride.app": name,
+              },
+          }
+          out = pathlib.Path.home() / "export_options.plist"
+          with open(out, "wb") as f:
+              plistlib.dump(pl, f)
+          print(f"Created {out}")
+          PYEOF
           security find-identity -v -p codesigning
           echo "✅ Ad Hoc signing ready"
       - name: Flutter build IPA (Ad Hoc)
         script: |
           flutter build ipa --release --no-tree-shake-icons \
-            --export-options-plist=~/export_options.plist || \
-          flutter build ipa --release --no-tree-shake-icons
+            --export-options-plist=$HOME/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
@@ -364,48 +402,95 @@ workflows:
             --verbose
 
           keychain add-certificates
-          xcode-project use-profiles || echo "use-profiles had warnings"
+          xcode-project use-profiles || true
 
-          # Read the downloaded profile info
-          PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
-          PLIST=$(security cms -D -i "$PROFILE_PATH")
-          PROFILE_UUID=$(echo "$PLIST" | grep -A1 UUID | grep string | sed 's/.*<string>//' | sed 's/<\/string>.*//')
-          PROFILE_NAME=$(echo "$PLIST" | grep -A1 Name | grep string | head -1 | sed 's/.*<string>//' | sed 's/<\/string>.*//')
-          echo "Profile: $PROFILE_NAME (UUID: $PROFILE_UUID)"
+          # ── Extract profile info ──────────────────────────────────────────
+          PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            -name "*.mobileprovision" 2>/dev/null | head -1)
+          if [ -z "$PROFILE_PATH" ]; then
+            echo "❌ No provisioning profile downloaded"
+            ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null
+            exit 1
+          fi
+          echo "Profile file: $PROFILE_PATH"
 
-          # Patch pbxproj to inject PROVISIONING_PROFILE_SPECIFIER
+          PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
+          if [ -z "$PLIST" ]; then
+            echo "❌ security cms failed to decode the profile"
+            file "$PROFILE_PATH"
+            exit 1
+          fi
+
+          PROFILE_UUID=$(echo "$PLIST" | grep -A1 '<key>UUID</key>' | tail -1 \
+            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | tr -d '[:space:]')
+          PROFILE_NAME=$(echo "$PLIST" | grep -A1 '<key>Name</key>' | tail -1 \
+            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | xargs)
+
+          if [ -z "$PROFILE_UUID" ] || [ -z "$PROFILE_NAME" ]; then
+            echo "❌ Could not extract UUID or Name from profile"
+            echo "   UUID='$PROFILE_UUID'  NAME='$PROFILE_NAME'"
+            echo "$PLIST" | head -40
+            exit 1
+          fi
+          echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
+
+          # ── Inject PROVISIONING_PROFILE_SPECIFIER into pbxproj ────────────
+          # NOTE: perl is used instead of sed because macOS BSD sed does NOT
+          #       interpret \n as a newline in the replacement string.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' "s/CODE_SIGN_STYLE = Manual;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";/g" "$PBXPROJ"
-          echo "Injected PROVISIONING_PROFILE_SPECIFIER into $(grep -c PROVISIONING_PROFILE_SPECIFIER "$PBXPROJ") configs"
+          if ! grep -q 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ"; then
+            perl -i -pe \
+              "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";}" \
+              "$PBXPROJ"
+          fi
+          echo "PROVISIONING_PROFILE_SPECIFIER count: $(grep -c 'PROVISIONING_PROFILE_SPECIFIER' "$PBXPROJ")"
 
-          # Create export_options.plist
-          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>method</key>\n  <string>app-store</string>\n  <key>teamID</key>\n  <string>7QLC9UVB3Z</string>\n  <key>signingStyle</key>\n  <string>manual</string>\n  <key>uploadSymbols</key>\n  <true/>\n  <key>provisioningProfiles</key>\n  <dict>\n    <key>com.cruiseinride.app</key>\n    <string>'"${PROFILE_NAME}"'</string>\n  </dict>\n</dict>\n</plist>\n' > "$HOME/export_options.plist"
+          # ── Generate export_options.plist via python3 (always reliable) ───
+          export PROFILE_NAME
+          python3 - << 'PYEOF'
+          import plistlib, os, pathlib
+          name = os.environ["PROFILE_NAME"]
+          pl = {
+              "method": "app-store",
+              "teamID": "7QLC9UVB3Z",
+              "signingStyle": "manual",
+              "uploadSymbols": True,
+              "provisioningProfiles": {
+                  "com.cruiseinride.app": name,
+              },
+          }
+          out = pathlib.Path.home() / "export_options.plist"
+          with open(out, "wb") as f:
+              plistlib.dump(pl, f)
+          print(f"Created {out}")
+          PYEOF
           echo "export_options.plist:"
           cat "$HOME/export_options.plist"
 
-          echo "── Identities ──"
+          # ── Diagnostics ───────────────────────────────────────────────────
+          echo "── Signing identities ──"
           security find-identity -v -p codesigning
           echo "── Profiles ──"
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
-          echo "── pbxproj signing ──"
-          grep "PROVISIONING_PROFILE_SPECIFIER\|CODE_SIGN_STYLE\|DEVELOPMENT_TEAM" "$PBXPROJ" | head -20
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          echo "── pbxproj signing fields ──"
+          grep -E 'PROVISIONING_PROFILE|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY' "$PBXPROJ" | head -20
           echo "✅ Signing ready"
       - name: Build IPA (App Store)
         script: |
+          set -o pipefail
           flutter build ipa \
             --release \
             --no-tree-shake-icons \
             --build-number=$BUILD_NUMBER \
-            --export-options-plist=$HOME/export_options.plist \
-            2>&1 | tee /tmp/flutter_build.log
+            --export-options-plist=$HOME/export_options.plist
 
           IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
           if [ -z "$IPA_PATH" ]; then
-            echo "ERROR: No IPA file found"
+            echo "❌ No IPA file found"
             ls -laR build/ios/ipa/ 2>/dev/null || true
             exit 1
           fi
-          echo "✅ IPA created: $IPA_PATH"
+          echo "✅ IPA created: $IPA_PATH ($(du -sh "$IPA_PATH" | cut -f1))"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

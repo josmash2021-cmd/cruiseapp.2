@@ -580,7 +580,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   void _goToRating() {
     if (!mounted) return;
-    // Navigate to rating immediately
+    // Navigate to rating with smooth fade transition
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => RiderRatingScreen(
@@ -592,9 +592,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           dropoffLat: widget.dropoffLatLng.latitude,
           dropoffLng: widget.dropoffLatLng.longitude,
         ),
-        transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 600),
+        reverseTransitionDuration: const Duration(milliseconds: 500),
       ),
     );
   }

@@ -364,13 +364,31 @@ workflows:
             --verbose
 
           keychain add-certificates
+          xcode-project use-profiles || echo "use-profiles had warnings"
 
-          xcode-project use-profiles
+          # Read the downloaded profile info
+          PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
+          PLIST=$(security cms -D -i "$PROFILE_PATH")
+          PROFILE_UUID=$(echo "$PLIST" | grep -A1 UUID | grep string | sed 's/.*<string>//' | sed 's/<\/string>.*//')
+          PROFILE_NAME=$(echo "$PLIST" | grep -A1 Name | grep string | head -1 | sed 's/.*<string>//' | sed 's/<\/string>.*//')
+          echo "Profile: $PROFILE_NAME (UUID: $PROFILE_UUID)"
+
+          # Patch pbxproj to inject PROVISIONING_PROFILE_SPECIFIER
+          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
+          sed -i '' "s/CODE_SIGN_STYLE = Manual;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";/g" "$PBXPROJ"
+          echo "Injected PROVISIONING_PROFILE_SPECIFIER into $(grep -c PROVISIONING_PROFILE_SPECIFIER "$PBXPROJ") configs"
+
+          # Create export_options.plist
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>method</key>\n  <string>app-store</string>\n  <key>teamID</key>\n  <string>7QLC9UVB3Z</string>\n  <key>signingStyle</key>\n  <string>manual</string>\n  <key>uploadSymbols</key>\n  <true/>\n  <key>provisioningProfiles</key>\n  <dict>\n    <key>com.cruiseinride.app</key>\n    <string>'"${PROFILE_NAME}"'</string>\n  </dict>\n</dict>\n</plist>\n' > "$HOME/export_options.plist"
+          echo "export_options.plist:"
+          cat "$HOME/export_options.plist"
 
           echo "── Identities ──"
           security find-identity -v -p codesigning
           echo "── Profiles ──"
           ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo "── pbxproj signing ──"
+          grep "PROVISIONING_PROFILE_SPECIFIER\|CODE_SIGN_STYLE\|DEVELOPMENT_TEAM" "$PBXPROJ" | head -20
           echo "✅ Signing ready"
       - name: Build IPA (App Store)
         script: |

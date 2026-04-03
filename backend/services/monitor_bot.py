@@ -215,7 +215,7 @@ async def _cmd_db() -> str:
 
         pool = engine.pool
         pool_line = f"Pool: {pool.checkedout()}/{pool.size()} checked-out"
-        status = "✅ Healthy" if q_ms < 100 else "⚠️ Slow" if q_ms < 500 else "❌ Critical"
+        status = "✅ Healthy" if q_ms < 500 else "⚠️ Slow" if q_ms < 1500 else "❌ Critical"
         return (
             f"*Database*\n\n"
             f"{status}\n"
@@ -344,7 +344,7 @@ async def _health_check_loop():
                     await db.execute(text("SELECT 1"))
                     latency = (time.time() - q_start) * 1000
                 pool = engine.pool
-                if latency > 200:
+                if latency > 500:
                     from services.admin_alerts import send_alert, HIGH
                     await send_alert("db_slow", "Database Slow",
                                      f"DB latency: {latency:.0f}ms | pool wait: {pool_wait:.0f}ms | pool {pool.checkedout()}/{pool.size()}", HIGH)

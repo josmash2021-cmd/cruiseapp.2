@@ -169,17 +169,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _setRouteAnnotation(List<LatLng> pts, Color c) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || pts.length < 2) return;
-    if (_routeAnnot != null) {
-      try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
-      _routeAnnot = null;
-    }
     final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: c.toARGB32(),
-      lineWidth: 5.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
+    final geo = mapbox.LineString(coordinates: coords);
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geo;
+      _routeAnnot!.lineColor = c.toARGB32();
+      try { await polyMgr.update(_routeAnnot!); } catch (_) {}
+    } else {
+      _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geo,
+        lineColor: c.toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    }
   }
 
   Future<void> _clearRouteAnnotation() async {

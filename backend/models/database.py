@@ -29,12 +29,19 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 40
-    _engine_kwargs["max_overflow"] = 80
+    _engine_kwargs["pool_size"] = 8            # stay within Railway's connection limit
+    _engine_kwargs["max_overflow"] = 12        # max 20 total connections
     _engine_kwargs["pool_pre_ping"] = True
-    _engine_kwargs["pool_recycle"] = 600
-    _engine_kwargs["pool_timeout"] = 30
-    _engine_kwargs["connect_args"] = {"timeout": 15, "command_timeout": 30}
+    _engine_kwargs["pool_recycle"] = 300       # recycle every 5 min (before Railway kills idle)
+    _engine_kwargs["pool_timeout"] = 8         # fail fast instead of queuing for 30s
+    _engine_kwargs["pool_use_lifo"] = True     # reuse warm connections first
+    _engine_kwargs["connect_args"] = {
+        "timeout": 10,
+        "command_timeout": 15,
+        # Kill runaway queries after 15s and idle-in-transaction after 10s
+        # so they don't hold pool connections indefinitely
+        "options": "-c statement_timeout=15000 -c idle_in_transaction_session_timeout=10000",
+    }
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

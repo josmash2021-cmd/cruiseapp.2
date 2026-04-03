@@ -193,17 +193,28 @@ async def _cmd_drivers() -> str:
 
 
 async def _cmd_db() -> str:
-    """Database health."""
+    """Database health — query latency + pool stats."""
     try:
-        from models.database import SessionLocal
+        from models.database import SessionLocal, engine
         from sqlalchemy import text
 
-        start = time.time()
+        acq_start = time.time()
         async with SessionLocal() as db:
+            pool_wait_ms = (time.time() - acq_start) * 1000
+            q_start = time.time()
             await db.execute(text("SELECT 1"))
-        latency_ms = (time.time() - start) * 1000
-        status = "✅ Healthy" if latency_ms < 100 else "⚠️ Slow" if latency_ms < 500 else "❌ Critical"
-        return f"*Database*\n\n{status}\nLatency: {latency_ms:.0f}ms"
+            q_ms = (time.time() - q_start) * 1000
+
+        pool = engine.pool
+        pool_line = f"Pool: {pool.checkedout()}/{pool.size()} checked-out"
+        status = "✅ Healthy" if q_ms < 100 else "⚠️ Slow" if q_ms < 500 else "❌ Critical"
+        return (
+            f"*Database*\n\n"
+            f"{status}\n"
+            f"Query latency: {q_ms:.0f}ms\n"
+            f"Pool wait: {pool_wait_ms:.0f}ms\n"
+            f"{pool_line}"
+        )
     except Exception as e:
         return f"❌ *Database DOWN*\n\nError: {e}"
 
@@ -301,16 +312,23 @@ async def _health_check_loop():
 
             # 1. Check database
             try:
-                from models.database import SessionLocal
+                from models.database import SessionLocal, engine
                 from sqlalchemy import text
-                start = time.time()
+                acq_start = time.time()
                 async with SessionLocal() as db:
+                    pool_wait = (time.time() - acq_start) * 1000
+                    q_start = time.time()
                     await db.execute(text("SELECT 1"))
-                latency = (time.time() - start) * 1000
-                if latency > 500:
+                    latency = (time.time() - q_start) * 1000
+                pool = engine.pool
+                if latency > 200:
                     from services.admin_alerts import send_alert, HIGH
                     await send_alert("db_slow", "Database Slow",
-                                     f"DB latency: {latency:.0f}ms", HIGH)
+                                     f"DB latency: {latency:.0f}ms | pool wait: {pool_wait:.0f}ms | pool {pool.checkedout()}/{pool.size()}", HIGH)
+                elif pool_wait > 1000:
+                    from services.admin_alerts import send_alert, HIGH
+                    await send_alert("db_pool_exhausted", "DB Pool Exhausted",
+                                     f"Pool wait: {pool_wait:.0f}ms — {pool.checkedout()}/{pool.size()} connections in use", HIGH)
                 consecutive_db_fails = 0
             except Exception as e:
                 consecutive_db_fails += 1

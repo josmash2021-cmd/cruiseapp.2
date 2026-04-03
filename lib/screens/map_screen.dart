@@ -1458,20 +1458,54 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _routeShimmerCtrl?.dispose();
     _routeShimmerCtrl = null;
 
-    // Progressive draw over 1.5s
-    const totalMs = 1500;
-    const frameMs = 30;
-    final totalFrames = totalMs ~/ frameMs;
-    for (int f = 1; f <= totalFrames; f++) {
-      if (!mounted || ticket != _routeAnimationTicket) return;
-      final progress = Curves.easeInOut.transform(f / totalFrames);
-      final count = (points.length * progress).round().clamp(2, points.length);
-      await _setRouteAnnotation(points.sublist(0, count));
-      await Future.delayed(const Duration(milliseconds: frameMs));
+    // Clear old annotation for fresh progressive draw
+    if (_routeAnnot != null) {
+      try { await _polylineAnnotMgr?.delete(_routeAnnot!); } catch (_) {}
+      _routeAnnot = null;
     }
-    // Ensure full route is drawn
+
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    const totalMs = 1500;
+    int lastCount = 0;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) async {
+      if (!mounted || ticket != _routeAnimationTicket) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeInOut.transform(progress);
+      final count = (eased * points.length).round().clamp(2, points.length);
+
+      if (count != lastCount) {
+        lastCount = count;
+        final subset = points.sublist(0, count);
+        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        final geo = mapbox.LineString(coordinates: coords);
+
+        if (_routeAnnot == null) {
+          try { _routeAnnot = await _polylineAnnotMgr?.create(mapbox.PolylineAnnotationOptions(
+            geometry: geo, lineColor: _routeColor.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+          )); } catch (_) {}
+        } else {
+          _routeAnnot!.geometry = geo;
+          try { await _polylineAnnotMgr?.update(_routeAnnot!); } catch (_) {}
+        }
+      }
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    _routeDrawTicker!.start();
+    await completer.future;
+    // Start shimmer after draw completes
     if (mounted && ticket == _routeAnimationTicket) {
-      await _setRouteAnnotation(points);
       _startRouteShimmer();
     }
   }
@@ -1482,17 +1516,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _setRouteAnnotation(List<LatLng> points) async {
     final mgr = _polylineAnnotMgr;
     if (mgr == null || points.length < 2) return;
-    if (_routeAnnot != null) {
-      try { await mgr.delete(_routeAnnot!); } catch (_) {}
-      _routeAnnot = null;
-    }
     final coords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
-      lineColor: _routeColor.toARGB32(),
-      lineWidth: 5.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
+    final geo = mapbox.LineString(coordinates: coords);
+    if (_routeAnnot != null) {
+      _routeAnnot!.geometry = geo;
+      try { await mgr.update(_routeAnnot!); } catch (_) {}
+    } else {
+      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geo,
+        lineColor: _routeColor.toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    }
   }
 
   Future<void> _clearRouteAnnotation() async {

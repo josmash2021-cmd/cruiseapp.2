@@ -271,6 +271,9 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_cache_sweep_loop())
 
     asyncio.create_task(_bg_init())
+    # Start SSE heartbeat + stale connection cleanup
+    from services.event_bus import event_bus as _eb
+    _eb.start_heartbeat()
     yield
     # Cleanup on shutdown
     await security_guardian.stop_heartbeat()

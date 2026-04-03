@@ -1807,102 +1807,143 @@ class ApiService {
   }
 
   // ── SSE real-time stream for driver pending offers ──
-  /// Returns a stream of offer events. Each event is a list of pending offers.
-  /// Falls back gracefully — if SSE fails, caller should use polling.
+  /// Returns a stream of offer events with automatic reconnection + exponential backoff.
   static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) async* {
-    try {
-      final h = await _authHeaders();
-      final request = http.Request(
-        'GET',
-        Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
-      );
-      request.headers.addAll(h);
-      final response = await _client.send(request);
-      if (response.statusCode != 200) return;
+    int backoffMs = 1000; // Start at 1s, max 30s
+    const maxBackoffMs = 30000;
+    int retries = 0;
 
-      String buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        buffer += chunk;
-        // Parse SSE events from buffer
-        while (buffer.contains('\n\n')) {
-          final idx = buffer.indexOf('\n\n');
-          final block = buffer.substring(0, idx);
-          buffer = buffer.substring(idx + 2);
+    while (true) {
+      bool gotData = false;
+      try {
+        final h = await _authHeaders();
+        final request = http.Request(
+          'GET',
+          Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
+        );
+        request.headers.addAll(h);
+        final response = await _client.send(request);
+        if (response.statusCode != 200) {
+          debugPrint('[SSE] Driver stream HTTP ${response.statusCode}');
+          break; // Non-recoverable (auth error, etc.)
+        }
 
-          String? eventType;
-          String? data;
-          for (final line in block.split('\n')) {
-            if (line.startsWith('event: ')) {
-              eventType = line.substring(7);
-            } else if (line.startsWith('data: ')) {
-              data = line.substring(6);
+        // Connected — reset backoff
+        backoffMs = 1000;
+        retries = 0;
+
+        String buffer = '';
+        await for (final chunk in response.stream.transform(utf8.decoder)) {
+          buffer += chunk;
+          while (buffer.contains('\n\n')) {
+            final idx = buffer.indexOf('\n\n');
+            final block = buffer.substring(0, idx);
+            buffer = buffer.substring(idx + 2);
+
+            String? eventType;
+            String? data;
+            for (final line in block.split('\n')) {
+              if (line.startsWith('event: ')) {
+                eventType = line.substring(7);
+              } else if (line.startsWith('data: ')) {
+                data = line.substring(6);
+              }
+            }
+
+            // Skip heartbeat pings
+            if (eventType == 'heartbeat') continue;
+
+            if (eventType == 'offers_update' && data != null) {
+              try {
+                final parsed = jsonDecode(data);
+                if (parsed is List) {
+                  gotData = true;
+                  yield parsed.cast<Map<String, dynamic>>();
+                }
+              } catch (_) {}
             }
           }
-
-          if (eventType == 'offers_update' && data != null) {
-            try {
-              final parsed = jsonDecode(data);
-              if (parsed is List) {
-                yield parsed.cast<Map<String, dynamic>>();
-              }
-            } catch (_) {}
-          }
         }
+      } catch (e) {
+        debugPrint('[SSE] Driver stream error (retry ${retries + 1}): $e');
       }
-    } catch (e) {
-      debugPrint('[ApiService] SSE stream error: $e');
-      // Stream ends — caller should fall back to polling
+
+      // Exponential backoff before reconnect
+      retries++;
+      if (retries > 10) break; // Give up after 10 retries
+      debugPrint('[SSE] Reconnecting driver stream in ${backoffMs}ms...');
+      await Future.delayed(Duration(milliseconds: backoffMs));
+      backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
     }
   }
 
   // ── SSE real-time stream for rider trip status ──
-  /// Returns a stream of trip status events with full driver info on match.
-  /// Falls back gracefully — if SSE fails, caller should use polling.
+  /// Returns a stream of trip status events with automatic reconnection + exponential backoff.
   static Stream<Map<String, dynamic>> streamTripStatus(int tripId) async* {
-    try {
-      final h = await _authHeaders();
-      final request = http.Request(
-        'GET',
-        Uri.parse('$_baseUrl/dispatch/trip/$tripId/stream'),
-      );
-      request.headers.addAll(h);
-      final response = await _client.send(request);
-      if (response.statusCode != 200) return;
+    int backoffMs = 1000;
+    const maxBackoffMs = 30000;
+    int retries = 0;
 
-      String buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        buffer += chunk;
-        while (buffer.contains('\n\n')) {
-          final idx = buffer.indexOf('\n\n');
-          final block = buffer.substring(0, idx);
-          buffer = buffer.substring(idx + 2);
+    while (true) {
+      try {
+        final h = await _authHeaders();
+        final request = http.Request(
+          'GET',
+          Uri.parse('$_baseUrl/dispatch/trip/$tripId/stream'),
+        );
+        request.headers.addAll(h);
+        final response = await _client.send(request);
+        if (response.statusCode != 200) {
+          debugPrint('[SSE] Trip stream HTTP ${response.statusCode}');
+          break;
+        }
 
-          String? eventType;
-          String? data;
-          for (final line in block.split('\n')) {
-            if (line.startsWith('event: ')) {
-              eventType = line.substring(7);
-            } else if (line.startsWith('data: ')) {
-              data = line.substring(6);
+        // Connected — reset backoff
+        backoffMs = 1000;
+        retries = 0;
+
+        String buffer = '';
+        await for (final chunk in response.stream.transform(utf8.decoder)) {
+          buffer += chunk;
+          while (buffer.contains('\n\n')) {
+            final idx = buffer.indexOf('\n\n');
+            final block = buffer.substring(0, idx);
+            buffer = buffer.substring(idx + 2);
+
+            String? eventType;
+            String? data;
+            for (final line in block.split('\n')) {
+              if (line.startsWith('event: ')) {
+                eventType = line.substring(7);
+              } else if (line.startsWith('data: ')) {
+                data = line.substring(6);
+              }
+            }
+
+            if (eventType == 'heartbeat') continue;
+
+            if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
+              try {
+                final parsed = jsonDecode(data);
+                if (parsed is Map<String, dynamic>) {
+                  if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
+                    parsed['status'] = 'no_drivers';
+                  }
+                  yield parsed;
+                }
+              } catch (_) {}
             }
           }
-
-          if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
-            try {
-              final parsed = jsonDecode(data);
-              if (parsed is Map<String, dynamic>) {
-                // Normalize dispatch_timeout to a status the listener understands
-                if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
-                  parsed['status'] = 'no_drivers';
-                }
-                yield parsed;
-              }
-            } catch (_) {}
-          }
         }
+      } catch (e) {
+        debugPrint('[SSE] Trip stream error (retry ${retries + 1}): $e');
       }
-    } catch (e) {
-      debugPrint('[ApiService] Trip SSE stream error: $e');
+
+      retries++;
+      if (retries > 10) break;
+      debugPrint('[SSE] Reconnecting trip stream in ${backoffMs}ms...');
+      await Future.delayed(Duration(milliseconds: backoffMs));
+      backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
     }
   }
 

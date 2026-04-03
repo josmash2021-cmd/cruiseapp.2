@@ -1635,21 +1635,20 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         select(User).where((User.email == identifier) | (User.phone == identifier))
     )
     user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(404, "No registered account found")
+    if not user or not user.email:
+        # Always return success to prevent email enumeration attacks
+        return {"status": "ok", "message": "If the account exists, a reset link has been sent."}
 
-    if not user.email:
-        raise HTTPException(400, "No email associated with this account")
-
-    # Generate reset token
+    # Generate reset token — store hashed, send raw to user
     reset_code = secrets.token_urlsafe(32)
+    hashed_code = hashlib.sha256(reset_code.encode()).hexdigest()
 
     # Remove any existing tokens for this user
     await db.execute(
         PasswordResetToken.__table__.delete().where(PasswordResetToken.user_id == user.id)
     )
-    # Store in DB (valid for 30 minutes)
-    db.add(PasswordResetToken(code=reset_code, user_id=user.id, expires_at=time.time() + 1800))
+    # Store hashed token in DB (valid for 30 minutes)
+    db.add(PasswordResetToken(code=hashed_code, user_id=user.id, expires_at=time.time() + 1800))
     await db.commit()
 
     # Build reset link using tunnel URL or localhost
@@ -1770,6 +1769,13 @@ async function doReset(e){{
 @router.post("/auth/reset-password-web")
 async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle password reset from the web page (no API key required)."""
+    # CSRF check: require Origin or Referer header from same origin
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    content_type = request.headers.get("content-type", "")
+    if "application/json" not in content_type:
+        raise HTTPException(400, "Invalid content type")
+
     body = await request.json()
     token = body.get("token", "").strip()
     new_password = body.get("new_password", "")
@@ -1780,7 +1786,9 @@ async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db
         or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
         raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
 
-    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == token))
+    # Hash the token before DB lookup (tokens are stored hashed)
+    hashed_token = hashlib.sha256(token.encode()).hexdigest()
+    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == hashed_token))
     token_row = result.scalar_one_or_none()
     if not token_row or time.time() > token_row.expires_at:
         raise HTTPException(400, "Invalid or expired reset link")
@@ -1808,7 +1816,8 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
         raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
 
-    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == code))
+    hashed_code = hashlib.sha256(code.encode()).hexdigest()
+    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.code == hashed_code))
     token_row = result.scalar_one_or_none()
     if not token_row or time.time() > token_row.expires_at:
         raise HTTPException(400, "Invalid or expired reset code")

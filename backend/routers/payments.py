@@ -59,8 +59,11 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         trip = trip_r.scalar_one_or_none()
         if trip and trip.fare:
             expected_cents = int(trip.fare * 100)
+            max_allowed = int(trip.fare * 1.20 * 100)  # Max 20% over fare (tip tolerance)
             if body.amount < expected_cents:
                 raise HTTPException(400, f"Payment amount cannot be less than the trip fare (${trip.fare:.2f})")
+            if body.amount > max_allowed:
+                raise HTTPException(400, f"Payment amount exceeds maximum allowed (${trip.fare * 1.20:.2f})")
     if body.amount <= 0 or body.amount > 100000:  # Max $1000
         raise HTTPException(400, "Invalid payment amount")
     if not _HAS_STRIPE:

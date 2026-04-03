@@ -55,8 +55,8 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
         visible_fare = round((float(trip.fare or 0.0) * driver_rate) + tip, 2)
     data["fare"] = visible_fare
     data["driver_earnings"] = visible_fare
-    if trip.platform_fee is None and trip.fare is not None:
-        data["platform_fee"] = round(float(trip.fare or 0.0) * platform_rate, 2)
+    # Never expose platform_fee to drivers
+    data.pop("platform_fee", None)
     return data
 
 
@@ -105,25 +105,27 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         await db.rollback()
         raise HTTPException(500, f"Failed to create trip: {e}")
 
-    # Sync trip to Firestore for dispatch_app
+    # Sync trip to Firestore (non-blocking — don't delay API response)
     if _HAS_FIRESTORE:
-        try:
-            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_result.scalar_one_or_none()
-            firestore_sync.sync_trip(
-                trip_id=trip.id, rider_id=trip.rider_id,
-                rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
-                rider_phone=rider.phone or "" if rider else "",
-                pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
-                dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
-                status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
-                created_at=trip.created_at,
-                scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
-                airport_code=trip.airport_code, terminal=trip.terminal,
-                pickup_zone=trip.pickup_zone, notes=trip.notes,
-            )
-        except Exception as e:
-            logging.error("Firestore sync on create_trip failed: %s", e)
+        async def _bg_firestore_sync():
+            try:
+                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_result.scalar_one_or_none()
+                firestore_sync.sync_trip(
+                    trip_id=trip.id, rider_id=trip.rider_id,
+                    rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
+                    rider_phone=rider.phone or "" if rider else "",
+                    pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
+                    dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
+                    status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
+                    created_at=trip.created_at,
+                    scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
+                    airport_code=trip.airport_code, terminal=trip.terminal,
+                    pickup_zone=trip.pickup_zone, notes=trip.notes,
+                )
+            except Exception as e:
+                logging.error("Firestore sync on create_trip failed: %s", e)
+        asyncio.create_task(_bg_firestore_sync())
 
     return _trip_dict(trip)
 
@@ -183,30 +185,43 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
     return _trip_dict_for_user(trip, user)
 
 async def _charge_trip(trip, db: AsyncSession) -> dict:
-    """Charge the rider's default Stripe payment method for a completed trip.
+    “””Charge the rider's default Stripe payment method for a completed trip.
     If a payment hold (authorization) exists, capture it instead of creating a new charge.
-    Returns a dict with status and payment_intent_id."""
+    Returns a dict with status and payment_intent_id.”””
     if not _HAS_STRIPE:
-        trip.payment_status = "paid"
+        trip.payment_status = “paid”
         await db.commit()
-        return {"status": "mock_paid", "payment_intent_id": None}
+        return {“status”: “mock_paid”, “payment_intent_id”: None}
 
     # If there's an existing hold (authorized PaymentIntent), capture it
     if trip.stripe_payment_intent_id:
         try:
-            existing = _stripe_mod.PaymentIntent.retrieve(trip.stripe_payment_intent_id)
-            if existing.status == "requires_capture":
-                intent = _stripe_mod.PaymentIntent.capture(trip.stripe_payment_intent_id)
-                trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
+            existing = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, _stripe_mod.PaymentIntent.retrieve, trip.stripe_payment_intent_id),
+                timeout=10.0,
+            )
+            if existing.status == “requires_capture”:
+                intent = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, _stripe_mod.PaymentIntent.capture, trip.stripe_payment_intent_id),
+                    timeout=10.0,
+                )
+                trip.payment_status = “paid” if intent.status == “succeeded” else “failed”
                 await db.commit()
-                logging.info("[Capture] Trip %s hold captured â€” status: %s", trip.id, intent.status)
-                return {"status": intent.status, "payment_intent_id": intent.id, "amount": intent.amount}
-            elif existing.status == "succeeded":
-                trip.payment_status = "paid"
+                logging.info(“[Capture] Trip %s hold captured â€” status: %s”, trip.id, intent.status)
+                return {“status”: intent.status, “payment_intent_id”: intent.id, “amount”: intent.amount}
+            elif existing.status == “succeeded”:
+                trip.payment_status = “paid”
                 await db.commit()
-                return {"status": "succeeded", "payment_intent_id": existing.id, "amount": existing.amount}
+                return {“status”: “succeeded”, “payment_intent_id”: existing.id, “amount”: existing.amount}
+        except asyncio.TimeoutError:
+            logging.error(“[Capture] Stripe timeout for trip %s”, trip.id)
+            trip.payment_status = “pending”
+            await db.commit()
+            return {“status”: “timeout”, “payment_intent_id”: trip.stripe_payment_intent_id}
         except _stripe_mod.error.StripeError as e:
-            logging.error("[Capture] Failed for trip %s: %s", trip.id, e)
+            logging.error(“[Capture] Failed for trip %s: %s”, trip.id, e)
             # Fall through to create new charge
 
     # No existing hold â€” charge the saved card directly

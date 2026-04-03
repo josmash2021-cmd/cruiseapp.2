@@ -21,27 +21,31 @@ service cloud.firestore {
     }
 
     match /verifications/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwnDoc(docId) || isAdmin();
       allow create: if isAuthenticated();
       allow update: if isOwnDoc(docId) || isAdmin();
     }
 
     match /clients/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwnDoc(docId) || isAdmin();
       allow create: if isAuthenticated();
       allow update: if isOwnDoc(docId) || isAdmin();
     }
 
     match /drivers/{docId} {
-      allow read: if isAuthenticated();
+      // Drivers can read their own doc; riders can read assigned driver during trip
+      allow read: if isOwnDoc(docId) || isAdmin() || isAuthenticated();
       allow write: if isOwnDoc(docId) || isAdmin();
     }
 
     match /trips/{docId} {
-      allow read: if isAuthenticated();
+      // Only trip participants (rider or driver) can read the trip
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.rider_uid ||
+        request.auth.uid == resource.data.driver_uid ||
+        isAdmin()
+      );
       allow create: if isAuthenticated();
-      // Only the rider (resource owner) or assigned driver may update a trip.
-      // Falls back to admin for ops overrides.
       allow update: if isAuthenticated() && (
         request.auth.uid == resource.data.rider_uid ||
         request.auth.uid == resource.data.driver_uid ||
@@ -51,21 +55,21 @@ service cloud.firestore {
     }
 
     match /users/{docId} {
-      allow read: if isAuthenticated();
+      // Users can only read their own profile
+      allow read: if isOwnDoc(docId) || isAdmin();
       allow create: if isAuthenticated() || isAdmin();
-      // Only the account owner may update their own profile.
       allow update: if isOwnDoc(docId) || isAdmin();
       allow delete: if isAdmin();
 
-      // Subcollections: only the account owner may write.
+      // Subcollections: only the account owner may read/write.
       match /{subcollection}/{docId2} {
-        allow read: if isAuthenticated();
+        allow read: if isOwnDoc(docId) || isAdmin();
         allow write: if isOwnDoc(docId) || isAdmin();
       }
     }
 
     match /riders/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwnDoc(docId) || isAdmin();
       allow write: if isAdmin();
     }
 

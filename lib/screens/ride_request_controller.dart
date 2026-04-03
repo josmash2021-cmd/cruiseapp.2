@@ -842,7 +842,7 @@ extension _RideRequestController on _RideRequestScreenState {
       );
 
       if (cancelled == true) {
-        if (mounted) Navigator.of(context).pop();
+        // _onStateChange already handles popUntil on cancel — no extra pop needed
         return;
       }
       if (nativePayFailed || paymentDeclinedFlag) {
@@ -888,6 +888,16 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Apple Pay: present native Apple Pay sheet via Stripe (hold only).
   Future<bool> _confirmApplePay(int amountCents, String label) async {
+    // Check if Apple Pay is available on this device
+    final supported = await stripe.Stripe.instance.isPlatformPaySupported(
+      googlePay: const stripe.IsGooglePaySupportedParams(),
+    );
+    if (!supported) {
+      debugPrint('[ApplePay] Not supported on this device');
+      // Fall back to card payment sheet
+      return _confirmCardSheet(amountCents, label);
+    }
+
     try {
       final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
@@ -911,13 +921,27 @@ extension _RideRequestController on _RideRequestScreenState {
       );
       return true;
     } on stripe.StripeException catch (e) {
+      debugPrint('[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
-      rethrow;
+      // If Apple Pay fails, fall back to card sheet
+      return _confirmCardSheet(amountCents, label);
+    } catch (e) {
+      debugPrint('[ApplePay] Error: $e');
+      return _confirmCardSheet(amountCents, label);
     }
   }
 
   /// Google Pay: present native Google Pay sheet via Stripe (hold only).
   Future<bool> _confirmGooglePay(int amountCents, String label) async {
+    // Check if Google Pay is available on this device
+    final supported = await stripe.Stripe.instance.isPlatformPaySupported(
+      googlePay: const stripe.IsGooglePaySupportedParams(),
+    );
+    if (!supported) {
+      debugPrint('[GooglePay] Not supported on this device');
+      return _confirmCardSheet(amountCents, label);
+    }
+
     try {
       final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
@@ -937,6 +961,42 @@ extension _RideRequestController on _RideRequestScreenState {
       );
       return true;
     } on stripe.StripeException catch (e) {
+      debugPrint('[GooglePay] StripeException: ${e.error.code} - ${e.error.message}');
+      if (e.error.code == stripe.FailureCode.Canceled) return false;
+      return _confirmCardSheet(amountCents, label);
+    } catch (e) {
+      debugPrint('[GooglePay] Error: $e');
+      return _confirmCardSheet(amountCents, label);
+    }
+  }
+
+  /// Fallback: open Stripe's standard card payment sheet when native pay unavailable.
+  Future<bool> _confirmCardSheet(int amountCents, String label) async {
+    try {
+      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
+      final clientSecret = piResult['client_secret'] as String?;
+      _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
+      if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
+
+      await stripe.Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: stripe.SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Cruise',
+          style: ThemeMode.dark,
+          appearance: const stripe.PaymentSheetAppearance(
+            colors: stripe.PaymentSheetAppearanceColors(
+              primary: Color(0xFFD4A843),
+              background: Color(0xFF1A1A2E),
+              componentBackground: Color(0xFF16213E),
+              componentText: Color(0xFFFFFFFF),
+            ),
+          ),
+        ),
+      );
+      await stripe.Stripe.instance.presentPaymentSheet();
+      return true;
+    } on stripe.StripeException catch (e) {
+      debugPrint('[CardSheet] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
       rethrow;
     }

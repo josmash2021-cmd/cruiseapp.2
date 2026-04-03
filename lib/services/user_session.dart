@@ -450,9 +450,8 @@ class UserSession {
 
     // Always fire network fetch — never blocks UI.
     // URL alone is enough for CachedNetworkImage to render the photo instantly.
-    if (cachedUrl.isEmpty || !foundLocal) {
-      unawaited(_fetchPhotoFromNetwork(uid, prefs, cachedUrl.isEmpty));
-    }
+    // Always fetch from network to recover photos lost during app updates.
+    unawaited(_fetchPhotoFromNetwork(uid, prefs, cachedUrl.isEmpty));
   }
 
   /// Fetch photo URL from network — fast, parallel, never blocks UI.
@@ -462,7 +461,6 @@ class UserSession {
     SharedPreferences prefs,
     bool needsUrl,
   ) async {
-    if (!needsUrl) return;
     final userId = int.tryParse(uid);
     if (userId == null || userId <= 0) return;
 

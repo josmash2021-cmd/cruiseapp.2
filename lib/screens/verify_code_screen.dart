@@ -1,11 +1,9 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/email_service.dart';
 import '../services/sms_service.dart';
 import 'create_password_screen.dart';
 
@@ -142,16 +140,10 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
         _showSnack('Failed to resend. Try again.', Colors.white.withValues(alpha: 0.6));
       }
     } else {
-      // Email — regenerate via backend then send with EmailJS
+      // Email — resend via backend (generates new code + sends email)
       final otpResult = await ApiService.sendOtp(email: widget.email);
       if (!mounted) return;
-      final code = otpResult['code'] as String?;
-      bool sent = false;
-      if (code != null) {
-        sent = await EmailService.sendVerificationCode(toEmail: widget.email, code: code);
-      }
-      if (!mounted) return;
-      if (sent) {
+      if (otpResult['ok'] == true) {
         _showSnack('Code resent to ${widget.email}', const Color(0xFFE8C547));
       } else {
         _showSnack('Failed to resend email. Try again.', Colors.white.withValues(alpha: 0.6));
@@ -172,11 +164,6 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       setState(() => _resendSeconds--);
       if (_resendSeconds > 0) _startResendTimer();
     });
-  }
-
-  String _generateCode() {
-    final r = Random();
-    return List.generate(6, (_) => r.nextInt(10)).join();
   }
 
   void _showSnack(String msg, Color color) {

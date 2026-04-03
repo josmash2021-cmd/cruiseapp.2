@@ -8,7 +8,6 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/apple_auth_service.dart';
 import '../services/google_auth_service.dart';
-import '../services/email_service.dart';
 import '../services/sms_service.dart';
 import '../services/user_session.dart';
 import '../services/analytics_service.dart';
@@ -203,12 +202,12 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
         );
       }
     } else {
-      final code = _generateCode();
-      final sent = await EmailService.sendVerificationCode(toEmail: contact, code: code);
+      // Send code via backend — single source of truth
+      final result = await ApiService.sendOtp(email: contact);
       if (!mounted) return;
       setState(() => _loading = false);
 
-      if (!sent) {
+      if (result['ok'] != true) {
         setState(() => _errorText = 'Could not send verification email. Please try again.');
         return;
       }
@@ -219,7 +218,8 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
             loginToken: loginToken,
             contact: contact,
             useVerifyApi: false,
-            expectedCode: code,
+            expectedCode: '',
+            useBackendVerify: true,
           ),
         ),
       );

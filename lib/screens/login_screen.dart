@@ -7,7 +7,6 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/email_service.dart';
 import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
@@ -155,34 +154,12 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Generate code client-side so EmailJS can send it independently of the backend
-    final code = List.generate(6, (_) => Random().nextInt(10)).join();
-
-    // Also notify backend (stores registration intent + sends its own email as fallback)
-    final backendOtp = ApiService.sendOtp(email: email);
-
-    // Send the code via EmailJS
-    final sent = await EmailService.sendVerificationCode(toEmail: email, code: code);
+    // Backend generates ONE code, stores it, and sends the email
+    final result = await ApiService.sendOtp(email: email);
     if (!mounted) return;
+    setState(() => _sending = false);
 
-    if (sent) {
-      // EmailJS worked — verify locally against the client-generated code
-      setState(() => _sending = false);
-      _showSnack('Code sent to $email', const Color(0xFFE8C547));
-      Navigator.of(context).push(
-        slideFromRightRoute(
-          VerifyCodeScreen(
-            email: email,
-            expectedCode: code,
-            useBackendVerify: false,
-          ),
-        ),
-      );
-    } else {
-      // EmailJS failed — fall back to backend email delivery
-      await backendOtp; // ensure backend OTP is stored
-      if (!mounted) return;
-      setState(() => _sending = false);
+    if (result['ok'] == true) {
       _showSnack('Code sent to $email', const Color(0xFFE8C547));
       Navigator.of(context).push(
         slideFromRightRoute(
@@ -192,6 +169,11 @@ class _LoginScreenState extends State<LoginScreen> {
             useBackendVerify: true,
           ),
         ),
+      );
+    } else {
+      _showSnack(
+        'Failed to send code. Please try again.',
+        Colors.white.withValues(alpha: 0.6),
       );
     }
   }

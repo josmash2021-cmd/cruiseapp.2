@@ -174,11 +174,11 @@ def _send_sms(phone_number: str, message: str):
     TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
     TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
     TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
-    
+
     if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER):
         logging.error("[SMS] Twilio credentials not configured")
         return False
-    
+
     try:
         from twilio.rest import Client
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -191,15 +191,4 @@ def _send_sms(phone_number: str, message: str):
         return True
     except Exception as e:
         logging.error("[SMS] Failed to send to %s: %s", phone_number, e)
-        return False
-    except Exception as e:
-        logging.warning("[EMAIL] SMTP port %s failed: %s — trying SSL 465", SMTP_PORT, e)
-    try:
-        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=8) as server:
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(_from, to_email, _build_msg().as_string())
-        logging.info("[EMAIL] Sent via SMTP SSL to %s", to_email)
-        return True
-    except Exception as e:
-        logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
         return False

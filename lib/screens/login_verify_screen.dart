@@ -18,14 +18,16 @@ import 'home_screen.dart';
 class LoginVerifyScreen extends StatefulWidget {
   final String loginToken;
   final String contact; // email or phone
-  final bool useVerifyApi; // true = Twilio, false = EmailJS
-  final String expectedCode; // only used when useVerifyApi == false
+  final bool useVerifyApi; // true = Twilio, false = local comparison
+  final bool useBackendVerify; // true = verify via backend OTP store
+  final String expectedCode; // only used when useVerifyApi == false && useBackendVerify == false
 
   const LoginVerifyScreen({
     super.key,
     required this.loginToken,
     required this.contact,
     required this.useVerifyApi,
+    this.useBackendVerify = false,
     this.expectedCode = '',
   });
 
@@ -99,8 +101,11 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
         toPhone: widget.contact,
         code: code,
       );
+    } else if (widget.useBackendVerify) {
+      // Email — verify via backend OTP store
+      isValid = await ApiService.verifyOtp(email: widget.contact, code: code);
     } else {
-      // Email — local code comparison
+      // Fallback — local code comparison
       isValid = code == widget.expectedCode;
     }
 

@@ -293,16 +293,30 @@ async def send_otp(body: SendOtpIn, request: Request):
     
     # â”€â”€ Try Email if email is provided â”€â”€
     if email:
-        html_body = (
-            f"<div style='font-family:sans-serif;max-width:400px;margin:auto;padding:24px'>"
-            f"<h2 style='color:#1a1a2e'>Cruise Verification Code</h2>"
-            f"<p>Your verification code is:</p>"
-            f"<h1 style='font-size:40px;letter-spacing:10px;font-family:monospace;"
-            f"color:#E8C547;background:#1a1a2e;padding:16px;border-radius:8px;"
-            f"text-align:center'>{code}</h1>"
-            f"<p style='color:#666'>Expires in 5 minutes. Do not share this code.</p>"
-            f"</div>"
-        )
+        html_body = f”””<!DOCTYPE html>
+<html lang=”en”>
+<head><meta charset=”UTF-8”/><meta name=”viewport” content=”width=device-width,initial-scale=1.0”/></head>
+<body style=”margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif”>
+<table role=”presentation” width=”100%” cellpadding=”0” cellspacing=”0” style=”background-color:#f0f0f0;padding:40px 0”><tr><td align=”center”>
+<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0”><tr><td align=”center” style=”padding-bottom:24px”>
+<h1 style=”margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px”>Cruise</h1>
+</td></tr></table>
+<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0” style=”background-color:#ffffff;border-radius:8px;overflow:hidden”><tr><td style=”padding:48px 40px;text-align:center”>
+<h2 style=”margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e”>Verify your email address</h2>
+<p style=”margin:0 0 32px;font-size:16px;color:#6b6b6b”>Use the code below, which expires in 5 minutes.</p>
+<table role=”presentation” cellpadding=”0” cellspacing=”0” style=”margin:0 auto”><tr>
+<td style=”background-color:#f7f7f7;border:1px solid #e0e0e0;border-radius:8px;padding:20px 48px”>
+<span style=”font-size:40px;font-weight:800;letter-spacing:12px;color:#1a1a2e”>{code}</span>
+</td></tr></table>
+</td></tr></table>
+<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0”><tr>
+<td style=”padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px”>
+<p style=”margin:0;font-size:14px;color:#999999”>If you didn't request this code, you can safely ignore this email.</p>
+</td></tr><tr><td align=”center” style=”padding-top:24px”>
+<p style=”margin:0;font-size:12px;color:#bbbbbb”>&mdash; Cruise App</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>”””
 
         async def _try_send_email_bg():
             """Try all email providers in background â€” does not block response."""

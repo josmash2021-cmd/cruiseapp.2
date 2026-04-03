@@ -9,15 +9,12 @@ import '../services/api_service.dart';
 import '../services/apple_auth_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/email_service.dart';
-import '../services/local_data_service.dart';
 import '../services/sms_service.dart';
 import '../services/user_session.dart';
 import '../services/analytics_service.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
-import 'home_screen.dart';
-import 'map_screen.dart';
 
 /// Screen for users who already have an account — enter email/phone + password.
 class LoginPasswordScreen extends StatefulWidget {
@@ -53,7 +50,8 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     super.dispose();
   }
 
-  Future<void> _signInWithApple() async {
+  /// Extract email from Apple and auto-fill the email field.
+  Future<void> _autoFillWithApple() async {
     if (_socialLoading) return;
     if (!Platform.isIOS && !Platform.isMacOS) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -66,16 +64,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       _errorText = null;
     });
     try {
-      final ok = await AppleAuthService.instance.signIn();
+      final email = await AppleAuthService.instance.getEmail();
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      if (ok) {
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const HomeScreen()),
-          (_) => false,
-        );
+      if (email != null && email.isNotEmpty) {
+        _emailCtrl.text = email;
+        _passCtrl.clear();
+        _validate();
       } else {
-        setState(() => _errorText = 'Apple Sign In was cancelled or failed');
+        setState(() => _errorText = 'Apple Sign In was cancelled');
       }
     } catch (e) {
       if (!mounted) return;
@@ -86,21 +83,23 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     }
   }
 
-  Future<void> _signInWithGoogle() async {
+  /// Extract email from Google and auto-fill the email field.
+  Future<void> _autoFillWithGoogle() async {
     if (_socialLoading) return;
     setState(() {
       _socialLoading = true;
       _errorText = null;
     });
     try {
-      final ok = await GoogleAuthService.instance.signIn();
+      final email = await GoogleAuthService.instance.getEmail();
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      if (ok) {
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const HomeScreen()),
-          (_) => false,
-        );
+      if (email != null && email.isNotEmpty) {
+        _emailCtrl.text = email;
+        _passCtrl.clear();
+        _validate();
+      } else {
+        setState(() => _errorText = 'Google Sign In was cancelled');
       }
     } catch (e) {
       if (!mounted) return;
@@ -739,7 +738,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       borderRadius: BorderRadius.circular(28),
                     ),
                   ),
-                  onPressed: _socialLoading ? null : _signInWithGoogle,
+                  onPressed: _socialLoading ? null : _autoFillWithGoogle,
                   icon: _socialLoading
                       ? const SizedBox(
                           width: 20,
@@ -775,7 +774,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    onPressed: _socialLoading ? null : _signInWithApple,
+                    onPressed: _socialLoading ? null : _autoFillWithApple,
                     icon: const Icon(Icons.apple, size: 24),
                     label: const Text(
                       'Sign in with Apple',

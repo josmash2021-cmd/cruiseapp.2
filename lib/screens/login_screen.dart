@@ -12,7 +12,6 @@ import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
 import 'login_password_screen.dart';
-import 'home_screen.dart';
 import 'verify_code_screen.dart';
 import 'terms_conditions_screen.dart';
 
@@ -59,55 +58,43 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _socialLoading = false;
 
-  Future<void> _signInWithGoogle() async {
+  /// Extract email from Google and feed it into the signup flow.
+  Future<void> _signUpWithGoogle() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
-      final ok = await GoogleAuthService.instance.signIn();
+      final email = await GoogleAuthService.instance.getEmail();
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      if (ok) {
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const HomeScreen()),
-          (_) => false,
-        );
+      if (email != null && email.isNotEmpty) {
+        _continueWithEmail(email);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Google Sign In was cancelled or failed')),
-        );
+        _showSnack('Google Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google Sign In error: $e')),
-      );
+      _showSnack('Google Sign In error: $e', Colors.white.withValues(alpha: 0.6));
     }
   }
 
-  Future<void> _signInWithApple() async {
+  /// Extract email from Apple and feed it into the signup flow.
+  Future<void> _signUpWithApple() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
-      final ok = await AppleAuthService.instance.signIn();
+      final email = await AppleAuthService.instance.getEmail();
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      if (ok) {
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const HomeScreen()),
-          (_) => false,
-        );
+      if (email != null && email.isNotEmpty) {
+        _continueWithEmail(email);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Apple Sign In was cancelled or failed')),
-        );
+        _showSnack('Apple Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Apple Sign In error: $e')),
-      );
+      _showSnack('Apple Sign In error: $e', Colors.white.withValues(alpha: 0.6));
     }
   }
 
@@ -622,7 +609,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    onPressed: _socialLoading ? null : _signInWithGoogle,
+                    onPressed: _socialLoading ? null : _signUpWithGoogle,
                     icon: SizedBox(
                       width: 22,
                       height: 22,
@@ -653,7 +640,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    onPressed: _socialLoading ? null : _signInWithApple,
+                    onPressed: _socialLoading ? null : _signUpWithApple,
                     icon: Icon(Icons.apple, size: 24, color: c.textPrimary),
                     label: const Text(
                       'Continue with Apple',

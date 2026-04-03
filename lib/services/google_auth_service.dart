@@ -55,6 +55,19 @@ class GoogleAuthService {
     }
   }
 
+  /// Returns the Google account email without calling the backend.
+  /// Used on the Create Account screen to extract the email for registration.
+  Future<String?> getEmail() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) return null; // user cancelled
+      return account.email;
+    } catch (e) {
+      debugPrint('[GoogleAuth] getEmail error: $e');
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     try {
       await _googleSignIn.signOut();

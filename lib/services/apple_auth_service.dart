@@ -13,6 +13,27 @@ class AppleAuthService {
   /// Whether Apple Sign-In is available on this device.
   bool get isAvailable => Platform.isIOS || Platform.isMacOS;
 
+  /// Returns the Apple account email without calling the backend.
+  /// Used on the Create Account screen to extract the email for registration.
+  Future<String?> getEmail() async {
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      return credential.email;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) return null;
+      debugPrint('[AppleAuth] getEmail error: $e');
+      return null;
+    } catch (e) {
+      debugPrint('[AppleAuth] getEmail error: $e');
+      return null;
+    }
+  }
+
   /// Returns true on success, false on cancel/failure.
   Future<bool> signIn({String role = 'rider'}) async {
     try {

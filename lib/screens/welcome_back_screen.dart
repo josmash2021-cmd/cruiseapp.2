@@ -142,9 +142,8 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
     await Future.delayed(const Duration(milliseconds: 900));
     if (_disposed || !mounted) return;
 
-    // Fade out
-    _exitCtrl.forward().orCancel.catchError((_) {});
-    await Future.delayed(const Duration(milliseconds: 100));
+    // Fade out — wait for exit animation to finish before navigating
+    await _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed || !mounted) return;
 
     Navigator.of(context).pushReplacement(

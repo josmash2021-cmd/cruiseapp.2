@@ -62,13 +62,25 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
-    final ok = await GoogleAuthService.instance.signIn();
-    if (!mounted) return;
-    setState(() => _socialLoading = false);
-    if (ok) {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const HomeScreen()),
-        (_) => false,
+    try {
+      final ok = await GoogleAuthService.instance.signIn();
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      if (ok) {
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const HomeScreen()),
+          (_) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Google Sign In was cancelled or failed')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Google Sign In error: $e')),
       );
     }
   }
@@ -159,30 +171,42 @@ class _LoginScreenState extends State<LoginScreen> {
     // Generate code client-side so EmailJS can send it independently of the backend
     final code = List.generate(6, (_) => Random().nextInt(10)).join();
 
-    // Also notify backend (stores registration intent, may send its own email too)
-    ApiService.sendOtp(email: email);
+    // Also notify backend (stores registration intent + sends its own email as fallback)
+    final backendOtp = ApiService.sendOtp(email: email);
 
     // Send the code via EmailJS
     final sent = await EmailService.sendVerificationCode(toEmail: email, code: code);
     if (!mounted) return;
-    setState(() => _sending = false);
 
-    if (!sent) {
-      _showSnack('Could not send verification email. Please try again.', Colors.redAccent);
-      return;
-    }
-
-    _showSnack('Code sent to $email', const Color(0xFFE8C547));
-
-    Navigator.of(context).push(
-      slideFromRightRoute(
-        VerifyCodeScreen(
-          email: email,
-          expectedCode: code,
-          useBackendVerify: false,
+    if (sent) {
+      // EmailJS worked — verify locally against the client-generated code
+      setState(() => _sending = false);
+      _showSnack('Code sent to $email', const Color(0xFFE8C547));
+      Navigator.of(context).push(
+        slideFromRightRoute(
+          VerifyCodeScreen(
+            email: email,
+            expectedCode: code,
+            useBackendVerify: false,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      // EmailJS failed — fall back to backend email delivery
+      await backendOtp; // ensure backend OTP is stored
+      if (!mounted) return;
+      setState(() => _sending = false);
+      _showSnack('Code sent to $email', const Color(0xFFE8C547));
+      Navigator.of(context).push(
+        slideFromRightRoute(
+          VerifyCodeScreen(
+            email: email,
+            expectedCode: '',
+            useBackendVerify: true,
+          ),
+        ),
+      );
+    }
   }
 
   void _continueWithPhone(String phone) async {

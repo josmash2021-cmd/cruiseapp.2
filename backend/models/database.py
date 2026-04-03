@@ -29,12 +29,12 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 20
-    _engine_kwargs["max_overflow"] = 40
+    _engine_kwargs["pool_size"] = 40
+    _engine_kwargs["max_overflow"] = 80
     _engine_kwargs["pool_pre_ping"] = True
     _engine_kwargs["pool_recycle"] = 600
-    _engine_kwargs["pool_timeout"] = 10
-    _engine_kwargs["connect_args"] = {"timeout": 10, "command_timeout": 10}
+    _engine_kwargs["pool_timeout"] = 30
+    _engine_kwargs["connect_args"] = {"timeout": 15, "command_timeout": 30}
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

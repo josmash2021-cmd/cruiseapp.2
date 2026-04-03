@@ -145,7 +145,19 @@ async def get_available_trips(
     lat: float = Query(...), lng: float = Query(...), radius_km: float = Query(15.0),
     user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Trip).where(Trip.status == "requested"))
+    # Pre-filter with bounding box in SQL to avoid full table scan
+    # ~1 degree lat = 111km, ~1 degree lng = 85km at 33N
+    lat_delta = radius_km / 111.0
+    lng_delta = radius_km / 85.0
+    result = await db.execute(
+        select(Trip).where(
+            Trip.status == "requested",
+            Trip.pickup_lat.isnot(None),
+            Trip.pickup_lng.isnot(None),
+            Trip.pickup_lat.between(lat - lat_delta, lat + lat_delta),
+            Trip.pickup_lng.between(lng - lng_delta, lng + lng_delta),
+        ).order_by(Trip.created_at.desc()).limit(50)
+    )
     trips = result.scalars().all()
     nearby = []
     for t in trips:

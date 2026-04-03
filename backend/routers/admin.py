@@ -4,6 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text, case
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
@@ -753,32 +754,31 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
     """Get all active trips with driver and rider info. Requires dispatch auth."""
     try:
+        # Single query with LEFT JOIN for driver — eliminates N+1
+        RiderAlias = aliased(User)
+        DriverAlias = aliased(User)
         result = await db.execute(
-            select(Trip, User).join(
-                User, User.id == Trip.rider_id
+            select(Trip, RiderAlias, DriverAlias).join(
+                RiderAlias, RiderAlias.id == Trip.rider_id
+            ).outerjoin(
+                DriverAlias, DriverAlias.id == Trip.driver_id
             ).where(
                 Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"])
-            ).order_by(Trip.created_at.desc())
+            ).order_by(Trip.created_at.desc()).limit(200)
         )
-        
+
         trips = []
-        for trip, rider in result.all():
-            # Get driver info if assigned
+        for trip, rider, driver in result.all():
             driver_info = None
-            if trip.driver_id:
-                driver_result = await db.execute(
-                    select(User).where(User.id == trip.driver_id)
-                )
-                driver = driver_result.scalar_one_or_none()
-                if driver:
-                    driver_info = {
-                        "id": driver.id,
-                        "name": f"{driver.first_name} {driver.last_name}",
-                        "phone": driver.phone,
-                        "lat": driver.lat,
-                        "lng": driver.lng,
-                    }
-            
+            if driver:
+                driver_info = {
+                    "id": driver.id,
+                    "name": f"{driver.first_name} {driver.last_name}",
+                    "phone": driver.phone,
+                    "lat": driver.lat,
+                    "lng": driver.lng,
+                }
+
             trips.append({
                 "id": trip.id,
                 "status": trip.status,
@@ -802,7 +802,7 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
                 "created_at": trip.created_at.isoformat() if trip.created_at else None,
                 "vehicle_type": trip.vehicle_type,
             })
-        
+
         return {"trips": trips}
     except Exception as e:
         logging.error("[Admin] Error getting active trips: %s", e)
@@ -819,8 +819,10 @@ async def get_heatmap_data(
         
         result = await db.execute(
             select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id))
-            .where(Trip.created_at >= since)
+            .where(Trip.created_at >= since, Trip.pickup_lat.isnot(None))
             .group_by(Trip.pickup_lat, Trip.pickup_lng)
+            .order_by(func.count(Trip.id).desc())
+            .limit(500)
         )
         
         heatmap_points = [

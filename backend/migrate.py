@@ -139,6 +139,36 @@ async def run():
                 log.info("  ok: %s.%s", table, col)
             except Exception as e:
                 log.warning("  skip: %s.%s - %s", table, col, e)
+        # ── Performance indexes ──
+        INDEXES = [
+            # Dispatch: find online drivers fast (CRITICAL for < 100ms dispatch)
+            ("idx_users_driver_online", "users", "(role, is_online, last_active_at) WHERE role = 'driver'"),
+            # Notification lookups by user
+            ("idx_notifications_user_unread", "notifications", "(user_id, is_read) WHERE is_read = false"),
+            # Payment method lookups
+            ("idx_payout_methods_user", "payout_methods", "(user_id)"),
+            ("idx_rider_pm_user", "rider_payment_methods", "(user_id)"),
+            # Active trips lookup
+            ("idx_trips_status_created", "trips", "(status, created_at)"),
+            # Dispatch offers by driver
+            ("idx_dispatch_offers_driver", "dispatch_offers", "(driver_id, status)"),
+            # Trips by rider/driver
+            ("idx_trips_rider", "trips", "(rider_id, created_at DESC)"),
+            ("idx_trips_driver", "trips", "(driver_id, created_at DESC)"),
+            # Ratings lookup
+            ("idx_ratings_to_user", "ratings", "(to_user_id)"),
+            # Chat messages by trip
+            ("idx_chat_trip", "chat_messages", "(trip_id, created_at)"),
+        ]
+        for idx_name, table, columns in INDEXES:
+            try:
+                await conn.execute(
+                    text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {columns}")
+                )
+                log.info("  idx-ok: %s", idx_name)
+            except Exception as e:
+                log.warning("  idx-skip: %s - %s", idx_name, e)
+
         # Upgrade timestamp columns to timezone-aware
         for table, col in TZ_UPGRADES:
             try:

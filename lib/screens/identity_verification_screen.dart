@@ -725,9 +725,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       key: const ValueKey(3),
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 60),
-          const Spacer(),
+          const Spacer(flex: 2),
           // Animated clock icon
           AnimatedBuilder(
             animation: _pulseCtrl,
@@ -770,7 +770,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             height: 28,
             child: CircularProgressIndicator(strokeWidth: 3, color: _gold),
           ),
-          const Spacer(),
+          const Spacer(flex: 2),
           Text(
             'You\'ll be notified when the review is complete',
             style: TextStyle(fontSize: 13, color: c.textTertiary),
@@ -810,7 +810,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
               ),
             ),
           ),
-          const Spacer(),
+          const Spacer(flex: 2),
           Container(
             width: 100,
             height: 100,
@@ -865,7 +865,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
               ],
             ),
           ),
-          const Spacer(),
+          const Spacer(flex: 2),
           SizedBox(
             width: double.infinity,
             height: 56,

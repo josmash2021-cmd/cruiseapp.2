@@ -420,7 +420,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         children: [
-          const Spacer(flex: 2),
+          const Spacer(flex: 3),
 
           // Animated pulsing icon
           AnimatedBuilder(
@@ -783,7 +783,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         children: [
-          const Spacer(flex: 2),
+          const Spacer(flex: 3),
           Container(
             width: 110,
             height: 110,

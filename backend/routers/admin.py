@@ -1269,3 +1269,40 @@ async def admin_commission_report(
         "trips_count": row.trips_count or 0,
     }
 
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Wipe Firestore Collections (fresh start)
+# ══════════════════════════════════════════════════════════
+
+@router.post("/admin/wipe-firestore", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_wipe_firestore():
+    """Delete all documents from Firestore collections (fresh start)."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    db = _fs.client()
+    COLLECTIONS = [
+        "verifications", "drivers", "clients", "users",
+        "trips", "notifications", "support_chats",
+        "admin_alerts", "driver_locations",
+    ]
+    results = {}
+    for coll_name in COLLECTIONS:
+        try:
+            count = 0
+            while True:
+                docs = db.collection(coll_name).limit(400).get()
+                batch_docs = list(docs)
+                if not batch_docs:
+                    break
+                batch = db.batch()
+                for doc in batch_docs:
+                    batch.delete(doc.reference)
+                    count += 1
+                batch.commit()
+            results[coll_name] = count
+        except Exception as e:
+            results[coll_name] = f"error: {e}"
+    _security_audit_log("ADMIN_WIPE_FIRESTORE", "admin", json.dumps(results))
+    return {"status": "ok", "deleted": results}
+

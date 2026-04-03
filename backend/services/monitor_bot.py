@@ -207,6 +207,7 @@ async def _cmd_db() -> str:
 
         acq_start = time.time()
         async with SessionLocal() as db:
+            await db.connection()  # force pool acquisition
             pool_wait_ms = (time.time() - acq_start) * 1000
             q_start = time.time()
             await db.execute(text("SELECT 1"))
@@ -335,7 +336,10 @@ async def _health_check_loop():
                 from sqlalchemy import text
                 acq_start = time.time()
                 async with SessionLocal() as db:
+                    # Force connection acquisition (SQLAlchemy lazy-connects)
+                    await db.connection()
                     pool_wait = (time.time() - acq_start) * 1000
+                    # Now measure pure query time on an already-open connection
                     q_start = time.time()
                     await db.execute(text("SELECT 1"))
                     latency = (time.time() - q_start) * 1000

@@ -13,17 +13,6 @@ try:
     if not DATABASE_URL:
         log.info("No DATABASE_URL - skipping migrations")
         sys.exit(0)
-
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
-
-    _mig_connect_args = {"timeout": 10, "command_timeout": 10}
-    if ".railway.internal" in DATABASE_URL:
-        _mig_connect_args["ssl"] = False
-    engine = create_async_engine(
-        DATABASE_URL, echo=False,
-        connect_args=_mig_connect_args,
-    )
 except Exception as _e:
     log.error("migrate.py setup failed: %s", _e)
     sys.exit(0)
@@ -133,15 +122,31 @@ TZ_UPGRADES = [
 ]
 
 async def run():
-    # Single connection with autocommit — DDL statements auto-commit individually,
-    # so a failure in one doesn't dirty the connection for the next.
-    async with engine.connect() as conn:
-        await conn.execution_options(isolation_level="AUTOCOMMIT")
+    # Use raw asyncpg connection — bypasses SQLAlchemy transaction state entirely.
+    # Each DDL statement auto-commits on its own. A failure in one cannot poison
+    # the connection for the next (no "invalid transaction" cascade).
+    import asyncpg
 
+    # Parse connection params from the DATABASE_URL
+    url = DATABASE_URL
+    # Strip driver prefix for asyncpg
+    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            url = "postgresql://" + url[len(prefix):]
+            break
+
+    ssl_ctx = False if ".railway.internal" in url else None  # no TLS on private net
+    try:
+        conn = await asyncpg.connect(url, timeout=15, ssl=ssl_ctx)
+    except Exception as e:
+        log.error("migrate.py: cannot connect: %s", e)
+        return
+
+    try:
         for table, col, col_type in MIGRATIONS:
             try:
                 await conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}")
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
                 )
                 log.info("  ok: %s.%s", table, col)
             except Exception as e:
@@ -163,7 +168,7 @@ async def run():
         for idx_name, table, columns in INDEXES:
             try:
                 await conn.execute(
-                    text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {columns}")
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {columns}"
                 )
                 log.info("  idx-ok: %s", idx_name)
             except Exception as e:
@@ -173,11 +178,13 @@ async def run():
         for table, col in TZ_UPGRADES:
             try:
                 await conn.execute(
-                    text(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE TIMESTAMP WITH TIME ZONE USING {col} AT TIME ZONE 'UTC'")
+                    f"ALTER TABLE {table} ALTER COLUMN {col} TYPE TIMESTAMP WITH TIME ZONE USING {col} AT TIME ZONE 'UTC'"
                 )
                 log.info("  tz-ok: %s.%s", table, col)
             except Exception as e:
                 log.warning("  tz-skip: %s.%s - %s", table, col, e)
+    finally:
+        await conn.close()
 
     log.info("Migrations done.")
 

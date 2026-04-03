@@ -193,10 +193,17 @@ async def _cmd_drivers() -> str:
 
 
 async def _cmd_db() -> str:
-    """Database health — query latency + pool stats."""
+    """Database health — query latency + pool stats + host."""
     try:
-        from models.database import SessionLocal, engine
+        from models.database import SessionLocal, engine, DATABASE_URL
         from sqlalchemy import text
+        import re
+
+        # Extract host from URL for display (mask password)
+        host_match = re.search(r"@([^/]+)/", DATABASE_URL)
+        host_display = host_match.group(1) if host_match else "unknown"
+        is_private = ".railway.internal" in host_display or "10." in host_display
+        net_label = "🔒 private" if is_private else "⚠️ public proxy"
 
         acq_start = time.time()
         async with SessionLocal() as db:
@@ -211,6 +218,7 @@ async def _cmd_db() -> str:
         return (
             f"*Database*\n\n"
             f"{status}\n"
+            f"Host: `{host_display}` {net_label}\n"
             f"Query latency: {q_ms:.0f}ms\n"
             f"Pool wait: {pool_wait_ms:.0f}ms\n"
             f"{pool_line}"

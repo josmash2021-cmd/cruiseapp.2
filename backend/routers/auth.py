@@ -66,7 +66,7 @@ async def logout(
         if jti:
             await revoke_token(jti, user.id, float(exp))
     except (JWTError, Exception):
-        pass  # Best-effort â€" don't fail logout
+        pass  # Best-effort - don't fail logout
     client_ip = request.client.host if request.client else "unknown"
     _security_audit_log("logout", client_ip, f"user_id={user.id}", user_id=user.id)
     return {"ok": True}
@@ -79,7 +79,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     role = body.role if body.role in ("rider", "driver") else "rider"
     # Check duplicates per role ï¿½ allow same email/phone for different roles (driver vs rider)
     if body.email:
-        exists = await db.execute(select(User).where(User.email == body.email, User.role == role))
+        exists = await db.execute(select(User).where(func.lower(User.email) == body.email.strip().lower(), User.role == role))
         existing = exists.scalar_one_or_none()
         if existing:
             # Allow re-registration over deleted accounts
@@ -116,7 +116,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     user = User(
         first_name=body.first_name,
         last_name=body.last_name,
-        email=body.email,
+        email=body.email.strip().lower() if body.email else None,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
         photo_url=body.photo_url,
@@ -192,7 +192,8 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
 @router.post("/auth/check-exists", dependencies=[Depends(_verify_api_key)])
 async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
     identifier = body.identifier.strip()
-    query = select(User).where((User.email == identifier) | (User.phone == identifier))
+    id_lower = identifier.lower()
+    query = select(User).where((func.lower(User.email) == id_lower) | (User.phone == identifier))
     if body.role in ("rider", "driver"):
         query = query.where(User.role == body.role)
     result = await db.execute(query)
@@ -217,8 +218,9 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
             cleaned = "+1" + cleaned  # Default to US
         identifier = cleaned
 
-    # Use stripped identifier for both email and phone comparisons
-    query = select(User).where((User.email == identifier) | (User.phone == identifier))
+    # Case-insensitive email matching + exact phone matching
+    id_lower = identifier.lower()
+    query = select(User).where((func.lower(User.email) == id_lower) | (User.phone == identifier))
     if body.role in ("rider", "driver"):
         query = query.where(User.role == body.role)
     result = await db.execute(query)
@@ -233,7 +235,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     if not user and body.role:
         other_role = "driver" if body.role == "rider" else "rider"
         other_q = select(User).where(
-            ((User.email == identifier) | (User.phone == identifier)),
+            ((func.lower(User.email) == id_lower) | (User.phone == identifier)),
             User.role == other_role
         )
         other_r = await db.execute(other_q)
@@ -340,7 +342,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             except Exception as e:
                 logging.warning("[OTP-BG] Email send error for %s: %s", email, e)
 
-        # Fire-and-forget email sending â€" respond immediately to avoid client timeout
+        # Fire-and-forget email sending - respond immediately to avoid client timeout
         asyncio.create_task(_try_send_email_bg())
 
         # Always return the code so user can verify even if email is delayed/fails
@@ -596,13 +598,13 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
 async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
     """Authenticate via Google or Apple OAuth ID token.
 
-    â€¢ Verifies the ID token with the provider.
-    â€¢ Creates a new user if one does not exist, or logs in the existing user.
-    â€¢ Skips password / OTP â€" social tokens are the credential.
+    * Verifies the ID token with the provider.
+    * Creates a new user if one does not exist, or logs in the existing user.
+    * Skips password / OTP - social tokens are the credential.
     """
     provider = body.provider.lower()
     if provider not in ("google", "apple"):
-        raise HTTPException(400, "Unsupported provider â€" use 'google' or 'apple'")
+        raise HTTPException(400, "Unsupported provider - use 'google' or 'apple'")
 
     email: Optional[str] = None
     given_name: Optional[str] = body.first_name
@@ -797,7 +799,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Only allow safe fields â€" NEVER role, is_verified, verification_status
+    # Only allow safe fields - NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
     # Device tracking fields (always allowed)
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
@@ -812,13 +814,13 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes â€" first_name and last_name cannot be changed
+    # Block name changes - first_name and last_name cannot be changed
     updates.pop("first_name", None)
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             val = updates[key]
-            # Never allow photo_url to be set to None or empty â€" use /auth/photo-url to set it
+            # Never allow photo_url to be set to None or empty - use /auth/photo-url to set it
             if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
                 continue
             setattr(db_user, key, val)
@@ -1007,7 +1009,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
     if len(photo_bytes) > 3 * 1024 * 1024:
         raise HTTPException(413, "Photo too large (max 3MB)")
     
-    # Validate image magic bytes â€" only allow JPEG and PNG
+    # Validate image magic bytes - only allow JPEG and PNG
     if photo_bytes[:2] == b'\xff\xd8':
         ext = "jpg"
         content_type = "image/jpeg"
@@ -1094,7 +1096,7 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
 
 @router.get("/auth/export-data", dependencies=[Depends(_verify_api_key)])
 async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """GDPR/CCPA data export â€" returns all personal data for the user."""
+    """GDPR/CCPA data export - returns all personal data for the user."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
@@ -1263,7 +1265,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         logging.error("[Verify] DB error saving verification for user %s: %s", user.id, e)
         raise HTTPException(500, f"Error saving verification: {str(e)}")
 
-    # Save verification photos if provided (non-fatal â€" disk may be unavailable on Railway)
+    # Save verification photos if provided (non-fatal - disk may be unavailable on Railway)
     saved_urls = {}
     try:
         docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
@@ -1433,7 +1435,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Always check Firestore â€" dispatch writes directly there even if backend call fails
+    # Always check Firestore - dispatch writes directly there even if backend call fails
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
@@ -1466,7 +1468,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
-        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB â€" trying without role filter", user_id)
+        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB - trying without role filter", user_id)
         # Fallback: try without role filter (role may not be set yet for new accounts)
         result2 = await db.execute(select(User).where(User.id == user_id))
         db_user = result2.scalar_one_or_none()
@@ -1487,7 +1489,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
     else:
-        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False â€" Firestore sync skipped")
+        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False - Firestore sync skipped")
     return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 
@@ -1516,7 +1518,7 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
 
 
 _account_status_cache: dict = {}  # user_id -> (status_str, monotonic_ts)
-_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds â€" Firestore check at most every 15s
+_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds - Firestore check at most every 15s
 
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

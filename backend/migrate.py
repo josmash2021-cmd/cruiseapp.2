@@ -51,6 +51,18 @@ MIGRATIONS = [
     ("trips", "duration", "INTEGER"),
     ("trips", "driver_earnings", "FLOAT"),
     ("trips", "platform_fee", "FLOAT"),
+    ("trips", "refund_status", "VARCHAR(20)"),
+    ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
+    ("trips", "refund_reason", "TEXT"),
+    ("trips", "per_mile_rate", "FLOAT"),
+    ("trips", "per_minute_rate", "FLOAT"),
+    ("trips", "share_token", "VARCHAR(64)"),
+    ("trips", "share_expires_at", "TIMESTAMP WITH TIME ZONE"),
+    ("trips", "waypoints", "TEXT"),
+    ("trips", "pet_friendly", "BOOLEAN DEFAULT FALSE"),
+    ("trips", "ac_guaranteed", "BOOLEAN DEFAULT FALSE"),
+    ("trips", "silent_ride", "BOOLEAN DEFAULT FALSE"),
+    ("trips", "wheelchair_accessible", "BOOLEAN DEFAULT FALSE"),
     # ── Users: critical columns for dispatch heartbeat & push notifications ──
     ("users", "fcm_token", "VARCHAR(500)"),
     ("users", "app_version", "VARCHAR(30)"),
@@ -170,6 +182,7 @@ async def run():
             ("idx_trips_driver", "trips", "(driver_id, created_at DESC)"),
             ("idx_ratings_to_user", "ratings", "(to_user_id)"),
             ("idx_chat_trip", "chat_messages", "(trip_id, created_at)"),
+            ("idx_trips_share_token", "trips", "(share_token) WHERE share_token IS NOT NULL"),
         ]
         for idx_name, table, columns in INDEXES:
             try:

@@ -350,9 +350,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _searchPulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 3000),
     )..repeat();
-    _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(_searchPulse);
+    _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
+    );
 
     // Pulse + ripple for offer card tap (tap-down scale)
     _pulseCtrl = AnimationController(
@@ -1314,23 +1316,22 @@ class _SearchingBorderPainter extends CustomPainter {
     final pm = metricsList.first;
     final total = pm.length;
 
-    const glowFraction = 0.18; // 18% of perimeter
+    const glowFraction = 0.22; // 22% of perimeter — longer, smoother tail
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
 
-    // Divide glow tail into steps for the fade gradient
-    const steps = 36;
+    // Fewer steps = less GPU work per frame → smoother animation
+    const steps = 14;
     final stepLen = glowLen / steps;
 
     for (int k = 0; k < steps; k++) {
       final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
       final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
-      if (fadeAlpha < 0.02) continue;
+      if (fadeAlpha < 0.03) continue;
 
       final segEnd = (headDist - k * stepLen + total) % total;
       final segStart = (segEnd - stepLen + total) % total;
 
-      // extractPath handles wrapping
       final Path seg;
       if (segStart <= segEnd) {
         seg = pm.extractPath(segStart, segEnd);
@@ -1346,24 +1347,22 @@ class _SearchingBorderPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0
           ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
           ..isAntiAlias = true
           ..color = Color.lerp(_gold, _goldLight, t)!
-              .withValues(alpha: fadeAlpha * 0.9),
+              .withValues(alpha: fadeAlpha * 0.85),
       );
 
-      // Soft outer glow halo (every other step for perf)
-      if (k % 2 == 0) {
+      // Soft outer glow halo — only the head 4 segments
+      if (k < 4) {
         canvas.drawPath(
           seg,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 8
+            ..strokeWidth = 6
             ..strokeCap = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round
             ..isAntiAlias = true
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
-            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.25),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.2),
         );
       }
     }

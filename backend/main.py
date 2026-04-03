@@ -193,10 +193,6 @@ async def lifespan(app: FastAPI):
         for _attempt in range(5):
             try:
                 async with engine.begin() as conn:
-                    # Transaction-scoped advisory lock: auto-released on commit/rollback
-                    # Prevents deadlocks when Railway old+new replicas run DDL simultaneously
-                    if not IS_SQLITE:
-                        await conn.execute(text("SELECT pg_advisory_xact_lock(42424242)"))
                     await conn.run_sync(Base.metadata.create_all)
                     if IS_SQLITE:
                         await conn.execute(text("PRAGMA journal_mode=WAL"))
@@ -204,8 +200,8 @@ async def lifespan(app: FastAPI):
                         await conn.execute(text("PRAGMA busy_timeout=30000"))
                         await conn.execute(text("PRAGMA cache_size=-64000"))
                         await _migrate_add_columns(conn)
-                    else:
-                        await _migrate_postgres(conn)
+                    # PostgreSQL column migrations + indexes are handled by migrate.py
+                    # (raw asyncpg) which runs before server start — PgBouncer compatible
                 logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
                 break
             except Exception as _e:

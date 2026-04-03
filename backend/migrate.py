@@ -189,6 +189,30 @@ async def run():
                 log.info("  tz-ok: %s.%s", table, col)
             except Exception as e:
                 log.warning("  tz-skip: %s.%s - %s", table, col, e)
+
+        # Make support_messages.sender_id nullable (bot/system messages)
+        try:
+            row = await conn.fetchval(
+                "SELECT is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'support_messages' AND column_name = 'sender_id'"
+            )
+            if row and row != 'YES':
+                await conn.execute("ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL")
+                log.info("  ok: support_messages.sender_id made nullable")
+        except Exception as e:
+            log.warning("  skip: sender_id nullable - %s", e)
+
+        # Default service area
+        try:
+            exists = await conn.fetchval("SELECT id FROM service_areas WHERE area_name = 'Birmingham Metro' LIMIT 1")
+            if not exists:
+                await conn.execute(
+                    "INSERT INTO service_areas (area_name, center_lat, center_lng, radius_km) "
+                    "VALUES ('Birmingham Metro', 33.5186, -86.8104, 50.0)"
+                )
+                log.info("  ok: default service area created")
+        except Exception as e:
+            log.warning("  skip: service area - %s", e)
     finally:
         await conn.close()
 

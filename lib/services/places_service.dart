@@ -283,71 +283,54 @@ class PlacesService {
     final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
-    // ── Primary: Mapbox Geocoding v5 ──
-    try {
-      final mapboxResults = await _mapboxAutocomplete(
-        cleanInput, lat: latitude, lon: longitude,
-      );
-      if (seq != _autocompleteSeq) return [];
-      if (mapboxResults.isNotEmpty) {
-        final enriched = <PlaceSuggestion>[];
-        for (final s in mapboxResults) {
-          if (hasLocation && s.lat != null && s.lng != null) {
-            final dist = _haversineDistance(latitude, longitude, s.lat!, s.lng!);
-            enriched.add(s.copyWith(distanceMiles: dist * 0.621371));
-          } else {
-            enriched.add(s);
-          }
-        }
-        return _dedupeByDescription(enriched).take(25).toList();
-      }
-    } catch (e) {
-      debugPrint('\u26a0\ufe0f Mapbox autocomplete failed, trying Google: $e');
-    }
+    // ── Run Mapbox + Google/backend in parallel for comprehensive results ──
+    final futures = <Future<List<PlaceSuggestion>>>[];
 
-    // ── Fallback: Google Places ──
-    if (!isKeyValid) {
-      debugPrint(
-        '\u26a0\ufe0f Places autocomplete: API key is empty or invalid, using backend proxy.',
-      );
-      // Try backend proxy endpoint
-      try {
-        final results = await _backendAutocomplete(cleanInput, lat: latitude, lon: longitude);
-        if (seq != _autocompleteSeq) return [];
-        if (results.isNotEmpty) return results;
-      } catch (e) {
-        debugPrint('\u26a0\ufe0f Backend autocomplete failed: $e');
-      }
-      return [];
-    }
+    // Always try Mapbox
+    futures.add(
+      _mapboxAutocomplete(cleanInput, lat: latitude, lon: longitude)
+          .catchError((_) => <PlaceSuggestion>[]),
+    );
 
-    try {
-      // Run two Google requests in parallel: all types + geocode-only
-      final allResults = await Future.wait([
+    // Also try Google (or backend proxy if no key)
+    if (isKeyValid) {
+      futures.add(
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
             .catchError((_) => <PlaceSuggestion>[]),
+      );
+      futures.add(
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude, types: 'geocode')
             .catchError((_) => <PlaceSuggestion>[]),
-      ]);
+      );
+    } else {
+      futures.add(
+        _backendAutocomplete(cleanInput, lat: latitude, lon: longitude)
+            .catchError((_) => <PlaceSuggestion>[]),
+      );
+    }
 
+    try {
+      final allResults = await Future.wait(futures);
       if (seq != _autocompleteSeq) return [];
 
       final merged = <PlaceSuggestion>[];
-      merged.addAll(allResults[0]);
-      merged.addAll(allResults[1]);
+      for (final batch in allResults) {
+        merged.addAll(batch);
+      }
 
+      // Enrich with distance
       if (hasLocation) {
         for (int i = 0; i < merged.length; i++) {
           final s = merged[i];
           if (s.lat != null && s.lng != null) {
             final dist = _haversineDistance(latitude, longitude, s.lat!, s.lng!);
-            final miles = dist * 0.621371;
-            merged[i] = s.copyWith(distanceMiles: miles);
+            merged[i] = s.copyWith(distanceMiles: dist * 0.621371);
           }
         }
       }
 
-      if (allResults[0].length + allResults[1].length < 3) {
+      // Geocode fallback if very few results
+      if (merged.length < 3) {
         try {
           final geocoded = await _geocodeFallback(cleanInput);
           if (seq == _autocompleteSeq && geocoded.isNotEmpty) {

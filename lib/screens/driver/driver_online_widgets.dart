@@ -278,6 +278,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         builder: (_, __) => CustomPaint(
           foregroundPainter: _SearchingBorderPainter(
             progress: _searchPulseVal.value,
+            expansion: 1.0,
           ),
           child: Container(
             decoration: BoxDecoration(
@@ -3190,6 +3191,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 const Spacer(),
             ],
           ),
+        ),
         ),
       ),
     );

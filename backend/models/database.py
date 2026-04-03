@@ -54,7 +54,14 @@ else:
         }
     _engine_kwargs["connect_args"] = _connect_args
 
-engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
+# For PgBouncer (Supabase pooler): disable prepared statement caches at URL level
+_final_url = DATABASE_URL
+if not IS_SQLITE and not _is_private:
+    # Append prepared_statement_cache_size=0 to disable asyncpg's statement cache
+    _sep = "&" if "?" in _final_url else "?"
+    _final_url = f"{_final_url}{_sep}prepared_statement_cache_size=0"
+
+engine = create_async_engine(_final_url, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
 

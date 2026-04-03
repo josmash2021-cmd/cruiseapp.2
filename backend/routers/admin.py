@@ -266,6 +266,19 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore accept sync failed: %s", e)
+    # Send push notification to rider: "Driver assigned!"
+    try:
+        rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider2 = rider_r2.scalar_one_or_none()
+        if rider2 and rider2.fcm_token:
+            asyncio.create_task(_send_fcm_push(
+                rider2.fcm_token,
+                "Driver Assigned",
+                f"{driver.first_name} has been assigned to your ride!",
+                data={"type": "driver_assigned", "trip_id": str(trip.id)},
+            ))
+    except Exception as e:
+        logging.warning("FCM push on accept failed: %s", e)
     _security_audit_log("ADMIN_TRIP_ACCEPTED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
     return _trip_dict(trip)
 

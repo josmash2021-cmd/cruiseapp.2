@@ -1120,52 +1120,24 @@ extension _RideRequestController on _RideRequestScreenState {
 
       if (!mounted) return;
 
-      // Pop back to home and show booking confirmation
-      Navigator.of(context).pop();
+      // Navigate to animated confirmation screen
       HapticFeedback.heavyImpact();
-      final isEs = Localizations.localeOf(context).languageCode == 'es';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF1E1E1E),
-          duration: const Duration(seconds: 5),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Color(0xFFE8C547), size: 22),
-                  const SizedBox(width: 10),
-                  Text(
-                    isEs ? '¡Reserva completada!' : 'Booking confirmed!',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                isEs
-                    ? 'Te avisaremos cuando tengas un driver asignado.'
-                    : 'We\'ll notify you when a driver is assigned.',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
+      Navigator.of(context).pushAndRemoveUntil(
+        PageRouteBuilder(
+          transitionDuration: const Duration(milliseconds: 400),
+          pageBuilder: (_, __, ___) => RideBookingConfirmedScreen(
+            scheduledAt: state.scheduledAt!,
+            pickupAddress: state.pickupLabel,
+            dropoffAddress: state.dropoffLabel,
+            vehicleType: state.selectedOption?.name ?? 'Comfort',
+            fare: state.selectedOption?.priceEstimate ?? 0,
           ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
           ),
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          margin: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 8, 16, 0),
         ),
+        (_) => false,
       );
     } catch (e) {
       if (!mounted) return;

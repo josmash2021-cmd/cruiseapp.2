@@ -411,15 +411,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     _setState(
                                       () => _rideOptionsExpanded = false,
                                     );
-                                    // Single gentle 15° tilt — only once
-                                    if (!_hasAppliedSelectionTilt && _mapCtrl != null) {
-                                      _hasAppliedSelectionTilt = true;
-                                      _mapCtrl!.flyTo(
-                                        mapbox.CameraOptions(pitch: 15.0),
-                                        mapbox.MapAnimationOptions(duration: 800),
-                                      );
+                                    // Refit route above the collapsed bottom panel
+                                    if (_mapCtrl != null) {
+                                      final s = _ctrl.state;
+                                      if (s.pickup != null && s.dropoff != null) {
+                                        final pts = s.route?.points ?? [
+                                          LatLng(s.pickup!.lat, s.pickup!.lng),
+                                          LatLng(s.dropoff!.lat, s.dropoff!.lng),
+                                        ];
+                                        // Delay to let the panel collapse animate first
+                                        Future.delayed(const Duration(milliseconds: 350), () {
+                                          if (mounted) _fitRoute(pts, preserveCamera: true);
+                                        });
+                                      }
                                     }
-
                                   },
                                   child: _buildRideOptionCard(
                                     c,

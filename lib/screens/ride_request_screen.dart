@@ -41,6 +41,7 @@ import '../widgets/gold_pin_renderer.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
+import 'ride_booking_confirmed_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
 import 'home_screen.dart';

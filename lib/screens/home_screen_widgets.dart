@@ -550,13 +550,33 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               height: 44,
                               fadeInDuration: const Duration(milliseconds: 200),
                               key: ValueKey('${remoteUrl}_${UserSession.currentUid}'),
-                              errorWidget: (_, __, ___) => Center(
-                                child: Text(
-                                  displayInitial,
-                                  style: const TextStyle(
-                                    color: Colors.black87,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
+                              placeholder: (_, __) => Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(colors: [_gold, _goldLight]),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    displayInitial,
+                                    style: const TextStyle(
+                                      color: Colors.black87,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (_, __, ___) => Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(colors: [_gold, _goldLight]),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    displayInitial,
+                                    style: const TextStyle(
+                                      color: Colors.black87,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
                               ),

@@ -1287,6 +1287,144 @@ async def admin_commission_report(
 #  ADMIN — Wipe Firestore Collections (fresh start)
 # ══════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════
+#  SYSTEM HEALTH ENDPOINT
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/health", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_system_health(db: AsyncSession = Depends(get_db)):
+    """Detailed system health for the dispatch dashboard."""
+    from config import _SERVER_START_TIME, _watchdog_stats
+    from services.event_bus import event_bus
+
+    # DB latency
+    db_ok = True
+    db_latency_ms = 0
+    try:
+        t0 = time.time()
+        await db.execute(text("SELECT 1"))
+        db_latency_ms = round((time.time() - t0) * 1000)
+    except Exception:
+        db_ok = False
+
+    # Uptime
+    uptime = datetime.now(timezone.utc) - _SERVER_START_TIME
+    hours = int(uptime.total_seconds() // 3600)
+    mins = int((uptime.total_seconds() % 3600) // 60)
+
+    # SSE stats
+    sse = event_bus.get_stats()
+
+    # Request stats
+    try:
+        from guardian_agent import guardian_agent
+        rg = guardian_agent.request_guardian
+        total_req = rg.successful_requests + rg.failed_requests
+        error_rate = (rg.failed_requests / max(total_req, 1)) * 100
+        req_stats = {
+            "total": total_req,
+            "successful": rg.successful_requests,
+            "failed": rg.failed_requests,
+            "timeouts": rg.timeout_requests,
+            "slow": rg.slow_requests,
+            "error_rate": round(error_rate, 1),
+        }
+    except Exception:
+        req_stats = {"total": 0, "error_rate": 0}
+
+    # Active counts
+    drivers_online = (await db.execute(
+        select(func.count(User.id)).where(User.role == "driver", User.is_online == True)
+    )).scalar() or 0
+
+    active_trips = (await db.execute(
+        select(func.count(Trip.id)).where(Trip.status.notin_(["completed", "cancelled"]))
+    )).scalar() or 0
+
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "uptime": f"{hours}h {mins}m",
+        "uptime_seconds": int(uptime.total_seconds()),
+        "database": {
+            "status": "ok" if db_ok else "down",
+            "latency_ms": db_latency_ms,
+            "failures": _watchdog_stats.get("db_failures", 0),
+            "reconnects": _watchdog_stats.get("db_reconnects", 0),
+        },
+        "requests": req_stats,
+        "sse": {
+            "driver_streams": sse.get("active_driver_streams", 0),
+            "trip_streams": sse.get("active_trip_streams", 0),
+            "total_events": sse.get("total_events_pushed", 0),
+        },
+        "drivers_online": drivers_online,
+        "active_trips": active_trips,
+        "firebase_failures": _watchdog_stats.get("firebase_failures", 0),
+    }
+
+
+# ══════════════════════════════════════════════════════════
+#  PROMO CODES ENDPOINTS
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/promos", dependencies=[Depends(_require_dispatch_auth)])
+async def list_promos(db: AsyncSession = Depends(get_db)):
+    """List all promo codes (Firestore-based for now)."""
+    if not _HAS_FIRESTORE:
+        return []
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    docs = fdb.collection("promo_codes").order_by("createdAt", direction=_fs.Query.DESCENDING).get()
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+
+@router.post("/admin/promos", dependencies=[Depends(_require_dispatch_auth)])
+async def create_promo(body: dict = Body(...)):
+    """Create a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    doc_data = {
+        "code": body.get("code", "").upper().strip(),
+        "discountType": body.get("discountType", "percentage"),
+        "discountValue": float(body.get("discountValue", 0)),
+        "maxUses": int(body.get("maxUses", 0)),
+        "currentUses": 0,
+        "minFare": float(body.get("minFare", 0)),
+        "expiresAt": body.get("expiresAt"),
+        "isActive": True,
+        "description": body.get("description", ""),
+        "createdAt": _fs.SERVER_TIMESTAMP,
+    }
+    ref = fdb.collection("promo_codes").add(doc_data)
+    _security_audit_log("PROMO_CREATED", "admin", json.dumps({"code": doc_data["code"]}))
+    return {"status": "ok", "id": ref[1].id}
+
+
+@router.patch("/admin/promos/{promo_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def update_promo(promo_id: str, body: dict = Body(...)):
+    """Update a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    fdb.collection("promo_codes").document(promo_id).update(body)
+    return {"status": "ok"}
+
+
+@router.delete("/admin/promos/{promo_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def delete_promo(promo_id: str):
+    """Delete a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    fdb.collection("promo_codes").document(promo_id).delete()
+    _security_audit_log("PROMO_DELETED", "admin", promo_id)
+    return {"status": "ok"}
+
+
 @router.post("/admin/wipe-firestore", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_wipe_firestore():
     """Delete all documents from Firestore collections (fresh start)."""

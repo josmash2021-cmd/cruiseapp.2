@@ -313,6 +313,8 @@ async def _handle_message(text: str):
 async def _health_check_loop():
     """Periodic health checks — alerts on critical issues."""
     consecutive_db_fails = 0
+    # Wait extra at startup so the event loop is not busy with initialization
+    await asyncio.sleep(60)
 
     while True:
         try:

@@ -38,6 +38,161 @@ extension _HomeScreenController on _HomeScreenState {
         });
   }
 
+  /// Listen for rider verification approval from Dispatch.
+  /// When approved, unlock the app and show a notification.
+  void _listenVerificationStatus() async {
+    final user = await UserSession.getUser();
+    final userId = user?['userId'];
+    if (userId == null || userId.isEmpty) return;
+    final userIdInt = int.tryParse(userId) ?? 0;
+    if (userIdInt <= 0) return;
+
+    // Load cached verification status
+    final cachedStatus = user?['verificationStatus'] ?? '';
+    if (mounted && cachedStatus.isNotEmpty) {
+      _setState(() => _verificationStatus = cachedStatus);
+    }
+
+    // Ensure Firebase Auth
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (_) {
+      return;
+    }
+
+    _verificationSub?.cancel();
+    _verificationSub = FirebaseFirestore.instance
+        .collection('verifications')
+        .where('userId', isEqualTo: userIdInt)
+        .snapshots()
+        .listen((snapshot) async {
+      if (!mounted) return;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ??
+            data['verificationStatus'] as String? ??
+            '';
+        final isApproved = status == 'approved' ||
+            data['isVerified'] == true ||
+            data['isApproved'] == true;
+
+        if (isApproved && !_isVerified) {
+          await LocalDataService.setIdentityVerified('license');
+          await UserSession.updateField('isVerified', 'true');
+          await UserSession.updateField('verificationStatus', 'approved');
+
+          // Update profile photo from Firestore
+          final photoUrl = data['profilePhotoUrl'] as String? ??
+              data['selfieUrl'] as String?;
+          if (photoUrl != null && photoUrl.isNotEmpty) {
+            await UserSession.updateField('photo', photoUrl);
+          }
+
+          if (!mounted) return;
+
+          // Show approval notification
+          NotificationService.show(
+            id: 7777,
+            title: S.of(context).accountApproved,
+            body: S.of(context).accountApprovedDesc,
+          );
+
+          _setState(() {
+            _isVerified = true;
+            _verificationStatus = 'approved';
+          });
+
+          // Show celebratory dialog
+          _showApprovalDialog();
+          return;
+        } else if (status == 'pending') {
+          if (mounted) {
+            _setState(() => _verificationStatus = 'pending');
+          }
+        } else if (status == 'rejected') {
+          if (mounted) {
+            _setState(() => _verificationStatus = 'rejected');
+          }
+        }
+      }
+    }, onError: (_) {});
+  }
+
+  void _showApprovalDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1E24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFE8C547), Color(0xFFFBE47A)],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: Colors.black,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              S.of(ctx).accountApproved,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              S.of(ctx).accountApprovedDesc,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8C547),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  S.of(ctx).gotIt,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Refresh GPS in background after using pre-loaded position
   void _refreshGpsInBackground() {
     Geolocator.getCurrentPosition(

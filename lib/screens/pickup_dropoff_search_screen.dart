@@ -76,6 +76,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         lat: widget.initialPickupLat!,
         lng: widget.initialPickupLng!,
       );
+      // Reverse-geocode to get real address for the coords
+      _resolveAddressFromCoords(widget.initialPickupLat!, widget.initialPickupLng!);
     } else {
       // No GPS coords passed — resolve from device location
       _resolveGpsPickup();
@@ -120,6 +122,30 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       }
     } catch (_) {
       // GPS unavailable — keep "Current location" text
+    }
+  }
+
+  /// Reverse-geocode coordinates to get a real street address.
+  /// Updates pickup details/label so tapping the field reveals the real address.
+  Future<void> _resolveAddressFromCoords(double lat, double lng) async {
+    try {
+      final address = await _placesService
+          .reverseGeocode(lat: lat, lng: lng)
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (address != null && address.isNotEmpty) {
+        setState(() {
+          _pickupDetails = PlaceDetails(
+            address: address,
+            lat: lat,
+            lng: lng,
+          );
+          _pickupLabel = address;
+          // Keep showing "Current location" in the field until user taps it
+        });
+      }
+    } catch (_) {
+      // Geocoding failed — keep original text
     }
   }
 

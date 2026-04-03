@@ -317,13 +317,13 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
         colorScheme: widget.isDark
             ? ColorScheme.dark(
                 primary: _gold,
-                onPrimary: const Color(0xFF1A1400),
+                onPrimary: Colors.white,
                 surface: _bg,
                 onSurface: Colors.white,
               )
             : ColorScheme.light(
                 primary: _gold,
-                onPrimary: const Color(0xFF1A1400),
+                onPrimary: Colors.white,
                 surface: _bg,
                 onSurface: const Color(0xFF1A1D24),
               ),
@@ -331,15 +331,38 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
           backgroundColor: _bg,
           headerBackgroundColor: _bg,
           headerForegroundColor: _textPrimary,
-          dayForegroundColor: WidgetStatePropertyAll(_textPrimary),
-          todayForegroundColor: const WidgetStatePropertyAll(_gold),
-          todayBorder: const BorderSide(color: _gold, width: 1),
+          // Selected day: white text on gold circle — number clearly visible
+          dayForegroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const Color(0xFF1A1400); // dark text on gold bg
+            }
+            return _textPrimary;
+          }),
+          dayBackgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return _gold; // gold circle fill
+            }
+            return null;
+          }),
+          dayOverlayColor: WidgetStatePropertyAll(
+            _gold.withValues(alpha: 0.12),
+          ),
+          todayForegroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const Color(0xFF1A1400);
+            }
+            return _gold;
+          }),
+          todayBorder: const BorderSide(color: _gold, width: 1.5),
           yearForegroundColor: WidgetStatePropertyAll(_textPrimary),
           weekdayStyle: TextStyle(
             color: _textSecondary,
             fontWeight: FontWeight.w600,
           ),
-          dayStyle: TextStyle(color: _textPrimary),
+          dayStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
         ),
       ),
       child: CalendarDatePicker(

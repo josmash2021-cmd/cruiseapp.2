@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -38,6 +39,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
@@ -136,6 +138,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   // Verification state
   bool _isVerified = false;
+  String _verificationStatus = ''; // '', 'pending', 'approved', 'rejected'
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _verificationSub;
 
   // Service zone state
   Set<String> _activeServiceStates = {};
@@ -334,6 +338,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
     _checkDriversOnline();
     _listenServiceZones();
+    _listenVerificationStatus();
     _driverCheckTimer = Timer.periodic(
       const Duration(seconds: 120),
       (_) => _checkDriversOnline(),
@@ -425,6 +430,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _driverLocationSub?.cancel();
     _tripDocSub?.cancel();
     _tripStatusSub?.cancel();
+    _verificationSub?.cancel();
     super.dispose();
   }
 
@@ -970,6 +976,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _photoPath = path.isNotEmpty ? path : null;
         final url = user['photoUrl'] ?? UserSession.photoUrlNotifier.value;
         _photoUrl = url.isNotEmpty ? url : null;
+        // Update verification status from cached user data
+        final vs = user['verificationStatus'] ?? '';
+        if (vs.isNotEmpty) _verificationStatus = vs;
+        if (verified) _verificationStatus = 'approved';
       }
     });
     // Start ride countdown if there's an active ride

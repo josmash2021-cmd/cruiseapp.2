@@ -198,6 +198,39 @@ class S {
       : 'If you feel unsafe, you can discreetly connect with a security professional from your app.';
   String get takeFirstRide =>
       _es ? 'Realiza tu primer viaje' : 'Take your first ride';
+  String get enableLocationTitle =>
+      _es ? 'Activa tu ubicación' : 'Enable your location';
+  String get enableLocationDesc => _es
+      ? 'Cruise necesita acceso a tu ubicación en tiempo real para conectarte con conductores cercanos y rastrear tus viajes.'
+      : 'Cruise needs access to your real-time location to connect you with nearby drivers and track your rides.';
+  String get allowLocation =>
+      _es ? 'Permitir ubicación' : 'Allow location';
+  String get locationAlwaysOn => _es
+      ? 'Mantén la ubicación siempre activa para una mejor experiencia.'
+      : 'Keep location always on for the best experience.';
+  String get add => _es ? 'Agregar' : 'Add';
+  String get paymentInfoSecure => _es
+      ? 'Tu información de pago está encriptada y almacenada de forma segura.\nCruise nunca verá los detalles de tu tarjeta.'
+      : 'Your payment information is securely encrypted and stored.\nCruise never sees your card details.';
+
+  // ── Account Verification ──────────────────────────────────────────────────
+  String get verifyAccountTitle =>
+      _es ? 'Verifica tu cuenta' : 'Verify your account';
+  String get verifyAccountDesc => _es
+      ? 'Verifica tu cuenta para empezar a solicitar rides. Esto nos ayuda a mantener segura a nuestra comunidad.'
+      : 'Verify your account to start requesting rides. This helps us keep our community safe.';
+  String get verifyNow =>
+      _es ? 'Verificar ahora' : 'Verify now';
+  String get accountPendingTitle =>
+      _es ? 'Verificación pendiente' : 'Verification pending';
+  String get accountPendingDesc => _es
+      ? 'Tu cuenta está siendo revisada. Te notificaremos cuando esté aprobada.'
+      : 'Your account is being reviewed. We\'ll notify you when it\'s approved.';
+  String get accountApproved =>
+      _es ? '¡Cuenta aprobada!' : 'Account approved!';
+  String get accountApprovedDesc => _es
+      ? '¡Tu cuenta ha sido verificada! Ya puedes solicitar rides.'
+      : 'Your account has been verified! You can now request rides.';
 
   // ── Home Screen ───────────────────────────────────────────────────────────
   String get whereToQuestion => _es ? '¿A dónde?' : 'Where to?';

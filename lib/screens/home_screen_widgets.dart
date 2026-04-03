@@ -92,15 +92,21 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // Normal "Where to?" search bar content
   Widget _buildWhereToContent() {
+    final locked = !_isVerified;
     return GestureDetector(
       key: const ValueKey('where_to'),
-      onTap: _openSearchThenRide,
+      onTap: locked ? _showVerificationBlockedDialog : _openSearchThenRide,
       behavior: HitTestBehavior.opaque,
       child: Row(
         children: [
           SizedBox(width: Responsive.w(16)),
-          Icon(Icons.search_rounded,
-              color: Colors.white.withValues(alpha: 0.5), size: Responsive.sp(20)),
+          Icon(
+            locked ? Icons.lock_rounded : Icons.search_rounded,
+            color: locked
+                ? Colors.white.withValues(alpha: 0.3)
+                : Colors.white.withValues(alpha: 0.5),
+            size: Responsive.sp(20),
+          ),
           SizedBox(width: Responsive.w(10)),
           Expanded(
             child: Text(
@@ -273,6 +279,15 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: RepaintBoundary(child: _buildHeroCTA()),
               ),
+
+              // ── Verification banner (when account not verified) ──
+              if (!_isVerified && _activeRide == null) ...[
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildVerificationBanner(),
+                ),
+              ],
 
               // ── Scheduled ride indicator (below Where to?) ──
               if (_nextScheduledRide != null && _activeRide == null) ...[
@@ -626,17 +641,172 @@ extension _HomeScreenWidgets on _HomeScreenState {
     return 'Good evening';
   }
 
+  // ─── Verification blocked dialog ───
+  void _showVerificationBlockedDialog() {
+    final verStatus = _verificationStatus;
+    if (verStatus == 'pending') {
+      // Already submitted — show pending message
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1E24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.hourglass_top_rounded, color: Color(0xFFE8C547)),
+              const SizedBox(width: 10),
+              Text(
+                S.of(ctx).accountPendingTitle,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ],
+          ),
+          content: Text(
+            S.of(ctx).accountPendingDesc,
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(
+                S.of(ctx).ok,
+                style: const TextStyle(color: Color(0xFFE8C547)),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Not yet submitted — launch verification
+      _ensureVerified();
+    }
+  }
+
+  // ─── Verification banner (shown above sheet content when not verified) ───
+  Widget _buildVerificationBanner() {
+    final verStatus = _verificationStatus;
+    final isPending = verStatus == 'pending';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isPending
+              ? [const Color(0xFF1A1815), const Color(0xFF1C1A16)]
+              : [const Color(0xFF1A1210), const Color(0xFF1C1412)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isPending
+              ? _gold.withValues(alpha: 0.3)
+              : Colors.red.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isPending
+                      ? _gold.withValues(alpha: 0.15)
+                      : Colors.red.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  isPending
+                      ? Icons.hourglass_top_rounded
+                      : Icons.lock_rounded,
+                  color: isPending ? _gold : Colors.redAccent,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPending
+                          ? S.of(context).accountPendingTitle
+                          : S.of(context).verifyAccountTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isPending
+                          ? S.of(context).accountPendingDesc
+                          : S.of(context).verifyAccountDesc,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!isPending) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () => _ensureVerified(),
+                child: Text(
+                  S.of(context).verifyNow,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // ─── Hero CTA Card — transforms between "Where to?" and "Ride in progress" ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
     final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final disabled = !active && !imminent && zoneBlocked;
+    final verificationBlocked = !_isVerified && !active;
+    final disabled = !active && !imminent && (zoneBlocked || verificationBlocked);
     return GestureDetector(
       onTap: () async {
         if (active) {
           _resumeActiveRide();
+          return;
+        }
+        if (verificationBlocked) {
+          _showVerificationBlockedDialog();
           return;
         }
         if (imminent) {
@@ -751,7 +921,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         ? _buildHeroRideInProgress()
                         : imminent
                             ? _buildHeroUpcomingRide()
-                            : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
+                            : _buildHeroWhereToContent(isDark, disabled, zoneBlocked, verificationBlocked),
                   ),
                 ),
               ),
@@ -763,7 +933,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
   }
 
   // ─── "Where to?" content inside the hero card ───
-  Widget _buildHeroWhereToContent(bool isDark, bool disabled, bool zoneBlocked) {
+  Widget _buildHeroWhereToContent(bool isDark, bool disabled, bool zoneBlocked, bool verificationBlocked) {
     return Row(
       key: const ValueKey('hero_where_to'),
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -787,7 +957,29 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               ),
               const SizedBox(height: 8),
-              if (disabled && zoneBlocked)
+              if (disabled && verificationBlocked)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.lock_rounded,
+                      color: Colors.white.withValues(alpha: 0.35),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        S.of(context).verifyAccountTitle,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                      ),
+                    ),
+                  ],
+                )
+              else if (disabled && zoneBlocked)
                 Row(
                   children: [
                     Icon(

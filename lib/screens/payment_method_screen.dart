@@ -32,44 +32,8 @@ class PaymentMethodScreen extends StatefulWidget {
 class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   static const _gold = Color(0xFFE8C547);
 
-  String? _selectedMethod;
   bool _gpayAvailable = false;
   bool _apayAvailable = false;
-
-  List<_PaymentOption> get _options => [
-    const _PaymentOption(
-      id: 'paypal',
-      label: 'PayPal',
-      icon: Icons.account_balance_wallet_rounded,
-      iconColor: Colors.white70,
-    ),
-    _PaymentOption(
-      id: 'cruise_cash',
-      label: S.of(context).cruiseCash,
-      icon: Icons.monetization_on_rounded,
-      iconColor: const Color(0xFFE8C547),
-    ),
-    if (Platform.isAndroid)
-      const _PaymentOption(
-        id: 'google_pay',
-        label: 'Google Pay',
-        icon: Icons.g_mobiledata_rounded,
-        iconColor: Colors.white,
-      ),
-    if (Platform.isIOS)
-      _PaymentOption(
-        id: 'apple_pay',
-        label: 'Apple Pay',
-        iconWidget: const _AppleLogoWidget(),
-        iconColor: Colors.transparent, // badge provides its own black background
-      ),
-    _PaymentOption(
-      id: 'credit_card',
-      label: S.of(context).creditOrDebitCard,
-      icon: Icons.credit_card_rounded,
-      iconColor: const Color(0xFF6B7280),
-    ),
-  ];
 
   @override
   void initState() {
@@ -87,9 +51,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     });
   }
 
-  void _selectMethod(String id) async {
-    setState(() => _selectedMethod = id);
-
+  void _addMethod(String id) async {
     if (id == 'paypal') {
       await _openPayPal();
       return;
@@ -108,7 +70,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       );
       if (!mounted) return;
       if (result != null) {
-        // Parse brand:last4 format
         String brand = 'card';
         String last4 = result;
         if (result.contains(':')) {
@@ -173,13 +134,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       }
       return;
     }
-
-    if (id == 'cruise_cash') {
-      _showSetupSnack(S.of(context).cruiseCashActivated);
-      if (!mounted) return;
-      _goToNextScreen(id);
-      return;
-    }
   }
 
   void _goToNextScreen(String method) {
@@ -240,8 +194,6 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
       _showSetupSnack(paypalLinkedMsg);
       if (!mounted) return;
       _goToNextScreen('paypal');
-    } else {
-      setState(() => _selectedMethod = null);
     }
   }
 
@@ -280,7 +232,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
               // ── Title ──
               Text(
-                S.of(context).howWouldYouLikeToPay,
+                S.of(context).addPaymentMethod,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -294,79 +246,58 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                 S.of(context).chargedAfterRide,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 36),
 
-              // ── Payment options ──
-              ...List.generate(_options.length, (i) {
-                final opt = _options[i];
-                final selected = _selectedMethod == opt.id;
-                return Column(
-                  children: [
-                    GestureDetector(
-                      onTap: () => _selectMethod(opt.id),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? _gold.withValues(alpha: 0.08)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
-                          border: selected
-                              ? Border.all(
-                                  color: _gold.withValues(alpha: 0.4),
-                                  width: 1.5,
-                                )
-                              : null,
-                        ),
-                        child: Row(
-                          children: [
-                            if (opt.id == 'apple_pay' || opt.id == 'google_pay')
-                              Expanded(child: _nativePayLogoWide(opt.id))
-                            else ...[    
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: opt.iconColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: opt.iconWidget ?? Icon(
-                                  opt.icon,
-                                  color: opt.iconColor,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  opt.label,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: c.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: c.chevron,
-                              size: 22,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (i < _options.length - 1)
-                      Divider(color: c.divider, height: 1),
-                  ],
-                );
-              }),
+              // ── Payment options with Add buttons ──
+
+              // Apple Pay (iOS) / Google Pay (Android)
+              if (Platform.isIOS)
+                _paymentRow(
+                  c,
+                  icon: const _ApplePayIcon(),
+                  label: 'Apple Pay',
+                  onAdd: () => _addMethod('apple_pay'),
+                ),
+              if (Platform.isAndroid)
+                _paymentRow(
+                  c,
+                  icon: const _GooglePayIcon(),
+                  label: 'Google Pay',
+                  onAdd: () => _addMethod('google_pay'),
+                ),
+
+              if (Platform.isIOS || Platform.isAndroid)
+                const SizedBox(height: 16),
+
+              // PayPal
+              _paymentRow(
+                c,
+                icon: const _PayPalIcon(),
+                label: 'PayPal',
+                onAdd: () => _addMethod('paypal'),
+              ),
+              const SizedBox(height: 16),
+
+              // Credit or debit card
+              _paymentRow(
+                c,
+                icon: _CardIcon(color: c),
+                label: S.of(context).creditOrDebitCard,
+                onAdd: () => _addMethod('credit_card'),
+              ),
+
+              const SizedBox(height: 32),
+
+              // ── Security notice ──
+              Text(
+                S.of(context).paymentInfoSecure,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: c.textTertiary,
+                  height: 1.5,
+                ),
+              ),
 
               const Spacer(),
 
@@ -403,45 +334,105 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     );
   }
 
-  Widget _nativePayLogoWide(String id) {
-    if (id == 'apple_pay') {
-      return Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-        ),
-        child: const Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.apple, color: Colors.white, size: 28),
-              SizedBox(width: 6),
-              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
-            ],
-          ),
-        ),
-      );
-    }
+  /// Payment row with icon, label, and gold "Add" button — matches photo 3
+  Widget _paymentRow(
+    AppColors c, {
+    required Widget icon,
+    required String label,
+    required VoidCallback onAdd,
+  }) {
     return Container(
-      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: 36, height: 36, child: icon),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 34,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(17),
+                ),
+              ),
+              onPressed: onAdd,
+              child: Text(
+                S.of(context).add,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Brand icon widgets
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Apple Pay icon — Apple logo in black circle
+class _ApplePayIcon extends StatelessWidget {
+  const _ApplePayIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.black,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: const Center(
+        child: Icon(Icons.apple, color: Colors.white, size: 22),
+      ),
+    );
+  }
+}
+
+/// Google Pay icon — colored G
+class _GooglePayIcon extends StatelessWidget {
+  const _GooglePayIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Center(
         child: RichText(
           text: const TextSpan(
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             children: [
               TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
-              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
-              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
-              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
-              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
-              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -450,55 +441,53 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   }
 }
 
-class _PaymentOption {
-  final String id;
-  final String label;
-  final IconData? icon;
-  final Widget? iconWidget;
-  final Color iconColor;
-
-  const _PaymentOption({
-    required this.id,
-    required this.label,
-    this.icon,
-    this.iconWidget,
-    required this.iconColor,
-  }) : assert(icon != null || iconWidget != null, 'Must provide either icon or iconWidget');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Apple Pay badge widget — black rounded-rect card with  + "Pay"
-// ─────────────────────────────────────────────────────────────────────────────
-class _AppleLogoWidget extends StatelessWidget {
-  const _AppleLogoWidget();
+/// PayPal icon — P in blue circle
+class _PayPalIcon extends StatelessWidget {
+  const _PayPalIcon();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 38,
-        height: 24,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.apple, color: Colors.white, size: 16),
-              SizedBox(width: 2),
-              Text(
-                'Pay',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ],
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: const Color(0xFF003087),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Center(
+        child: Text(
+          'P',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            fontStyle: FontStyle.italic,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Credit card icon
+class _CardIcon extends StatelessWidget {
+  final AppColors color;
+  const _CardIcon({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B7280).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.credit_card_rounded,
+          color: Color(0xFF6B7280),
+          size: 20,
         ),
       ),
     );

@@ -32,7 +32,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       } catch (e) {
         debugPrint('âš ï¸ getCurrentUserId attempt $attempt failed: $e');
       }
-      if (attempt < 3) await Future.delayed(const Duration(seconds: 1));
+      if (attempt < 3) await Future.delayed(const Duration(milliseconds: 300));
     }
     if (_driverId == null) {
       debugPrint('âŒ Could not get driver ID after 3 attempts');
@@ -73,7 +73,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Save current earnings snapshot to SharedPreferences for instant load next time.
   Future<void> _cacheEarnings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       // Use same key as driver_home_screen for shared cache
       prefs.setDouble('driver_cached_earnings', _earnings);
       prefs.setDouble('driver_online_weekly', _weeklyEarnings);
@@ -84,7 +84,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   Future<void> _loadAllEarnings() async {
     // ── Instant: load from SharedPreferences cache first (single setState) ──
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       final cachedToday = prefs.getDouble('driver_cached_earnings');
       final cachedWeekly = prefs.getDouble('driver_online_weekly');
       final cachedLastTrip = prefs.getDouble('driver_online_last_trip');
@@ -234,15 +234,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _buildVehicleIcons() async {
-    _suvIconBytes = await CarIconLoader.loadForRideBytes('Suburban');
-    _sedanIconBytes = await CarIconLoader.loadForRideBytes('Camry');
+    // Load ALL icons in parallel instead of sequentially
+    final results = await Future.wait([
+      CarIconLoader.loadForRideBytes('Suburban'),
+      CarIconLoader.loadForRideBytes('Camry'),
+      CarIconLoader.loadUberBytes(),
+      _loadDriverPhoto(),
+      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
+    ]);
+    _suvIconBytes = results[0] as Uint8List?;
+    _sedanIconBytes = results[1] as Uint8List?;
     _arrowIconBytes = _suvIconBytes;
-    // Skip PNG navatar sprites (contain blue circle overlay); use single rotated canvas car
     _navCarSprites = null;
-    _navCarIconBytes = await CarIconLoader.loadUberBytes();
-    await _loadDriverPhoto();
+    _navCarIconBytes = results[2] as Uint8List?;
+    // results[3] is void (_loadDriverPhoto sets _driverPhotoImage internally)
+    _goldPinBytes = results[4] as Uint8List?;
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
-    _goldPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     if (mounted) _setState(() {});
   }
 

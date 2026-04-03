@@ -127,10 +127,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           _photoUrl = me['photo_url']?.toString();
           _dispatchPassword = (me['password_visible'] ?? me['password_plain'])
               ?.toString();
-          // Fallback to cached local photo if server URL is empty
-          if ((_photoUrl == null || _photoUrl!.isEmpty) &&
-              UserSession.photoNotifier.value.isNotEmpty) {
-            _photoUrl = UserSession.photoNotifier.value;
+          // Fallback to cached URL or local photo if server URL is empty
+          if (_photoUrl == null || _photoUrl!.isEmpty) {
+            final cachedUrl = UserSession.photoUrlNotifier.value;
+            if (cachedUrl.isNotEmpty) {
+              _photoUrl = cachedUrl;
+            } else if (UserSession.photoNotifier.value.isNotEmpty) {
+              _photoUrl = UserSession.photoNotifier.value;
+            }
           }
           // Persist photo URL so it's available on next app launch
           if (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) {

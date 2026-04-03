@@ -33,6 +33,7 @@ import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/analytics_service.dart';
+import 'services/prefs_cache.dart';
 import 'screens/chat_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
@@ -171,6 +172,7 @@ void main() async {
       // ── Parallel startup: independent inits run concurrently ──
       // Group 1: no dependencies between these
       await Future.wait([
+        PrefsCache.init(),           // cache SharedPreferences singleton early
         SecurityService.init(),
         CacheService.initialize(),
         LocalDataService.init(),
@@ -229,9 +231,8 @@ Future<void> _initFirebase() async {
 /// Heavy async init that runs while the splash animation plays.
 /// Called from SplashScreen.initState().
 Future<void> heavyInit() async {
-  // Probe + warm up the server BEFORE the user reaches the login screen.
-  // DNS is pre-resolved in startup Group 1, so probes should resolve fast.
-  await ApiService.probeAndSetBestUrl(
+  // Probe + warm up the server in the background — NEVER block splash on this.
+  unawaited(ApiService.probeAndSetBestUrl(
     timeout: const Duration(seconds: 2),
   ).timeout(
     const Duration(seconds: 3),
@@ -239,7 +240,7 @@ Future<void> heavyInit() async {
       debugPrint('[heavyInit] probe timed out — using production URL');
       return null;
     },
-  );
+  ));
 
   // Start keep-alive pings to prevent server sleep
   KeepAliveService.instance.start();
@@ -323,7 +324,10 @@ Future<void> heavyInit() async {
           // Handle notification tap when app was fully terminated
           FirebaseMessaging.instance.getInitialMessage().then((msg) {
             if (msg != null) {
-              Future.delayed(const Duration(seconds: 4), () => _handleDriverRideOffer(msg));
+              // Use post-frame callback instead of artificial delay
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _handleDriverRideOffer(msg);
+              });
             }
           });
         } catch (e) {

@@ -239,20 +239,12 @@ class _SplashScreenState extends State<SplashScreen>
       return const WelcomeScreen() as Widget;
     });
 
-    // Small delay on launch
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (_disposed) return;
-
-    // Phase 1 — letters bounce in
+    // Phase 1 — letters bounce in (no artificial pre-delay)
     await _entranceCtrl.forward().orCancel.catchError((_) {});
     if (_disposed) return;
 
     // Phase 2 — shimmer glow pulse
     await _glowCtrl.forward().orCancel.catchError((_) {});
-    if (_disposed) return;
-
-    // Hold for a beat
-    await Future.delayed(const Duration(milliseconds: 500));
     if (_disposed) return;
 
     // ── Wait for destination + preload to be ready BEFORE starting exit ──
@@ -268,9 +260,8 @@ class _SplashScreenState extends State<SplashScreen>
     // Phase 3 — scale up + fade out
     _exitCtrl.forward().orCancel.catchError((_) {});
 
-    // Navigate almost immediately — the incoming screen fades IN while
+    // Navigate immediately — the incoming screen fades IN while
     // the splash fades OUT, overlapping perfectly with no black gap.
-    await Future.delayed(const Duration(milliseconds: 50));
     if (_disposed || !mounted) return;
 
     nav.pushReplacement(

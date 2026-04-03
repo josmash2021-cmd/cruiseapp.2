@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'prefs_cache.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -165,7 +166,7 @@ class NotificationService {
   }) async {
     if (!_initialized) await init();
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
 
     if (type == 'ride' && !(prefs.getBool('notif_ride') ?? true)) return;
     if (type == 'promo' && !(prefs.getBool('notif_promo') ?? true)) return;
@@ -233,7 +234,7 @@ class NotificationService {
   }) async {
     if (!_initialized) await init();
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
     final soundsEnabled = prefs.getBool('sound_trips') ?? true;
     final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
 
@@ -349,7 +350,7 @@ class NotificationService {
   /// Play the "go online" chime inside the app.
   static Future<void> playOnlineSound() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
       if (!(prefs.getBool('notif_sounds') ?? true)) return;
       await _onlinePlayer.stop();
       await _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
@@ -361,7 +362,7 @@ class NotificationService {
   /// Play the trip offer sound inside the app (when app is in foreground).
   static Future<void> playOfferSound() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
       if (!(prefs.getBool('sound_trips') ?? true)) return;
       await _offerPlayer.stop();
       await _offerPlayer.play(AssetSource('sounds/cruise_offer.wav'));
@@ -382,7 +383,7 @@ class NotificationService {
     if (!_initialized) await init();
     if (scheduledTime.isBefore(DateTime.now())) return;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
     final soundsEnabled = prefs.getBool('notif_sounds') ?? true;
     final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
 

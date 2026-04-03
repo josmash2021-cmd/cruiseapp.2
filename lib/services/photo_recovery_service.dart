@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
+import 'prefs_cache.dart';
 
 /// 5-source recovery chain for profile photos — ensures photos are
 /// NEVER lost across sessions, logouts, app updates, or device changes.
@@ -35,7 +36,7 @@ class PhotoRecoveryService {
 
     // ─── SOURCE 1: Local SharedPreferences (fastest) ────────────────────────
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       final cached = prefs.getString(_photoUrlKeyForUid(uid, role));
       if (cached != null && cached.isNotEmpty && cached.startsWith('https')) {
         debugPrint('[PhotoRecovery] ✅ Found in SharedPreferences: $cached');
@@ -131,7 +132,7 @@ class PhotoRecoveryService {
   /// Save photoUrl to SharedPreferences cache — always UID+role specific.
   static Future<void> _cachePhotoUrl(String uid, String role, String photoUrl) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       await prefs.setString(_photoUrlKeyForUid(uid, role), photoUrl);
       debugPrint('[PhotoRecovery] Cached photo URL to SharedPreferences (role=$role)');
     } catch (e) {
@@ -202,7 +203,7 @@ class PhotoRecoveryService {
   ///   - Recovery chain finds them on next login
   static Future<void> clearPhotoUrlCache(String uid, String role) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       await prefs.remove(_photoUrlKeyForUid(uid, role));
       debugPrint('[PhotoRecovery] Cleared photo URL cache for uid=$uid, role=$role (Firestore copy preserved)');
     } catch (e) {

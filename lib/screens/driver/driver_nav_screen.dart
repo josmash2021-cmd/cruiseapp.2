@@ -663,8 +663,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     await _zoomToShowRoute();
     if (!mounted) return;
 
-    // Hold overview for 5 seconds.
-    await Future.delayed(const Duration(seconds: 5));
+    // Brief overview before entering nav mode.
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
     // Phase 2: Transition — flyTo 45° nav view centred on driver.
@@ -1242,8 +1242,6 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     if (!riderConfirmed) {
       _showToast('El rider no ha confirmado, comenzando viaje...');
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
     }
 
     _stopWaitTimer(); // End wait time when ride starts
@@ -1269,11 +1267,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _updateDestPin(widget.dropoffLatLng);
       await _deleteRouteAnnotations();
 
-      // Overview of dropoff route for 3 seconds.
+      // Brief overview of dropoff route.
       _updateRouteAnnotation();
       setState(() { _cameraFollowing = false; _isOverview = true; });
       _animateCameraOverview(_pos, widget.dropoffLatLng);
-      await Future.delayed(const Duration(seconds: 3));
+      await Future.delayed(const Duration(milliseconds: 1500));
       if (!mounted) return;
 
       // Transition to nav view.

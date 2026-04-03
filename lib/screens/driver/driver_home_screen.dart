@@ -18,6 +18,7 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/prefs_cache.dart';
 import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
@@ -185,7 +186,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     WidgetsBinding.instance.addObserver(this);
 
     // Restore online state persisted from last session
-    SharedPreferences.getInstance().then((prefs) {
+    PrefsCache.instance.then((prefs) {
       if (!mounted) return;
       final wasOnline = prefs.getBool('driver_was_online') ?? false;
       if (wasOnline && !_isStillOnline) {
@@ -439,7 +440,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Future<void> _loadDriverData() async {
     // Cache-first: show last-known data instantly
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
     final cachedName = prefs.getString('driver_cached_name');
     final cachedEarnings = prefs.getDouble('driver_cached_earnings');
     final cachedTrips = prefs.getInt('driver_cached_trips');
@@ -563,7 +564,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
-    SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
+    PrefsCache.instance.then((p) => p.setBool('driver_was_online', stillOnline));
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();
@@ -652,7 +653,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
-    SharedPreferences.getInstance().then((p) => p.setBool('driver_was_online', stillOnline));
+    PrefsCache.instance.then((p) => p.setBool('driver_was_online', stillOnline));
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();

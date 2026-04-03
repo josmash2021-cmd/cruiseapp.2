@@ -159,6 +159,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return from + diff * t;
   }
 
+  /// Fast double-returning pow for time-based exponential decay.
+  double _pow(double base, double exp) => math.pow(base, exp).toDouble();
+
   // ═══════════════════════════════════════════════════════════
   //  MAPBOX ANNOTATION HELPERS
   // ═══════════════════════════════════════════════════════════

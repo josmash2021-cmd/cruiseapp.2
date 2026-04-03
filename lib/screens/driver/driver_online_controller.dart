@@ -806,10 +806,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _smoothMoveTo(LatLng target, double heading) {
-    _animFrom = _pos!;
-    _animTo = target;
+    _targetPos = target;
     _targetHeading = heading;
-    _driverAnim.forward(from: 0);
   }
 
   /// Trim the route polyline behind the driver so only upcoming road is shown.
@@ -842,25 +840,35 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setRouteAnnotation(List.from(_routePts), _navyRoute);
   }
 
-  void _onDriverAnimTick() {
-    if (!mounted) return;
-    final t = Curves.easeOutCubic.transform(_driverAnim.value);
-    final lat =
-        _animFrom.latitude + (_animTo.latitude - _animFrom.latitude) * t;
-    final lng =
-        _animFrom.longitude + (_animTo.longitude - _animFrom.longitude) * t;
-    _pos = LatLng(lat, lng);
+  /// Continuous 60fps ticker — exponential decay toward target position.
+  /// Never resets, never stutters. Each frame closes 18% of the remaining gap.
+  void _onSmoothTick(Duration elapsed) {
+    if (!mounted || _pos == null) return;
+    if (_targetPos.latitude == 0 && _targetPos.longitude == 0) return;
 
-    // Smooth bearing interpolation — exponential decay toward target
+    // Time-based decay so animation is frame-rate independent
+    final dtMs = (elapsed - _lastTickElapsed).inMilliseconds.clamp(1, 50);
+    _lastTickElapsed = elapsed;
+    final dt = dtMs / 16.667; // normalize to 60fps frame
+
+    // Position: exponential decay — 18% of gap per frame at 60fps
+    const posDecay = 0.18;
+    final posFactor = 1.0 - _pow(1.0 - posDecay, dt);
+    final newLat = _pos!.latitude + (_targetPos.latitude - _pos!.latitude) * posFactor;
+    final newLng = _pos!.longitude + (_targetPos.longitude - _pos!.longitude) * posFactor;
+    _pos = LatLng(newLat, newLng);
+
+    // Bearing: exponential decay — 12% per frame, shortest-arc
+    const brgDecay = 0.12;
+    final brgFactor = 1.0 - _pow(1.0 - brgDecay, dt);
     double diff = _targetHeading - _heading;
     while (diff > 180) { diff -= 360; }
     while (diff < -180) { diff += 360; }
-    _heading += diff * 0.12;
+    _heading += diff * brgFactor;
 
     // Unified camera following (single source of truth for all phases)
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     if (_phase == _Phase.searching) {
-      // Searching: instant camera update — setCamera avoids animation conflicts at 60fps
       _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
@@ -871,7 +879,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ),
       );
     } else if (isNav && _cameraFollowing) {
-      // Navigation: 2.5D chase cam using lerped position + bearing
       _cameraBearing = _heading;
       _map?.setCamera(
         mapbox.CameraOptions(

@@ -846,8 +846,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           if (d < -180) d += 360;
           _animBearing = (_animBearing + d * 0.18) % 360;
           _driverBearing = _animBearing;
-          // Idle when position AND bearing have both converged
-          if (dLat.abs() < 0.000002 && dLng.abs() < 0.000002 && d.abs() < 0.3) {
+          // Idle when position AND bearing have both fully converged
+          if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
             _interpIdle = true;
             _interpTicker?.stop();
             return;
@@ -918,7 +918,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     double db2 = _animBearing - (_driverBearing);
     if (db2 > 180) db2 -= 360;
     if (db2 < -180) db2 += 360;
-    if (diff2 < 0.05 && db2.abs() < 0.3 && _directTargetPos == null) {
+    if (diff2 < 0.01 && db2.abs() < 0.1 && _directTargetPos == null) {
       _interpIdle = true;
       _interpTicker?.stop();
     }

@@ -229,8 +229,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Driver smooth animation --
   late AnimationController _driverAnim;
-  LatLng _animFrom = const LatLng(0, 0);
-  LatLng _animTo = const LatLng(0, 0);
+  Ticker? _smoothTicker;
+  Duration _lastTickElapsed = Duration.zero;
+  LatLng _targetPos = const LatLng(0, 0); // exponential decay target
   double _heading = 0;
   double _smoothedBearing = 0;
   Uint8List? _arrowIconBytes;
@@ -324,9 +325,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _driverAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900), // Longer lerp = smoother glide between GPS ticks
+      duration: const Duration(milliseconds: 900),
     );
-    _driverAnim.addListener(_onDriverAnimTick);
+    // Continuous 60fps ticker for ultra-smooth exponential decay movement
+    _smoothTicker = createTicker(_onSmoothTick)..start();
 
     _reqCtrl = AnimationController(
       vsync: this,
@@ -392,7 +394,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _driverAnim.removeListener(_onDriverAnimTick);
+    _smoothTicker?.stop();
+    _smoothTicker?.dispose();
     _driverAnim.dispose();
     _reqCtrl.dispose();
     _doneCtrl.dispose();

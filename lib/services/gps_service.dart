@@ -63,7 +63,7 @@ class GpsService {
 
     final now = DateTime.now();
     if (_lastUploadAt == null ||
-        now.difference(_lastUploadAt!) >= const Duration(milliseconds: 450)) {
+        now.difference(_lastUploadAt!) >= const Duration(milliseconds: 300)) {
       unawaited(_uploadToFirebase());
     }
   }

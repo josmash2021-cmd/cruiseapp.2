@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/firebase_storage_service.dart';
+import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
 import '../widgets/user_profile_photo.dart';
 
@@ -130,12 +132,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     // Update UI immediately - don't wait for server upload
     setState(() => _photoPath = permanentPath);
     
-    // Upload to server in background so it persists across devices
-    // This doesn't block the UI update
+    // Upload to server + Firebase Storage for cross-device sync
     ApiService.uploadPhoto(permanentPath).catchError((e) {
       debugPrint('Photo upload failed (saved locally): $e');
       return '';
     });
+    // Sync to Firebase Storage + Firestore so photo works on all devices
+    final userId = await ApiService.getCurrentUserId();
+    if (userId != null) {
+      final user = await UserSession.getUser();
+      final role = user?['role'] ?? 'rider';
+      try {
+        final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
+          permanentPath, userId, role,
+        );
+        await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, role);
+        await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), role, firebaseUrl);
+        UserSession.photoUrlNotifier.value = firebaseUrl;
+        await UserSession.updateField('photoUrl', firebaseUrl);
+      } catch (e) {
+        debugPrint('Firebase photo sync failed: $e');
+      }
+    }
   }
 
   Widget _photoOption(

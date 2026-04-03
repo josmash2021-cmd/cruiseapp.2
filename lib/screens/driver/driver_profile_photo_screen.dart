@@ -6,6 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/firebase_storage_service.dart';
+import '../../services/photo_recovery_service.dart';
+import '../../services/user_session.dart';
 import 'driver_home_screen.dart';
 
 /// After approval, the driver must upload a profile photo before entering the app.
@@ -96,6 +99,25 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     try {
       final photoUrl = await ApiService.uploadPhoto(_photoPath!);
       await ApiService.updateMe({'photo_url': photoUrl});
+
+      // Sync to Firebase Storage + Firestore for cross-device availability
+      final userId = await ApiService.getCurrentUserId();
+      if (userId != null) {
+        try {
+          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
+            _photoPath!, userId, 'driver',
+          );
+          await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, 'driver');
+          await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), 'driver', firebaseUrl);
+          UserSession.photoUrlNotifier.value = firebaseUrl;
+          UserSession.photoNotifier.value = _photoPath!;
+          await UserSession.updateField('photoUrl', firebaseUrl);
+          await UserSession.updateField('photoPath', _photoPath!);
+        } catch (_) {
+          // Firebase sync failed — backend photo still works
+        }
+      }
+
       if (!mounted) return;
       if (widget.returnOnly) {
         Navigator.of(context).pop(photoUrl);

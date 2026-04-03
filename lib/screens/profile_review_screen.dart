@@ -8,6 +8,8 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
+import '../services/firebase_storage_service.dart';
+import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
 import 'ready_to_ride_screen.dart';
 
@@ -174,7 +176,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       );
     }
 
-    // Upload photo to server so it persists across devices
+    // Upload photo to server + Firebase Storage for cross-device sync
     if (permanentPhotoPath != null && permanentPhotoPath.isNotEmpty) {
       try {
         final photoUrl = await ApiService.uploadPhoto(permanentPhotoPath);
@@ -183,6 +185,21 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         }
       } catch (e) {
         debugPrint('⚠️ Photo upload failed: $e');
+      }
+      // Sync to Firebase Storage + Firestore for all devices
+      final uid = await ApiService.getCurrentUserId();
+      if (uid != null) {
+        try {
+          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
+            permanentPhotoPath, uid, 'rider',
+          );
+          await FirebaseStorageService.updateFirestorePhotoUrl(uid, firebaseUrl, 'rider');
+          await PhotoRecoveryService.savePhotoEveryWhere(uid.toString(), 'rider', firebaseUrl);
+          UserSession.photoUrlNotifier.value = firebaseUrl;
+          await UserSession.updateField('photoUrl', firebaseUrl);
+        } catch (e) {
+          debugPrint('Firebase photo sync failed: $e');
+        }
       }
     }
 

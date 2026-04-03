@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/firebase_storage_service.dart';
+import '../../services/photo_recovery_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 
@@ -82,6 +84,19 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
       final url = await ApiService.uploadPhoto(file.path);
       // Persist photo locally so it survives reinstall/update
       await UserSession.saveProfilePhoto(file.path);
+      // Sync to Firebase Storage + Firestore for cross-device availability
+      final userId = await ApiService.getCurrentUserId();
+      if (userId != null) {
+        try {
+          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
+            file.path, userId, 'driver',
+          );
+          await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, 'driver');
+          await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), 'driver', firebaseUrl);
+          UserSession.photoUrlNotifier.value = firebaseUrl;
+          await UserSession.updateField('photoUrl', firebaseUrl);
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _photoUrl = url;

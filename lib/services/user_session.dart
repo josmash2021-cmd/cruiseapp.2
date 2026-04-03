@@ -448,9 +448,14 @@ class UserSession {
       foundLocal = true;
     }
 
-    // If we have either a URL or local path, the UI can render now.
-    // Network fallback runs in background — never blocks.
-    if (cachedUrl.isEmpty || !foundLocal) {
+    // If we have BOTH a URL and local path, the UI can render — skip network.
+    // If we have a URL but no local file, fetch file in background (URL is enough for UI).
+    // If we have NO URL at all (new device), we MUST await network to get the photo.
+    if (cachedUrl.isEmpty && !foundLocal) {
+      // New device — no photo at all. Await network so UI shows photo immediately.
+      await _fetchPhotoFromNetwork(uid, prefs, true);
+    } else if (cachedUrl.isEmpty || !foundLocal) {
+      // Have one but not the other — background fetch is fine.
       unawaited(_fetchPhotoFromNetwork(uid, prefs, cachedUrl.isEmpty));
     }
   }

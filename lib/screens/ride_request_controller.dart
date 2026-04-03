@@ -229,7 +229,7 @@ extension _RideRequestController on _RideRequestScreenState {
         // Draw polyline + cinematic only when REAL route arrives (once).
         if (hasRealRoute) {
           _fetchingRoute = false;
-          if (!_cinematicDone) {
+          if (!_cinematicDone && !_cinematicRunning) {
             _drawRoute();
           }
         }
@@ -1016,38 +1016,49 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   /// Credit/debit card: authorize (hold) saved card via Stripe PaymentIntent.
+  /// Falls back to card sheet if no saved card or if server-side confirm fails.
   Future<bool> _confirmCard(int amountCents) async {
     final pmId = await LocalDataService.getStripePaymentMethodId();
     if (!mounted) return false;
+    // If no saved card, fall back to the Stripe card sheet
     if (pmId == null || pmId.isEmpty) {
-      throw Exception(S.of(context).pleaseAddPaymentFirst);
+      return _confirmCardSheet(amountCents, 'Cruise');
     }
 
-    final piResult = await ApiService.createPaymentIntent(
-      amountCents: amountCents,
-      paymentMethodId: pmId,
-      holdOnly: true,
-    );
-    _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
-    final clientSecret = piResult['client_secret'] as String?;
-    final status = piResult['status'] as String?;
-    if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
+    try {
+      final piResult = await ApiService.createPaymentIntent(
+        amountCents: amountCents,
+        paymentMethodId: pmId,
+        holdOnly: true,
+      );
+      _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
+      final clientSecret = piResult['client_secret'] as String?;
+      final status = piResult['status'] as String?;
+      if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
 
-    // If already succeeded (confirmed server-side), done
-    if (status == 'succeeded') return true;
+      // If already succeeded (confirmed server-side), done
+      if (status == 'succeeded') return true;
 
-    // If requires_action (3D Secure), handle it client-side
-    if (status == 'requires_action') {
-      try {
-        await stripe.Stripe.instance.handleNextAction(clientSecret);
-        return true;
-      } on stripe.StripeException catch (e) {
-        if (e.error.code == stripe.FailureCode.Canceled) return false;
-        rethrow;
+      // If requires_capture (hold authorized), done
+      if (status == 'requires_capture') return true;
+
+      // If requires_action (3D Secure), handle it client-side
+      if (status == 'requires_action') {
+        try {
+          await stripe.Stripe.instance.handleNextAction(clientSecret);
+          return true;
+        } on stripe.StripeException catch (e) {
+          if (e.error.code == stripe.FailureCode.Canceled) return false;
+          rethrow;
+        }
       }
-    }
 
-    return true;
+      return true;
+    } catch (e) {
+      debugPrint('[Card] Saved card failed: $e — falling back to card sheet');
+      // Fall back to card sheet on any failure
+      return _confirmCardSheet(amountCents, 'Cruise');
+    }
   }
 
   /// Creates a scheduled trip via the backend API and navigates to the scheduled rides list.

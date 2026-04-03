@@ -597,7 +597,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     _hasAppliedSelectionTilt = false;
     _labelsRevealed = false;
 
-    // Stop running controllers
+    // Remove listeners then stop running controllers
+    _tiltAnim?.removeListener(_applyMapCamera);
     _tiltCtrl?.stop();
     _bearingCtrl?.stop();
     _pinPopCtrl?.stop();
@@ -661,6 +662,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (!mounted) { _cinematicRunning = false; return; }
 
     // 3. Tilt 0° → 55° + bearing 0° → random, simultaneously (slightly slower)
+    _tiltAnim?.removeListener(_applyMapCamera);
     _tiltCtrl?.dispose();
     _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
     _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(

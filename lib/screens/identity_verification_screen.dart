@@ -566,6 +566,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           key: const ValueKey(2),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 60),
               // Animated check
@@ -608,6 +609,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
               const SizedBox(height: 28),
               Text(
                 'Identity Verified!',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -725,7 +727,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       key: const ValueKey(3),
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Spacer(flex: 2),
           // Animated clock icon
@@ -750,6 +752,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           const SizedBox(height: 32),
           Text(
             'Pending Review',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
@@ -773,6 +776,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           const Spacer(flex: 2),
           Text(
             'You\'ll be notified when the review is complete',
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: c.textTertiary),
           ),
           const SizedBox(height: 24),
@@ -789,6 +793,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       key: const ValueKey(4),
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const SizedBox(height: 8),
           Align(
@@ -827,6 +832,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           const SizedBox(height: 32),
           Text(
             'Verification Not Approved',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w800,

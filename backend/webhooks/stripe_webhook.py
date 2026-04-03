@@ -134,6 +134,19 @@ async def _handle_payment_intent_failed(data_object: dict, client_ip: str):
     logging.warning("[StripeWH] Trip %s payment failed: %s", trip_id, error_msg)
     _security_audit_log("stripe_payment_failed", client_ip, f"trip={trip_id} pi={payment_intent_id} err={error_msg[:100]}")
 
+    # Alert admin about payment failure
+    try:
+        from services.admin_alerts import send_alert, CRITICAL
+        asyncio.create_task(send_alert(
+            alert_type="payment_failed",
+            title="Payment Failed",
+            message=f"Trip #{trip_id} payment failed: {error_msg[:100]}",
+            severity=CRITICAL,
+            data={"trip_id": str(trip_id), "error": error_msg[:100]},
+        ))
+    except Exception:
+        pass
+
 
 async def _handle_charge_refunded(data_object: dict, client_ip: str):
     """charge.refunded — update trip with refund amount."""

@@ -261,6 +261,18 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         trip.payment_status = "failed"
         await db.commit()
         logging.error("[Charge] Stripe error for trip %s: %s", trip.id, e)
+        # Alert admin about payment failure
+        try:
+            from services.admin_alerts import send_alert, CRITICAL
+            asyncio.create_task(send_alert(
+                alert_type="stripe_charge_failed",
+                title="Stripe Charge Failed",
+                message=f"Trip #{trip.id} charge failed: {str(e)[:100]}",
+                severity=CRITICAL,
+                data={"trip_id": str(trip.id), "amount_cents": str(amount_cents)},
+            ))
+        except Exception:
+            pass
         return {"status": "failed", "error": str(getattr(e, "user_message", None) or e)}
 
 

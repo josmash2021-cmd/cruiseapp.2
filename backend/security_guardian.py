@@ -93,6 +93,19 @@ class RateLimiter:
         self._blocked_ips[ip] = time.time() + duration
         _save_blocked_ips(self._blocked_ips)
         logger.critical(f"🔒 IP BLOCKED: {ip} for {duration}s — reason: {reason}")
+        # Alert admin about security threat
+        try:
+            import asyncio
+            from services.admin_alerts import send_alert, HIGH
+            asyncio.create_task(send_alert(
+                alert_type="security_ip_blocked",
+                title="IP Blocked",
+                message=f"IP {ip} blocked for {duration}s — {reason}",
+                severity=HIGH,
+                data={"ip": ip, "reason": reason},
+            ))
+        except Exception:
+            pass
 
     def check_rate(self, ip: str, endpoint: str = "", user_id: str = None) -> Tuple[bool, str]:
         """Returns (is_allowed, reason). is_allowed=True means request can proceed."""

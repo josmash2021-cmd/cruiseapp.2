@@ -575,6 +575,16 @@ class RequestGuardian:
                 logger.critical(f"🚨 5 CONSECUTIVE FAILURES — triggering emergency check")
                 if self._emergency_callback:
                     asyncio.create_task(self._run_emergency_check())
+                try:
+                    from services.admin_alerts import send_alert, CRITICAL
+                    asyncio.create_task(send_alert(
+                        alert_type="server_errors",
+                        title="5 Consecutive Server Errors",
+                        message=f"Last: {request.method} {path} — status {response.status_code}",
+                        severity=CRITICAL,
+                    ))
+                except Exception:
+                    pass
                 self._consecutive_failures = 0
 
             return response

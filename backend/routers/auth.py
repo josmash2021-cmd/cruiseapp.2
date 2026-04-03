@@ -572,6 +572,21 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
     if not user:
         raise HTTPException(404, "User not found")
 
+    # Recover photo_url from Firestore if missing in DB
+    if not user.photo_url and _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if user.role == "driver" else "clients"
+            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
+            if doc.exists:
+                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
+                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
+                    user.photo_url = fs_photo
+                    await db.commit()
+                    await db.refresh(user)
+                    logging.info("Recovered photo_url from Firestore for user %s", user.id)
+        except Exception as e:
+            logging.warning("Firestore photo recovery failed for user %s: %s", user.id, e)
+
     token = _create_token(user.id, role=user.role, status=user.status or "active")
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
@@ -737,6 +752,23 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
                     pass
         except Exception:
             pass
+
+    # Recover photo_url from Firestore if missing in DB
+    if not user.photo_url and _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if user.role == "driver" else "clients"
+            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
+            if doc.exists:
+                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
+                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
+                    user.photo_url = fs_photo
+                    await db.execute(
+                        User.__table__.update().where(User.__table__.c.id == user.id).values(photo_url=fs_photo)
+                    )
+                    await db.commit()
+        except Exception:
+            pass
+
     return _user_dict(user)
 
 @router.post("/auth/offline", dependencies=[Depends(_verify_api_key)])

@@ -32,7 +32,7 @@ else:
     _engine_kwargs["pool_size"] = 8            # stay within Railway's connection limit
     _engine_kwargs["max_overflow"] = 12        # max 20 total connections
     _engine_kwargs["pool_pre_ping"] = True
-    _engine_kwargs["pool_recycle"] = 300       # recycle every 5 min (before Railway kills idle)
+    _engine_kwargs["pool_recycle"] = 600       # recycle every 10 min — keeps connections warm longer
     _engine_kwargs["pool_timeout"] = 8         # fail fast instead of queuing for 30s
     _engine_kwargs["pool_use_lifo"] = True     # reuse warm connections first
     _engine_kwargs["connect_args"] = {

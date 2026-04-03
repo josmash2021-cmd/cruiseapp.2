@@ -313,8 +313,17 @@ async def _handle_message(text: str):
 async def _health_check_loop():
     """Periodic health checks — alerts on critical issues."""
     consecutive_db_fails = 0
-    # Wait extra at startup so the event loop is not busy with initialization
-    await asyncio.sleep(60)
+    # Wait for server initialization, then warm up the pool with a real connection
+    await asyncio.sleep(30)
+    try:
+        from models.database import SessionLocal
+        from sqlalchemy import text as _text
+        async with SessionLocal() as _db:
+            await _db.execute(_text("SELECT 1"))
+        logger.info("[MonitorBot] Pool warm-up done")
+    except Exception as e:
+        logger.warning("[MonitorBot] Pool warm-up failed: %s", e)
+    await asyncio.sleep(30)
 
     while True:
         try:

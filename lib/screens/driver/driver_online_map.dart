@@ -363,8 +363,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1: Camera zoom to fit route (immediate) ──
+    // ── PHASE 1: Camera zoom to fit route (smooth) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 2: Place pins + start route draw in parallel ──
     final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
@@ -419,7 +421,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _animatePinPop() async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
-    const totalMs = 600;
+    const totalMs = 800;
     final stopwatch = Stopwatch()..start();
     final completer = Completer<void>();
 
@@ -475,7 +477,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 1000;
+    const totalMs = 1500;
 
     mapbox.PolylineAnnotation? mainLine;
     int lastCount = 0;

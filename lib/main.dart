@@ -53,16 +53,60 @@ final _navigatorKey = GlobalKey<NavigatorState>();
 /// Background FCM handler — runs in a separate Dart isolate when the app is
 /// killed or backgrounded. Shows a local offer notification with the distinct
 /// cruise_offer.wav sound so the driver is alerted even when not in the app.
+/// Fallback titles for push notifications when backend sends no title.
+String _riderNotifTitle(String type) => switch (type) {
+  // ── Rider notifications ──
+  'driver_assigned'    => 'Driver Assigned',
+  'driver_arriving'    => 'Driver Is Almost There',
+  'driver_arrived'     => 'Driver Has Arrived',
+  'driver_found'       => 'Driver Found',
+  'arrived_dropoff'    => 'You Have Arrived',
+  'fast_ride'          => 'Drivers Available Nearby',
+  'driver_cancelled' || 'ride_reassigned' => 'Ride Update',
+  // ── Driver notifications ──
+  'trip_offer' || 'new_offer' => 'New Ride Offer',
+  'rider_cancelled'    => 'Ride Cancelled',
+  'scheduled_cancelled' => 'Scheduled Ride Cancelled',
+  'tip_received'       => 'You Got a Tip!',
+  'level_up'           => 'Level Up!',
+  'level_down'         => 'Level Update',
+  'instant_cashout'    => 'Instant Cashout',
+  _ => 'Cruise',
+};
+
+/// Fallback bodies for push notifications when backend sends no body.
+String _riderNotifBody(String type) => switch (type) {
+  // ── Rider notifications ──
+  'driver_assigned'    => 'A driver has been assigned to your ride.',
+  'driver_arriving'    => 'Your driver is almost at the pickup location.',
+  'driver_arrived'     => 'Your driver is at the pickup location.',
+  'driver_found'       => 'We found a driver for your ride!',
+  'arrived_dropoff'    => 'You have arrived at your destination. Thanks for riding with Cruise!',
+  'fast_ride'          => 'There are drivers near you — request a ride now!',
+  'driver_cancelled'   => 'Your driver cancelled. We are assigning a new driver.',
+  'ride_reassigned'    => 'A new driver is being assigned to your ride.',
+  // ── Driver notifications ──
+  'trip_offer' || 'new_offer' => 'A rider needs a ride — open Cruise to accept.',
+  'rider_cancelled'    => 'The rider has cancelled the ride.',
+  'scheduled_cancelled' => 'A scheduled ride has been cancelled by the rider.',
+  'tip_received'       => 'A rider left you a tip. Keep up the great work!',
+  'level_up'           => 'Congratulations! You leveled up in Cruise.',
+  'level_down'         => 'Your driver level has changed. Check the app for details.',
+  'instant_cashout'    => 'Your instant cashout has been processed successfully.',
+  _ => '',
+};
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   final type = message.data['type'] as String? ?? '';
+  final plugin = FlutterLocalNotificationsPlugin();
+  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await plugin.initialize(
+    settings: const InitializationSettings(android: androidSettings),
+  );
+
   if (type == 'trip_offer' || type == 'new_offer') {
-    final plugin = FlutterLocalNotificationsPlugin();
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await plugin.initialize(
-      settings: const InitializationSettings(android: androidSettings),
-    );
     final title = message.notification?.title ?? 'New Trip Request';
     final body = message.notification?.body ?? 'A rider needs a ride — open Cruise to accept.';
     await plugin.show(
@@ -93,6 +137,56 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         ),
       ),
       payload: 'trip_offer',
+    );
+  }
+
+  // System push notifications for rider + driver (show even when app is killed)
+  const riderTypes = {
+    // Rider
+    'driver_assigned',
+    'driver_arriving',
+    'driver_arrived',
+    'driver_found',
+    'arrived_dropoff',
+    'fast_ride',
+    'driver_cancelled',
+    'ride_reassigned',
+    // Driver
+    'rider_cancelled',
+    'scheduled_cancelled',
+    'tip_received',
+    'level_up',
+    'level_down',
+    'instant_cashout',
+  };
+  if (riderTypes.contains(type)) {
+    final title = message.notification?.title ?? message.data['title'] ?? _riderNotifTitle(type);
+    final body = message.notification?.body ?? message.data['body'] ?? _riderNotifBody(type);
+    await plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'cruise_premium',
+          'Cruise Notifications',
+          channelDescription: 'Ride status updates',
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound('cruise_notification'),
+          enableVibration: true,
+          color: Color(0xFFE8C547),
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      ),
+      payload: type,
     );
   }
 }
@@ -295,9 +389,13 @@ Future<void> heavyInit() async {
           if (kDebugMode) debugPrint('[FCM] token: $fcmToken');
 
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-            final title = message.notification?.title ?? 'Cruise';
-            final body = message.notification?.body ?? '';
             final type = message.data['type'] as String? ?? 'general';
+            final title = message.notification?.title ??
+                message.data['title'] ??
+                _riderNotifTitle(type);
+            final body = message.notification?.body ??
+                message.data['body'] ??
+                _riderNotifBody(type);
 
             // Suppress chat notification if user is already in that chat
             if (type == 'chat_message') {

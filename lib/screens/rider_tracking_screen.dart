@@ -237,6 +237,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   StreamSubscription? _rtdbDriverLocSub;
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
+  Timer? _rideSaveTimer;
 
   late AnimationController _etaPulse;
 
@@ -287,6 +288,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _fallbackTripStatusSub?.cancel();
     _tripSseSub?.cancel();
     _statusPollTimer?.cancel();
+    _rideSaveTimer?.cancel();
     _saveStateTimer?.cancel();
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();

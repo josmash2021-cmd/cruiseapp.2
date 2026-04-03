@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../config/page_transitions.dart';
 import 'home_screen.dart';
-import 'scheduled_rides_screen.dart';
 
 /// Confirmation screen shown after rider books a scheduled ride.
+/// Styled like "Viaje Aceptado" — gold check, bold title, auto-fades to home.
 class RideBookingConfirmedScreen extends StatefulWidget {
   final DateTime scheduledAt;
   final String pickupAddress;
@@ -28,243 +27,250 @@ class RideBookingConfirmedScreen extends StatefulWidget {
 }
 
 class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
-    with SingleTickerProviderStateMixin {
-  static const _gold = Color(0xFFD4AF37);
+    with TickerProviderStateMixin {
+  static const _gold = Color(0xFFE8C547);
 
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-  late Animation<double> _fadeAnim;
+  late AnimationController _enterCtrl;
+  late Animation<double> _checkScale;
+  late Animation<double> _checkFade;
+  late Animation<double> _textFade;
+  late Animation<double> _cardSlide;
+
+  late AnimationController _fadeOutCtrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
+
+    // ── Enter animations ──
+    _enterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    _checkScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.2)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.2, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 45,
+      ),
+    ]).animate(_enterCtrl);
+
+    _checkFade = CurvedAnimation(
+      parent: _enterCtrl,
+      curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
+    );
+
+    _textFade = CurvedAnimation(
+      parent: _enterCtrl,
+      curve: const Interval(0.25, 0.65, curve: Curves.easeOut),
+    );
+
+    _cardSlide = CurvedAnimation(
+      parent: _enterCtrl,
+      curve: const Interval(0.4, 0.85, curve: Curves.easeOutCubic),
+    );
+
+    // ── Fade-out to home ──
+    _fadeOutCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
 
-    _scaleAnim = TweenSequence<double>([
-      TweenSequenceItem(
-        tween:
-            Tween(begin: 0.0, end: 1.15).chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 60,
-      ),
-      TweenSequenceItem(
-        tween:
-            Tween(begin: 1.15, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 40,
-      ),
-    ]).animate(_ctrl);
+    _enterCtrl.forward();
 
-    _fadeAnim = CurvedAnimation(
-      parent: _ctrl,
-      curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
-    );
-
-    _ctrl.forward();
+    // Auto-navigate after 3.5 seconds
+    Future.delayed(const Duration(milliseconds: 3500), () {
+      if (!mounted) return;
+      _fadeOutCtrl.forward().then((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomeScreen(),
+            transitionDuration: Duration.zero,
+          ),
+          (_) => false,
+        );
+      });
+    });
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _enterCtrl.dispose();
+    _fadeOutCtrl.dispose();
     super.dispose();
-  }
-
-  String _formatDateTime(DateTime dt) {
-    return DateFormat('EEEE, MMM d · h:mm a').format(dt);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0D1A),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Spacer(),
+    final timeStr = DateFormat('EEEE, MMM d · h:mm a').format(widget.scheduledAt);
 
-              // Animated checkmark
-              FadeTransition(
-                opacity: _fadeAnim,
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _gold.withValues(alpha: 0.15),
-                    border: Border.all(color: _gold, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.3),
-                        blurRadius: 30,
-                        spreadRadius: 5,
+    return AnimatedBuilder(
+      animation: _fadeOutCtrl,
+      builder: (context, child) => Opacity(
+        opacity: 1.0 - _fadeOutCtrl.value,
+        child: child,
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0D1A),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Animated gold check circle ──
+                  AnimatedBuilder(
+                    animation: _enterCtrl,
+                    builder: (context, child) => FadeTransition(
+                      opacity: _checkFade,
+                      child: ScaleTransition(
+                        scale: _checkScale,
+                        child: child,
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: _gold,
-                    size: 52,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Title
-              FadeTransition(
-                opacity: _fadeAnim,
-                child: const Text(
-                  'Ride Booked!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Subtitle
-              FadeTransition(
-                opacity: _fadeAnim,
-                child: const Text(
-                  'We\'ll send you a notification once\nwe have a driver available for your ride.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white60,
-                    fontSize: 15,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Ride details card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1F35),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _gold.withValues(alpha: 0.2)),
-                ),
-                child: Column(
-                  children: [
-                    _buildDetailRow(
-                      Icons.access_time_rounded,
-                      'Date & Time',
-                      _formatDateTime(widget.scheduledAt),
                     ),
-                    Divider(color: Colors.white.withValues(alpha: 0.06)),
-                    _buildDetailRow(
-                      Icons.location_on_rounded,
-                      'Pickup',
-                      widget.pickupAddress,
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _gold.withValues(alpha: 0.12),
+                        border: Border.all(color: _gold, width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.35),
+                            blurRadius: 40,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: _gold,
+                        size: 54,
+                      ),
                     ),
-                    Divider(color: Colors.white.withValues(alpha: 0.06)),
-                    _buildDetailRow(
-                      Icons.flag_rounded,
-                      'Destination',
-                      widget.dropoffAddress,
-                    ),
-                    Divider(color: Colors.white.withValues(alpha: 0.06)),
-                    _buildDetailRow(
-                      Icons.directions_car_rounded,
-                      'Vehicle',
-                      '${widget.vehicleType} · \$${widget.fare.toStringAsFixed(2)}',
-                    ),
-                  ],
-                ),
-              ),
+                  ),
 
-              const SizedBox(height: 16),
+                  const SizedBox(height: 28),
 
-              // Status badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.schedule_rounded, color: Colors.orange, size: 16),
-                    SizedBox(width: 8),
-                    Text(
-                      'Pending driver assignment',
+                  // ── Title ──
+                  FadeTransition(
+                    opacity: _textFade,
+                    child: const Text(
+                      'Ride Reservado',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.orange,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                        color: _gold,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
 
-              const Spacer(),
+                  const SizedBox(height: 14),
 
-              // View scheduled rides button
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      slideFromRightRoute(const ScheduledRidesScreen()),
-                      (route) => route.isFirst,
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  // ── Subtitle ──
+                  FadeTransition(
+                    opacity: _textFade,
+                    child: const Text(
+                      'Te notificaremos cuando ya tengas\nun driver asignado',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 15,
+                        height: 1.5,
+                      ),
                     ),
                   ),
-                  child: const Text(
-                    'View My Bookings',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+
+                  const SizedBox(height: 32),
+
+                  // ── Ride details card ──
+                  SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.3),
+                      end: Offset.zero,
+                    ).animate(_cardSlide),
+                    child: FadeTransition(
+                      opacity: _cardSlide,
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF151929),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            _row(Icons.access_time_rounded, timeStr),
+                            _divider(),
+                            _row(Icons.location_on_rounded, widget.pickupAddress),
+                            _divider(),
+                            _row(Icons.flag_rounded, widget.dropoffAddress),
+                            _divider(),
+                            _row(
+                              Icons.directions_car_rounded,
+                              '${widget.vehicleType} · \$${widget.fare.toStringAsFixed(2)}',
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Status badge ──
+                  FadeTransition(
+                    opacity: _cardSlide,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _gold.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.schedule_rounded, color: _gold, size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'Pendiente de asignacion',
+                            style: TextStyle(
+                              color: _gold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-
-              const SizedBox(height: 12),
-
-              // Back to home
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    slideFromRightRoute(const HomeScreen()),
-                    (_) => false,
-                  );
-                },
-                child: const Text(
-                  'Back to Home',
-                  style: TextStyle(color: Colors.white54, fontSize: 14),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
+  Widget _row(IconData icon, String text) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
@@ -272,28 +278,22 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
           Icon(icon, color: _gold, size: 18),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _divider() =>
+      Divider(color: Colors.white.withValues(alpha: 0.06), height: 1);
 }

@@ -8,12 +8,12 @@ class Env {
   static const String emailjsTemplateId = 'template_oucb3n9';
   static const String emailjsPublicKey = '5R65y1qr1-lXDwGRb';
   static const String emailjsPrivateKey = 'xeR8WDCTgskv9g9ITzote';
-  static const String stripePublishableKey = '';
-  static const String stripeMerchantId = '';
+  static const String stripePublishableKey = 'pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo';
+  static const String stripeMerchantId = 'merchant.com.cruise.app';
   static const String twilioAccountSid = '';
   static const String twilioAuthToken = '';
   static const String twilioServiceSid = '';
-  static const bool paypalSandbox = true;
+  static const bool paypalSandbox = false;
   static const String paypalClientId = '';
   static const String paypalSecret = '';
 }

@@ -64,27 +64,29 @@ class EmailService {
     }
 
     try {
+      final payload = {
+        'service_id': _serviceId,
+        'template_id': _templateId,
+        'user_id': _publicKey,
+        'accessToken': _privateKey,
+        'template_params': {
+          'to_email': toEmail,
+          'to_name': toName,
+          'name': toName,
+          'code': code,
+          'verification_code': code,
+        },
+      };
+
+      if (kDebugMode) {
+        debugPrint('📧 EmailJS payload: ${jsonEncode(payload)}');
+      }
+
       final response = await http.post(
         Uri.parse(_apiUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'origin': 'http://localhost',
-          'User-Agent': 'Mozilla/5.0',
-        },
-        body: jsonEncode({
-          'service_id': _serviceId,
-          'template_id': _templateId,
-          'user_id': _publicKey,
-          'accessToken': _privateKey,
-          'template_params': {
-            'to_email': toEmail,
-            'to_name': toName,
-            'name': toName,
-            'code': code,
-            'verification_code': code,
-          },
-        }),
-      ).timeout(const Duration(seconds: 8));
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         debugPrint('✅ Verification code sent to $toEmail');

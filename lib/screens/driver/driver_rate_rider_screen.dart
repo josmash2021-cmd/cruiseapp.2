@@ -54,12 +54,12 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   late final Animation<double> _fadeAnim;
 
   static const _tags = [
-    '👍 Puntual',
-    '😊 Amable',
-    '🤫 Respetuoso',
-    '🧹 Orden',
-    '💬 Buen trato',
-    '⭐ Excelente rider',
+    'Puntual',
+    'Amable',
+    'Respetuoso',
+    'Orden',
+    'Buen trato',
+    'Excelente rider',
   ];
 
   @override
@@ -202,7 +202,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
                   _buildAvatar(),
                   SizedBox(height: Responsive.h(20)),
                   Text(
-                    '¿Cómo fue tu viaje\ncon $_firstName?',
+                    '¿Cómo fue tu viaje\nllevando a $_firstName?',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,

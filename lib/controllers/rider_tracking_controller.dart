@@ -139,6 +139,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     // Start chase camera follow timer (backs up per-GPS-update follow)
     _startCameraFollowTracking();
+
+    // Periodically persist ride state so app resumption restores correct position
+    _rideSaveTimer?.cancel();
+    _rideSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && _phase != _TrackPhase.completed) _saveRideState();
+    });
   }
 
   /// Process real-time driver location from RTDB.
@@ -363,6 +369,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _etaMinutes = 0;
         _distanceMiles = 0;
       });
+      _saveRideState();
       // FIX 2: Start the pulsing dot animation and handle arrival visuals
       _arrivedDotPulse.repeat(reverse: true);
       // Fade route polyline and zoom camera to driver location
@@ -389,6 +396,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _phase = _TrackPhase.onTrip;
         _tripJustStarted = true;
       });
+      _saveRideState();
       _tripStartedTimer?.cancel();
       _tripStartedTimer = Timer(const Duration(seconds: 2), () {
         if (mounted) _setState(() => _tripJustStarted = false);
@@ -816,9 +824,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       driverLat: _animPos.latitude,
       driverLng: _animPos.longitude,
       traveledMeters: _traveledM,
-      driverPhotoUrl: activeRide.driverPhotoUrl,
+      driverPhotoUrl: _driverPhotoUrl ?? activeRide.driverPhotoUrl,
       driverId: activeRide.driverId,
-      etaMinutes: activeRide.etaMinutes,
+      etaMinutes: _etaMinutes,
     );
 
     await LocalDataService.setActiveRide(updatedRide);

@@ -162,12 +162,15 @@ class _LoginScreenState extends State<LoginScreen> {
     // Also notify backend (stores registration intent, may send its own email too)
     ApiService.sendOtp(email: email);
 
+    // Send the code via EmailJS
+    final sent = await EmailService.sendVerificationCode(toEmail: email, code: code);
     if (!mounted) return;
     setState(() => _sending = false);
 
-    // Send the code via EmailJS
-    await EmailService.sendVerificationCode(toEmail: email, code: code);
-    if (!mounted) return;
+    if (!sent) {
+      _showSnack('Could not send verification email. Please try again.', Colors.redAccent);
+      return;
+    }
 
     _showSnack('Code sent to $email', const Color(0xFFE8C547));
 
@@ -596,14 +599,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     onPressed: _socialLoading ? null : _signInWithGoogle,
-                    icon: Image.asset(
-                      'assets/images/google_logo.png',
+                    icon: SizedBox(
                       width: 22,
                       height: 22,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.g_mobiledata,
-                        size: 28,
-                        color: c.textPrimary,
+                      child: Image.asset(
+                        'assets/images/google_logo.png',
+                        fit: BoxFit.contain,
                       ),
                     ),
                     label: const Text(

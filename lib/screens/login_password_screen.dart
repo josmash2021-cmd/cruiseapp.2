@@ -205,9 +205,14 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       }
     } else {
       final code = _generateCode();
-      await EmailService.sendVerificationCode(toEmail: contact, code: code);
+      final sent = await EmailService.sendVerificationCode(toEmail: contact, code: code);
       if (!mounted) return;
       setState(() => _loading = false);
+
+      if (!sent) {
+        setState(() => _errorText = 'Could not send verification email. Please try again.');
+        return;
+      }
 
       Navigator.of(context).push(
         slideFromRightRoute(
@@ -741,14 +746,12 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Image.asset(
-                          'assets/images/google_logo.png',
+                      : SizedBox(
                           width: 22,
                           height: 22,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.g_mobiledata,
-                            size: 28,
-                            color: c.textPrimary,
+                          child: Image.asset(
+                            'assets/images/google_logo.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
                   label: const Text(

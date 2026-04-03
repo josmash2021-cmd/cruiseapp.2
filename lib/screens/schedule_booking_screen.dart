@@ -27,7 +27,6 @@ import '../services/user_session.dart';
 import '../utils/app_toast.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
-import 'scheduled_rides_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 
@@ -642,18 +641,23 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
       if (!mounted) return;
 
-      // Show success toast at top (uses root overlay — survives navigation)
-      AppToast.success(
-        context,
-        S.of(context).scheduledForDate(
-          DateFormat('MMM d · h:mm a').format(widget.scheduledAt),
+      // Navigate to confirmation screen (auto-fades to home after 3.5s)
+      final fareVal = fare;
+      final vehicleName = _rides[_selectedRide].name;
+      Navigator.of(context).pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => RideBookingConfirmedScreen(
+            scheduledAt: widget.scheduledAt,
+            pickupAddress: _pickupAddress,
+            dropoffAddress: _dropoffAddress,
+            vehicleType: vehicleName,
+            fare: fareVal,
+          ),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 500),
         ),
-      );
-
-      // Navigate immediately to ScheduledRidesScreen with booking ready
-      Navigator.of(context).popUntil((r) => r.isFirst);
-      Navigator.of(context).push(
-        slideFromRightRoute(const ScheduledRidesScreen()),
+        (_) => false,
       );
     } catch (e) {
       if (mounted) _showErr(S.of(context).failedToBook('$e'));

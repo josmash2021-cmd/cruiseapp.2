@@ -21,7 +21,7 @@ data:
         parameters:
           gateway: stripe
           stripe:version: "2018-10-31"
-          stripe:publishableKey: "pk_test_REPLACE_WITH_YOUR_KEY"
+          stripe:publishableKey: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
   merchantInfo:
     merchantName: "Cruise"
   transactionInfo:

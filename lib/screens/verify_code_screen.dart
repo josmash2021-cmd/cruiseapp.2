@@ -146,11 +146,16 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       final otpResult = await ApiService.sendOtp(email: widget.email);
       if (!mounted) return;
       final code = otpResult['code'] as String?;
+      bool sent = false;
       if (code != null) {
-        await EmailService.sendVerificationCode(toEmail: widget.email, code: code);
+        sent = await EmailService.sendVerificationCode(toEmail: widget.email, code: code);
       }
       if (!mounted) return;
-      _showSnack('Code resent to ${widget.email}', const Color(0xFFE8C547));
+      if (sent) {
+        _showSnack('Code resent to ${widget.email}', const Color(0xFFE8C547));
+      } else {
+        _showSnack('Failed to resend email. Try again.', Colors.white.withValues(alpha: 0.6));
+      }
     }
 
     if (!mounted) return;

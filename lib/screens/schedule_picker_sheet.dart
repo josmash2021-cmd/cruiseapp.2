@@ -317,13 +317,13 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
         colorScheme: widget.isDark
             ? ColorScheme.dark(
                 primary: _gold,
-                onPrimary: Colors.white,
+                onPrimary: const Color(0xFF1A1400),
                 surface: _bg,
                 onSurface: Colors.white,
               )
             : ColorScheme.light(
                 primary: _gold,
-                onPrimary: Colors.white,
+                onPrimary: const Color(0xFF1A1400),
                 surface: _bg,
                 onSurface: const Color(0xFF1A1D24),
               ),

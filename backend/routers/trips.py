@@ -24,22 +24,39 @@ from config import (
 
 router = APIRouter()
 
-PLATFORM_COMMISSION_RATE = 0.60
-DRIVER_SHARE_RATE = 0.40
+# Commission splits by vehicle type
+# Comfort: driver 60% / platform 40%
+# Premium: driver 65% / platform 35%
+# VIP:     driver 70% / platform 30%
+_COMMISSION_BY_TYPE = {
+    "comfort":  (0.40, 0.60),  # (platform_rate, driver_rate)
+    "premium":  (0.35, 0.65),
+    "vip":      (0.30, 0.70),
+}
+_DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
+
+def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
+    """Return (platform_rate, driver_rate) for the given vehicle type."""
+    return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)
+
+# Legacy constants kept for backward-compat in places that don't have vehicle_type
+PLATFORM_COMMISSION_RATE = 0.40
+DRIVER_SHARE_RATE = 0.60
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
     """Return trip payload for drivers without exposing rider gross fare."""
     data = _trip_dict(trip)
     tip = float(trip.tip_amount or 0.0)
+    platform_rate, driver_rate = _get_commission(getattr(trip, "vehicle_type", None))
     if trip.driver_earnings is not None:
         visible_fare = round(float(trip.driver_earnings), 2)
     else:
-        visible_fare = round((float(trip.fare or 0.0) * DRIVER_SHARE_RATE) + tip, 2)
+        visible_fare = round((float(trip.fare or 0.0) * driver_rate) + tip, 2)
     data["fare"] = visible_fare
     data["driver_earnings"] = visible_fare
     if trip.platform_fee is None and trip.fare is not None:
-        data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
+        data["platform_fee"] = round(float(trip.fare or 0.0) * platform_rate, 2)
     return data
 
 
@@ -374,12 +391,12 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         raise HTTPException(404, "Trip not found")
     trip.status = status
     trip.updated_at = datetime.now(timezone.utc)
-    # Auto-calculate earnings split (60% platform / 40% driver)
+    # Auto-calculate earnings split based on vehicle type
     if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
-        platform_rate = PLATFORM_COMMISSION_RATE
+        platform_rate, driver_rate = _get_commission(getattr(trip, "vehicle_type", None))
         tip = trip.tip_amount or 0.0
         trip.platform_fee = round(trip.fare * platform_rate, 2)
-        trip.driver_earnings = round((trip.fare * (1 - platform_rate)) + tip, 2)
+        trip.driver_earnings = round((trip.fare * driver_rate) + tip, 2)
         _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
         _drv = _drv_res.scalar_one_or_none()
         if _drv:
@@ -720,13 +737,57 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     if existing.scalar_one_or_none():
         raise HTTPException(409, "Already rated this trip")
 
+    tip_amount = float(body.get("tip_amount", 0.0))
+
+    # ── Charge tip via Stripe if rider is rating and leaving a tip ──
+    stripe_tip_status = "skipped"
+    if tip_amount > 0 and user.id == trip.rider_id and _HAS_STRIPE:
+        pm_r = await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == trip.rider_id,
+                RiderPaymentMethod.method_type == "stripe_card",
+                RiderPaymentMethod.stripe_pm_id.isnot(None),
+            ).order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.asc())
+        )
+        pm = pm_r.scalars().first()
+        if pm:
+            tip_cents = max(int(tip_amount * 100), 50)
+            try:
+                intent = _stripe_mod.PaymentIntent.create(
+                    amount=tip_cents,
+                    currency="usd",
+                    payment_method=pm.stripe_pm_id,
+                    confirm=True,
+                    off_session=True,
+                    automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+                    metadata={"trip_id": str(trip.id), "rider_id": str(trip.rider_id), "type": "tip"},
+                )
+                stripe_tip_status = intent.status
+                logging.info("[Tip] Trip %s rating tip $%.2f charged", trip.id, tip_amount)
+            except _stripe_mod.error.StripeError as e:
+                logging.error("[Tip] Stripe charge failed on rate for trip %s: %s", trip.id, e)
+                # Don't block the rating if tip charge fails, just log it
+                tip_amount = 0.0
+                stripe_tip_status = "failed"
+
+    # ── Credit tip 100% to driver (no commission) ──
+    if tip_amount > 0 and trip.driver_id:
+        trip.tip_amount = round((trip.tip_amount or 0.0) + tip_amount, 2)
+        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        drv = drv_res.scalar_one_or_none()
+        if drv:
+            drv.pending_balance = round((drv.pending_balance or 0.0) + tip_amount, 2)
+            drv.total_earnings = round((drv.total_earnings or 0.0) + tip_amount, 2)
+        if trip.driver_earnings is not None:
+            trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
+
     rating = Rating(
         trip_id=trip_id,
         from_user_id=user.id,
         to_user_id=to_user_id,
         stars=stars,
         comment=body.get("comment"),
-        tip_amount=body.get("tip_amount", 0.0),
+        tip_amount=tip_amount,
     )
     db.add(rating)
     await db.commit()
@@ -742,7 +803,7 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     db.add(notif)
     await db.commit()
 
-    return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount}
+    return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount, "stripe_tip_status": stripe_tip_status}
 
 @router.get("/users/{user_id}/ratings", dependencies=[Depends(_verify_api_key)])
 async def get_user_ratings(user_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -847,15 +908,48 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
 
 @router.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
 async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add tip to a completed trip â€” credited directly to driver's balance."""
+    “””Add tip to a completed trip â€” charge rider via Stripe, credit 100% to driver.”””
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
-        raise HTTPException(404, "Trip not found")
+        raise HTTPException(404, “Trip not found”)
     if trip.rider_id != user.id:
-        raise HTTPException(403, "Only the rider can tip")
-    if trip.status != "completed":
-        raise HTTPException(400, "Can only tip completed trips")
+        raise HTTPException(403, “Only the rider can tip”)
+    if trip.status != “completed”:
+        raise HTTPException(400, “Can only tip completed trips”)
+
+    # ── Charge tip from rider's payment method via Stripe ──
+    stripe_tip_status = “skipped”
+    if _HAS_STRIPE and tip_amount > 0:
+        pm_r = await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == trip.rider_id,
+                RiderPaymentMethod.method_type == “stripe_card”,
+                RiderPaymentMethod.stripe_pm_id.isnot(None),
+            ).order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.asc())
+        )
+        pm = pm_r.scalars().first()
+        if pm:
+            tip_cents = max(int(tip_amount * 100), 50)
+            try:
+                intent = _stripe_mod.PaymentIntent.create(
+                    amount=tip_cents,
+                    currency=”usd”,
+                    payment_method=pm.stripe_pm_id,
+                    confirm=True,
+                    off_session=True,
+                    automatic_payment_methods={“enabled”: True, “allow_redirects”: “never”},
+                    metadata={“trip_id”: str(trip.id), “rider_id”: str(trip.rider_id), “type”: “tip”},
+                )
+                stripe_tip_status = intent.status
+                logging.info(“[Tip] Trip %s tip $%.2f charged â€” status: %s”, trip.id, tip_amount, intent.status)
+            except _stripe_mod.error.StripeError as e:
+                logging.error(“[Tip] Stripe charge failed for trip %s: %s”, trip.id, e)
+                raise HTTPException(402, f”Tip payment failed: {getattr(e, 'user_message', None) or str(e)}”)
+        else:
+            logging.warning(“[Tip] No Stripe card on file for rider %s, trip %s”, trip.rider_id, trip.id)
+
+    # ── Credit tip 100% to driver (no commission on tips) ──
     trip.tip_amount = round((trip.tip_amount or 0.0) + tip_amount, 2)
     if trip.driver_id:
         drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
@@ -866,7 +960,7 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
         if trip.driver_earnings is not None:
             trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
     await db.commit()
-    return {"status": "ok", "tip_amount": tip_amount}
+    return {“status”: “ok”, “tip_amount”: tip_amount, “stripe_status”: stripe_tip_status}
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

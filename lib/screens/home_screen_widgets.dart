@@ -429,10 +429,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
       if (_firstName.isNotEmpty) _firstName,
       if (_lastName.isNotEmpty) _lastName,
     ].join(' ');
-    final hasPhoto =
+    final hasLocalPhoto =
         _photoPath != null &&
         _photoPath!.isNotEmpty &&
+        !_photoPath!.startsWith('http') &&
         (kIsWeb || File(_photoPath!).existsSync());
+    final hasRemotePhoto =
+        (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) ||
+        UserSession.photoUrlNotifier.value.isNotEmpty;
+    final hasPhoto = hasLocalPhoto || hasRemotePhoto;
+    final remoteUrl = (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http'))
+        ? _photoUrl!
+        : (UserSession.photoUrlNotifier.value.isNotEmpty ? UserSession.photoUrlNotifier.value : null);
 
     return Row(
       children: [
@@ -512,19 +520,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ],
                 ),
                 child: hasPhoto
-                    ? (kIsWeb
-                          ? CachedNetworkImage(
-                              imageUrl: _photoPath!,
-                              cacheKey: UserSession.currentUid.isNotEmpty
-                                  ? 'avatar_${UserSession.currentUid}'
-                                  : null,
-                              fit: BoxFit.cover,
-                              width: 44,
-                              height: 44,
-                              fadeInDuration: const Duration(milliseconds: 200),
-                              key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
-                            )
-                          : Image.file(
+                    ? (hasLocalPhoto && !kIsWeb
+                          ? Image.file(
                               File(_photoPath!),
                               fit: BoxFit.cover,
                               width: 44,
@@ -542,6 +539,27 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                       child: child,
                                     );
                                   },
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: remoteUrl ?? '',
+                              cacheKey: UserSession.currentUid.isNotEmpty
+                                  ? 'avatar_${UserSession.currentUid}'
+                                  : null,
+                              fit: BoxFit.cover,
+                              width: 44,
+                              height: 44,
+                              fadeInDuration: const Duration(milliseconds: 200),
+                              key: ValueKey('${remoteUrl}_${UserSession.currentUid}'),
+                              errorWidget: (_, __, ___) => Center(
+                                child: Text(
+                                  displayInitial,
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ))
                     : Center(
                         child: Text(

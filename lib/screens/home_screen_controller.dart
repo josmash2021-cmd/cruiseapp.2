@@ -8,9 +8,11 @@ extension _HomeScreenController on _HomeScreenState {
 
   void _onPhotoChanged() {
     if (!mounted) return;
+    final path = UserSession.photoNotifier.value;
+    final url = UserSession.photoUrlNotifier.value;
     _setState(() {
-      _photoPath = UserSession.photoNotifier.value;
-      _photoUrl = UserSession.photoUrlNotifier.value;
+      _photoPath = path.isNotEmpty ? path : null;
+      _photoUrl = url.isNotEmpty ? url : null;
     });
   }
 

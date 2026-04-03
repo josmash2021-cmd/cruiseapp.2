@@ -193,7 +193,10 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
 async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
     identifier = body.identifier.strip()
     id_lower = identifier.lower()
-    query = select(User).where((func.lower(User.email) == id_lower) | (User.phone == identifier))
+    query = select(User).where(
+        (func.lower(User.email) == id_lower) | (User.phone == identifier),
+        ~User.status.in_(["deleted", "pending_deletion"]),
+    )
     if body.role in ("rider", "driver"):
         query = query.where(User.role == body.role)
     result = await db.execute(query)
@@ -236,7 +239,8 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         other_role = "driver" if body.role == "rider" else "rider"
         other_q = select(User).where(
             ((func.lower(User.email) == id_lower) | (User.phone == identifier)),
-            User.role == other_role
+            User.role == other_role,
+            ~User.status.in_(["deleted", "pending_deletion"]),
         )
         other_r = await db.execute(other_q)
         other_users = other_r.scalars().all()
@@ -574,8 +578,12 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
     if not user:
         raise HTTPException(404, "User not found")
 
-    # Recover photo_url from Firestore if missing in DB
-    if not user.photo_url and _HAS_FIRESTORE:
+    # Recover photo_url from Firestore if missing or ephemeral (Railway local file)
+    _needs_photo_recovery = (
+        not user.photo_url
+        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
+    )
+    if _needs_photo_recovery and _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
             doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
@@ -755,8 +763,12 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
         except Exception:
             pass
 
-    # Recover photo_url from Firestore if missing in DB
-    if not user.photo_url and _HAS_FIRESTORE:
+    # Recover photo_url from Firestore if missing or ephemeral (Railway local file)
+    _needs_photo = (
+        not user.photo_url
+        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
+    )
+    if _needs_photo and _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
             doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()

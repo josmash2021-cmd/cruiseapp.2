@@ -66,7 +66,7 @@ async def logout(
         if jti:
             await revoke_token(jti, user.id, float(exp))
     except (JWTError, Exception):
-        pass  # Best-effort â€” don't fail logout
+        pass  # Best-effort â€" don't fail logout
     client_ip = request.client.host if request.client else "unknown"
     _security_audit_log("logout", client_ip, f"user_id={user.id}", user_id=user.id)
     return {"ok": True}
@@ -288,38 +288,38 @@ async def send_otp(body: SendOtpIn, request: Request):
     for k in expired:
         del _otp_store[k]
     
-    # â”€â”€ ALWAYS log code for development/troubleshooting â”€â”€
+    # â"€â"€ ALWAYS log code for development/troubleshooting â"€â"€
     logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", otp_key, code, _OTP_TTL)
     
-    # â”€â”€ Try Email if email is provided â”€â”€
+    # â"€â"€ Try Email if email is provided â"€â"€
     if email:
-        html_body = f”””<!DOCTYPE html>
-<html lang=”en”>
-<head><meta charset=”UTF-8”/><meta name=”viewport” content=”width=device-width,initial-scale=1.0”/></head>
-<body style=”margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif”>
-<table role=”presentation” width=”100%” cellpadding=”0” cellspacing=”0” style=”background-color:#f0f0f0;padding:40px 0”><tr><td align=”center”>
-<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0”><tr><td align=”center” style=”padding-bottom:24px”>
-<h1 style=”margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px”>Cruise</h1>
+        html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
+<body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
+<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
 </td></tr></table>
-<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0” style=”background-color:#ffffff;border-radius:8px;overflow:hidden”><tr><td style=”padding:48px 40px;text-align:center”>
-<h2 style=”margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e”>Verify your email address</h2>
-<p style=”margin:0 0 32px;font-size:16px;color:#6b6b6b”>Use the code below, which expires in 5 minutes.</p>
-<table role=”presentation” cellpadding=”0” cellspacing=”0” style=”margin:0 auto”><tr>
-<td style=”background-color:#f7f7f7;border:1px solid #e0e0e0;border-radius:8px;padding:20px 48px”>
-<span style=”font-size:40px;font-weight:800;letter-spacing:12px;color:#1a1a2e”>{code}</span>
-</td></tr></table>
-</td></tr></table>
-<table role=”presentation” width=”600” cellpadding=”0” cellspacing=”0”><tr>
-<td style=”padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px”>
-<p style=”margin:0;font-size:14px;color:#999999”>If you didn't request this code, you can safely ignore this email.</p>
-</td></tr><tr><td align=”center” style=”padding-top:24px”>
-<p style=”margin:0;font-size:12px;color:#bbbbbb”>&mdash; Cruise App</p>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
+<h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
+<p style="margin:0 0 32px;font-size:16px;color:#6b6b6b">Use the code below, which expires in 5 minutes.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>
+<td style="background-color:#f7f7f7;border:1px solid #e0e0e0;border-radius:8px;padding:20px 48px">
+<span style="font-size:40px;font-weight:800;letter-spacing:12px;color:#1a1a2e">{code}</span>
 </td></tr></table>
 </td></tr></table>
-</body></html>”””
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr>
+<td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
+<p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
+</td></tr><tr><td align="center" style="padding-top:24px">
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>"""
 
         async def _try_send_email_bg():
-            """Try all email providers in background â€” does not block response."""
+            """Try all email providers in background â€" does not block response."""
             import urllib.parse as _up
             # Twilio Verify email channel
             twilio_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
@@ -351,7 +351,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             except Exception as e:
                 logging.warning("[OTP-BG] All email providers failed for %s: %s", email, e)
 
-        # Fire-and-forget email sending â€” respond immediately to avoid client timeout
+        # Fire-and-forget email sending â€" respond immediately to avoid client timeout
         asyncio.create_task(_try_send_email_bg())
 
         # Always return the code so user can verify even if email is delayed/fails
@@ -362,7 +362,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             "note": "Code also being sent to your email."
         }
     
-    # â”€â”€ Try Twilio SMS if configured and phone provided â”€â”€
+    # â"€â"€ Try Twilio SMS if configured and phone provided â"€â"€
     if phone:
         twilio_configured = (
             TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and 
@@ -425,7 +425,7 @@ async def send_otp(body: SendOtpIn, request: Request):
         else:
             logging.warning("[OTP] Twilio not properly configured, skipping SMS")
     
-    # â”€â”€ Final Fallback: Return code directly (for development/testing) â”€â”€
+    # â"€â"€ Final Fallback: Return code directly (for development/testing) â"€â"€
     logging.info("[OTP] CODE FOR %s: %s (check backend logs)", otp_key, code)
     
     return {
@@ -448,7 +448,7 @@ async def verify_otp(body: VerifyOtpIn):
     twilio_verify_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
                         TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
 
-    # â”€â”€ 1. Twilio Verify API (phone SMS or email channel) â”€â”€
+    # â"€â"€ 1. Twilio Verify API (phone SMS or email channel) â"€â"€
     if twilio_verify_ok:
         to = phone if phone else email
         # Only call Twilio Verify if we sent via Twilio (sentinel flag or it's a phone)
@@ -478,7 +478,7 @@ async def verify_otp(body: VerifyOtpIn):
             except Exception as e:
                 logging.warning("[OTP] Twilio Verify check error: %s", e)
 
-    # â”€â”€ 2. Local OTP store (for codes sent directly) â”€â”€
+    # â"€â"€ 2. Local OTP store (for codes sent directly) â"€â"€
     entry = _otp_store.get(otp_key)
     if entry and entry["code"] == code and entry["expires"] > time.time():
         _otp_store.pop(otp_key, None)
@@ -612,18 +612,18 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
 
     â€¢ Verifies the ID token with the provider.
     â€¢ Creates a new user if one does not exist, or logs in the existing user.
-    â€¢ Skips password / OTP â€” social tokens are the credential.
+    â€¢ Skips password / OTP â€" social tokens are the credential.
     """
     provider = body.provider.lower()
     if provider not in ("google", "apple"):
-        raise HTTPException(400, "Unsupported provider â€” use 'google' or 'apple'")
+        raise HTTPException(400, "Unsupported provider â€" use 'google' or 'apple'")
 
     email: Optional[str] = None
     given_name: Optional[str] = body.first_name
     family_name: Optional[str] = body.last_name
     photo: Optional[str] = body.photo_url
 
-    # â”€â”€ Verify token with provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€ Verify token with provider â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     if provider == "google":
         try:
             from google.oauth2 import id_token as google_id_token
@@ -675,7 +675,7 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
 
     role = body.role if body.role in ("rider", "driver") else "rider"
 
-    # â”€â”€ Find or create user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€ Find or create user â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     result = await db.execute(
         select(User).where(User.email == email, User.role == role)
     )
@@ -811,7 +811,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Only allow safe fields â€” NEVER role, is_verified, verification_status
+    # Only allow safe fields â€" NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
     # Device tracking fields (always allowed)
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
@@ -826,13 +826,13 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes â€” first_name and last_name cannot be changed
+    # Block name changes â€" first_name and last_name cannot be changed
     updates.pop("first_name", None)
     updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             val = updates[key]
-            # Never allow photo_url to be set to None or empty â€” use /auth/photo-url to set it
+            # Never allow photo_url to be set to None or empty â€" use /auth/photo-url to set it
             if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
                 continue
             setattr(db_user, key, val)
@@ -1021,7 +1021,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
     if len(photo_bytes) > 3 * 1024 * 1024:
         raise HTTPException(413, "Photo too large (max 3MB)")
     
-    # Validate image magic bytes â€” only allow JPEG and PNG
+    # Validate image magic bytes â€" only allow JPEG and PNG
     if photo_bytes[:2] == b'\xff\xd8':
         ext = "jpg"
         content_type = "image/jpeg"
@@ -1108,7 +1108,7 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
 
 @router.get("/auth/export-data", dependencies=[Depends(_verify_api_key)])
 async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """GDPR/CCPA data export â€” returns all personal data for the user."""
+    """GDPR/CCPA data export â€" returns all personal data for the user."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
@@ -1277,7 +1277,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         logging.error("[Verify] DB error saving verification for user %s: %s", user.id, e)
         raise HTTPException(500, f"Error saving verification: {str(e)}")
 
-    # Save verification photos if provided (non-fatal â€” disk may be unavailable on Railway)
+    # Save verification photos if provided (non-fatal â€" disk may be unavailable on Railway)
     saved_urls = {}
     try:
         docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
@@ -1447,7 +1447,7 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Always check Firestore â€” dispatch writes directly there even if backend call fails
+    # Always check Firestore â€" dispatch writes directly there even if backend call fails
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
             fs_status = firestore_sync.get_verification_status(db_user.id)
@@ -1480,7 +1480,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
-        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB â€” trying without role filter", user_id)
+        logging.warning("[DISPATCH-APPROVE] Driver %d not found in DB â€" trying without role filter", user_id)
         # Fallback: try without role filter (role may not be set yet for new accounts)
         result2 = await db.execute(select(User).where(User.id == user_id))
         db_user = result2.scalar_one_or_none()
@@ -1501,7 +1501,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
     else:
-        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False â€” Firestore sync skipped")
+        logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False â€" Firestore sync skipped")
     return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 
@@ -1530,7 +1530,7 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
 
 
 _account_status_cache: dict = {}  # user_id -> (status_str, monotonic_ts)
-_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds â€” Firestore check at most every 15s
+_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds â€" Firestore check at most every 15s
 
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

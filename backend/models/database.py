@@ -38,11 +38,6 @@ else:
     _engine_kwargs["connect_args"] = {
         "timeout": 10,
         "command_timeout": 15,
-        # Kill runaway queries after 15s and idle-in-transaction after 10s
-        "server_settings": {
-            "statement_timeout": "15000",
-            "idle_in_transaction_session_timeout": "10000",
-        },
     }
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)

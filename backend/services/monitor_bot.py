@@ -329,7 +329,7 @@ async def _health_check_loop():
                     await db.execute(text("SELECT 1"))
                     latency = (time.time() - q_start) * 1000
                 pool = engine.pool
-                if latency > 200:
+                if latency > 800:
                     from services.admin_alerts import send_alert, HIGH
                     await send_alert("db_slow", "Database Slow",
                                      f"DB latency: {latency:.0f}ms | pool wait: {pool_wait:.0f}ms | pool {pool.checkedout()}/{pool.size()}", HIGH)
@@ -396,6 +396,17 @@ async def start_monitor_bot():
     if not _HAS_TELEGRAM:
         logger.info("[MonitorBot] Telegram not configured, bot disabled")
         return
+
+    # Log which DB host is actually in use so we can confirm private vs public
+    try:
+        from models.database import DATABASE_URL
+        import re
+        host_match = re.search(r"@([^/]+)/", DATABASE_URL)
+        db_host = host_match.group(1) if host_match else "unknown"
+        is_private = ".railway.internal" in db_host
+        logger.info("[MonitorBot] DB host: %s (%s)", db_host, "PRIVATE" if is_private else "PUBLIC PROXY")
+    except Exception:
+        pass
 
     logger.info("[MonitorBot] Starting Telegram monitor bot...")
     await _tg_send("🟢 *Cruise Server Online*\n\nMonitor bot active. Send /help for commands.")

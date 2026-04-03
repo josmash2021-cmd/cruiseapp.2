@@ -142,14 +142,15 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
     await Future.delayed(const Duration(milliseconds: 900));
     if (_disposed || !mounted) return;
 
-    // Fade out — wait for exit animation to finish before navigating
-    await _exitCtrl.forward().orCancel.catchError((_) {});
+    // Fade out + navigate simultaneously — the destination fades IN
+    // while this screen fades OUT, preventing a black-screen gap.
+    _exitCtrl.forward().orCancel.catchError((_) {});
     if (_disposed || !mounted) return;
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => widget.destination,
-        transitionDuration: const Duration(milliseconds: 600),
+        transitionDuration: const Duration(milliseconds: 700),
         reverseTransitionDuration: Duration.zero,
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),

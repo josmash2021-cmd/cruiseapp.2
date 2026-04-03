@@ -62,3 +62,11 @@ La pantalla (`DriverTripAcceptScreen`) aparece después de que el conductor acep
 - NO cambiar lógica o estado que el usuario no haya mencionado
 - NO adivinar decisiones de diseño — si algo es ambiguo, hacer una sola pregunta concisa
 - NO omitir la verificación de errores después de las ediciones
+
+## Integración con Otros Agentes
+
+- **Pre-aceptación** → `driver-ride-offer.agent.md` (pantalla de oferta anterior)
+- **Pantalla online** → `driver-online-screen.agent.md` (host del flujo)
+- **Trip pipeline** → `trip-pipeline.agent.md` (estado del viaje)
+- **Backend** → `backend-guardian.agent.md` (endpoints start trip, status)
+- **Real-time** → `realtime-sync.agent.md` (GPS, Firestore sync)

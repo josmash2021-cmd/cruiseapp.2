@@ -63,6 +63,25 @@ The screen manages these phases — understand them before making changes:
 - `inTrip` — Active trip to dropoff
 - `completed` — Trip finished (summary)
 
+## Phase State Machine Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `_phase` | Current phase — controls which UI renders |
+| `_earnings` / `_weeklyEarnings` / `_lastTripEarnings` | Earnings pill data |
+| `_pos` / `_heading` | Driver GPS position and heading |
+| `_pendingOffers` | Pending trip offers |
+| `_cameraFollowing` | Whether map camera tracks driver |
+| `_searchPulse` / `_searchPulseVal` | Pulsing animation on "Finding trips" bar |
+
+## Design Language
+
+- **Background**: pure black `#000000`
+- **Primary accent**: gold `#FFD700`
+- **Cards**: dark gray `#1A1A1A` / `#111111`, rounded corners
+- **Text**: white primary, `Colors.grey[400]` secondary
+- **Map**: Mapbox dark style
+
 ## Constraints
 
 - DO NOT modify screens outside the driver online/home flow unless explicitly asked
@@ -70,6 +89,16 @@ The screen manages these phases — understand them before making changes:
 - DO NOT add comments, docstrings, or type annotations unless requested
 - DO NOT question the user's design choices — implement them
 - ONLY touch files related to the driver online/home experience
+- ALWAYS preserve animation controllers and their `dispose()` methods
+- ALWAYS check `mounted` before `setState` in async callbacks
+
+## Integration with Other Agents
+
+- **Ride offers** → `driver-ride-offer.agent.md` (offer card, cinematic animation)
+- **Trip accept** → `driver-trip-accept-screen.agent.md` (post-accept screen)
+- **Backend** → `backend-guardian.agent.md` (dispatch, SSE, location endpoints)
+- **Real-time** → `realtime-sync.agent.md` (GPS streaming, Firestore)
+- **Performance** → `performance-optimizer.agent.md` (map, animations, rebuilds)
 
 ## Output
 

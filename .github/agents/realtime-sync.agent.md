@@ -161,3 +161,17 @@ Rider/Driver App ← api_service.dart ← status events
 - DO NOT add new Firestore listeners without checking cost implications
 - ALWAYS cancel stream subscriptions in `dispose()`
 - ALWAYS handle the case where Firestore and backend DB disagree
+
+## Database Context
+
+- **PostgreSQL** hosted on Supabase (migrated from Railway — 50ms vs 400ms latency)
+- **Firestore** for real-time trip status and ephemeral data
+- **Firebase RTDB** for driver GPS location streaming
+- **Source of truth**: PostgreSQL (Supabase) for persistent data; Firestore is a cache/mirror
+
+## Integration with Other Agents
+
+- **Trip Pipeline** (`trip-pipeline.agent.md`) — owns trip state transitions; consult when status updates aren't propagating
+- **Backend Guardian** (`backend-guardian.agent.md`) — owns backend endpoints that write to Firestore; consult for write failures
+- **Performance Optimizer** (`performance-optimizer.agent.md`) — consult for latency optimization on streams
+- **CruiseHero** (`cruisehero.agent.md`) — escalate if sync issue spans multiple layers

@@ -94,3 +94,11 @@ La pantalla (`DriverOnlineScreen`) es la pantalla principal cuando el conductor 
 - NO adivinar decisiones de diseño — si algo es ambiguo, hacer una sola pregunta concisa
 - NO omitir la verificación de errores después de las ediciones
 - NO confundir este archivo con `driver_home_screen.dart` (ese es la pantalla offline)
+
+## Integración con Otros Agentes
+
+- **Ofertas de viaje** → `driver-ride-offer.agent.md` (tarjeta de oferta, animación cinemática, accept/reject)
+- **Aceptar viaje** → `driver-trip-accept-screen.agent.md` (pantalla post-aceptación)
+- **Backend** → `backend-guardian.agent.md` (endpoints de dispatch, SSE, ubicación)
+- **Real-time** → `realtime-sync.agent.md` (GPS streaming, Firestore status)
+- **Performance** → `performance-optimizer.agent.md` (mapa, animaciones, rebuilds)

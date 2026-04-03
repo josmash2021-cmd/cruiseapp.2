@@ -132,3 +132,11 @@ RideRequestScreen → SearchingDriverScreen (4s) → [Driver Found overlay (4s)]
 - NO adivinar decisiones de diseño — si algo es ambiguo, hacer una sola pregunta concisa
 - NO omitir la verificación de errores después de las ediciones
 - NO romper la secuencia de animación (los 7 controllers deben iniciar y hacer dispose correctamente)
+
+## Integración con Otros Agentes
+
+- **Pre-confirmación** → `rider-ride-request.agent.md` (pantalla de solicitud)
+- **Post-confirmación** → `rider-tracking.agent.md` (tracking del conductor)
+- **Trip pipeline** → `trip-pipeline.agent.md` (dispatch y asignación)
+- **Backend dispatch** → `backend-guardian.agent.md` (SSE stream, polling)
+- **Real-time** → `realtime-sync.agent.md` (Firestore status updates)

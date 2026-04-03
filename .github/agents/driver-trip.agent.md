@@ -46,16 +46,34 @@ You own every pixel and every line of code for this screen. The key files are:
 - DO NOT add comments, docstrings, or type annotations unless requested
 - DO NOT question the user's design choices — implement them
 - ONLY touch files related to the driver trip experience
+- ALWAYS preserve slide-to-confirm logic and `_startTrip()` callback
+- ALWAYS preserve Mapbox camera, style, and annotation configuration
 
-## Design Reference
+## Design Language
 
-The current screen layout (top to bottom):
+- **Background**: pure black `#000000`
+- **Primary accent**: gold `#FFD700`
+- **Cards**: dark gray `#1A1A1A` / `#111111`, rounded corners (12-16px)
+- **Text**: white primary, `Colors.grey[400]` secondary
+- **Buttons (Call/Message)**: gold outline, gold icon/text, dark fill
+- **Map**: Mapbox dark theme with route polyline, pickup (blue) and dropoff (gold) pins
+
+## Screen Layout (top to bottom)
+
 - **Header**: Back arrow, dark/light mode toggle, help icon
 - **Title**: "Ride for {Rider Name}" + time
 - **Rider Card**: Profile photo circle (gold border, initials fallback), name, star rating, Call button, Message button
 - **Map**: Mapbox mini-map with route polyline, pickup/dropoff markers
 - **Address Cards**: Pickup (yellow dot icon) and Dropoff (yellow flag icon) with full addresses, tappable
 - **Bottom**: Slide-to-confirm "Start Trip →" button with gold accent
+
+## Integration with Other Agents
+
+- **Pre-accept** → `driver-ride-offer.agent.md` (offer card before acceptance)
+- **Online screen** → `driver-online-screen.agent.md` (host of driver flow)
+- **Trip pipeline** → `trip-pipeline.agent.md` (trip state transitions)
+- **Backend** → `backend-guardian.agent.md` (trip endpoints, status updates)
+- **Real-time** → `realtime-sync.agent.md` (GPS, Firestore sync)
 
 ## Output
 

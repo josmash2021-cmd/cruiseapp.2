@@ -134,3 +134,11 @@ Scaffold (bg: #07080D)
 - NO adivinar decisiones de diseño — si algo es ambiguo, hacer una sola pregunta concisa
 - NO omitir la verificación de errores después de las ediciones
 - NO tocar `home_screen_controller.dart` si el cambio es solo visual
+
+## Integración con Otros Agentes
+
+- **Búsqueda** → `rider-search.agent.md` (pantalla "Where to?")
+- **Solicitud de viaje** → `rider-ride-request.agent.md` (selección de flota y pago)
+- **Confirmando** → `rider-confirming-screen.agent.md` (buscando conductor)
+- **Tracking** → `rider-tracking.agent.md` (seguimiento del conductor)
+- **Performance** → `performance-optimizer.agent.md` (mapa, animaciones, startup)

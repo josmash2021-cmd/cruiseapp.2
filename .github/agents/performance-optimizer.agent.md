@@ -115,3 +115,22 @@ Follow the priority order — biggest impact first:
 - DO NOT reduce polling intervals below safety thresholds (GPS: 800ms, status: 3s)
 - DO NOT break the existing caching architecture — only tune it
 - ALWAYS preserve the existing animation feel (durations, curves) unless explicitly asked to change
+
+## Database Context
+
+- **Supabase** (PostgreSQL) — migrated from Railway for latency (50ms vs 400ms)
+- DB connection pool tuning is critical for API response times
+- Supabase dashboard has query performance insights
+
+## Skill Resources
+
+- `.claude/skills/senior-backend/references/database_optimization_guide.md` — DB optimization patterns
+- `.claude/skills/senior-backend/references/api_design_patterns.md` — API patterns
+- `.claude/skills/code-reviewer/references/common_antipatterns.md` — Common antipatterns
+
+## Integration with Other Agents
+
+- **Backend Guardian** (`backend-guardian.agent.md`) — owns backend infrastructure; consult for query/connection pool issues
+- **Realtime Sync** (`realtime-sync.agent.md`) — owns stream performance; consult for Firestore/SSE latency
+- **Trip Pipeline** (`trip-pipeline.agent.md`) — owns trip flow; consult for transition latency targets
+- **CruiseHero** (`cruisehero.agent.md`) — escalate if performance issue spans frontend + backend

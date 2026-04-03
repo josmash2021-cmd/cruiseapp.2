@@ -150,3 +150,34 @@ git log --oneline -10
 8. **One bug at a time** — Fix, verify, then move to the next
 9. **Commit descriptive messages** — Explain WHAT was fixed and WHY
 10. **When in doubt, search** — Use grep/semantic search before assuming anything about the codebase
+
+## Known Bug Patterns (Learn From History)
+
+| Commit | Bug | Root Cause |
+|--------|-----|------------|
+| `29b0712` | Smart quotes in auth.py | Copy-paste from docs introduced curly quotes |
+| `3fa6055` | 500 on scheduled rides | Migration missing trips columns |
+| `9f5be25` | OTP codes not working | Local store not checked before remote |
+| `7dd5da5` | Content not vertically centered | Wrong alignment on pending/rejected screens |
+
+## Skill Resources
+
+- `.claude/skills/code-reviewer/references/code_review_checklist.md` — Review checklist
+- `.claude/skills/code-reviewer/references/common_antipatterns.md` — Antipatterns
+- `.claude/skills/senior-backend/references/backend_security_practices.md` — Security
+
+## Integration with Specialized Agents
+
+Delegate to specialists when the bug is in their domain:
+- **Backend bugs** → `backend-guardian.agent.md`
+- **Trip lifecycle bugs** → `trip-pipeline.agent.md`
+- **Real-time sync bugs** → `realtime-sync.agent.md`
+- **Performance issues** → `performance-optimizer.agent.md`
+- **Driver online screen** → `driver-online-screen.agent.md`
+- **Driver offer card** → `driver-ride-offer.agent.md`
+- **Driver trip accept** → `driver-trip-accept-screen.agent.md`
+- **Rider home screen** → `rider-home-screen.agent.md`
+- **Rider ride request** → `rider-ride-request.agent.md`
+- **Rider confirming** → `rider-confirming-screen.agent.md`
+- **Rider tracking** → `rider-tracking.agent.md`
+- **Rider search** → `rider-search.agent.md`

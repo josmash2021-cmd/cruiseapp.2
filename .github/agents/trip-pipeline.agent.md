@@ -183,3 +183,19 @@ When a trip goes wrong:
 - DO NOT skip Firestore updates — both apps depend on it for real-time status
 - ALWAYS ensure driver and rider see consistent state within 2 seconds of any transition
 - ALWAYS update `local_data_service` when trip state changes for crash recovery
+- ALWAYS verify migration columns exist before referencing them (commit 3fa6055: missing columns = 500)
+
+## Known Trip Bugs (Learn From History)
+
+| Commit | Bug | Lesson |
+|--------|-----|--------|
+| `3fa6055` | 500 on schedule ride | Missing `scheduled_at` column in migration — always check schema |
+| `a403c5c` | Scheduled rides UI broken | Verify both backend columns AND frontend display logic |
+
+## Integration with Other Agents
+
+- **Realtime Sync** (`realtime-sync.agent.md`) — handles Firestore/RTDB listeners; consult for sync issues
+- **Backend Guardian** (`backend-guardian.agent.md`) — handles endpoint/DB fixes; consult for 500 errors
+- **Performance Optimizer** (`performance-optimizer.agent.md`) — handles latency; consult for slow transitions
+- **Driver screens** → `driver-online-screen.agent.md`, `driver-ride-offer.agent.md`, `driver-trip-accept-screen.agent.md`
+- **Rider screens** → `rider-ride-request.agent.md`, `rider-confirming-screen.agent.md`, `rider-tracking.agent.md`

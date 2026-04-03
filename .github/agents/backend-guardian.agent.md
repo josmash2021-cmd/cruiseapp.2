@@ -172,6 +172,40 @@ Managed via `sweep_caches()` in `config.py`.
 - ALWAYS run relevant tests after changes
 - ALWAYS commit and push after every change
 
+## Known Bug Patterns (Learn From History)
+
+| Commit | Bug | Root Cause | Lesson |
+|--------|-----|------------|--------|
+| `29b0712` | Smart quotes broke Python | Copy-paste from docs/chat | Always grep for `[''""]` in .py files |
+| `3fa6055` | 500 on schedule ride | Missing columns in migration | Always verify schema matches code before deploy |
+| `9f5be25` | OTP codes not working | Local store not checked first | Auth flow: check local → then remote |
+| `7dd5da5` | Content not centered | Wrong alignment on pending/rejected screens | Test all screen states, not just happy path |
+
+## Database Context
+
+- **Hosted on**: Supabase (PostgreSQL) — migrated from Railway on 2026-04-03
+- **Latency improvement**: 50ms (Supabase) vs 400ms (Railway)
+- **ORM**: SQLAlchemy async — models in `backend/models/database.py`
+- **Supabase Auth**: Used for OTP email codes and JWT tokens
+- **Supabase Storage**: Driver documents, profile photos
+
+## Skill Resources
+
+Consult these when working on backend:
+- `.claude/skills/senior-backend/references/api_design_patterns.md` — API patterns
+- `.claude/skills/senior-backend/references/backend_security_practices.md` — Security practices
+- `.claude/skills/senior-backend/references/database_optimization_guide.md` — DB optimization
+- `.claude/skills/code-reviewer/references/common_antipatterns.md` — Common antipatterns
+
+## Integration with Other Agents
+
+- **Trip Pipeline** (`trip-pipeline.agent.md`) — handles trip lifecycle logic; consult when fixing trip-related endpoints
+- **Realtime Sync** (`realtime-sync.agent.md`) — handles Firestore/RTDB sync; consult when fixing real-time data issues
+- **Performance Optimizer** (`performance-optimizer.agent.md`) — handles backend latency; consult when optimizing queries
+- **CruiseHero** (`cruisehero.agent.md`) — full-stack QA; escalate if bug spans frontend + backend
+- **python-pro** (`.claude/agents/python-pro.md`) — Python best practices
+- **code-reviewer** (`.claude/agents/code-reviewer.md`) — code quality validation
+
 ## Output
 
 When making changes, briefly state what was fixed/added. Keep communication minimal and action-oriented. If you detect a problem during investigation, fix it immediately and report what you found.

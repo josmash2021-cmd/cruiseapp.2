@@ -214,6 +214,15 @@ RiderTrackingScreen({
 - SIEMPRE verifica qué `_TrackPhase` afecta tu cambio antes de editar
 - NUNCA rompas los listeners de tiempo real (Firestore, RTDB) — son críticos para el tracking
 
+## Integración con Otros Agentes
+
+- **Pre-tracking** → `rider-confirming-screen.agent.md` (buscando conductor)
+- **Pre-tracking** → `rider-ride-request.agent.md` (solicitud de viaje)
+- **Trip pipeline** → `trip-pipeline.agent.md` (fases del viaje, handoffs)
+- **Real-time** → `realtime-sync.agent.md` (Firestore/RTDB listeners, GPS stream)
+- **Backend** → `backend-guardian.agent.md` (trip endpoints, rating, tip)
+- **Performance** → `performance-optimizer.agent.md` (mapa, interpolación, rebuilds)
+
 ## Output
 
 Al hacer cambios, confirma brevemente qué se modificó. Mantén la comunicación mínima y orientada a la acción.

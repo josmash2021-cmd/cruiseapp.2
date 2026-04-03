@@ -130,3 +130,12 @@ La pantalla (`RideRequestScreen`) es donde el pasajero elige tipo de vehículo y
 - NO adivinar precios o multiplicadores — si algo es ambiguo, preguntar
 - NO omitir la verificación de errores después de las ediciones
 - NO tocar `rider_trip_controller.dart` a menos que el cambio lo requiera explícitamente
+
+## Integración con Otros Agentes
+
+- **Búsqueda** → `rider-search.agent.md` (pantalla de búsqueda de dirección)
+- **Confirmando** → `rider-confirming-screen.agent.md` (animación buscando conductor)
+- **Tracking** → `rider-tracking.agent.md` (seguimiento post-asignación)
+- **Trip pipeline** → `trip-pipeline.agent.md` (flujo completo del viaje)
+- **Backend pagos** → `backend-guardian.agent.md` (Stripe, intents, webhooks)
+- **Performance** → `performance-optimizer.agent.md` (mapa, animación cinemática)

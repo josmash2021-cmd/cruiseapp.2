@@ -112,3 +112,11 @@ Los 4 archivos son `part of` el mismo widget. Editar el archivo correcto según 
 - NO adivinar decisiones de diseño — si algo es ambiguo, hacer una sola pregunta concisa
 - NO omitir la verificación de errores después de las ediciones
 - NO confundir esta pantalla con `driver_trip_accept_screen.dart` (esa es DESPUÉS de aceptar)
+
+## Integración con Otros Agentes
+
+- **Pantalla online** → `driver-online-screen.agent.md` (host de las ofertas)
+- **Post-aceptación** → `driver-trip-accept-screen.agent.md` (pantalla que sigue)
+- **Trip pipeline** → `trip-pipeline.agent.md` (flujo completo del viaje)
+- **Backend dispatch** → `backend-guardian.agent.md` (SSE offers, accept endpoint)
+- **Performance** → `performance-optimizer.agent.md` (animación cinemática, mapa)

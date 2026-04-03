@@ -54,6 +54,26 @@ You own every pixel and every line of code for this screen. The key files are:
 - **Results area**: Autocomplete suggestions from Mapbox/Google as user types
 - **Flow**: User types → suggestions appear → tap to select → returns address+coords to caller
 
+## Design Language
+
+- **Background**: dark `#07080D` / `#000000`
+- **Primary accent**: gold `#FFD700`
+- **Search fields**: dark gray `#1A1A1A`, rounded, white text
+- **Pickup dot**: green `#00C853`
+- **Dropoff dot**: gold `#FFD700`
+- **Suggestions**: dark cards, white text, secondary gray address
+- **Shortcuts (Home/Work)**: dark cards with gold icons
+
+## Key Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `_pickupController` | TextEditingController for pickup field |
+| `_dropoffController` | TextEditingController for dropoff field |
+| `_suggestions` | Autocomplete results list |
+| `_isLoading` | Loading state during search |
+| `_focusedField` | Which field is active (pickup/dropoff) |
+
 ## Constraints
 
 - DO NOT modify screens outside the address search flow unless explicitly asked
@@ -61,6 +81,16 @@ You own every pixel and every line of code for this screen. The key files are:
 - DO NOT add comments, docstrings, or type annotations unless requested
 - DO NOT question the user's design choices — implement them
 - ONLY touch files related to the address search experience
+- ALWAYS dispose TextEditingControllers properly
+- ALWAYS handle the case where Mapbox/Google returns no results
+
+## Integration with Other Agents
+
+- **Caller** → `rider-home-screen.agent.md` (navigates here from "Where to?")
+- **Next step** → `rider-ride-request.agent.md` (receives selected addresses)
+- **Map picker** → this agent also owns `map_picker_screen.dart`
+- **Backend** → `backend-guardian.agent.md` (favorites CRUD endpoints)
+- **Performance** → `performance-optimizer.agent.md` (autocomplete debounce, caching)
 
 ## Output
 

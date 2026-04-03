@@ -58,26 +58,42 @@ class _AboutScreenState extends State<AboutScreen> {
             children: [
               const SizedBox(height: 8),
 
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: c.isDark
-                        ? null
-                        : Border.all(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: c.isDark
+                              ? null
+                              : Border.all(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                ),
+                        ),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: c.textPrimary,
+                          size: 18,
+                        ),
+                      ),
+                    ),
                   ),
-                  child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: c.textPrimary,
-                    size: 18,
+                  Text(
+                    S.of(context).aboutTitle,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 36),
 

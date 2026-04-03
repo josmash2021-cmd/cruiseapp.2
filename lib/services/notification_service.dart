@@ -348,15 +348,18 @@ class NotificationService {
   // ── In-app sounds (audioplayers) ──────────────────────────────────────
 
   /// Play the "go online" chime inside the app.
-  static Future<void> playOnlineSound() async {
-    try {
-      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
-      if (!(prefs.getBool('notif_sounds') ?? true)) return;
-      await _onlinePlayer.stop();
-      await _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
-    } catch (e) {
-      debugPrint('[NotificationService] playOnlineSound error: $e');
-    }
+  /// Fire-and-forget — never blocks the UI thread.
+  static void playOnlineSound() {
+    Future<void>(() async {
+      try {
+        final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+        if (!(prefs.getBool('notif_sounds') ?? true)) return;
+        _onlinePlayer.stop();
+        _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
+      } catch (e) {
+        debugPrint('[NotificationService] playOnlineSound error: $e');
+      }
+    });
   }
 
   /// Play the trip offer sound inside the app (when app is in foreground).

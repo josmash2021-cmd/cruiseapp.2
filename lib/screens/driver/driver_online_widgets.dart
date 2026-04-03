@@ -2965,13 +2965,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final t = _panelFrac.clamp(0.0, 1.0);
 
     // Collapsed pill height + expanded max height
-    const collapsedH = 60.0;
+    const collapsedH = 78.0;
     final expandedH = screenH * 0.55;
     final currentH = collapsedH + (expandedH - collapsedH) * t;
 
-    // Margins: collapsed = 16 horizontal + 20 bottom; expanded = 0
-    final hMargin = 16.0 * (1.0 - t);
-    final bMargin = (32.0 + botPad) * (1.0 - t);
+    // Margins: collapsed = 12 horizontal + 10 bottom; expanded = 0
+    final hMargin = 12.0 * (1.0 - t);
+    final bMargin = (10.0 + botPad) * (1.0 - t);
 
     // Border radius: collapsed = 20 all; expanded = 24 top only
     final radius = BorderRadius.only(
@@ -3017,11 +3017,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           }
           _animatePanelTo(target);
         },
-        child: Container(
+        child: ListenableBuilder(
+          listenable: _searchPulseVal,
+          builder: (_, child) => CustomPaint(
+            foregroundPainter: _SearchingBorderPainter(
+              progress: _searchPulseVal.value,
+              expansion: t,
+            ),
+            child: child,
+          ),
+          child: Container(
           decoration: BoxDecoration(
             color: surface,
             borderRadius: radius,
-            border: Border.all(color: _gold.withValues(alpha: 0.08 + 0.04 * (1 - t))),
             boxShadow: [
               BoxShadow(
                 color: shadowC,
@@ -3033,22 +3041,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
-              // Progress bar
-              ListenableBuilder(
-                listenable: _searchPulseVal,
-                builder: (_, __) => SizedBox(
-                  height: 2,
-                  child: LinearProgressIndicator(
-                    value: null,
-                    backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation(
-                      _gold.withValues(alpha: 0.5),
-                    ),
-                    minHeight: 2,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               _handle(isDark),
               // Arrow icon: up when collapsed, down when expanded
               Icon(

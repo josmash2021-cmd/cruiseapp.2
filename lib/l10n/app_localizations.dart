@@ -1781,6 +1781,9 @@ class S {
   String get giveUsBestSmile =>
       _es ? '¡Danos tu mejor sonrisa!' : 'Give us your best smile!';
 
+  // ── About Screen ──────────────────────────────────────────────────────────
+  String get aboutTitle => _es ? 'Acerca de' : 'About';
+
   // ── Driver Profile Screen ──────────────────────────────────────────────────
   String get profileTitle => _es ? 'Perfil' : 'Profile';
   String get deliveries => _es ? 'Entregas' : 'Deliveries';

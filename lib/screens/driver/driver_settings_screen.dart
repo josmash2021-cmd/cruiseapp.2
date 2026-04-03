@@ -72,25 +72,28 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
               left: 16,
               right: 16,
             ),
-            child: Row(
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: dc.glassBg,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.arrow_back_rounded,
-                      color: dc.text,
-                      size: 22,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: dc.glassBg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        color: dc.text,
+                        size: 22,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
                 Text(
                   S.of(context).settingsTitle,
                   style: TextStyle(

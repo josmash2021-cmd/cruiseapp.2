@@ -126,8 +126,14 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     try:
         await db.commit()
         await db.refresh(user)
-    except IntegrityError:
+    except IntegrityError as ie:
         await db.rollback()
+        err_str = str(ie).lower()
+        # If it's a single-column unique violation (not composite), guide the user
+        if "email" in err_str and "role" not in err_str:
+            raise HTTPException(409, f"Email already registered. The database may need a migration to support dual-role accounts.")
+        if "phone" in err_str and "role" not in err_str:
+            raise HTTPException(409, f"Phone already registered. The database may need a migration to support dual-role accounts.")
         raise HTTPException(409, "Email or phone already registered with this role")
 
     # Sync new user to Firestore so dispatch_app sees it in real-time
@@ -211,7 +217,8 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
             cleaned = "+1" + cleaned  # Default to US
         identifier = cleaned
 
-    query = select(User).where((User.email == body.identifier) | (User.phone == identifier))
+    # Use stripped identifier for both email and phone comparisons
+    query = select(User).where((User.email == identifier) | (User.phone == identifier))
     if body.role in ("rider", "driver"):
         query = query.where(User.role == body.role)
     result = await db.execute(query)
@@ -226,7 +233,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     if not user and body.role:
         other_role = "driver" if body.role == "rider" else "rider"
         other_q = select(User).where(
-            ((User.email == body.identifier) | (User.phone == identifier)),
+            ((User.email == identifier) | (User.phone == identifier)),
             User.role == other_role
         )
         other_r = await db.execute(other_q)
@@ -234,7 +241,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         for u in other_users:
             if pwd.verify(body.password, u.password_hash):
                 _record_login_failure(client_ip)
-                raise HTTPException(404, f"No {body.role} account found with these credentials")
+                raise HTTPException(404, f"No {body.role} account found with these credentials. You have a {other_role} account with this email/phone.")
                 break
     if not user:
         _record_login_failure(client_ip)

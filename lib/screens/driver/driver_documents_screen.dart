@@ -208,15 +208,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     ),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  flexibleSpace: FlexibleSpaceBar(
-                    titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-                    title: Text(
-                      s.documentsTitle,
-                      style: TextStyle(
-                        color: dc.text,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
+                  centerTitle: true,
+                  title: Text(
+                    s.documentsTitle,
+                    style: TextStyle(
+                      color: dc.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),

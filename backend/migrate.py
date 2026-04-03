@@ -215,6 +215,65 @@ async def run():
         except Exception as e:
             log.warning("  skip: sender_id nullable - %s", e)
 
+        # ── Composite unique constraints (email+role, phone+role) ──
+        # Allow same email/phone for different roles (rider vs driver).
+        # First drop any old single-column unique constraints on email/phone,
+        # then create the composite ones.
+        for old_name in (
+            "users_email_key", "uq_users_email", "ix_users_email",
+            "users_phone_key", "uq_users_phone", "ix_users_phone",
+        ):
+            try:
+                exists = await conn.fetchval(
+                    "SELECT 1 FROM pg_constraint WHERE conname = $1", old_name
+                )
+                if exists:
+                    await conn.execute(f"ALTER TABLE users DROP CONSTRAINT {old_name}")
+                    log.info("  dropped old constraint: %s", old_name)
+            except Exception as e:
+                log.warning("  skip drop %s: %s", old_name, e)
+        # Also drop unique indexes that enforce single-column uniqueness
+        for old_idx in ("ix_users_email", "ix_users_phone"):
+            try:
+                exists = await conn.fetchval(
+                    "SELECT 1 FROM pg_indexes WHERE indexname = $1", old_idx
+                )
+                if exists:
+                    # Check if it's a unique index
+                    is_unique = await conn.fetchval(
+                        "SELECT indisunique FROM pg_index WHERE indexrelid = $1::regclass",
+                        old_idx,
+                    )
+                    if is_unique:
+                        await conn.execute(f"DROP INDEX {old_idx}")
+                        log.info("  dropped unique index: %s", old_idx)
+                        # Recreate as non-unique for lookups
+                        col = "email" if "email" in old_idx else "phone"
+                        await conn.execute(
+                            f"CREATE INDEX IF NOT EXISTS {old_idx} ON users ({col})"
+                        )
+                        log.info("  recreated non-unique index: %s", old_idx)
+            except Exception as e:
+                log.warning("  skip idx %s: %s", old_idx, e)
+        # Create composite unique constraints
+        for uq_name, cols in (
+            ("uq_user_email_role", "email, role"),
+            ("uq_user_phone_role", "phone, role"),
+        ):
+            try:
+                exists = await conn.fetchval(
+                    "SELECT 1 FROM pg_constraint WHERE conname = $1", uq_name
+                )
+                if not exists:
+                    await conn.execute(
+                        f"ALTER TABLE users ADD CONSTRAINT {uq_name} UNIQUE ({cols})"
+                    )
+                    log.info("  ok: constraint %s created", uq_name)
+                else:
+                    log.info("  ok: constraint %s already exists", uq_name)
+            except Exception as e:
+                log.warning("  skip constraint %s: %s", uq_name, e)
+
         # Default service area
         try:
             exists = await conn.fetchval("SELECT id FROM service_areas WHERE area_name = 'Birmingham Metro' LIMIT 1")

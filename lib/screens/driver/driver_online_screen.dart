@@ -1273,24 +1273,28 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
   }
 }
 
-/// Paints an animated gold glow segment that follows the rounded top border
-/// of the "Finding trips" panel, creating a premium search animation effect.
+/// Paints an animated gold glow segment around the "Finding trips" panel.
+/// [expansion] 0.0 = collapsed (glow runs around ALL 4 sides),
+///             1.0 = expanded  (glow runs only across the top edge).
 class _SearchingBorderPainter extends CustomPainter {
   final double progress; // 0.0 → 1.0, loops continuously
-  static const double _borderRadius = 18.0;
+  final double expansion; // 0.0 = collapsed, 1.0 = expanded
   static const Color _gold = Color(0xFFD4AF37);
   static const Color _goldLight = Color(0xFFF5E6A3);
 
-  _SearchingBorderPainter({required this.progress});
+  _SearchingBorderPainter({required this.progress, this.expansion = 0.0});
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Build path for the top portion of the rounded rect (pill-shaped top)
     final rect = Offset.zero & size;
+    // Bottom corners shrink from 20→0 as panel expands; top stays 20
+    final botRadius = 20.0 * (1.0 - expansion);
     final rrect = RRect.fromRectAndCorners(
       rect,
-      topLeft: const Radius.circular(_borderRadius),
-      topRight: const Radius.circular(_borderRadius),
+      topLeft: const Radius.circular(20),
+      topRight: const Radius.circular(20),
+      bottomLeft: Radius.circular(botRadius),
+      bottomRight: Radius.circular(botRadius),
     );
 
     // Subtle base border — always visible
@@ -1366,5 +1370,6 @@ class _SearchingBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SearchingBorderPainter old) => old.progress != progress;
+  bool shouldRepaint(_SearchingBorderPainter old) =>
+      old.progress != progress || old.expansion != expansion;
 }

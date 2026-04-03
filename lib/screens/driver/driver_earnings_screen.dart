@@ -215,15 +215,13 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               ),
               onPressed: () => Navigator.pop(context),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-              title: Text(
-                s.earningsTitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
+            centerTitle: true,
+            title: Text(
+              s.earningsTitle,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),

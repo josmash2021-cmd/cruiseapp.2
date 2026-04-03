@@ -56,8 +56,9 @@ _TUNNEL_URL_FILE = os.path.join(os.path.dirname(__file__), "tunnel_url.txt")
 def sweep_caches():
     """Evict expired entries from all in-memory caches. Call periodically."""
     now = time.monotonic()
-    # OTP
-    _expired = [k for k, v in _otp_store.items() if now - v.get("ts", 0) > _OTP_TTL]
+    # OTP — entries store "expires" as time.time() epoch
+    import time as _time
+    _expired = [k for k, v in _otp_store.items() if _time.time() > v.get("expires", 0)]
     for k in _expired:
         _otp_store.pop(k, None)
     if len(_otp_store) > _MAX_OTP_ENTRIES:

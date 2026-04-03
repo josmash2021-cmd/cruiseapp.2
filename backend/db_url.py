@@ -2,7 +2,23 @@ import os
 from urllib.parse import quote
 
 
-def _normalize_database_url(url: str, *, async_driver: bool) -> str:
+def _strip_ssl_params(url: str) -> str:
+    """Remove sslmode/ssl query params from URL so connect_args controls SSL."""
+    import re
+    # Remove sslmode=xxx and ssl=xxx from query string
+    url = re.sub(r'[?&]sslmode=[^&]*', '', url)
+    url = re.sub(r'[?&]ssl=[^&]*', '', url)
+    # Fix broken query string (e.g., ?& or trailing ?)
+    url = re.sub(r'\?&', '?', url)
+    url = url.rstrip('?')
+    return url
+
+
+def _normalize_database_url(url: str, *, async_driver: bool, private: bool = False) -> str:
+    # Strip SSL params for private network — we control SSL via connect_args
+    if private:
+        url = _strip_ssl_params(url)
+
     if async_driver:
         if url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -52,13 +68,14 @@ def resolve_database_url(
         or os.getenv("POSTGRES_PRIVATE_URL", "").strip()
     )
     if explicit_private:
-        return _normalize_database_url(explicit_private, async_driver=async_driver)
+        priv = _is_private_host(explicit_private.split("@")[-1].split("/")[0] if "@" in explicit_private else "")
+        return _normalize_database_url(explicit_private, async_driver=async_driver, private=priv)
 
     # 2. Build from PGHOST etc — prefer if PGHOST is already a private host
     pg_url = _build_private_pg_url()
     pg_host = os.getenv("PGHOST", "").strip()
     if pg_url and _is_private_host(pg_host):
-        return _normalize_database_url(pg_url, async_driver=async_driver)
+        return _normalize_database_url(pg_url, async_driver=async_driver, private=True)
 
     # 3. Explicit DATABASE_URL — but try to swap public proxy for private host
     configured = os.getenv("DATABASE_URL", "").strip() or os.getenv("POSTGRES_URL", "").strip()
@@ -67,9 +84,8 @@ def resolve_database_url(
         private_host = os.getenv("POSTGRES_PRIVATE_HOST", "").strip() or os.getenv("PGHOST_PRIVATE", "").strip()
         if private_host and (".proxy.rlwy.net" in configured or "railway.app" in configured):
             import re
-            # Replace the host:port section with the private host
             swapped = re.sub(r"@[^/]+/", f"@{private_host}:{os.getenv('PGPORT','5432')}/", configured)
-            return _normalize_database_url(swapped, async_driver=async_driver)
+            return _normalize_database_url(swapped, async_driver=async_driver, private=_is_private_host(private_host))
         return _normalize_database_url(configured, async_driver=async_driver)
 
     # 4. PGHOST even if public (fallback)

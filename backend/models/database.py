@@ -31,18 +31,15 @@ if IS_SQLITE:
 else:
     _engine_kwargs["pool_size"] = 15           # Pro Plan — dedicated DB handles more connections
     _engine_kwargs["max_overflow"] = 10        # burst to 25 total under load
-    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_pre_ping"] = False    # no extra ping — saves a round-trip per checkout
     _engine_kwargs["pool_recycle"] = 1800      # recycle every 30 min — Pro connections are stable
     _engine_kwargs["pool_timeout"] = 5         # fail fast — dedicated DB should respond instantly
     _engine_kwargs["pool_use_lifo"] = True     # reuse warm connections first
     _connect_args = {
-        "timeout": 5,                          # TCP connect timeout
-        "command_timeout": 10,                 # query timeout
+        "timeout": 5,
+        "command_timeout": 10,
+        "ssl": False,                          # private network — no TLS needed
     }
-    # Private network → skip SSL handshake (saves ~800-1200ms per new connection)
-    if ".railway.internal" in DATABASE_URL or "10." in DATABASE_URL.split("@")[-1][:3]:
-        _connect_args["ssl"] = False
-        _logger.info("Private network detected — SSL disabled for speed")
     _engine_kwargs["connect_args"] = _connect_args
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)

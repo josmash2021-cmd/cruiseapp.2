@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
@@ -41,12 +43,14 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   late final AnimationController _settleCtrl;
   late final Animation<double> _settleAnim;
 
-  // Confirm anchor + ripple animation
+  // Confirm anchor animation
   AnimationController? _anchorCtrl;
   Animation<double>? _anchorAnim;
-  AnimationController? _rippleCtrl;
-  Animation<double>? _rippleAnim;
   bool _confirming = false;
+  Ticker? _rippleTicker;
+  double _rippleElapsed = 0.0;
+  static const _rippleDurationMs = 1200.0;
+  static const _waveCount = 3; // number of staggered waves
 
   @override
   void initState() {
@@ -96,7 +100,7 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     _debounce?.cancel();
     _settleCtrl.dispose();
     _anchorCtrl?.dispose();
-    _rippleCtrl?.dispose();
+    _rippleTicker?.dispose();
     super.dispose();
   }
 
@@ -194,26 +198,16 @@ class _MapPickerScreenState extends State<MapPickerScreen>
       ),
     ]).animate(_anchorCtrl!);
     _anchorCtrl!.addListener(() => setState(() {}));
-
-    // 2. Ripple wave starts when pin lands (at ~65% of anchor anim)
-    _rippleCtrl?.dispose();
-    _rippleCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _rippleAnim = CurvedAnimation(parent: _rippleCtrl!, curve: Curves.easeOut);
-    _rippleCtrl!.addListener(() => setState(() {}));
-
     _anchorCtrl!.forward(from: 0);
 
-    // Start ripple when pin impacts (at 65% = ~260ms)
+    // 2. Map-native ripple: add GeoJSON source + circle layers, animate with Ticker
     Future.delayed(const Duration(milliseconds: 260), () {
       if (!mounted) return;
-      _rippleCtrl!.forward(from: 0);
+      _startMapRipple();
     });
 
     // 3. Pop result after full animation
-    Future.delayed(const Duration(milliseconds: 1000), () {
+    Future.delayed(const Duration(milliseconds: 1400), () {
       if (!mounted) return;
       Navigator.of(context).pop({
         'address': _address,
@@ -221,6 +215,115 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         'lng': _center.longitude,
       });
     });
+  }
+
+  /// Meters-per-pixel at a given latitude and zoom level.
+  double _metersPerPixel(double lat, double zoom) {
+    return 156543.03392 *
+        (1.0 / (1 << zoom.floor())) *
+        (1.0 / (1.0 + (lat.abs() * 3.14159265 / 180.0).clamp(0.0, 1.2)));
+  }
+
+  Future<void> _startMapRipple() async {
+    final map = _mapCtrl;
+    if (map == null) return;
+
+    final lng = _center.longitude;
+    final lat = _center.latitude;
+
+    // Create a GeoJSON point source at the pin location
+    final geojson = jsonEncode({
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [lng, lat],
+          },
+          'properties': {},
+        }
+      ],
+    });
+
+    try {
+      await map.style.addSource(mapbox.GeoJsonSource(id: 'ripple-source', data: geojson));
+    } catch (_) {
+      // Source might already exist
+    }
+
+    // Add circle layers for each wave (staggered)
+    for (int i = 0; i < _waveCount; i++) {
+      final layerId = 'ripple-wave-$i';
+      try {
+        await map.style.addLayer(mapbox.CircleLayer(
+          id: layerId,
+          sourceId: 'ripple-source',
+          circleRadius: 0.0,
+          circleColor: 0xFFD4A843,
+          circleOpacity: 0.0,
+          circleStrokeWidth: 2.5,
+          circleStrokeColor: 0xFFE8C547,
+          circleStrokeOpacity: 0.0,
+        ));
+      } catch (_) {}
+    }
+
+    // Animate using Ticker for smooth 60fps
+    _rippleElapsed = 0.0;
+    _rippleTicker?.dispose();
+    _rippleTicker = createTicker((elapsed) {
+      _rippleElapsed = elapsed.inMilliseconds.toDouble();
+      if (_rippleElapsed > _rippleDurationMs) {
+        _rippleTicker?.stop();
+        _cleanupMapRipple();
+        return;
+      }
+      _updateRippleLayers();
+    })..start();
+  }
+
+  void _updateRippleLayers() {
+    final map = _mapCtrl;
+    if (map == null) return;
+
+    for (int i = 0; i < _waveCount; i++) {
+      final layerId = 'ripple-wave-$i';
+      // Stagger each wave by 150ms
+      final waveOffset = i * 150.0;
+      final waveTime = (_rippleElapsed - waveOffset).clamp(0.0, _rippleDurationMs - waveOffset);
+      final progress = (waveTime / (_rippleDurationMs - waveOffset)).clamp(0.0, 1.0);
+
+      if (progress <= 0) continue;
+
+      // Ease out curve for natural deceleration
+      final eased = 1.0 - (1.0 - progress) * (1.0 - progress);
+      // Max radius grows with each wave (outer waves go further)
+      final maxRadius = 80.0 + (i * 30.0);
+      final radius = maxRadius * eased;
+      // Opacity: peaks early then fades out
+      final opacity = progress < 0.15
+          ? (progress / 0.15) * 0.35
+          : 0.35 * (1.0 - ((progress - 0.15) / 0.85));
+      final fillOpacity = opacity * 0.25; // fill is more subtle
+      final strokeOpacity = opacity;
+      final strokeWidth = (3.0 * (1.0 - eased * 0.5)).clamp(0.5, 3.0);
+
+      // Update layer properties
+      map.style.setStyleLayerProperty(layerId, 'circle-radius', radius);
+      map.style.setStyleLayerProperty(layerId, 'circle-opacity', fillOpacity);
+      map.style.setStyleLayerProperty(layerId, 'circle-stroke-opacity', strokeOpacity);
+      map.style.setStyleLayerProperty(layerId, 'circle-stroke-width', strokeWidth);
+    }
+  }
+
+  Future<void> _cleanupMapRipple() async {
+    final map = _mapCtrl;
+    if (map == null) return;
+    for (int i = 0; i < _waveCount; i++) {
+      try { await map.style.removeStyleLayer('ripple-wave-$i'); } catch (_) {}
+    }
+    try { await map.style.removeStyleSource('ripple-source'); } catch (_) {}
   }
 
   @override
@@ -257,28 +360,6 @@ class _MapPickerScreenState extends State<MapPickerScreen>
             onMapIdleListener: _onMapIdle,
           ),
           ),
-
-          // Golden ripple wave — expands from pin tip (screen center) when pin anchors
-          if (_confirming && _rippleAnim != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _rippleAnim!,
-                  builder: (_, __) {
-                    final pinTipY = MediaQuery.of(context).size.height / 2;
-                    final pinTipX = MediaQuery.of(context).size.width / 2;
-                    return CustomPaint(
-                      painter: _RipplePainter(
-                        progress: _rippleAnim!.value,
-                        color: _gold,
-                        center: Offset(pinTipX, pinTipY),
-                      ),
-                      size: MediaQuery.of(context).size,
-                    );
-                  },
-                ),
-              ),
-            ),
 
           // Center pin — tip sits at exact screen center (map coordinate)
           Center(
@@ -473,52 +554,3 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   }
 }
 
-/// Paints a focused shockwave ring expanding from a point (the pin tip).
-/// Starts small and tight, then sweeps outward with a golden band that fades out.
-class _RipplePainter extends CustomPainter {
-  final double progress; // 0.0 → 1.0
-  final Color color;
-  final Offset? center;
-
-  _RipplePainter({required this.progress, required this.color, this.center});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (progress <= 0) return;
-    final c = center ?? size.center(Offset.zero);
-    final maxR = size.longestSide * 0.6;
-
-    final r = maxR * progress;
-    // Band starts thick and narrows as it expands
-    final bandWidth = 40.0 * (1.0 - progress * 0.6);
-    final innerR = (r - bandWidth).clamp(0.0, r);
-    // Opacity fades as ring expands
-    final opacity = (1.0 - progress) * 0.45;
-
-    final paint = Paint()
-      ..shader = RadialGradient(
-        center: Alignment.center,
-        colors: [
-          Colors.transparent,
-          Colors.transparent,
-          color.withValues(alpha: opacity * 0.2),
-          color.withValues(alpha: opacity),
-          color.withValues(alpha: opacity * 0.5),
-          Colors.transparent,
-        ],
-        stops: [
-          0.0,
-          (innerR / (r + 1)).clamp(0.0, 1.0),
-          ((innerR / (r + 1)) + 0.01).clamp(0.0, 1.0),
-          ((innerR + bandWidth * 0.4) / (r + 1)).clamp(0.0, 1.0),
-          ((innerR + bandWidth * 0.8) / (r + 1)).clamp(0.0, 1.0),
-          1.0,
-        ],
-      ).createShader(Rect.fromCircle(center: c, radius: r.clamp(1, double.infinity)));
-
-    canvas.drawCircle(c, r, paint);
-  }
-
-  @override
-  bool shouldRepaint(_RipplePainter old) => old.progress != progress;
-}

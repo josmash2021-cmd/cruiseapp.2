@@ -9,7 +9,7 @@ from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn
-from utils.security import _get_current_user, _verify_api_key
+from utils.security import _get_current_user, _verify_api_key, _require_dispatch_auth
 from config import (
     STRIPE_SECRET, _HAS_STRIPE, _stripe_mod, STRIPE_WEBHOOK_SECRET,
     PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_SANDBOX,
@@ -290,6 +290,64 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 logging.info("[Stripe Webhook] Refund recorded for trip %s: $%.2f", trip.id, trip.refund_amount)
 
     return {"status": "ok"}
+
+
+# ═══════════════════════════════════════════════════════
+#  DISPATCH ADMIN — REFUND & TRIP PAYMENT DETAIL
+# ═══════════════════════════════════════════════════════
+
+@router.post("/payments/refund", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_refund_trip(request: Request, db: AsyncSession = Depends(get_db)):
+    """Process a trip refund from the dispatch admin app.
+    Body: {"trip_id": int, "amount": float (optional, defaults to full fare), "reason": str}
+    """
+    body = await request.json()
+    trip_id = body.get("trip_id")
+    reason = body.get("reason", "")
+    if not trip_id:
+        raise HTTPException(400, "trip_id is required")
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    # Determine refund amount — default to full fare
+    amount = body.get("amount")
+    if amount is None:
+        amount = float(trip.fare or 0.0)
+    amount = round(float(amount), 2)
+    if amount <= 0:
+        raise HTTPException(400, "Refund amount must be positive")
+    if trip.fare and amount > float(trip.fare):
+        raise HTTPException(400, "Refund amount cannot exceed trip fare")
+
+    trip.refund_status = "full" if (trip.fare and amount >= float(trip.fare)) else "partial"
+    trip.refund_amount = amount
+    trip.refund_reason = reason
+    await db.commit()
+    await db.refresh(trip)
+    logging.info("[Refund] trip_id=%s amount=%.2f reason=%s", trip_id, amount, reason)
+    return {"ok": True, "refund_amount": amount}
+
+
+@router.get("/payments/trip/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def get_trip_payment_details(trip_id: int, db: AsyncSession = Depends(get_db)):
+    """Get payment details for a specific trip. For dispatch admin app."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    return {
+        "trip_id": trip.id,
+        "fare": trip.fare,
+        "payment_status": trip.payment_status or "unpaid",
+        "stripe_payment_intent_id": trip.stripe_payment_intent_id,
+        "refund_status": trip.refund_status,
+        "refund_amount": float(trip.refund_amount or 0.0),
+        "driver_earnings": float(trip.driver_earnings or 0.0),
+        "platform_fee": float(trip.platform_fee or 0.0),
+        "tip_amount": float(trip.tip_amount or 0.0),
+    }
 
 
 # ═══════════════════════════════════════════════════════

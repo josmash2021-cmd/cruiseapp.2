@@ -3,12 +3,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text, case
+from sqlalchemy import select, func, and_, or_, text, case, cast, Date
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
     SupportChat, RiderPaymentMethod, SurgeZone, DispatchOffer, DriverIncentive,
+    AuditLog,
 )
 from models.schemas import AdminStatsResponse
 from utils.security import (
@@ -26,6 +27,22 @@ from config import (
 )
 
 router = APIRouter()
+
+# ══════════════════════════════════════════════════════════
+#  In-memory pricing configuration (admin-editable at runtime)
+# ══════════════════════════════════════════════════════════
+_pricing_config: dict = {
+    "base_fare": 5.0,
+    "per_mile": 2.0,
+    "per_minute": 0.35,
+    "minimum_fare": 8.0,
+    "cancellation_fee": 5.0,
+    "airport_fee": 10.0,
+    "booking_fee": 2.0,
+    "vehicle_multipliers": {"sedan": 1.0, "suv": 1.5, "luxury": 2.0},
+    "surge": {"night": 1.25, "holiday": 1.35},
+    "driver_commission": 0.80,
+}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  HELPER: Calculate driver rating from reviews
@@ -183,6 +200,75 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
             logging.warning("Firestore trip sync failed: %s", e)
     _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(body.keys())}")
     return _trip_dict(trip)
+
+
+@router.post("/admin/trips/{trip_id}/cancel", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Dedicated cancel endpoint for the dispatch admin app."""
+    body = await request.json()
+    reason = body.get("reason", "")
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    trip.status = "cancelled"
+    trip.cancel_reason = reason
+    await db.commit()
+    await db.refresh(trip)
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_status(
+                trip_id=trip.id, status=trip.status,
+                cancel_reason=trip.cancel_reason,
+            )
+        except Exception as e:
+            logging.warning("Firestore cancel sync failed: %s", e)
+    _security_audit_log("ADMIN_TRIP_CANCELLED", "admin", f"trip_id={trip_id} reason={reason}")
+    return _trip_dict(trip)
+
+
+@router.post("/admin/trips/{trip_id}/accept", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Dedicated accept/assign-driver endpoint for the dispatch admin app."""
+    body = await request.json()
+    driver_id = body.get("driver_id")
+    if not driver_id:
+        raise HTTPException(400, "driver_id is required")
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    # Verify driver exists and is a driver
+    driver_r = await db.execute(select(User).where(User.id == driver_id))
+    driver = driver_r.scalar_one_or_none()
+    if not driver or driver.role != "driver":
+        raise HTTPException(404, "Driver not found")
+    trip.driver_id = driver_id
+    trip.status = "accepted"
+    await db.commit()
+    await db.refresh(trip)
+    if _HAS_FIRESTORE:
+        try:
+            rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_r.scalar_one_or_none()
+            firestore_sync.sync_trip(
+                trip_id=trip.id, rider_id=trip.rider_id,
+                rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
+                rider_phone=rider.phone or "" if rider else "",
+                pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
+                dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
+                status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
+                created_at=trip.created_at, scheduled_at=trip.scheduled_at,
+                driver_id=driver.id,
+                driver_name=f"{driver.first_name} {driver.last_name}",
+                driver_phone=driver.phone or "",
+                pickup_zone=trip.pickup_zone, notes=trip.notes,
+            )
+        except Exception as e:
+            logging.warning("Firestore accept sync failed: %s", e)
+    _security_audit_log("ADMIN_TRIP_ACCEPTED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
+    return _trip_dict(trip)
+
 
 @router.delete("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
@@ -950,4 +1036,236 @@ async def create_driver_incentive(
     db.add(incentive)
     await db.commit()
     return {"status": "created", "incentive_id": incentive.id}
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — PUSH NOTIFICATIONS
+# ══════════════════════════════════════════════════════════
+
+@router.post("/admin/notifications/send", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_send_notification(
+    user_id: int = Body(...),
+    title: str = Body(...),
+    body: str = Body(...),
+    data: Optional[dict] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a push notification to a specific user by user_id."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not user.fcm_token:
+        raise HTTPException(400, "User has no FCM token registered")
+    _send_fcm_push(user.fcm_token, title, body, data)
+    logging.info("[Admin] Push notification sent to user %d", user_id)
+    return {"ok": True}
+
+
+@router.post("/admin/notifications/broadcast/drivers", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_broadcast_drivers(
+    title: str = Body(...),
+    body: str = Body(...),
+    data: Optional[dict] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Broadcast a push notification to all online drivers with an FCM token."""
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.role == "driver",
+                User.is_online == True,
+                User.fcm_token.isnot(None),
+            )
+        )
+    )
+    drivers = result.scalars().all()
+    sent = 0
+    for driver in drivers:
+        _send_fcm_push(driver.fcm_token, title, body, data)
+        sent += 1
+    logging.info("[Admin] Broadcast sent to %d online drivers", sent)
+    return {"ok": True, "sent": sent}
+
+
+@router.post("/admin/notifications/broadcast/riders", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_broadcast_riders(
+    title: str = Body(...),
+    body: str = Body(...),
+    data: Optional[dict] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Broadcast a push notification to all riders with an FCM token."""
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.role == "rider",
+                User.fcm_token.isnot(None),
+            )
+        )
+    )
+    riders = result.scalars().all()
+    sent = 0
+    for rider in riders:
+        _send_fcm_push(rider.fcm_token, title, body, data)
+        sent += 1
+    logging.info("[Admin] Broadcast sent to %d riders", sent)
+    return {"ok": True, "sent": sent}
+
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Pricing Configuration
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/pricing", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_pricing():
+    """Return current pricing configuration."""
+    return _pricing_config.copy()
+
+
+@router.patch("/admin/pricing", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_update_pricing(request: Request):
+    """Update pricing configuration. Accepts partial updates."""
+    body = await request.json()
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(400, "Request body must be a non-empty JSON object")
+    allowed_keys = set(_pricing_config.keys())
+    for key, value in body.items():
+        if key not in allowed_keys:
+            raise HTTPException(400, f"Unknown pricing key: {key}")
+        # Validate nested dicts stay as dicts
+        if key in ("vehicle_multipliers", "surge"):
+            if not isinstance(value, dict):
+                raise HTTPException(400, f"{key} must be a JSON object")
+            # Merge nested dict (partial update within nested)
+            _pricing_config[key].update(value)
+        else:
+            if not isinstance(value, (int, float)):
+                raise HTTPException(400, f"{key} must be a number")
+            _pricing_config[key] = float(value)
+    _security_audit_log("ADMIN_PRICING_UPDATED", "admin", f"keys={list(body.keys())}")
+    return _pricing_config.copy()
+
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Audit Logs
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/audit-logs", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_audit_logs(
+    action: Optional[str] = Query(None, description="Filter by event/action type"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Query audit/security logs from the database."""
+    query = select(AuditLog)
+    if action:
+        query = query.where(AuditLog.event == action)
+    query = query.order_by(AuditLog.ts.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    logs = result.scalars().all()
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.ts.isoformat() if log.ts else None,
+            "action": log.event,
+            "ip": log.ip,
+            "user_id": log.user_id,
+            "details": log.details,
+            "entry_hash": log.entry_hash,
+        }
+        for log in logs
+    ]
+
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Revenue Report
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/reports/revenue", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_revenue_report(
+    period: str = Query("week", description="Report period: today, week, or month"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revenue report: total revenue, trip count, and daily breakdown."""
+    if period not in ("today", "week", "month"):
+        raise HTTPException(400, "period must be 'today', 'week', or 'month'")
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if period == "today":
+        since = today_start
+    elif period == "week":
+        since = today_start - timedelta(days=today_start.weekday())
+    else:  # month
+        since = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # Total revenue and trip count for the period
+    totals_q = await db.execute(
+        select(
+            func.coalesce(func.sum(Trip.fare), 0).label("total_revenue"),
+            func.count(Trip.id).label("total_trips"),
+        ).where(
+            and_(
+                Trip.status == "completed",
+                Trip.created_at >= since,
+            )
+        )
+    )
+    totals = totals_q.one()
+
+    # Daily breakdown — cast created_at to date for grouping
+    daily_q = await db.execute(
+        select(
+            cast(Trip.created_at, Date).label("day"),
+            func.coalesce(func.sum(Trip.fare), 0).label("revenue"),
+            func.count(Trip.id).label("trips"),
+        ).where(
+            and_(
+                Trip.status == "completed",
+                Trip.created_at >= since,
+            )
+        ).group_by(cast(Trip.created_at, Date))
+        .order_by(cast(Trip.created_at, Date))
+    )
+    daily_rows = daily_q.all()
+
+    return {
+        "period": period,
+        "total_revenue": round(float(totals.total_revenue or 0), 2),
+        "total_trips": totals.total_trips or 0,
+        "daily": [
+            {
+                "date": str(row.day),
+                "revenue": round(float(row.revenue or 0), 2),
+                "trips": row.trips or 0,
+            }
+            for row in daily_rows
+        ],
+    }
+
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Commission Report
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/reports/commission", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_commission_report(
+    db: AsyncSession = Depends(get_db),
+):
+    """Platform commission report across all completed trips."""
+    result = await db.execute(
+        select(
+            func.coalesce(func.sum(Trip.platform_fee), 0).label("total_commission"),
+            func.coalesce(func.sum(Trip.driver_earnings), 0).label("total_driver_earnings"),
+            func.count(Trip.id).label("trips_count"),
+        ).where(Trip.status == "completed")
+    )
+    row = result.one()
+    return {
+        "total_commission": round(float(row.total_commission or 0), 2),
+        "total_driver_earnings": round(float(row.total_driver_earnings or 0), 2),
+        "trips_count": row.trips_count or 0,
+    }
 

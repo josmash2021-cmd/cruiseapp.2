@@ -16,6 +16,7 @@ from models.schemas import (
 )
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
+    _require_dispatch_auth,
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
@@ -182,6 +183,42 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
         raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()).limit(100))
     return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
+
+
+@router.get("/drivers/{driver_id}/locations", dependencies=[Depends(_require_dispatch_auth)])
+async def get_driver_location_history(
+    driver_id: int, hours: int = Query(24, ge=1, le=168),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return driver location history for the dispatch admin app.
+    No dedicated location-history table exists yet, so return the driver's
+    current lat/lng from the in-memory cache (freshest) or the DB as a
+    single-entry list.
+    """
+    result = await db.execute(select(User).where(User.id == driver_id, User.role == "driver"))
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(404, "Driver not found")
+
+    locations: list[dict] = []
+
+    # Prefer in-memory location cache (updated every ~800ms while driver is online)
+    mem = _driver_locations.get(driver_id)
+    if mem and mem.get("lat") is not None and mem.get("lng") is not None:
+        locations.append({
+            "lat": mem["lat"],
+            "lng": mem["lng"],
+            "timestamp": utc_now().isoformat(),
+        })
+    elif driver.lat is not None and driver.lng is not None:
+        ts = driver.last_active_at or driver.created_at or utc_now()
+        locations.append({
+            "lat": driver.lat,
+            "lng": driver.lng,
+            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+        })
+
+    return {"driver_id": driver_id, "locations": locations}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  EARNINGS  ENDPOINTS

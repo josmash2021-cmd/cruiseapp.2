@@ -42,7 +42,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     },
     {
       'doc_type': 'profile_photo',
-      'title': 'Biometrics',
+      'title': 'Face Biometrics',
       'icon': Icons.fingerprint_rounded,
     },
   ];
@@ -71,9 +71,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         final docType = req['doc_type'] as String;
 
         // Background check - use status from user profile
+        // If driver is fully verified, background check is implicitly approved
         if (docType == 'background_check') {
           String bgStatus;
-          if (bgCheckStatus == 'clear') {
+          if (isVerified || bgCheckStatus == 'clear') {
             bgStatus = 'approved';
           } else if (bgCheckStatus == 'pending' || bgCheckStatus == 'processing') {
             bgStatus = 'pending';
@@ -150,7 +151,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       case 'background_check':
         return s.backgroundCheckTitle;
       case 'profile_photo':
-        return 'Biometrics';
+        return 'Face Biometrics';
       default:
         return docType ?? 'Document';
     }

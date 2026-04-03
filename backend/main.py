@@ -274,6 +274,9 @@ async def lifespan(app: FastAPI):
     # Start SSE heartbeat + stale connection cleanup
     from services.event_bus import event_bus as _eb
     _eb.start_heartbeat()
+    # Start 24/7 Telegram monitoring bot
+    from services.monitor_bot import start_monitor_bot
+    asyncio.create_task(start_monitor_bot())
     yield
     # Cleanup on shutdown
     await security_guardian.stop_heartbeat()

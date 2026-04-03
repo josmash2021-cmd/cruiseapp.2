@@ -280,23 +280,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: RepaintBoundary(child: _buildHeroCTA()),
               ),
 
-              // ── Verification banner (when account not verified) ──
-              if (!_isVerified && _activeRide == null) ...[
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildVerificationBanner(),
-                ),
-              ],
+              // Verification content now shown inside the hero card
 
-              // ── Scheduled ride indicator (below Where to?) ──
-              if (_nextScheduledRide != null && _activeRide == null) ...[
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildScheduledRideIndicator(context),
+              // ── Scheduled ride indicator (below Where to?) — fades in/out ──
+              if (_activeRide == null)
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, child: child)),
+                  child: _nextScheduledRide != null
+                      ? Padding(
+                          key: const ValueKey('scheduled_indicator'),
+                          padding: const EdgeInsets.only(left: 24, right: 24, top: 16),
+                          child: _buildScheduledRideIndicator(context),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no_scheduled')),
                 ),
-              ],
 
               // ── Hide everything below when a ride is active ──
               if (_activeRide == null) ...[
@@ -684,113 +685,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
     }
   }
 
-  // ─── Verification banner (shown above sheet content when not verified) ───
-  Widget _buildVerificationBanner() {
-    final verStatus = _verificationStatus;
-    final isPending = verStatus == 'pending';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isPending
-              ? [const Color(0xFF1A1815), const Color(0xFF1C1A16)]
-              : [const Color(0xFF1A1210), const Color(0xFF1C1412)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isPending
-              ? _gold.withValues(alpha: 0.3)
-              : Colors.red.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isPending
-                      ? _gold.withValues(alpha: 0.15)
-                      : Colors.red.withValues(alpha: 0.12),
-                ),
-                child: Icon(
-                  isPending
-                      ? Icons.hourglass_top_rounded
-                      : Icons.lock_rounded,
-                  color: isPending ? _gold : Colors.redAccent,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isPending
-                          ? S.of(context).accountPendingTitle
-                          : S.of(context).verifyAccountTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isPending
-                          ? S.of(context).accountPendingDesc
-                          : S.of(context).verifyAccountDesc,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!isPending) ...[
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: () => _ensureVerified(),
-                child: Text(
-                  S.of(context).verifyNow,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   // ─── Hero CTA Card — transforms between "Where to?" and "Ride in progress" ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -806,13 +700,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
           return;
         }
         if (verificationBlocked) {
-          _showVerificationBlockedDialog();
+          if (_verificationStatus == 'pending') {
+            _showVerificationBlockedDialog();
+          } else {
+            _ensureVerified();
+          }
           return;
         }
         if (imminent) {
-          Navigator.of(context).push(
+          await Navigator.of(context).push(
             slideFromRightRoute(const ScheduledRidesScreen()),
           );
+          _loadSavedData();
           return;
         }
         if (zoneBlocked) {
@@ -860,11 +759,15 @@ extension _HomeScreenWidgets on _HomeScreenState {
         builder: (context, child) {
           final v = _shimmerController.value;
           return Opacity(
-            opacity: disabled ? 0.55 : 1.0,
+            opacity: (disabled && !verificationBlocked) ? 0.55 : 1.0,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
-              height: (active || imminent) ? Responsive.h(195) : Responsive.h(140),
+              height: (active || imminent)
+                  ? Responsive.h(195)
+                  : verificationBlocked
+                      ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
+                      : Responsive.h(140),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
@@ -934,6 +837,90 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // ─── "Where to?" content inside the hero card ───
   Widget _buildHeroWhereToContent(bool isDark, bool disabled, bool zoneBlocked, bool verificationBlocked) {
+    // When verification is blocked, show verification content inside the card
+    if (verificationBlocked) {
+      final isPending = _verificationStatus == 'pending';
+      return Column(
+        key: const ValueKey('hero_verify'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isPending
+                      ? _gold.withValues(alpha: 0.15)
+                      : Colors.red.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  isPending ? Icons.hourglass_top_rounded : Icons.lock_rounded,
+                  color: isPending ? _gold : Colors.redAccent,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPending
+                          ? S.of(context).accountPendingTitle
+                          : S.of(context).verifyAccountTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isPending
+                          ? S.of(context).accountPendingDesc
+                          : S.of(context).verifyAccountDesc,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!isPending) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () => _ensureVerified(),
+                child: Text(
+                  S.of(context).verifyNow,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
     return Row(
       key: const ValueKey('hero_where_to'),
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -957,29 +944,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               ),
               const SizedBox(height: 8),
-              if (disabled && verificationBlocked)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.lock_rounded,
-                      color: Colors.white.withValues(alpha: 0.35),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        S.of(context).verifyAccountTitle,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 2,
-                      ),
-                    ),
-                  ],
-                )
-              else if (disabled && zoneBlocked)
+              if (disabled && zoneBlocked)
                 Row(
                   children: [
                     Icon(
@@ -2633,10 +2598,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
         : '';
 
     return GestureDetector(
-      onTap: () {
-        Navigator.of(ctx).push(
+      onTap: () async {
+        await Navigator.of(ctx).push(
           slideFromRightRoute(const ScheduledRidesScreen()),
         );
+        _loadSavedData();
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

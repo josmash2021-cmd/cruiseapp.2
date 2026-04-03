@@ -26,6 +26,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   String _vehicleType = 'comfort';
   bool _inspectionValid = false;
   bool _insuranceValid = false;
+  bool _registrationValid = false;
   bool _loading = true;
 
   @override
@@ -47,6 +48,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         _vehicleType = (v['vehicle_type'] ?? 'comfort') as String;
         _inspectionValid = v['inspection_valid'] == true;
         _insuranceValid = v['insurance_valid'] == true;
+        _registrationValid = v['registration_valid'] == true;
         _loading = false;
       });
     } catch (_) {
@@ -174,159 +176,94 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Inspection status (tappable to update) ──
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      Navigator.push(
-                        context,
-                        slideFromRightRoute(const DriverDocumentsScreen()),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
+                  // ── "Required to go online" banner ──
+                  if (!_inspectionValid || !_insuranceValid || !_registrationValid)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        color: _inspectionValid
-                            ? const Color(0xFFE8C547).withValues(alpha: 0.08)
-                            : Colors.orange.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: _inspectionValid
-                              ? const Color(0xFFE8C547).withValues(alpha: 0.2)
-                              : Colors.orange.withValues(alpha: 0.4),
-                        ),
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            _inspectionValid
-                                ? Icons.verified_rounded
-                                : Icons.warning_rounded,
-                            color: _inspectionValid
-                                ? const Color(0xFFE8C547)
-                                : Colors.orange,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 14),
+                          const Icon(Icons.block_rounded, color: Colors.red, size: 22),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  _inspectionValid
-                                      ? s.vehicleInspectionValid
-                                      : s.inspectionExpired,
+                                const Text(
+                                  'Required to go online',
                                   style: TextStyle(
-                                    color: _inspectionValid
-                                        ? const Color(0xFFE8C547)
-                                        : Colors.orange,
+                                    color: Colors.red,
                                     fontSize: 15,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  _inspectionValid
-                                      ? s.nextInspectionDue
-                                      : s.tapToUpdateDocuments,
+                                  'Upload all vehicle documents below to activate your driver account.',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.4),
+                                    color: Colors.white.withValues(alpha: 0.5),
                                     fontSize: 12,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Colors.white38,
-                            size: 20,
-                          ),
                         ],
                       ),
                     ),
+
+                  // ── Inspection status ──
+                  _vehicleDocCard(
+                    isValid: _inspectionValid,
+                    validIcon: Icons.verified_rounded,
+                    invalidIcon: Icons.warning_rounded,
+                    validColor: const Color(0xFFE8C547),
+                    invalidColor: Colors.red,
+                    validTitle: s.vehicleInspectionValid,
+                    invalidTitle: s.inspectionExpired,
+                    validSubtitle: s.nextInspectionDue,
+                    invalidSubtitle: 'Required to go online',
                   ),
                   const SizedBox(height: 12),
 
-                  // ── Insurance status (tappable to update) ──
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      Navigator.push(
-                        context,
-                        slideFromRightRoute(const DriverDocumentsScreen()),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: _insuranceValid
-                            ? const Color(0xFF4CAF50).withValues(alpha: 0.08)
-                            : Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: _insuranceValid
-                              ? const Color(0xFF4CAF50).withValues(alpha: 0.3)
-                              : Colors.red.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _insuranceValid
-                                ? Icons.security_rounded
-                                : Icons.security_rounded,
-                            color: _insuranceValid
-                                ? const Color(0xFF4CAF50)
-                                : Colors.red,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _insuranceValid
-                                      ? s.vehicleInsuranceValid
-                                      : s.insuranceExpiredLabel,
-                                  style: TextStyle(
-                                    color: _insuranceValid
-                                        ? const Color(0xFF4CAF50)
-                                        : Colors.red,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _insuranceValid
-                                      ? s.insuranceUpToDate
-                                      : s.tapToUpdateDocuments,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.4),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Colors.white38,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
+                  // ── Insurance status ──
+                  _vehicleDocCard(
+                    isValid: _insuranceValid,
+                    validIcon: Icons.security_rounded,
+                    invalidIcon: Icons.security_rounded,
+                    validColor: const Color(0xFF4CAF50),
+                    invalidColor: Colors.red,
+                    validTitle: s.vehicleInsuranceValid,
+                    invalidTitle: s.insuranceExpiredLabel,
+                    validSubtitle: s.insuranceUpToDate,
+                    invalidSubtitle: 'Required to go online',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Registration status ──
+                  _vehicleDocCard(
+                    isValid: _registrationValid,
+                    validIcon: Icons.description_rounded,
+                    invalidIcon: Icons.description_rounded,
+                    validColor: const Color(0xFF4CAF50),
+                    invalidColor: Colors.red,
+                    validTitle: 'Registration Valid',
+                    invalidTitle: 'Registration Required',
+                    validSubtitle: 'Vehicle registration up to date',
+                    invalidSubtitle: 'Required to go online',
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Read-only vehicle details ──
-                  _detailRow(s.makeLabel, _make, Icons.directions_car_filled_rounded),
-                  _detailRow(s.modelLabel, _model, Icons.local_taxi_rounded),
-                  _detailRow(s.yearLabel, _year, Icons.calendar_today_rounded),
-                  _detailRow(s.colorLabel, _color, Icons.palette_rounded),
+                  // ── Read-only vehicle details (approved) ──
+                  _detailRowApproved(s.makeLabel, _make, Icons.directions_car_filled_rounded),
+                  _detailRowApproved(s.modelLabel, _model, Icons.local_taxi_rounded),
+                  _detailRowApproved(s.yearLabel, _year, Icons.calendar_today_rounded),
+                  _detailRowApproved(s.colorLabel, _color, Icons.palette_rounded),
                   _detailRow(s.licensePlate, _plate, Icons.confirmation_number_rounded),
                   // Vehicle type: set by dispatch only
                   _detailRowWithNote(
@@ -411,6 +348,157 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vehicleDocCard({
+    required bool isValid,
+    required IconData validIcon,
+    required IconData invalidIcon,
+    required Color validColor,
+    required Color invalidColor,
+    required String validTitle,
+    required String invalidTitle,
+    required String validSubtitle,
+    required String invalidSubtitle,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        Navigator.push(
+          context,
+          slideFromRightRoute(const DriverDocumentsScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: isValid
+              ? validColor.withValues(alpha: 0.08)
+              : invalidColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isValid
+                ? validColor.withValues(alpha: 0.25)
+                : invalidColor.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isValid ? validIcon : invalidIcon,
+              color: isValid ? validColor : invalidColor,
+              size: 24,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isValid ? validTitle : invalidTitle,
+                    style: TextStyle(
+                      color: isValid ? validColor : invalidColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isValid ? validSubtitle : invalidSubtitle,
+                    style: TextStyle(
+                      color: isValid
+                          ? Colors.white.withValues(alpha: 0.4)
+                          : invalidColor.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: isValid ? FontWeight.w400 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              isValid ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+              color: isValid ? validColor.withValues(alpha: 0.6) : Colors.white38,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRowApproved(String label, String value, IconData icon) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white.withValues(alpha: 0.4),
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 12, color: const Color(0xFF4CAF50)),
+                const SizedBox(width: 4),
+                const Text(
+                  'Approved',
+                  style: TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

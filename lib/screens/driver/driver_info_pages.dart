@@ -965,225 +965,476 @@ class _LearningTopicScreen extends StatelessWidget {
 
 // ═══════════════════════════════════════════════════════════════
 //  NEW DRIVER INSTRUCTIONS SCREEN (shown to newly approved drivers)
+//  3 swipeable pages + animated "Let's Go" button
 // ═══════════════════════════════════════════════════════════════
 
-class NewDriverInstructionsScreen extends StatelessWidget {
+class NewDriverInstructionsScreen extends StatefulWidget {
   const NewDriverInstructionsScreen({super.key});
 
   @override
+  State<NewDriverInstructionsScreen> createState() =>
+      _NewDriverInstructionsScreenState();
+}
+
+class _NewDriverInstructionsScreenState
+    extends State<NewDriverInstructionsScreen>
+    with TickerProviderStateMixin {
+  static const _gold = Color(0xFFE8C547);
+  static const _goldLight = Color(0xFFF5D990);
+  static const _bg = Color(0xFF0A0A0A);
+
+  final _pageCtrl = PageController();
+  int _currentPage = 0;
+  bool _viewedAllPages = false;
+
+  late final AnimationController _buttonCtrl;
+  late final Animation<double> _buttonSlide;
+  late final Animation<double> _buttonFade;
+
+  late final AnimationController _iconPulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _buttonCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _buttonSlide = Tween<double>(begin: 60, end: 0).animate(
+      CurvedAnimation(parent: _buttonCtrl, curve: Curves.easeOutBack),
+    );
+    _buttonFade = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _buttonCtrl, curve: Curves.easeIn),
+    );
+
+    _iconPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    _buttonCtrl.dispose();
+    _iconPulseCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onPageChanged(int page) {
+    setState(() => _currentPage = page);
+    if (page == 2 && !_viewedAllPages) {
+      _viewedAllPages = true;
+      _buttonCtrl.forward();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pages = _buildPages();
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: _bg,
       body: SafeArea(
         child: Column(
           children: [
+            // ── Top bar ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: Colors.white,
-                        size: 20,
+                  // App logo
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _gold.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Image.asset(
+                        'assets/images/logoapp.png',
+                        fit: BoxFit.contain,
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    S.of(context).newDriverWelcomeTitle,
-                    style: const TextStyle(
+                  const Text(
+                    'Welcome New Cruise Driver',
+                    style: TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+
+            // ── Page indicator dots ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(3, (i) {
+                final isActive = i == _currentPage;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: isActive ? 28 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: isActive ? _gold : Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Swipeable pages ──
             Expanded(
-              child: ListView(
+              child: PageView.builder(
+                controller: _pageCtrl,
+                onPageChanged: _onPageChanged,
+                itemCount: 3,
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const SizedBox(height: 16),
-                  Center(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFE8C547), Color(0xFFF5D990)],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.local_taxi_rounded,
-                        color: Colors.black,
-                        size: 40,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: Text(
-                      S.of(context).youreApprovedTitle,
-                      style: const TextStyle(
-                        color: Color(0xFFE8C547),
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      S.of(context).threeThingsToDo,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  _instructionStep(
-                    step: 1,
-                    title: S.of(context).verifyDocumentsTitle,
-                    body: S.of(context).verifyDocumentsBody,
-                    icon: Icons.description_rounded,
-                    color: const Color(0xFF2196F3),
-                  ),
-                  const SizedBox(height: 16),
-                  _instructionStep(
-                    step: 2,
-                    title: S.of(context).setupNavigationTitle,
-                    body: S.of(context).setupNavigationBody,
-                    icon: Icons.navigation_rounded,
-                    color: const Color(0xFF4CAF50),
-                  ),
-                  const SizedBox(height: 16),
-                  _instructionStep(
-                    step: 3,
-                    title: S.of(context).goOnlineAndEarnTitle,
-                    body: S.of(context).goOnlineAndEarnBody,
-                    icon: Icons.play_circle_filled_rounded,
-                    color: const Color(0xFFE8C547),
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        HapticFeedback.mediumImpact();
-                        Navigator.of(context).pushAndRemoveUntil(
-                          slideFromRightRoute(const DriverProfilePhotoScreen()),
-                          (_) => false,
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE8C547),
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(
-                        S.of(context).letsGoBtn,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
+                itemBuilder: (context, index) => pages[index],
               ),
             ),
+
+            // ── Animated "Let's Go" button ──
+            AnimatedBuilder(
+              animation: _buttonCtrl,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(0, _buttonSlide.value),
+                  child: Opacity(
+                    opacity: _buttonFade.value,
+                    child: child,
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [_gold, _goldLight],
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _gold.withValues(alpha: 0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _viewedAllPages
+                          ? () {
+                              HapticFeedback.mediumImpact();
+                              Navigator.of(context).pushAndRemoveUntil(
+                                slideFromRightRoute(
+                                    const DriverProfilePhotoScreen()),
+                                (_) => false,
+                              );
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            S.of(context).letsGoBtn,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_rounded, size: 22),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Swipe hint when button is not yet visible
+            if (!_viewedAllPages)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.swipe_rounded,
+                      color: Colors.white.withValues(alpha: 0.3),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Swipe to continue',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _instructionStep({
-    required int step,
-    required String title,
-    required String body,
+  List<Widget> _buildPages() {
+    return [
+      // ── Page 1: Vehicle & Presentation ──
+      _buildPage(
+        icon: Icons.auto_awesome_rounded,
+        iconColor: const Color(0xFF2196F3),
+        title: 'Keep Your Vehicle Spotless',
+        subtitle: 'First impressions matter',
+        items: [
+          _InstructionItem(
+            icon: Icons.cleaning_services_rounded,
+            color: const Color(0xFF2196F3),
+            title: 'Clean Inside & Out',
+            body:
+                'Wash your car regularly. Vacuum seats and floor mats. A clean vehicle earns higher ratings and better tips.',
+          ),
+          _InstructionItem(
+            icon: Icons.air_rounded,
+            color: const Color(0xFF00BCD4),
+            title: 'Fresh & Comfortable',
+            body:
+                'Keep the cabin smelling fresh. Maintain a comfortable temperature. Have water bottles available for riders.',
+          ),
+          _InstructionItem(
+            icon: Icons.phone_android_rounded,
+            color: const Color(0xFF9C27B0),
+            title: 'Phone Mount & Charger',
+            body:
+                'Use a secure phone mount for navigation. Offer a charging cable for riders. Keep your phone charged at all times.',
+          ),
+          _InstructionItem(
+            icon: Icons.checkroom_rounded,
+            color: const Color(0xFF4CAF50),
+            title: 'Professional Appearance',
+            body:
+                'Dress neatly and present yourself professionally. You represent the Cruise brand with every ride.',
+          ),
+        ],
+      ),
+
+      // ── Page 2: Safe Driving ──
+      _buildPage(
+        icon: Icons.shield_rounded,
+        iconColor: const Color(0xFF4CAF50),
+        title: 'Drive Safe, Always',
+        subtitle: 'Safety is your #1 priority',
+        items: [
+          _InstructionItem(
+            icon: Icons.speed_rounded,
+            color: const Color(0xFF4CAF50),
+            title: 'Obey Traffic Laws',
+            body:
+                'Follow speed limits, stop at red lights, and use turn signals. No exceptions. A safe driver is a successful driver.',
+          ),
+          _InstructionItem(
+            icon: Icons.no_drinks_rounded,
+            color: const Color(0xFFE53935),
+            title: 'Zero Tolerance Policy',
+            body:
+                'Never drive under the influence of alcohol or drugs. If you feel drowsy or unwell, go offline immediately.',
+          ),
+          _InstructionItem(
+            icon: Icons.remove_red_eye_rounded,
+            color: const Color(0xFFFF9800),
+            title: 'Stay Focused',
+            body:
+                'No texting while driving. Set your navigation before starting the trip. Keep your eyes on the road at all times.',
+          ),
+          _InstructionItem(
+            icon: Icons.airline_seat_recline_normal_rounded,
+            color: const Color(0xFF2196F3),
+            title: 'Seatbelt Required',
+            body:
+                'Ensure all passengers have their seatbelts fastened before starting the ride. Safety first, every trip.',
+          ),
+        ],
+      ),
+
+      // ── Page 3: Customer Service ──
+      _buildPage(
+        icon: Icons.favorite_rounded,
+        iconColor: const Color(0xFFE8C547),
+        title: 'Deliver 5-Star Service',
+        subtitle: 'Make every ride memorable',
+        items: [
+          _InstructionItem(
+            icon: Icons.emoji_people_rounded,
+            color: const Color(0xFFE8C547),
+            title: 'Greet Every Rider',
+            body:
+                'Welcome riders by name. A simple "Hello!" and a smile goes a long way. Confirm their destination before starting.',
+          ),
+          _InstructionItem(
+            icon: Icons.route_rounded,
+            color: const Color(0xFF4CAF50),
+            title: 'Efficient Routes',
+            body:
+                'Follow the GPS navigation. If you know a faster route, ask the rider first. Respect their time and preferences.',
+          ),
+          _InstructionItem(
+            icon: Icons.music_note_rounded,
+            color: const Color(0xFF9C27B0),
+            title: 'Respect Rider Preferences',
+            body:
+                'Keep music at a low volume or ask the rider. Some prefer conversation, others prefer quiet. Read the room.',
+          ),
+          _InstructionItem(
+            icon: Icons.star_rounded,
+            color: const Color(0xFFFF9800),
+            title: 'Go the Extra Mile',
+            body:
+                'Help with luggage, open the door, offer a smooth ride. Small gestures lead to 5-star ratings and repeat riders.',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _buildPage({
     required IconData icon,
-    required Color color,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required List<_InstructionItem> items,
   }) {
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      children: [
+        const SizedBox(height: 8),
+        // Animated icon
+        Center(
+          child: AnimatedBuilder(
+            animation: _iconPulseCtrl,
+            builder: (_, child) {
+              final scale = 1.0 + _iconPulseCtrl.value * 0.08;
+              return Transform.scale(scale: scale, child: child);
+            },
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: iconColor.withValues(alpha: 0.2),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: iconColor, size: 40),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Center(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Center(
+          child: Text(
+            subtitle,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        ...items.map((item) => _buildInstructionCard(item)),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildInstructionCard(_InstructionItem item) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: item.color.withValues(alpha: 0.12),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+              color: item.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Center(
-              child: Text(
-                '$step',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
+            child: Icon(item.icon, color: item.color, size: 22),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Icon(icon, color: color, size: 18),
-                    const SizedBox(width: 6),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
                 Text(
-                  body,
+                  item.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.body,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: Colors.white.withValues(alpha: 0.55),
                     fontSize: 13,
-                    height: 1.5,
+                    height: 1.45,
                   ),
                 ),
               ],
@@ -1193,6 +1444,19 @@ class NewDriverInstructionsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InstructionItem {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+  const _InstructionItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -283,6 +283,10 @@ class Vehicle(Base):
     vehicle_type = Column(String(30), default="comfort")
     inspection_valid = Column(Boolean, default=False)
     inspection_expiry = Column(DateTime(timezone=True), nullable=True)
+    insurance_valid = Column(Boolean, default=False)
+    insurance_expiry = Column(DateTime(timezone=True), nullable=True)
+    registration_valid = Column(Boolean, default=False)
+    registration_expiry = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -661,6 +665,10 @@ async def migrate_postgres(conn):
         ("vehicles", "vin", "VARCHAR(50)"),
         ("vehicles", "inspection_valid", "BOOLEAN DEFAULT FALSE"),
         ("vehicles", "inspection_expiry", "TIMESTAMP WITH TIME ZONE"),
+        ("vehicles", "insurance_valid", "BOOLEAN DEFAULT FALSE"),
+        ("vehicles", "insurance_expiry", "TIMESTAMP WITH TIME ZONE"),
+        ("vehicles", "registration_valid", "BOOLEAN DEFAULT FALSE"),
+        ("vehicles", "registration_expiry", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "agent_name", "VARCHAR(100)"),
         ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),

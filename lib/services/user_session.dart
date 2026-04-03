@@ -313,29 +313,45 @@ class UserSession {
 
   /// Log out — clear saved session, mode, JWT token, and ALL photo caches.
   /// Ensures complete isolation between accounts on the same device.
+  /// Photos will be re-downloaded from server on next sign-in.
   static Future<void> logout() async {
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
+
+    // Grab UID before clearing session so we can clean up UID-specific data
+    final uid = _cachedUid.isNotEmpty ? _cachedUid : ((await getUser())?['userId'] ?? '');
+
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
 
-    // ⚠️ CRITICAL: DO NOT delete photo-related keys here.
-    //    Photos are permanently stored in Firestore and Cloud Storage.
-    //    Deleting from SharedPreferences only breaks recovery for returning users.
-    //    The 4-source recovery chain will restore photos on next login.
-    //    
-    //    ❌ REMOVED (was breaking photo persistence):
-    //    await prefs.remove(_photoKeyForUid(uid));
-    //    await prefs.remove(_photoUrlKeyForUid(uid));
-    //    await prefs.remove(_photoKey);
-    //    await prefs.remove(_photoUrlKey);
+    // Clear local photo keys so photo is not shown until re-downloaded on
+    // next sign-in.  Photos remain in Firestore / Cloud Storage and the
+    // recovery chain will re-fetch them after authentication.
+    if (uid.isNotEmpty) {
+      await prefs.remove(_photoKeyForUid(uid));
+      await prefs.remove(_photoUrlKeyForUid(uid));
+    }
+    await prefs.remove(_photoKey);
+    await prefs.remove(_photoUrlKey);
+
+    // Delete the local photo file from the documents directory
+    try {
+      if (!kIsWeb && uid.isNotEmpty) {
+        final dir = await getApplicationDocumentsDirectory();
+        final candidates = await dir.list().toList();
+        for (final entity in candidates) {
+          if (entity is File && entity.path.contains('user_$uid.')) {
+            await entity.delete();
+          }
+        }
+      }
+    } catch (_) {}
 
     await ApiService.clearToken();
     ApiService.clearUserCache();
     await LocalDataService.clearAllUserData();
 
     // Clear all photo caches so next user starts with fresh app state
-    // Photos remain in Firestore/Storage and will be recovered on next login
     try { await UserProfilePhoto.clearCache(); } catch (_) {}
     try {
       PaintingBinding.instance.imageCache.clear();

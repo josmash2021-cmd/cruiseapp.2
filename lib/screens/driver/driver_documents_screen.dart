@@ -27,22 +27,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _documents = [];
 
-  // Required doc types that we always show
+  // Required doc types that we always show (driver-level only)
+  // Vehicle docs (insurance, registration, inspection) are on the Vehicle screen
   static const _requiredDocs = [
     {
       'doc_type': 'drivers_license',
       'title': "Driver's License",
       'icon': Icons.badge_rounded,
-    },
-    {
-      'doc_type': 'insurance',
-      'title': 'Vehicle Insurance',
-      'icon': Icons.security_rounded,
-    },
-    {
-      'doc_type': 'registration',
-      'title': 'Vehicle Registration',
-      'icon': Icons.description_rounded,
     },
     {
       'doc_type': 'background_check',
@@ -51,13 +42,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     },
     {
       'doc_type': 'profile_photo',
-      'title': 'Profile Photo',
-      'icon': Icons.camera_alt_rounded,
-    },
-    {
-      'doc_type': 'vehicle_photos',
-      'title': 'Vehicle Photos',
-      'icon': Icons.photo_library_rounded,
+      'title': 'Biometrics',
+      'icon': Icons.fingerprint_rounded,
     },
   ];
 
@@ -83,18 +69,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final merged = <Map<String, dynamic>>[];
       for (final req in _requiredDocs) {
         final docType = req['doc_type'] as String;
-        
-        // Vehicle photos - mark as Coming Soon
-        if (docType == 'vehicle_photos') {
-          merged.add({
-            'doc_type': docType,
-            'title': req['title'],
-            'icon': req['icon'],
-            'status': 'coming_soon',
-            'disabled': true,
-          });
-          continue;
-        }
 
         // Background check - use status from user profile
         if (docType == 'background_check') {
@@ -160,16 +134,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     switch (doc['doc_type']) {
       case 'drivers_license':
         return Icons.badge_rounded;
-      case 'insurance':
-        return Icons.security_rounded;
-      case 'registration':
-        return Icons.description_rounded;
       case 'background_check':
         return Icons.verified_user_rounded;
       case 'profile_photo':
-        return Icons.camera_alt_rounded;
-      case 'vehicle_photos':
-        return Icons.photo_library_rounded;
+        return Icons.fingerprint_rounded;
       default:
         return Icons.insert_drive_file_rounded;
     }
@@ -179,16 +147,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     switch (docType) {
       case 'drivers_license':
         return s.driversLicenseTitle;
-      case 'insurance':
-        return s.vehicleInsuranceTitle;
-      case 'registration':
-        return s.vehicleRegistrationTitle;
       case 'background_check':
         return s.backgroundCheckTitle;
       case 'profile_photo':
-        return s.profilePhotoTitle;
-      case 'vehicle_photos':
-        return s.vehiclePhotosTitle;
+        return 'Biometrics';
       default:
         return docType ?? 'Document';
     }

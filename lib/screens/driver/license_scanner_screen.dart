@@ -47,6 +47,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
       const SystemUiOverlayStyle(
         statusBarBrightness: Brightness.dark,
         statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
       ),
     );
     _cornerAnim = AnimationController(

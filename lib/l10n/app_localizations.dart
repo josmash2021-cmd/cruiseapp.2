@@ -2416,6 +2416,7 @@ class S {
   String get phoneUpdated => _es ? 'Teléfono actualizado' : 'Phone updated';
   String get nameCannotBeChanged =>
       _es ? 'El nombre no se puede cambiar' : 'Name cannot be changed';
+  String get locked => _es ? 'Bloqueado' : 'Locked';
   String get changesUsed => _es ? 'cambios usados' : 'changes used';
   String get errorOccurred => _es ? 'Ocurrió un error' : 'An error occurred';
   String get deleteAccountTitle => _es ? 'Eliminar Cuenta' : 'Delete Account';

@@ -150,6 +150,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Ticker? _routeDrawTicker;
   double _randomBearing = 0;
   bool _cinematicDone = false;
+  bool _cinematicRunning = false;
   bool _hasAppliedSelectionTilt = false;
   bool _labelsRevealed = false;
   bool _placingMarkers = false; // guard against concurrent pin duplication

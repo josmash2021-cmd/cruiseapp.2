@@ -273,29 +273,59 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 16),
-                Center(
-                  child: Text(
-                    fullName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                const SizedBox(height: 24),
+
+                // ── First Name field (locked) ──
+                _fieldLabel(
+                  S.of(context).firstNameLabel,
+                  S.of(context).locked,
                 ),
-                const SizedBox(height: 4),
-                Center(
-                  child: Text(
-                    S.of(context).nameCannotBeChanged,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: 12,
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: TextEditingController(text: firstName),
+                        enabled: false,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 15,
+                        ),
+                        decoration: _inputDec(Icons.person_outline_rounded),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    _lockIcon(),
+                  ],
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 20),
+
+                // ── Last Name field (locked) ──
+                _fieldLabel(
+                  S.of(context).lastNameLabel,
+                  S.of(context).locked,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: TextEditingController(text: lastName),
+                        enabled: false,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 15,
+                        ),
+                        decoration: _inputDec(Icons.person_outline_rounded),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _lockIcon(),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
 
                 // ── Email field ──
                 _fieldLabel(
@@ -401,6 +431,22 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
         borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.04)),
       ),
       contentPadding: const EdgeInsets.symmetric(vertical: 14),
+    );
+  }
+
+  Widget _lockIcon() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        Icons.lock_rounded,
+        color: Colors.white.withValues(alpha: 0.25),
+        size: 20,
+      ),
     );
   }
 

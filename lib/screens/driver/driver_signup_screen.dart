@@ -1732,7 +1732,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               child: done
                   ? (kIsWeb
                         ? CachedNetworkImage(imageUrl: filePath, fit: BoxFit.cover, fadeInDuration: const Duration(milliseconds: 200))
-                        : Image.file(File(filePath), fit: BoxFit.cover))
+                        : Image.file(
+                            File(filePath),
+                            fit: BoxFit.cover,
+                            width: 50,
+                            height: 50,
+                            errorBuilder: (_, __, ___) => Icon(icon, color: _gold, size: 22),
+                          ))
                   : Icon(icon, color: done ? _gold : Colors.white38, size: 22),
             ),
             const SizedBox(width: 14),

@@ -506,17 +506,6 @@ extension _MapScreenController on _MapScreenState {
       });
     }
 
-    // Start/stop glow animation based on stage
-    if (stage == RideStage.options ||
-        stage == RideStage.confirmPickup ||
-        stage == RideStage.payment ||
-        stage == RideStage.matching ||
-        stage == RideStage.riding) {
-      _startRouteGlowAnimation();
-    } else {
-      _stopRouteGlowAnimation();
-    }
-
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       // Small delay so panel animation settles before camera moves

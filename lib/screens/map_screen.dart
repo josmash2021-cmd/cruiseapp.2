@@ -196,9 +196,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _dropoffPosition;
   List<LatLng> _activeRoutePoints = [];
 
-  AnimationController? _glowController;
-  final double _routeGlowPhase = 0.0;
-
   // Gold animated location dot
   final GoldLocationDot _goldDot = GoldLocationDot();
 
@@ -326,10 +323,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // Pickup annotation set after map is created
     _pickupFocus.addListener(_handleAddressFocusChange);
     _dropoffFocus.addListener(_handleAddressFocusChange);
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..addListener(_onGlowTick);
     _driverMotion = SmoothMotion(
       onTick: _onDriverMotionTick,
       lerpFactor: 0.10,
@@ -472,8 +465,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
     _pinPopCtrl?.dispose();
-    _glowController?.removeListener(_onGlowTick);
-    _glowController?.dispose();
     _pickupFocus.removeListener(_handleAddressFocusChange);
     _dropoffFocus.removeListener(_handleAddressFocusChange);
     _pickupCtrl.dispose();

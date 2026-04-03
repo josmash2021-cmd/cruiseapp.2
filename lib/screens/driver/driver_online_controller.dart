@@ -543,26 +543,57 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (me == null) return;
       final bgStatus = me['background_check_status'] as String? ?? 'none';
       final verStatus = me['verification_status'] as String? ?? 'none';
-      // Allow: clear/approved OR not-yet-configured ('none')
-      if (bgStatus == 'clear' || bgStatus == 'none' ||
-          verStatus == 'approved' || verStatus == 'none') {
+
+      // Check user-level approval
+      final userApproved = (bgStatus == 'clear' || bgStatus == 'none') &&
+          (verStatus == 'approved' || verStatus == 'none');
+
+      // Check vehicle-level docs (inspection, insurance, registration)
+      bool vehicleDocsOk = true;
+      String? vehicleBlockReason;
+      try {
+        final v = await ApiService.getVehicle();
+        if (v != null) {
+          final inspOk = v['inspection_valid'] == true;
+          final insOk = v['insurance_valid'] == true;
+          final regOk = v['registration_valid'] == true;
+          if (!inspOk || !insOk || !regOk) {
+            vehicleDocsOk = false;
+            final missing = <String>[];
+            if (!inspOk) missing.add('Inspection');
+            if (!insOk) missing.add('Insurance');
+            if (!regOk) missing.add('Registration');
+            vehicleBlockReason = 'Missing: ${missing.join(', ')}';
+          }
+        }
+      } catch (_) {}
+
+      if (userApproved && vehicleDocsOk) {
         _approvalGatePassed = true;
         return;
       }
+
       _approvalGatePassed = false;
       if (!mounted) return;
       String title;
       String message;
-      if (bgStatus == 'pending' || bgStatus == 'processing') {
-        title = 'Background Check In Progress';
-        message = 'Your background check is still being processed. You\'ll be notified when it\'s complete.';
-      } else if (bgStatus == 'consider' || bgStatus == 'suspended') {
-        title = 'Background Check Issue';
-        message = 'There is an issue with your background check. Please contact support.';
+
+      if (!userApproved) {
+        if (bgStatus == 'pending' || bgStatus == 'processing') {
+          title = 'Background Check In Progress';
+          message = 'Your background check is still being processed. You\'ll be notified when it\'s complete.';
+        } else if (bgStatus == 'consider' || bgStatus == 'suspended') {
+          title = 'Background Check Issue';
+          message = 'There is an issue with your background check. Please contact support.';
+        } else {
+          title = 'Verification Required';
+          message = 'Please complete your documents and background check before going online.';
+        }
       } else {
-        title = 'Verification Required';
-        message = 'Please complete your documents and background check before going online.';
+        title = 'Vehicle Documents Required';
+        message = 'You need to upload your vehicle documents before going online.\n\n${vehicleBlockReason ?? ''}\n\nGo to Vehicle > upload the missing documents.';
       }
+
       await showDialog(
         context: context,
         builder: (ctx) => AlertDialog(

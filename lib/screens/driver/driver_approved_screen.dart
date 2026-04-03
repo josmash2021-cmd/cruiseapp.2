@@ -131,7 +131,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // ── Gold checkmark circle with glow ──
+                  // ── App logo with glow ──
                   AnimatedBuilder(
                     animation: _glowCtrl,
                     builder: (_, __) => Container(
@@ -150,12 +150,12 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
                           ),
                         ],
                       ),
-                      child: AnimatedBuilder(
-                        animation: _checkCtrl,
-                        builder: (_, __) => CustomPaint(
-                          painter: _CheckmarkPainter(
-                            progress: _checkCtrl.value,
-                            color: _gold,
+                      child: ClipOval(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Image.asset(
+                            'assets/images/logoapp.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
                       ),
@@ -173,17 +173,19 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
                     child: Column(
                         children: [
                           const Text(
-                            "You're Approved!",
+                            'Welcome to the Family,\nCruise',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 32,
+                              fontSize: 30,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
+                              height: 1.2,
                             ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Welcome to Cruise.\nGet ready to drive.',
+                            'Welcome New Cruise Driver.\nGet ready to hit the road.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.54),

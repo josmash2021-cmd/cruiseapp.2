@@ -393,6 +393,9 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   late final Animation<double> _removeFade;
   late final Animation<double> _removeSize;
 
+  // -- Resolved pickup address (reverse geocoded if "Current location") --
+  String? _resolvedPickup;
+
   @override
   void initState() {
     super.initState();
@@ -404,6 +407,29 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         .animate(CurvedAnimation(parent: _removeCtrl, curve: Curves.easeIn));
     _removeSize = Tween<double>(begin: 1.0, end: 0.0)
         .animate(CurvedAnimation(parent: _removeCtrl, curve: Curves.easeInCubic));
+    _resolvePickupAddress();
+  }
+
+  /// If pickup_address is generic ("Current location", empty), reverse-geocode
+  /// from the stored lat/lng to get the actual street address.
+  void _resolvePickupAddress() {
+    final raw = widget.trip['pickup_address'] as String? ?? '';
+    final lower = raw.toLowerCase().trim();
+    final isGeneric = lower.isEmpty ||
+        lower == 'current location' ||
+        lower == 'ubicación actual' ||
+        lower == 'pickup location';
+    if (!isGeneric) return; // already has a real address
+
+    final lat = (widget.trip['pickup_lat'] as num?)?.toDouble();
+    final lng = (widget.trip['pickup_lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    PlacesService(ApiKeys.webServices).reverseGeocode(lat: lat, lng: lng).then((address) {
+      if (address != null && address.isNotEmpty && mounted) {
+        setState(() => _resolvedPickup = address);
+      }
+    }).catchError((_) {});
   }
 
   Future<void> _handleCancel() async {
@@ -632,7 +658,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     final timeFmt = DateFormat('h:mm a');
     final isAirport = widget.trip['is_airport'] == true;
     final status = widget.trip['status'] as String? ?? 'scheduled';
-    final pickup = widget.trip['pickup_address'] as String? ?? '';
+    final rawPickup = widget.trip['pickup_address'] as String? ?? '';
+    final pickup = _resolvedPickup ?? rawPickup;
     final dropoff = widget.trip['dropoff_address'] as String? ?? '';
     final fare = (widget.trip['fare'] as num?)?.toDouble();
     final vehicleType = widget.trip['vehicle_type'] as String? ?? 'Comfort';
@@ -662,7 +689,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       child: FadeTransition(
         opacity: _removeFade,
         child: GestureDetector(
-      onTap: _hasCoords ? _toggle : null,
+      onTap: _hasCoords && status != 'completed' && status != 'canceled' ? _toggle : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
@@ -846,13 +873,25 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
               child: Row(
                 children: [
-                  _infoChip(Icons.directions_car_outlined, vehicleType, c),
+                  _vehicleTierBadge(vehicleType),
                   if (fare != null && fare > 0) ...[
-                    const SizedBox(width: 8),
-                    _infoChip(
-                      Icons.attach_money_rounded,
-                      fare.toStringAsFixed(2),
-                      c,
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: Text(
+                        '\$ ${fare.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
                     ),
                   ],
                   if (terminal != null) ...[
@@ -892,8 +931,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               ),
 
 
-            // ── Expandable mini map (before cancel button) ──
-            if (_hasCoords)
+            // ── Expandable mini map — hidden for completed/cancelled trips ──
+            if (_hasCoords && status != 'completed' && status != 'canceled')
               AnimatedSize(
                 duration: const Duration(milliseconds: 350),
                 curve: Curves.easeOutCubic,
@@ -906,6 +945,36 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                         ),
                       )
                     : const SizedBox.shrink(),
+              ),
+            // ── "Ride Completed" banner for finished trips ──
+            if (status == 'completed')
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle_rounded,
+                          color: Colors.white.withValues(alpha: 0.35), size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Ride Completed',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             // -- Cancel / Contact support --
             if (_cancelling)
@@ -1182,6 +1251,67 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               fontSize: 11,
               color: color,
               fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vehicleTierBadge(String vehicleType) {
+    final tier = vehicleType.toUpperCase();
+    final isVIP = tier == 'VIP';
+    final isPremium = tier == 'PREMIUM';
+
+    final Color accent;
+    final List<Color> gradient;
+    final IconData icon;
+    final bool lightText;
+
+    if (isVIP) {
+      accent = _gold;
+      gradient = const [Color(0xFFE8C547), Color(0xFFD4A574)];
+      icon = Icons.star_rounded;
+      lightText = true;
+    } else if (isPremium) {
+      accent = const Color(0xFFCECECE);
+      gradient = const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
+      icon = Icons.diamond_rounded;
+      lightText = false;
+    } else {
+      accent = const Color(0xFF4CAF50);
+      gradient = const [Color(0xFF66BB6A), Color(0xFF388E3C)];
+      icon = Icons.eco_rounded;
+      lightText = false;
+    }
+
+    final textColor = lightText ? Colors.white : Colors.black87;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: textColor, size: 12),
+          const SizedBox(width: 5),
+          Text(
+            tier,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
             ),
           ),
         ],

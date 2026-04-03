@@ -1012,6 +1012,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         if (trips.isNotEmpty) {
           final now = DateTime.now();
           for (final t in trips) {
+            // Only consider trips that are still scheduled (not cancelled/completed)
+            final status = (t['status'] as String? ?? 'scheduled').toLowerCase();
+            if (status != 'scheduled') continue;
             final sa = t['scheduled_at'];
             if (sa != null) {
               final dt = DateTime.tryParse(sa.toString());

@@ -308,20 +308,6 @@ extension _MapScreenMap on _MapScreenState {
     _routeShimmerCtrl = null;
   }
 
-  void _onGlowTick() {
-    // Glow animation no longer rebuilds Google Maps polylines
-    // Mapbox annotation is set once; skip per-frame rebuilds
-  }
-
-  void _startRouteGlowAnimation() {
-    _glowController?.repeat();
-  }
-
-  void _stopRouteGlowAnimation() {
-    _glowController?.stop();
-    _glowController?.reset();
-  }
-
   /// Push a new raw GPS position from the backend poll into SmoothMotion.
   /// SmoothMotion lerps continuously at 60fps — no restarts, no jumps.
   void _animateDriverTo(LatLng newPos) {

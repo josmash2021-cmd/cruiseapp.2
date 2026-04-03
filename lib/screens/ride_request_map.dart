@@ -593,6 +593,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Reset all cinematic animation state so sequence can replay from scratch.
   Future<void> _resetCinematic() async {
     _cinematicDone = false;
+    _cinematicRunning = false;
     _hasAppliedSelectionTilt = false;
     _labelsRevealed = false;
 
@@ -641,6 +642,8 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Cinematic map animation: fit → pin pop → camera tilt/bearing → gold route draw
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
+    if (_cinematicRunning) return; // prevent duplicate concurrent sequences
+    _cinematicRunning = true;
 
     // Generate random bearing 5-15° left or right
     final rng = math.Random();
@@ -650,12 +653,12 @@ extension _RideRequestMap on _RideRequestScreenState {
     // 1. Fit camera to full route (flat, no tilt yet)
     _fitRoute(pts);
     await Future.delayed(const Duration(milliseconds: 420));
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
 
     // 2. Pin pop first so markers establish visual focus
     _startPinPop();
     await Future.delayed(const Duration(milliseconds: 560));
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
 
     // 3. Tilt 0° → 55° + bearing 0° → random, simultaneously (slightly slower)
     _tiltCtrl?.dispose();
@@ -673,24 +676,25 @@ extension _RideRequestMap on _RideRequestScreenState {
       _tiltCtrl!.forward(from: 0),
       _bearingCtrl!.forward(from: 0),
     ]);
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
 
     // 4. Label bubbles unroll after camera settles
     await Future.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
     _unrollLabels();
 
     // 5. Gold route draws last, with a slightly slower stroke animation
     await Future.delayed(const Duration(milliseconds: 180));
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
     await _animateGoldRoute(pts, const Duration(milliseconds: 850));
-    if (!mounted) return;
+    if (!mounted) { _cinematicRunning = false; return; }
 
     // 6. Refit route with panel padding so full route is visible above panel
     _fitRoute(pts, preserveCamera: true);
 
     // Camera stays tilted at 55° — no reset to flat
     _cinematicDone = true;
+    _cinematicRunning = false;
   }
 
   void _applyMapCamera() {

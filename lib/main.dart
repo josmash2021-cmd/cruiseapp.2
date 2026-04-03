@@ -35,6 +35,7 @@ import 'services/keep_alive_service.dart';
 import 'services/analytics_service.dart';
 import 'services/prefs_cache.dart';
 import 'screens/chat_screen.dart';
+import 'widgets/offer_banner.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -318,6 +319,15 @@ Future<void> heavyInit() async {
               message: body,
               type: type,
             );
+
+            // Show in-app banner + play offer sound 3x for trip offers
+            if (type == 'trip_offer' || type == 'new_offer') {
+              final ctx = _navigatorKey.currentContext;
+              if (ctx != null) {
+                OfferBanner.show(ctx, pickup: body);
+              }
+              NotificationService.playOfferSound();
+            }
           });
           // Handle notification tap when app is backgrounded
           FirebaseMessaging.onMessageOpenedApp.listen(_handleDriverRideOffer);

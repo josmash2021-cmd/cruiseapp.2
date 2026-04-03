@@ -349,13 +349,14 @@ class NotificationService {
 
   /// Play the "go online" chime inside the app.
   /// Fire-and-forget — never blocks the UI thread.
+  /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
   static void playOnlineSound() {
     Future<void>(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         if (!(prefs.getBool('notif_sounds') ?? true)) return;
-        _onlinePlayer.stop();
-        _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
+        await _onlinePlayer.seek(Duration.zero);
+        await _onlinePlayer.resume();
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');
       }
@@ -364,19 +365,21 @@ class NotificationService {
 
   /// Play the trip offer sound inside the app (when app is in foreground).
   /// Plays 3 times with 2-second intervals to grab driver's attention.
-  static Future<void> playOfferSound() async {
-    try {
-      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
-      if (!(prefs.getBool('sound_trips') ?? true)) return;
-      // Play 3 times with 2s gap
-      for (int i = 0; i < 3; i++) {
-        await _offerPlayer.stop();
-        await _offerPlayer.play(AssetSource('sounds/cruise_offer.wav'));
-        if (i < 2) await Future.delayed(const Duration(seconds: 2));
+  /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
+  static void playOfferSound() {
+    Future<void>(() async {
+      try {
+        final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+        if (!(prefs.getBool('sound_trips') ?? true)) return;
+        for (int i = 0; i < 3; i++) {
+          await _offerPlayer.seek(Duration.zero);
+          await _offerPlayer.resume();
+          if (i < 2) await Future.delayed(const Duration(seconds: 2));
+        }
+      } catch (e) {
+        debugPrint('[NotificationService] playOfferSound error: $e');
       }
-    } catch (e) {
-      debugPrint('[NotificationService] playOfferSound error: $e');
-    }
+    });
   }
 
   // ── Schedule notification ─────────────────────────────────────────────

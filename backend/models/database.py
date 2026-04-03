@@ -29,17 +29,24 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 15           # Pro Plan — dedicated DB handles more connections
-    _engine_kwargs["max_overflow"] = 10        # burst to 25 total under load
-    _engine_kwargs["pool_pre_ping"] = False    # no extra ping — saves a round-trip per checkout
-    _engine_kwargs["pool_recycle"] = 1800      # recycle every 30 min — Pro connections are stable
-    _engine_kwargs["pool_timeout"] = 5         # fail fast — dedicated DB should respond instantly
-    _engine_kwargs["pool_use_lifo"] = True     # reuse warm connections first
-    _connect_args = {
-        "timeout": 5,
-        "command_timeout": 10,
-        "ssl": False,                          # private network — no TLS needed
-    }
+    _engine_kwargs["pool_size"] = 15
+    _engine_kwargs["pool_pre_ping"] = False
+    _engine_kwargs["pool_recycle"] = 1800
+    _engine_kwargs["pool_timeout"] = 5
+    _engine_kwargs["pool_use_lifo"] = True
+    # Private Railway network: no SSL, higher burst capacity
+    # External DB (Supabase/Neon): SSL required, conservative pool
+    _is_private = ".railway.internal" in DATABASE_URL
+    if _is_private:
+        _engine_kwargs["max_overflow"] = 10
+        _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False}
+    else:
+        _engine_kwargs["max_overflow"] = 5         # external DB — respect connection limits
+        import ssl as _ssl_mod
+        _ssl_ctx = _ssl_mod.create_default_context()
+        _ssl_ctx.check_hostname = False
+        _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
+        _connect_args = {"timeout": 10, "command_timeout": 15, "ssl": _ssl_ctx}
     _engine_kwargs["connect_args"] = _connect_args
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)

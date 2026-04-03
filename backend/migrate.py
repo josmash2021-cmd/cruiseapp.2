@@ -135,7 +135,13 @@ async def run():
             url = "postgresql://" + url[len(prefix):]
             break
 
-    ssl_ctx = False if ".railway.internal" in url else None  # no TLS on private net
+    if ".railway.internal" in url:
+        ssl_ctx = False  # private network — no TLS
+    else:
+        import ssl as _ssl_mod
+        ssl_ctx = _ssl_mod.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
     try:
         conn = await asyncpg.connect(url, timeout=15, ssl=ssl_ctx)
     except Exception as e:

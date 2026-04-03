@@ -54,12 +54,33 @@ else:
         }
     _engine_kwargs["connect_args"] = _connect_args
 
-# For PgBouncer (Supabase pooler): disable prepared statement caches at URL level
+# For PgBouncer (Supabase): disable asyncpg prepared statement cache + SA dialect cache
 _final_url = DATABASE_URL
 if not IS_SQLITE and not _is_private:
-    # Append prepared_statement_cache_size=0 to disable asyncpg's statement cache
-    _sep = "&" if "?" in _final_url else "?"
-    _final_url = f"{_final_url}{_sep}prepared_statement_cache_size=0"
+    # SA asyncpg dialect prepared_statement_cache_size is engine-level kwarg
+    _engine_kwargs["pool_pre_ping"] = True  # PgBouncer can silently drop connections
+
+    # Build custom creator that forces statement_cache_size=0 at asyncpg level
+    import asyncpg as _asyncpg
+    from urllib.parse import urlparse as _urlparse
+
+    _parsed = _urlparse(_final_url.replace("postgresql+asyncpg://", "postgresql://"))
+    _pghost = _parsed.hostname
+    _pgport = _parsed.port or 5432
+    _pguser = _parsed.username
+    _pgpass = _parsed.password
+    _pgdb = _parsed.path.lstrip("/")
+
+    async def _pgbouncer_creator():
+        return await _asyncpg.connect(
+            host=_pghost, port=_pgport, user=_pguser,
+            password=_pgpass, database=_pgdb,
+            ssl=_ssl_ctx, statement_cache_size=0,
+            timeout=10, command_timeout=15,
+        )
+    _engine_kwargs["async_creator"] = _pgbouncer_creator
+    # Remove connect_args — creator handles everything
+    _engine_kwargs.pop("connect_args", None)
 
 engine = create_async_engine(_final_url, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

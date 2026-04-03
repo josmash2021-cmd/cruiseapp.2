@@ -273,12 +273,12 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           ).createShader(r),
                           child: Text(
                             S.of(context).welcomeBackDriver,
-                            style: GoogleFonts.cinzel(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 30,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               color: Colors.white,
                               height: 1.2,
-                              letterSpacing: 0.5,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),

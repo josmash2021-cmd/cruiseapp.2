@@ -76,13 +76,25 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithApple() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
-    final ok = await AppleAuthService.instance.signIn();
-    if (!mounted) return;
-    setState(() => _socialLoading = false);
-    if (ok) {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const HomeScreen()),
-        (_) => false,
+    try {
+      final ok = await AppleAuthService.instance.signIn();
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      if (ok) {
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const HomeScreen()),
+          (_) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Apple Sign In was cancelled or failed')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Apple Sign In error: $e')),
       );
     }
   }

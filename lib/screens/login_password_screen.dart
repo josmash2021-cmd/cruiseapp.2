@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/apple_auth_service.dart';
+import '../services/google_auth_service.dart';
 import '../services/email_service.dart';
 import '../services/local_data_service.dart';
 import '../services/sms_service.dart';
@@ -54,15 +55,59 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
 
   Future<void> _signInWithApple() async {
     if (_socialLoading) return;
-    setState(() => _socialLoading = true);
-    final ok = await AppleAuthService.instance.signIn();
-    if (!mounted) return;
-    setState(() => _socialLoading = false);
-    if (ok) {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const HomeScreen()),
-        (_) => false,
+    if (!Platform.isIOS && !Platform.isMacOS) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Apple Sign In is only available on iOS')),
       );
+      return;
+    }
+    setState(() {
+      _socialLoading = true;
+      _errorText = null;
+    });
+    try {
+      final ok = await AppleAuthService.instance.signIn();
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      if (ok) {
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const HomeScreen()),
+          (_) => false,
+        );
+      } else {
+        setState(() => _errorText = 'Apple Sign In was cancelled or failed');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _socialLoading = false;
+        _errorText = 'Apple Sign In error: $e';
+      });
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_socialLoading) return;
+    setState(() {
+      _socialLoading = true;
+      _errorText = null;
+    });
+    try {
+      final ok = await GoogleAuthService.instance.signIn();
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      if (ok) {
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _socialLoading = false;
+        _errorText = 'Google Sign In error: $e';
+      });
     }
   }
 
@@ -465,11 +510,11 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 ).createShader(r),
                 child: Text(
                   S.of(context).welcomeBack,
-                  style: GoogleFonts.cinzel(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
-                    letterSpacing: 0.5,
+                    letterSpacing: 0.3,
                     height: 1.2,
                   ),
                 ),
@@ -657,26 +702,65 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
 
               const SizedBox(height: 16),
 
-              // ── Apple Sign-In (iOS only) ──
-              if (Platform.isIOS) ...[
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: c.border, thickness: 1)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'or',
-                        style: TextStyle(
-                          color: c.textTertiary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+              // ── Social Sign-In ──
+              Row(
+                children: [
+                  Expanded(child: Divider(color: c.border, thickness: 1)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'or',
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Expanded(child: Divider(color: c.border, thickness: 1)),
-                  ],
+                  ),
+                  Expanded(child: Divider(color: c.border, thickness: 1)),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Google Sign-In ──
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: c.textPrimary,
+                    side: BorderSide(color: c.border, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  onPressed: _socialLoading ? null : _signInWithGoogle,
+                  icon: _socialLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Image.asset(
+                          'assets/images/google_logo.png',
+                          width: 22,
+                          height: 22,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.g_mobiledata,
+                            size: 28,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                  label: const Text(
+                    'Sign in with Google',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ),
-                const SizedBox(height: 16),
+              ),
+
+              // ── Apple Sign-In (iOS only) ──
+              if (Platform.isIOS) ...[
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -689,21 +773,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       ),
                     ),
                     onPressed: _socialLoading ? null : _signInWithApple,
-                    icon: _socialLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.apple, size: 24),
+                    icon: const Icon(Icons.apple, size: 24),
                     label: const Text(
                       'Sign in with Apple',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
               ],
+              const SizedBox(height: 8),
 
               // ── Quick Access removed (production) ──
               const Spacer(),

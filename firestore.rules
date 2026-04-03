@@ -77,5 +77,13 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if isAdmin();
     }
+
+    // Admin alerts from backend (payment, server, security)
+    match /admin_alerts/{alertId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin();
+      allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
   }
 }

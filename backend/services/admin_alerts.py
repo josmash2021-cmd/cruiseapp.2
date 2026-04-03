@@ -1,9 +1,8 @@
 """Cruise App — Admin alert notification service.
 
-Sends real-time alerts to the app owner via:
-1. FCM push notification (to owner's phone)
-2. Telegram bot (optional)
-3. In-app admin inbox (always)
+Sends real-time alerts to the dispatch app via:
+1. Firestore `admin_alerts` collection (dispatch app listens in real-time)
+2. Telegram bot (optional — direct to owner's phone)
 
 Alert types: payment_failed, server_error, security_threat, high_latency,
              driver_issue, ride_stuck, stripe_error, db_slow
@@ -41,7 +40,7 @@ async def send_alert(
     severity: str = HIGH,
     data: Optional[dict] = None,
 ):
-    """Send alert to all configured channels. Rate-limited per alert_type."""
+    """Send alert to Firestore (dispatch app) + Telegram. Rate-limited per alert_type."""
     # Rate limit check (critical alerts bypass)
     now = time.time()
     cooldown_key = f"{alert_type}:{severity}"
@@ -60,70 +59,37 @@ async def send_alert(
 
     logger.warning("[ALERT] %s %s: %s — %s", severity_emoji, severity.upper(), title, message)
 
-    # 1. Save to admin notifications in DB (always)
-    asyncio.create_task(_save_to_db(alert_type, title, message, severity, data))
+    # 1. Write to Firestore admin_alerts collection (dispatch app listens here)
+    asyncio.create_task(_save_to_firestore(alert_type, title, message, severity, data))
 
-    # 2. FCM push to owner (if configured)
-    asyncio.create_task(_send_fcm_alert(title, message, severity, alert_type, data))
-
-    # 3. Telegram message (if configured)
+    # 2. Telegram message (if configured)
     if _HAS_TELEGRAM:
         asyncio.create_task(_send_telegram(title, message, severity_emoji, severity, data))
 
 
-async def _save_to_db(alert_type: str, title: str, message: str, severity: str, data: dict = None):
-    """Save alert to admin notifications table."""
+async def _save_to_firestore(alert_type: str, title: str, message: str, severity: str, data: dict = None):
+    """Write alert to Firestore admin_alerts collection for dispatch app to show."""
     try:
-        from models.database import get_db, Notification, User
-        from sqlalchemy import select
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from models.database import SessionLocal
+        from config import _HAS_FIRESTORE
+        if not _HAS_FIRESTORE:
+            logger.warning("[Alert] Firestore not available, alert not saved")
+            return
 
-        async with SessionLocal() as db:
-            # Find admin users to notify
-            result = await db.execute(select(User).where(User.role == "admin"))
-            admins = result.scalars().all()
-            for admin in admins:
-                notif = Notification(
-                    user_id=admin.id,
-                    title=f"[{severity.upper()}] {title}",
-                    body=message,
-                    notif_type="admin_alert",
-                )
-                db.add(notif)
-            await db.commit()
+        from firebase_admin import firestore as _fs
+        db = _fs.client()
+        doc_data = {
+            "type": alert_type,
+            "title": title,
+            "message": message,
+            "severity": severity,
+            "data": data or {},
+            "read": False,
+            "createdAt": _fs.SERVER_TIMESTAMP,
+        }
+        db.collection("admin_alerts").add(doc_data)
+        logger.info("[Alert] Saved to Firestore admin_alerts")
     except Exception as e:
-        logger.error("[Alert] DB save failed: %s", e)
-
-
-async def _send_fcm_alert(title: str, message: str, severity: str, alert_type: str, data: dict = None):
-    """Send FCM push to all admin users."""
-    try:
-        from models.database import User
-        from sqlalchemy import select
-        from models.database import SessionLocal
-        from services.fcm_service import _send_fcm_push
-
-        async with SessionLocal() as db:
-            result = await db.execute(
-                select(User).where(User.role == "admin", User.fcm_token.isnot(None))
-            )
-            admins = result.scalars().all()
-            for admin in admins:
-                if admin.fcm_token:
-                    _send_fcm_push(
-                        token=admin.fcm_token,
-                        title=f"Cruise Alert: {title}",
-                        body=message,
-                        data={
-                            "type": "admin_alert",
-                            "alert_type": alert_type,
-                            "severity": severity,
-                            **(data or {}),
-                        },
-                    )
-    except Exception as e:
-        logger.error("[Alert] FCM push failed: %s", e)
+        logger.error("[Alert] Firestore save failed: %s", e)
 
 
 async def _send_telegram(title: str, message: str, emoji: str, severity: str, data: dict = None):

@@ -448,52 +448,53 @@ class UserSession {
       foundLocal = true;
     }
 
-    // If we have BOTH a URL and local path, the UI can render — skip network.
-    // If we have a URL but no local file, fetch file in background (URL is enough for UI).
-    // If we have NO URL at all (new device), we MUST await network to get the photo.
-    if (cachedUrl.isEmpty && !foundLocal) {
-      // New device — no photo at all. Await network so UI shows photo immediately.
-      await _fetchPhotoFromNetwork(uid, prefs, true);
-    } else if (cachedUrl.isEmpty || !foundLocal) {
-      // Have one but not the other — background fetch is fine.
+    // Always fire network fetch — never blocks UI.
+    // URL alone is enough for CachedNetworkImage to render the photo instantly.
+    if (cachedUrl.isEmpty || !foundLocal) {
       unawaited(_fetchPhotoFromNetwork(uid, prefs, cachedUrl.isEmpty));
     }
   }
 
-  /// Phase 2: Background network fetch — never blocks UI.
+  /// Fetch photo URL from network — fast, parallel, never blocks UI.
+  /// Once we have a URL, CachedNetworkImage handles rendering + disk cache.
   static Future<void> _fetchPhotoFromNetwork(
     String uid,
     SharedPreferences prefs,
     bool needsUrl,
   ) async {
+    if (!needsUrl) return;
+    final userId = int.tryParse(uid);
+    if (userId == null || userId <= 0) return;
+
     try {
-      // If no cached URL, try Firestore first
-      if (needsUrl) {
-        final userId = int.tryParse(uid);
-        if (userId != null && userId > 0) {
-          final firestoreUrl = await FirebaseStorageService.fetchPhotoUrl(userId);
-          if (firestoreUrl != null && firestoreUrl.isNotEmpty) {
-            photoUrlNotifier.value = firestoreUrl;
-            if (uid.isNotEmpty) await prefs.setString(_photoUrlKeyForUid(uid), firestoreUrl);
-            await updateField('photoUrl', firestoreUrl);
-            return; // Got URL from Firestore
-          }
-        }
+      // Race Firestore and backend API in parallel — use whichever responds first
+      String? resolvedUrl;
+      final results = await Future.wait<String?>([
+        FirebaseStorageService.fetchPhotoUrl(userId).catchError((_) => null),
+        ApiService.getMe().then((me) => me?['photo_url']?.toString()).catchError((_) => null),
+      ]).timeout(const Duration(seconds: 4), onTimeout: () => [null, null]);
+
+      // Prefer Firestore URL (Firebase Storage permanent link)
+      final firestoreUrl = results[0];
+      final backendUrl = results[1];
+      if (firestoreUrl != null && firestoreUrl.isNotEmpty) {
+        resolvedUrl = firestoreUrl;
+      } else if (backendUrl != null && backendUrl.isNotEmpty) {
+        resolvedUrl = backendUrl;
       }
 
-      // Last resort: fetch from backend API
-      final me = await ApiService.getMe();
-      final serverUrl = me?['photo_url'] as String?;
-      if (serverUrl != null && serverUrl.isNotEmpty) {
-        photoUrlNotifier.value = serverUrl;
-        if (uid.isNotEmpty) await prefs.setString(_photoUrlKeyForUid(uid), serverUrl);
-        await updateField('photoUrl', serverUrl);
-        final localPath = await ApiService.downloadPhoto(serverUrl);
-        if (localPath.isNotEmpty) {
-          photoNotifier.value = localPath;
-          await updateField('photoPath', localPath);
-          if (uid.isNotEmpty) await prefs.setString(_photoKeyForUid(uid), localPath);
-        }
+      if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+        photoUrlNotifier.value = resolvedUrl;
+        if (uid.isNotEmpty) await prefs.setString(_photoUrlKeyForUid(uid), resolvedUrl);
+        unawaited(updateField('photoUrl', resolvedUrl));
+        // Download local copy in background — non-blocking
+        unawaited(ApiService.downloadPhoto(resolvedUrl).then((path) async {
+          if (path.isNotEmpty) {
+            photoNotifier.value = path;
+            if (uid.isNotEmpty) await prefs.setString(_photoKeyForUid(uid), path);
+            unawaited(updateField('photoPath', path));
+          }
+        }).catchError((_) {}));
       }
     } catch (_) {
       // Network unreachable — skip silently

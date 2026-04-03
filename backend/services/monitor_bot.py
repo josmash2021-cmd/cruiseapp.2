@@ -331,7 +331,7 @@ async def _health_check_loop():
                     await db.execute(text("SELECT 1"))
                     latency = (time.time() - q_start) * 1000
                 pool = engine.pool
-                if latency > 800:
+                if latency > 1500:
                     from services.admin_alerts import send_alert, HIGH
                     await send_alert("db_slow", "Database Slow",
                                      f"DB latency: {latency:.0f}ms | pool wait: {pool_wait:.0f}ms | pool {pool.checkedout()}/{pool.size()}", HIGH)

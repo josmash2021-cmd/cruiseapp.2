@@ -203,7 +203,13 @@ async def _cmd_db() -> str:
         host_match = re.search(r"@([^/]+)/", DATABASE_URL)
         host_display = host_match.group(1) if host_match else "unknown"
         is_private = ".railway.internal" in host_display or "10." in host_display
-        net_label = "🔒 private" if is_private else "⚠️ public proxy"
+        is_supabase = "supabase" in host_display
+        if is_private:
+            net_label = "🔒 private"
+        elif is_supabase:
+            net_label = "🔒 SSL"
+        else:
+            net_label = "🔒 external"
 
         acq_start = time.time()
         async with SessionLocal() as db:
@@ -419,7 +425,9 @@ async def start_monitor_bot():
         host_match = re.search(r"@([^/]+)/", DATABASE_URL)
         db_host = host_match.group(1) if host_match else "unknown"
         is_private = ".railway.internal" in db_host
-        logger.info("[MonitorBot] DB host: %s (%s)", db_host, "PRIVATE" if is_private else "PUBLIC PROXY")
+        is_supabase = "supabase" in db_host
+        label = "PRIVATE" if is_private else "SUPABASE SSL" if is_supabase else "EXTERNAL"
+        logger.info("[MonitorBot] DB host: %s (%s)", db_host, label)
     except Exception:
         pass
 

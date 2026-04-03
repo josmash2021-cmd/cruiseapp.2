@@ -46,7 +46,12 @@ else:
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
-        _connect_args = {"timeout": 10, "command_timeout": 15, "ssl": _ssl_ctx}
+        _connect_args = {
+            "timeout": 10,
+            "command_timeout": 15,
+            "ssl": _ssl_ctx,
+            "statement_cache_size": 0,  # required for PgBouncer/Supabase pooler
+        }
     _engine_kwargs["connect_args"] = _connect_args
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)

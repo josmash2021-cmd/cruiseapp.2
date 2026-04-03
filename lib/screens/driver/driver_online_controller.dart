@@ -643,12 +643,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 10, // 10 meters — smooth movement without flooding backend
+            distanceFilter: 5, // 5 meters — ultra-smooth movement
           ),
         ).listen((pos) {
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
-          _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.30);
+          _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.25);
           _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
@@ -844,7 +844,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   void _onDriverAnimTick() {
     if (!mounted) return;
-    final t = Curves.easeInOutCubic.transform(_driverAnim.value);
+    final t = Curves.easeOutCubic.transform(_driverAnim.value);
     final lat =
         _animFrom.latitude + (_animTo.latitude - _animFrom.latitude) * t;
     final lng =
@@ -855,7 +855,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     double diff = _targetHeading - _heading;
     while (diff > 180) { diff -= 360; }
     while (diff < -180) { diff += 360; }
-    _heading += diff * 0.15;
+    _heading += diff * 0.12;
 
     // Unified camera following (single source of truth for all phases)
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;

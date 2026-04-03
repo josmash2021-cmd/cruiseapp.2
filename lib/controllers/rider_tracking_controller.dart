@@ -862,9 +862,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Use exponential decay so the car accelerates toward the target
     // and decelerates as it approaches — no jolts, no teleports.
     final diff = _tgtTraveledM - _traveledM;
-    // Exponential catch-up: 20% of remaining distance per frame.
-    // Capped to prevent teleporting on large GPS jumps (>50m).
-    final step = (diff * 0.20).clamp(-2.5, 2.5);
+    // Exponential catch-up: 18% of remaining distance per frame.
+    // Higher cap (4m) allows faster highway speeds without jolts.
+    final step = (diff * 0.18).clamp(-4.0, 4.0);
     if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {

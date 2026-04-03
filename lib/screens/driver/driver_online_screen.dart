@@ -324,7 +324,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _driverAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600), // Smooth interpolation between GPS updates
+      duration: const Duration(milliseconds: 900), // Longer lerp = smoother glide between GPS ticks
     );
     _driverAnim.addListener(_onDriverAnimTick);
 

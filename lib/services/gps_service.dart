@@ -16,7 +16,7 @@ class GpsService {
   GpsService._internal();
 
   final _database = FirebaseDatabase.instance;
-  static const Duration _uploadInterval = Duration(milliseconds: 800);
+  static const Duration _uploadInterval = Duration(milliseconds: 500);
 
   Timer? _uploadTimer;
   LatLng? _lastUploadedPos;

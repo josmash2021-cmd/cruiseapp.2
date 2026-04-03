@@ -283,12 +283,18 @@ class PlacesService {
     final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
-    // ── Run Mapbox + Google/backend in parallel for comprehensive results ──
+    // ── Run Mapbox + SearchBox + Google/backend in parallel for comprehensive results ──
     final futures = <Future<List<PlaceSuggestion>>>[];
 
-    // Always try Mapbox
+    // Always try Mapbox Geocoding v5 (addresses, regions)
     futures.add(
       _mapboxAutocomplete(cleanInput, lat: latitude, lon: longitude)
+          .catchError((_) => <PlaceSuggestion>[]),
+    );
+
+    // Mapbox SearchBox v6 (better POI/airport/business coverage)
+    futures.add(
+      _mapboxSearchBox(cleanInput, lat: latitude, lon: longitude)
           .catchError((_) => <PlaceSuggestion>[]),
     );
 
@@ -407,11 +413,11 @@ class PlacesService {
       'access_token': token,
       'autocomplete': 'true',
       'limit': '10',
-      'language': 'en',
+      'language': 'en,es',
       'fuzzyMatch': 'true',
       'types': 'country,region,postcode,district,place,locality,neighborhood,address,poi',
       'routing': 'true',
-      'country': 'us', // US-only results
+      'country': 'us',
     };
     if (lat != null && lon != null) {
       // proximity = soft relevance bias (nearby results ranked higher)
@@ -475,6 +481,81 @@ class PlacesService {
     }).whereType<PlaceSuggestion>().toList();
   }
 
+  // ─── Mapbox Search Box API (v6) — better POI/airport coverage ──────
+
+  Future<List<PlaceSuggestion>> _mapboxSearchBox(
+    String input, {
+    double? lat,
+    double? lon,
+  }) async {
+    final token = MapboxConfig.accessToken;
+    if (token.isEmpty) return [];
+
+    final params = <String, String>{
+      'q': input,
+      'access_token': token,
+      'limit': '10',
+      'language': 'en,es',
+      'country': 'US',
+      'types': 'poi,address,place,neighborhood,street',
+    };
+    if (lat != null && lon != null) {
+      params['proximity'] = '$lon,$lat';
+    }
+
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/suggest',
+      params,
+    );
+
+    try {
+      debugPrint('\u{1F50D} Mapbox SearchBox: "$input"');
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) {
+        debugPrint('\u{274C} Mapbox SearchBox HTTP ${res.statusCode}');
+        return [];
+      }
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final suggestions = data['suggestions'] as List? ?? [];
+      debugPrint('\u{2705} Mapbox SearchBox: ${suggestions.length} results for "$input"');
+
+      return suggestions.map<PlaceSuggestion?>((s) {
+        final name = s['name']?.toString() ?? '';
+        final fullAddr = s['full_address']?.toString() ?? s['place_formatted']?.toString() ?? '';
+        final description = fullAddr.isNotEmpty ? '$name, $fullAddr' : name;
+        if (name.isEmpty) return null;
+        final mapboxId = s['mapbox_id']?.toString() ?? '';
+        // Extract types for smart icons
+        final types = <String>[];
+        final poiCategory = (s['poi_category'] as List?)?.cast<String>() ?? <String>[];
+        final maki = s['maki']?.toString() ?? '';
+        final featureType = s['feature_type']?.toString() ?? '';
+        for (final cat in poiCategory) {
+          final c = cat.toLowerCase();
+          if (c.contains('airport')) types.add('airport');
+          if (c.contains('hotel') || c.contains('lodging')) types.add('lodging');
+          if (c.contains('hospital') || c.contains('medical')) types.add('hospital');
+          if (c.contains('school') || c.contains('university')) types.add('university');
+          if (c.contains('shop') || c.contains('store') || c.contains('mall')) types.add('store');
+        }
+        if (maki.contains('airport')) types.add('airport');
+        if (featureType == 'poi') types.add('establishment');
+        if (featureType == 'address') types.add('street_address');
+
+        return PlaceSuggestion(
+          description: description,
+          placeId: mapboxId.isNotEmpty ? 'searchbox:$mapboxId' : '',
+          types: types,
+        );
+      }).whereType<PlaceSuggestion>().where((s) => s.placeId.isNotEmpty).toList();
+    } catch (e) {
+      debugPrint('\u{26A0}\u{FE0F} Mapbox SearchBox error: $e');
+      return [];
+    }
+  }
+
   // ─── Google Places Autocomplete ────────────────────────────────────
 
   Future<List<PlaceSuggestion>> _googleAutocomplete(
@@ -487,16 +568,17 @@ class PlacesService {
       'input': input,
       'key': apiKey,
       'sessiontoken': _sessionToken,
-      'components': 'country:us', // US-only results
+      'language': 'en',
+      'components': 'country:us',
     };
     if (types != null && types.isNotEmpty) {
       params['types'] = types;
     }
 
-    // Location bias: center on user, 80km radius (soft preference, not filter)
+    // Location bias: center on user, 160km radius (soft preference, not filter)
     if (lat != null && lon != null) {
       params['location'] = '$lat,$lon';
-      params['radius'] = '80000';
+      params['radius'] = '160000';
     }
 
     final uri = Uri.https(
@@ -580,6 +662,46 @@ class PlacesService {
         if (lat != null && lng != null) {
           return PlaceDetails(address: address, lat: lat, lng: lng);
         }
+      }
+      return null;
+    }
+
+    // Handle Mapbox SearchBox placeIds (searchbox:mapbox_id)
+    if (placeId.startsWith('searchbox:')) {
+      final mapboxId = placeId.substring('searchbox:'.length);
+      try {
+        final token = MapboxConfig.accessToken;
+        final uri = Uri.https(
+          'api.mapbox.com',
+          '/search/searchbox/v1/retrieve/$mapboxId',
+          {
+            'access_token': token,
+            'session_token': _sessionToken,
+          },
+        );
+        final res = await http.get(uri).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final features = data['features'] as List? ?? [];
+          if (features.isNotEmpty) {
+            final f = features[0];
+            final coords = f['geometry']?['coordinates'] as List?;
+            final lng = (coords != null && coords.length >= 2)
+                ? (coords[0] as num).toDouble() : null;
+            final lat = (coords != null && coords.length >= 2)
+                ? (coords[1] as num).toDouble() : null;
+            final props = f['properties'] as Map<String, dynamic>? ?? {};
+            final address = props['full_address']?.toString()
+                ?? props['place_formatted']?.toString()
+                ?? props['name']?.toString() ?? '';
+            if (lat != null && lng != null) {
+              resetSession();
+              return PlaceDetails(address: address, lat: lat, lng: lng);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('\u{26A0}\u{FE0F} Mapbox SearchBox retrieve failed: $e');
       }
       return null;
     }

@@ -826,7 +826,7 @@ async def places_autocomplete(
         # Add location bias if provided
         if lat is not None and lng is not None:
             params["location"] = f"{lat},{lng}"
-            params["radius"] = "50000"  # 50km radius
+            params["radius"] = "160000"  # 160km radius
         
         url = f"{base_url}?{urllib.parse.urlencode(params)}"
         req = urllib.request.Request(url, method="GET")

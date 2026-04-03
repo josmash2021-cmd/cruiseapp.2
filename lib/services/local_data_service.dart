@@ -604,6 +604,9 @@ class LocalDataService {
   static const _docTypeKey = 'id_document_type_v1';
   static const _biometricKey = 'biometric_login_enabled';
 
+  /// Sync getter — safe to call after init(), used to prevent UI flash.
+  static bool get isVerifiedSync => _prefs?.getBool(_verifiedKey) ?? false;
+
   static Future<bool> isIdentityVerified() async {
     final prefs = _p;
     return prefs.getBool(_verifiedKey) ?? false;

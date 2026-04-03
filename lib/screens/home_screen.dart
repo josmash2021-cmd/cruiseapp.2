@@ -136,9 +136,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _remainingSeconds = 0;
   Timer? _countdownTimer;
 
-  // Verification state
-  bool _isVerified = false;
-  String _verificationStatus = ''; // '', 'pending', 'approved', 'rejected'
+  // Verification state — eagerly loaded to prevent banner flash
+  bool _isVerified = LocalDataService.isVerifiedSync;
+  String _verificationStatus = LocalDataService.isVerifiedSync ? 'approved' : '';
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _verificationSub;
 
   // Service zone state

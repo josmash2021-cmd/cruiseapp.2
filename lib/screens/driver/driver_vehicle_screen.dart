@@ -19,7 +19,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   static const _goldDark = Color(0xFFD4A843);
   static const _card = Color(0xFF1C1C1E);
   static const _surface = Color(0xFF141414);
-  static const _amber = Color(0xFFFFA726);
+  // _gold removed — use _gold for pending/missing doc styling
   static const _green = Color(0xFF4CAF50);
 
   String _make = '';
@@ -381,12 +381,12 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _amber.withValues(alpha: 0.15),
-            _amber.withValues(alpha: 0.05),
+            _gold.withValues(alpha: 0.15),
+            _gold.withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _amber.withValues(alpha: 0.4)),
+        border: Border.all(color: _gold.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
@@ -394,11 +394,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: _amber.withValues(alpha: 0.15),
+              color: _gold.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.warning_amber_rounded,
-                color: _amber, size: 22),
+                color: _gold, size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -408,7 +408,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 const Text(
                   'Required to go online',
                   style: TextStyle(
-                    color: _amber,
+                    color: _gold,
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
@@ -556,7 +556,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     required String docType,
   }) {
     final displayTitle = isValid ? title : invalidTitle;
-    final cardColor = isValid ? _green : _amber;
+    final cardColor = isValid ? _green : _gold;
 
     return GestureDetector(
       onTap: () {
@@ -618,18 +618,18 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: _amber.withValues(alpha: 0.15),
+                  color: _gold.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.upload_rounded, color: _amber, size: 14),
+                    Icon(Icons.upload_rounded, color: _gold, size: 14),
                     SizedBox(width: 4),
                     Text(
                       'Upload',
                       style: TextStyle(
-                        color: _amber,
+                        color: _gold,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),

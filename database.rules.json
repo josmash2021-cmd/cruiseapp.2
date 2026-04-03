@@ -1,5 +1,11 @@
 {
   "rules": {
+    "ratings": {
+      "$collection": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
     "chats": {
       "$rideId": {
         "messages": {
@@ -24,13 +30,13 @@
     "driver_locations": {
       "$driverId": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $driverId"
+        ".write": "auth != null"
       }
     },
     "drivers": {
       "$driverId": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $driverId"
+        ".write": "auth != null"
       }
     }
   }

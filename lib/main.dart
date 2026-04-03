@@ -316,7 +316,18 @@ Future<void> _initFirebase() async {
     FirebaseDatabase.instance.setPersistenceEnabled(true);
     // Ensure Firebase Auth so RTDB/Firestore rules (auth != null) pass
     if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
+      try {
+        await FirebaseAuth.instance.signInAnonymously();
+      } catch (authErr) {
+        debugPrint('[Firebase] anonymous auth failed: $authErr — retrying...');
+        // Retry once after a short delay
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+        } catch (retryErr) {
+          debugPrint('[Firebase] anonymous auth retry failed: $retryErr');
+        }
+      }
     }
   } catch (e) {
     debugPrint('[Firebase] early init error: $e');

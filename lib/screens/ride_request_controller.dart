@@ -569,11 +569,11 @@ extension _RideRequestController on _RideRequestScreenState {
                             Builder(
                               builder: (_) {
                                 final optName = (option.name).toLowerCase();
-                                String asset = 'assets/images/fusion.png';
-                                if (optName.contains('suburban')) {
-                                  asset = 'assets/images/suburban.png';
-                                } else if (optName.contains('camry')) {
-                                  asset = 'assets/images/camry.png';
+                                String asset = 'assets/images/car_economy.png';
+                                if (optName.contains('suburban') || optName.contains('vip') || optName.contains('suv')) {
+                                  asset = 'assets/images/car_suv.png';
+                                } else if (optName.contains('camry') || optName.contains('premium') || optName.contains('sedan')) {
+                                  asset = 'assets/images/car_sedan.png';
                                 }
                                 return Image.asset(
                                   asset,

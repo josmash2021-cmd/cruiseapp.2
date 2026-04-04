@@ -200,8 +200,22 @@ async def lifespan(app: FastAPI):
                         await conn.execute(text("PRAGMA busy_timeout=30000"))
                         await conn.execute(text("PRAGMA cache_size=-64000"))
                         await _migrate_add_columns(conn)
-                    # PostgreSQL column migrations + indexes are handled by migrate.py
-                    # (raw asyncpg) which runs before server start — PgBouncer compatible
+                    else:
+                        # PostgreSQL: run critical column migrations as fallback
+                        # in case migrate.py failed during container startup.
+                        _pg_cols = [
+                            ("trips", "started_at", "TIMESTAMP WITH TIME ZONE"),
+                            ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
+                            ("trips", "distance", "FLOAT"),
+                            ("trips", "duration", "INTEGER"),
+                        ]
+                        for _tbl, _col, _ctype in _pg_cols:
+                            try:
+                                await conn.execute(text(
+                                    f"ALTER TABLE {_tbl} ADD COLUMN IF NOT EXISTS {_col} {_ctype}"
+                                ))
+                            except Exception:
+                                pass
                 logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
                 break
             except Exception as _e:

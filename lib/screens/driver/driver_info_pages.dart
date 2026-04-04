@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1059,11 +1060,12 @@ class _NewDriverInstructionsScreenState
                       color: _gold.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
+                    child: ClipOval(
                       child: Image.asset(
                         'assets/images/logoapp.png',
-                        fit: BoxFit.contain,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
                       ),
                     ),
                   ),
@@ -1108,7 +1110,7 @@ class _NewDriverInstructionsScreenState
               child: PageView(
                 controller: _pageCtrl,
                 onPageChanged: _onPageChanged,
-                physics: const BouncingScrollPhysics(),
+                physics: const _SmoothPagePhysics(),
                 children: [
                   _buildPage(
                     scene: _SceneType.vehicle,
@@ -1441,9 +1443,19 @@ class _InstructionItem {
   });
 }
 
+// Smooth snappy page physics — no bounce, crisp deceleration
+class _SmoothPagePhysics extends ScrollPhysics {
+  const _SmoothPagePhysics({super.parent});
+  @override
+  _SmoothPagePhysics applyTo(ScrollPhysics? ancestor) =>
+      _SmoothPagePhysics(parent: buildParent(ancestor));
+  @override
+  SpringDescription get spring => const SpringDescription(mass: 80, stiffness: 100, damping: 1);
+}
+
 // ═══════════════════════════════════════════════════════════════
-//  Animated Scene Painter — draws stick-figure illustrations
-//  that loop smoothly for each instruction page
+//  Animated Scene Painter — premium 3D-style illustrations
+//  with gradients, shadows, depth, and fluid motion
 // ═══════════════════════════════════════════════════════════════
 
 class _InstructionScenePainter extends CustomPainter {
@@ -1451,8 +1463,11 @@ class _InstructionScenePainter extends CustomPainter {
   final double progress; // 0.0 → 1.0, repeats
 
   static const _gold = Color(0xFFE8C547);
+  static const _goldDim = Color(0xFFB08C35);
   static const _blue = Color(0xFF2196F3);
+  static const _blueDark = Color(0xFF1565C0);
   static const _green = Color(0xFF4CAF50);
+  static const _greenDark = Color(0xFF2E7D32);
 
   _InstructionScenePainter({required this.scene, required this.progress});
 
@@ -1468,365 +1483,472 @@ class _InstructionScenePainter extends CustomPainter {
     }
   }
 
-  /// Scene 1: Person cleaning a car — sponge moves back and forth
+  // ─────────────────────────────────────────
+  //  Scene 1 — Vehicle Cleaning
+  // ─────────────────────────────────────────
   void _paintVehicleScene(Canvas canvas, Size size) {
     final cx = size.width / 2;
-    final cy = size.height * 0.55;
+    final cy = size.height * 0.52;
 
-    // ── Car body ──
-    final carPaint = Paint()
-      ..color = const Color(0xFF2A2A2E)
-      ..style = PaintingStyle.fill;
-    final carGlow = Paint()
-      ..color = _blue.withValues(alpha: 0.08)
-      ..style = PaintingStyle.fill;
-
-    // Car shadow
+    // Ground reflection
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 28), width: 140, height: 16),
-      Paint()..color = Colors.white.withValues(alpha: 0.03),
+      Rect.fromCenter(center: Offset(cx, cy + 42), width: 180, height: 14),
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(cx, cy + 42), 90,
+          [Colors.white.withValues(alpha: 0.04), Colors.transparent],
+        ),
     );
 
-    // Car body shape
-    final carBody = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(cx, cy), width: 130, height: 40),
-      const Radius.circular(8),
+    // ── 3D Car ──
+    _draw3DCar(canvas, cx, cy, _blue, scale: 1.3);
+
+    // ── Person (right side) ──
+    final pX = cx + 85;
+    final pY = cy - 6;
+    _draw3DPerson(canvas, pX, pY, _blue, armAngle: math.sin(progress * math.pi * 2) * 0.35);
+
+    // ── Animated sponge on car ──
+    final spongeX = cx + 12 + math.sin(progress * math.pi * 2) * 30;
+    final spongeY = cy - 26;
+    // Sponge shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(spongeX, spongeY + 6), width: 16, height: 4),
+      Paint()..color = Colors.black.withValues(alpha: 0.15),
     );
-    canvas.drawRRect(carBody, carGlow);
-    canvas.drawRRect(carBody, carPaint);
-
-    // Car roof
-    final roofPath = Path()
-      ..moveTo(cx - 35, cy - 20)
-      ..lineTo(cx - 20, cy - 38)
-      ..lineTo(cx + 20, cy - 38)
-      ..lineTo(cx + 35, cy - 20)
-      ..close();
-    canvas.drawPath(roofPath, carPaint);
-
-    // Windows
-    final windowPaint = Paint()
-      ..color = _blue.withValues(alpha: 0.15)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx - 18, cy - 35, 15, 14),
-        const Radius.circular(3),
-      ),
-      windowPaint,
+    // Sponge body with gradient
+    final spongeRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset(spongeX, spongeY), width: 16, height: 11),
+      const Radius.circular(4),
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx + 3, cy - 35, 15, 14),
-        const Radius.circular(3),
-      ),
-      windowPaint,
-    );
+    canvas.drawRRect(spongeRect, Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(spongeX - 8, spongeY - 5),
+        Offset(spongeX + 8, spongeY + 5),
+        [_blue.withValues(alpha: 0.8), _blueDark.withValues(alpha: 0.6)],
+      ));
 
-    // Wheels
-    final wheelPaint = Paint()..color = const Color(0xFF3A3A3E);
-    canvas.drawCircle(Offset(cx - 38, cy + 20), 10, wheelPaint);
-    canvas.drawCircle(Offset(cx + 38, cy + 20), 10, wheelPaint);
-    final hubPaint = Paint()..color = const Color(0xFF555558);
-    canvas.drawCircle(Offset(cx - 38, cy + 20), 4, hubPaint);
-    canvas.drawCircle(Offset(cx + 38, cy + 20), 4, hubPaint);
-
-    // ── Person with sponge (right side) ──
-    final personX = cx + 80;
-    final personY = cy - 10;
-    _drawStickPerson(canvas, personX, personY, _blue, armAngle: progress * 0.4 - 0.2);
-
-    // Sponge moving on car surface
-    final spongeX = cx + 20 + math.sin(progress * math.pi * 2) * 25;
-    final spongeY = cy - 22;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(spongeX, spongeY), width: 14, height: 10),
-        const Radius.circular(3),
-      ),
-      Paint()..color = _blue.withValues(alpha: 0.6),
-    );
-
-    // Sparkle particles around sponge
-    final sparkleP = Paint()..color = _blue.withValues(alpha: 0.5 + 0.5 * math.sin(progress * math.pi * 4));
-    for (int i = 0; i < 3; i++) {
-      final angle = progress * math.pi * 2 + i * 2.1;
-      final r = 12.0 + i * 4;
-      canvas.drawCircle(
-        Offset(spongeX + math.cos(angle) * r, spongeY + math.sin(angle) * r),
-        1.5,
-        sparkleP,
-      );
+    // ── Sparkle particles ──
+    for (int i = 0; i < 6; i++) {
+      final angle = progress * math.pi * 2 + i * 1.05;
+      final r = 14.0 + i * 3.5;
+      final sparkAlpha = (0.6 + 0.4 * math.sin(progress * math.pi * 4 + i)).clamp(0.0, 1.0);
+      final sx = spongeX + math.cos(angle) * r;
+      final sy = spongeY + math.sin(angle) * r * 0.6;
+      // Glow
+      canvas.drawCircle(Offset(sx, sy), 3,
+        Paint()..color = _blue.withValues(alpha: 0.08 * sparkAlpha)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+      // Dot
+      canvas.drawCircle(Offset(sx, sy), 1.2,
+        Paint()..color = Colors.white.withValues(alpha: 0.5 * sparkAlpha));
     }
 
-    // ── Water bucket (left side) ──
-    final bucketPath = Path()
-      ..moveTo(cx - 78, cy + 6)
-      ..lineTo(cx - 72, cy + 24)
-      ..lineTo(cx - 56, cy + 24)
-      ..lineTo(cx - 50, cy + 6)
-      ..close();
-    canvas.drawPath(bucketPath, Paint()..color = _blue.withValues(alpha: 0.2));
-    canvas.drawPath(
-      bucketPath,
-      Paint()
-        ..color = _blue.withValues(alpha: 0.4)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
+    // ── Water bucket (left) ──
+    final bx = cx - 72;
+    final by = cy + 12;
+    _drawBucket(canvas, bx, by, _blue);
   }
 
-  /// Scene 2: Car on road with shield/safety — traffic light
+  // ─────────────────────────────────────────
+  //  Scene 2 — Safety / Traffic
+  // ─────────────────────────────────────────
   void _paintSafetyScene(Canvas canvas, Size size) {
     final cx = size.width / 2;
-    final cy = size.height * 0.55;
+    final cy = size.height * 0.52;
 
-    // ── Road ──
-    final roadPaint = Paint()..color = const Color(0xFF1A1A1E);
-    canvas.drawRect(
-      Rect.fromLTWH(0, cy + 14, size.width, 28),
-      roadPaint,
+    // ── Road with perspective ──
+    final roadGrad = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, cy + 16), Offset(0, cy + 46),
+        [const Color(0xFF1E1E22), const Color(0xFF141417)],
+      );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(20, cy + 16, size.width - 40, 30),
+        const Radius.circular(3),
+      ),
+      roadGrad,
     );
-    // Road dashes
-    final dashPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
-      ..strokeWidth = 1.5;
-    for (double x = 10; x < size.width; x += 30) {
-      canvas.drawLine(Offset(x, cy + 28), Offset(x + 14, cy + 28), dashPaint);
+    // Animated dashes
+    final dashOffset = (progress * 30) % 30;
+    final dashP = Paint()
+      ..color = Colors.white.withValues(alpha: 0.18)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (double x = 30 - dashOffset; x < size.width - 30; x += 30) {
+      canvas.drawLine(Offset(x, cy + 31), Offset(x + 12, cy + 31), dashP);
     }
 
-    // ── Moving car ──
-    final carX = cx - 20 + math.sin(progress * math.pi * 2) * 8;
-    _drawMiniCar(canvas, carX, cy + 4, _green);
+    // ── Car driving ──
+    final carBob = math.sin(progress * math.pi * 4) * 1.5;
+    _draw3DCar(canvas, cx - 15, cy + 6 + carBob, _green, scale: 1.0);
 
-    // ── Shield icon (center top) ──
-    final shieldCx = cx;
-    final shieldCy = cy - 40;
-    final shieldScale = 0.95 + 0.05 * math.sin(progress * math.pi * 2);
+    // ── Shield (center-left, above car) ──
+    final sx = cx - 10;
+    final sy = cy - 42;
+    final pulse = 0.96 + 0.04 * math.sin(progress * math.pi * 2);
     canvas.save();
-    canvas.translate(shieldCx, shieldCy);
-    canvas.scale(shieldScale);
+    canvas.translate(sx, sy);
+    canvas.scale(pulse);
+
+    // Shield glow
+    canvas.drawCircle(Offset.zero, 28, Paint()
+      ..color = _green.withValues(alpha: 0.06)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12));
+
+    // Shield body
     final shieldPath = Path()
-      ..moveTo(0, -24)
-      ..lineTo(20, -14)
-      ..lineTo(20, 4)
-      ..quadraticBezierTo(20, 20, 0, 28)
-      ..quadraticBezierTo(-20, 20, -20, 4)
-      ..lineTo(-20, -14)
+      ..moveTo(0, -22)
+      ..lineTo(18, -13)
+      ..lineTo(18, 4)
+      ..quadraticBezierTo(18, 18, 0, 25)
+      ..quadraticBezierTo(-18, 18, -18, 4)
+      ..lineTo(-18, -13)
       ..close();
-    canvas.drawPath(shieldPath, Paint()..color = _green.withValues(alpha: 0.12));
-    canvas.drawPath(
-      shieldPath,
-      Paint()
-        ..color = _green.withValues(alpha: 0.5)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeJoin = StrokeJoin.round,
-    );
-    // Checkmark inside shield
-    final checkPath = Path()
-      ..moveTo(-8, 2)
-      ..lineTo(-2, 8)
-      ..lineTo(10, -6);
-    canvas.drawPath(
-      checkPath,
-      Paint()
-        ..color = _green
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+    canvas.drawPath(shieldPath, Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, -22), const Offset(0, 25),
+        [_green.withValues(alpha: 0.20), _greenDark.withValues(alpha: 0.08)],
+      ));
+    canvas.drawPath(shieldPath, Paint()
+      ..color = _green.withValues(alpha: 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeJoin = StrokeJoin.round);
+
+    // Checkmark
+    final checkP = Paint()
+      ..color = _green
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(Path()
+      ..moveTo(-7, 2)..lineTo(-2, 8)..lineTo(9, -5), checkP);
     canvas.restore();
 
-    // ── Traffic light (right side) ──
-    final tlX = cx + 80;
-    final tlY = cy - 20;
-    // Pole
-    canvas.drawRect(
-      Rect.fromLTWH(tlX - 2, tlY - 10, 4, 50),
-      Paint()..color = const Color(0xFF333336),
-    );
-    // Housing
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(tlX - 10, tlY - 40, 20, 40),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF2A2A2E),
-    );
-    // Lights: red, yellow, green
-    final phase = (progress * 3).floor() % 3;
-    canvas.drawCircle(Offset(tlX, tlY - 30), 5,
-        Paint()..color = (phase == 0 ? const Color(0xFFE53935) : const Color(0xFF3A1010)));
-    canvas.drawCircle(Offset(tlX, tlY - 18), 5,
-        Paint()..color = (phase == 1 ? const Color(0xFFFFB300) : const Color(0xFF3A3010)));
-    canvas.drawCircle(Offset(tlX, tlY - 6), 5,
-        Paint()..color = (phase == 2 ? _green : const Color(0xFF103A10)));
+    // ── Traffic light (right) ──
+    _drawTrafficLight(canvas, cx + 75, cy - 18, progress);
 
-    // ── Person at crosswalk (left) ──
-    _drawStickPerson(canvas, cx - 80, cy + 2, _green, armAngle: 0.1);
+    // ── Pedestrian (far left) ──
+    _draw3DPerson(canvas, cx - 82, cy + 4, _green, armAngle: 0.15, scale: 0.85);
   }
 
-  /// Scene 3: Driver greeting rider — 5 stars
+  // ─────────────────────────────────────────
+  //  Scene 3 — 5-Star Service
+  // ─────────────────────────────────────────
   void _paintServiceScene(Canvas canvas, Size size) {
     final cx = size.width / 2;
-    final cy = size.height * 0.55;
+    final cy = size.height * 0.52;
 
-    // ── Car in center ──
-    _drawMiniCar(canvas, cx, cy + 8, _gold);
+    // Ground glow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, cy + 42), width: 200, height: 14),
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(cx, cy + 42), 100,
+          [_gold.withValues(alpha: 0.04), Colors.transparent],
+        ),
+    );
+
+    // ── Car ──
+    _draw3DCar(canvas, cx, cy + 10, _gold, scale: 1.1);
 
     // ── Driver (left, waving) ──
-    final waveAngle = 0.3 + 0.4 * math.sin(progress * math.pi * 2);
-    _drawStickPerson(canvas, cx - 55, cy - 4, _gold, armAngle: waveAngle);
+    final wave = 0.3 + 0.5 * math.sin(progress * math.pi * 2);
+    _draw3DPerson(canvas, cx - 58, cy - 2, _gold, armAngle: wave);
 
     // ── Rider (right, with luggage) ──
-    _drawStickPerson(canvas, cx + 60, cy - 4, const Color(0xFF9C27B0), armAngle: -0.1);
+    _draw3DPerson(canvas, cx + 62, cy - 2, const Color(0xFF9C27B0), armAngle: -0.1);
     // Luggage
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx + 72, cy + 14, 10, 16),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF9C27B0).withValues(alpha: 0.3),
+    final lugRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(cx + 74, cy + 16, 12, 18),
+      const Radius.circular(3),
     );
-    // Handle
-    canvas.drawLine(
-      Offset(cx + 75, cy + 14),
-      Offset(cx + 75, cy + 10),
-      Paint()
-        ..color = const Color(0xFF9C27B0).withValues(alpha: 0.4)
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round,
-    );
+    canvas.drawRRect(lugRect, Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(cx + 74, cy + 16), Offset(cx + 86, cy + 34),
+        [const Color(0xFF9C27B0).withValues(alpha: 0.35), const Color(0xFF7B1FA2).withValues(alpha: 0.2)],
+      ));
+    canvas.drawLine(Offset(cx + 78, cy + 16), Offset(cx + 78, cy + 11),
+      Paint()..color = const Color(0xFF9C27B0).withValues(alpha: 0.45)..strokeWidth = 2..strokeCap = StrokeCap.round);
 
-    // ── 5 Stars above (animated) ──
+    // ── 5 Stars (cascading glow animation) ──
     for (int i = 0; i < 5; i++) {
-      final delay = i * 0.15;
+      final delay = i * 0.12;
       final t = ((progress - delay) % 1.0).clamp(0.0, 1.0);
-      final starAlpha = 0.3 + 0.7 * math.sin(t * math.pi);
-      final starY = cy - 50 - math.sin(t * math.pi) * 6;
-      final starX = cx - 40 + i * 20.0;
-      _drawStar(canvas, starX, starY, 6, _gold.withValues(alpha: starAlpha));
+      final pulse = math.sin(t * math.pi);
+      final starAlpha = (0.35 + 0.65 * pulse).clamp(0.0, 1.0);
+      final starY = cy - 48 - pulse * 5;
+      final starX = cx - 38 + i * 19.0;
+      // Star glow
+      canvas.drawCircle(Offset(starX, starY), 8,
+        Paint()..color = _gold.withValues(alpha: 0.06 * pulse)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      _drawStar(canvas, starX, starY, 7.0, _gold.withValues(alpha: starAlpha));
     }
 
-    // ── Speech bubble with "Hello!" ──
-    final bubbleAlpha = 0.4 + 0.6 * math.sin(progress * math.pi * 2);
-    final bubblePaint = Paint()..color = _gold.withValues(alpha: 0.08 * bubbleAlpha);
-    final bubbleBorder = Paint()
-      ..color = _gold.withValues(alpha: 0.2 * bubbleAlpha)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final bubbleRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(cx - 84, cy - 42, 40, 18),
-      const Radius.circular(8),
+    // ── Speech bubble ──
+    final bAlpha = (0.5 + 0.5 * math.sin(progress * math.pi * 2)).clamp(0.0, 1.0);
+    final bRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(cx - 88, cy - 40, 44, 20),
+      const Radius.circular(10),
     );
-    canvas.drawRRect(bubbleRect, bubblePaint);
-    canvas.drawRRect(bubbleRect, bubbleBorder);
+    canvas.drawRRect(bRect, Paint()
+      ..color = _gold.withValues(alpha: 0.10 * bAlpha));
+    canvas.drawRRect(bRect, Paint()
+      ..color = _gold.withValues(alpha: 0.25 * bAlpha)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1);
     // Tail
-    final tailPath = Path()
-      ..moveTo(cx - 60, cy - 24)
-      ..lineTo(cx - 54, cy - 20)
-      ..lineTo(cx - 66, cy - 24)
-      ..close();
-    canvas.drawPath(tailPath, Paint()..color = _gold.withValues(alpha: 0.08 * bubbleAlpha));
+    canvas.drawPath(Path()
+      ..moveTo(cx - 62, cy - 20)..lineTo(cx - 56, cy - 16)..lineTo(cx - 68, cy - 20)..close(),
+      Paint()..color = _gold.withValues(alpha: 0.10 * bAlpha));
 
-    // "Hi!" text (tiny)
-    final textPainter = TextPainter(
+    final tp = TextPainter(
       text: TextSpan(
-        text: 'Hi!',
+        text: 'Hello!',
         style: TextStyle(
-          color: _gold.withValues(alpha: 0.6 * bubbleAlpha),
-          fontSize: 9,
+          color: _gold.withValues(alpha: 0.7 * bAlpha),
+          fontSize: 10,
           fontWeight: FontWeight.w800,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    textPainter.paint(canvas, Offset(cx - 74, cy - 38));
+    tp.paint(canvas, Offset(cx - 80, cy - 36));
   }
 
-  // ── Helpers ──
+  // ═════════════════════════════════════════
+  //  Premium helpers
+  // ═════════════════════════════════════════
 
-  void _drawStickPerson(
-    Canvas canvas,
-    double x,
-    double y,
-    Color color, {
-    double armAngle = 0.0,
-  }) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.7)
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final headPaint = Paint()..color = color.withValues(alpha: 0.5);
+  /// 3D-style car with gradients, reflections, and depth
+  void _draw3DCar(Canvas canvas, double x, double y, Color accent, {double scale = 1.0}) {
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.scale(scale);
 
-    // Head
-    canvas.drawCircle(Offset(x, y - 16), 7, headPaint);
-    // Body
-    canvas.drawLine(Offset(x, y - 9), Offset(x, y + 10), paint);
-    // Left arm
-    final lArmEnd = Offset(
-      x - 12 * math.cos(armAngle),
-      y - 2 + 12 * math.sin(armAngle),
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(0, 24), width: 80, height: 10),
+      Paint()..color = Colors.black.withValues(alpha: 0.20)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
-    canvas.drawLine(Offset(x, y - 4), lArmEnd, paint);
-    // Right arm
-    final rArmEnd = Offset(
-      x + 12 * math.cos(armAngle),
-      y - 2 - 12 * math.sin(armAngle),
-    );
-    canvas.drawLine(Offset(x, y - 4), rArmEnd, paint);
-    // Legs
-    canvas.drawLine(Offset(x, y + 10), Offset(x - 8, y + 24), paint);
-    canvas.drawLine(Offset(x, y + 10), Offset(x + 8, y + 24), paint);
-  }
-
-  void _drawMiniCar(Canvas canvas, double x, double y, Color accent) {
-    final bodyPaint = Paint()..color = const Color(0xFF2A2A2E);
 
     // Body
+    final bodyRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset.zero, width: 76, height: 26),
+      const Radius.circular(7),
+    );
+    canvas.drawRRect(bodyRect, Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, -13), const Offset(0, 13),
+        [const Color(0xFF3A3A40), const Color(0xFF222226)],
+      ));
+    // Body highlight
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, y), width: 64, height: 22),
-        const Radius.circular(5),
+        Rect.fromCenter(center: const Offset(0, -6), width: 70, height: 6),
+        const Radius.circular(3),
       ),
-      bodyPaint,
+      Paint()..color = Colors.white.withValues(alpha: 0.04),
     );
+
     // Roof
     final roof = Path()
-      ..moveTo(x - 16, y - 11)
-      ..lineTo(x - 10, y - 22)
-      ..lineTo(x + 10, y - 22)
-      ..lineTo(x + 16, y - 11)
+      ..moveTo(-20, -13)
+      ..lineTo(-12, -28)
+      ..lineTo(12, -28)
+      ..lineTo(20, -13)
       ..close();
-    canvas.drawPath(roof, bodyPaint);
-    // Window
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, y - 16), width: 16, height: 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = accent.withValues(alpha: 0.12),
-    );
+    canvas.drawPath(roof, Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, -28), const Offset(0, -13),
+        [const Color(0xFF444448), const Color(0xFF2E2E32)],
+      ));
+
+    // Windshield
+    final wsPath = Path()
+      ..moveTo(-11, -27)..lineTo(-4, -14)..lineTo(4, -14)..lineTo(11, -27)..close();
+    canvas.drawPath(wsPath, Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, -27), const Offset(0, -14),
+        [accent.withValues(alpha: 0.18), accent.withValues(alpha: 0.06)],
+      ));
+
     // Wheels
-    final wheelP = Paint()..color = const Color(0xFF444448);
-    canvas.drawCircle(Offset(x - 18, y + 11), 6, wheelP);
-    canvas.drawCircle(Offset(x + 18, y + 11), 6, wheelP);
+    for (final wx in [-22.0, 22.0]) {
+      // Tire
+      canvas.drawCircle(Offset(wx, 13), 8, Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(wx - 2, 11), 8,
+          [const Color(0xFF3A3A3E), const Color(0xFF1A1A1E)],
+        ));
+      // Hub
+      canvas.drawCircle(Offset(wx, 13), 3.5, Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(wx - 1, 12), 3.5,
+          [const Color(0xFF666668), const Color(0xFF444446)],
+        ));
+    }
+
     // Headlights
-    canvas.drawCircle(Offset(x + 30, y - 2), 2.5,
-        Paint()..color = accent.withValues(alpha: 0.4));
-    canvas.drawCircle(Offset(x - 30, y - 2), 2.5,
-        Paint()..color = const Color(0xFFE53935).withValues(alpha: 0.3));
+    canvas.drawCircle(const Offset(36, -2), 3, Paint()
+      ..color = accent.withValues(alpha: 0.5));
+    canvas.drawCircle(const Offset(36, -2), 6, Paint()
+      ..color = accent.withValues(alpha: 0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
+    // Taillights
+    canvas.drawCircle(const Offset(-36, -2), 3, Paint()
+      ..color = const Color(0xFFE53935).withValues(alpha: 0.4));
+    canvas.drawCircle(const Offset(-36, -2), 5, Paint()
+      ..color = const Color(0xFFE53935).withValues(alpha: 0.06)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+
+    canvas.restore();
   }
 
+  /// 3D-style person with filled body, gradient head, and natural proportions
+  void _draw3DPerson(Canvas canvas, double x, double y, Color color,
+      {double armAngle = 0.0, double scale = 1.0}) {
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.scale(scale);
+
+    final bodyP = Paint()
+      ..color = color.withValues(alpha: 0.65)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // Head with gradient
+    canvas.drawCircle(const Offset(0, -18), 8, Paint()
+      ..shader = ui.Gradient.radial(
+        const Offset(-2, -20), 8,
+        [color.withValues(alpha: 0.6), color.withValues(alpha: 0.3)],
+      ));
+    // Head highlight
+    canvas.drawCircle(const Offset(-2, -21), 3, Paint()
+      ..color = Colors.white.withValues(alpha: 0.08));
+
+    // Body
+    canvas.drawLine(const Offset(0, -10), const Offset(0, 12), bodyP);
+    // Left arm
+    final la = Offset(-14 * math.cos(armAngle), -2 + 14 * math.sin(armAngle));
+    canvas.drawLine(const Offset(0, -5), la, bodyP);
+    // Right arm
+    final ra = Offset(14 * math.cos(armAngle), -2 - 14 * math.sin(armAngle));
+    canvas.drawLine(const Offset(0, -5), ra, bodyP);
+    // Legs
+    canvas.drawLine(const Offset(0, 12), const Offset(-9, 28), bodyP);
+    canvas.drawLine(const Offset(0, 12), const Offset(9, 28), bodyP);
+
+    canvas.restore();
+  }
+
+  /// Traffic light with glow effects
+  void _drawTrafficLight(Canvas canvas, double x, double y, double t) {
+    // Pole
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 2.5, y - 8, 5, 52),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(x - 2.5, y), Offset(x + 2.5, y),
+          [const Color(0xFF444448), const Color(0xFF2A2A2E)],
+        ),
+    );
+    // Housing
+    final housing = RRect.fromRectAndRadius(
+      Rect.fromLTWH(x - 12, y - 42, 24, 44),
+      const Radius.circular(5),
+    );
+    canvas.drawRRect(housing, Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(x - 12, y - 42), Offset(x + 12, y + 2),
+        [const Color(0xFF333338), const Color(0xFF1E1E22)],
+      ));
+    canvas.drawRRect(housing, Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5);
+
+    // Smooth phase transition (not abrupt)
+    final phase = (t * 3) % 3;
+    final colors = [
+      const Color(0xFFE53935), const Color(0xFFFFB300), _green,
+    ];
+    final offColors = [
+      const Color(0xFF3A1010), const Color(0xFF3A3010), const Color(0xFF103A10),
+    ];
+    final positions = [y - 30, y - 18, y - 6];
+
+    for (int i = 0; i < 3; i++) {
+      final isActive = phase.floor() == i;
+      final c = isActive ? colors[i] : offColors[i];
+      final cy = positions[i];
+      // Glow behind active light
+      if (isActive) {
+        canvas.drawCircle(Offset(x, cy), 10, Paint()
+          ..color = c.withValues(alpha: 0.15)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      }
+      // Light
+      canvas.drawCircle(Offset(x, cy), 5.5, Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(x - 1, cy - 1), 5.5,
+          [c, c.withValues(alpha: isActive ? 0.6 : 0.3)],
+        ));
+    }
+  }
+
+  /// Water bucket with 3D shading
+  void _drawBucket(Canvas canvas, double x, double y, Color color) {
+    final bucketPath = Path()
+      ..moveTo(x - 12, y - 8)
+      ..lineTo(x - 8, y + 10)
+      ..lineTo(x + 8, y + 10)
+      ..lineTo(x + 12, y - 8)
+      ..close();
+    canvas.drawPath(bucketPath, Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(x - 12, y - 8), Offset(x + 12, y + 10),
+        [color.withValues(alpha: 0.25), color.withValues(alpha: 0.10)],
+      ));
+    canvas.drawPath(bucketPath, Paint()
+      ..color = color.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeJoin = StrokeJoin.round);
+    // Water surface
+    canvas.drawLine(
+      Offset(x - 10, y - 4), Offset(x + 10, y - 4),
+      Paint()..color = color.withValues(alpha: 0.25)..strokeWidth = 1.5..strokeCap = StrokeCap.round,
+    );
+    // Handle
+    final handlePath = Path()
+      ..moveTo(x - 8, y - 8)
+      ..quadraticBezierTo(x, y - 18, x + 8, y - 8);
+    canvas.drawPath(handlePath, Paint()
+      ..color = color.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round);
+  }
+
+  /// 5-pointed star with proper inner/outer radii
   void _drawStar(Canvas canvas, double x, double y, double r, Color color) {
     final path = Path();
-    for (int i = 0; i < 5; i++) {
-      final angle = -math.pi / 2 + i * 4 * math.pi / 5;
-      final px = x + r * math.cos(angle);
-      final py = y + r * math.sin(angle);
+    final innerR = r * 0.4;
+    for (int i = 0; i < 10; i++) {
+      final angle = -math.pi / 2 + i * math.pi / 5;
+      final radius = i.isEven ? r : innerR;
+      final px = x + radius * math.cos(angle);
+      final py = y + radius * math.sin(angle);
       if (i == 0) {
         path.moveTo(px, py);
       } else {

@@ -2565,20 +2565,33 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<void> _updateGoldDotAnnotation() async {
     final mgr = _pointAnnotMgr;
-    if (mgr == null || _currentPosition == null) return;
+    if (mgr == null) return;
+
+    // Feed latest GPS position into the dot's lerp target
+    final pos = _currentPosition;
+    if (pos != null) {
+      _goldDot.setTarget(pos.latitude, pos.longitude);
+    }
+
+    // Use the interpolated (lerped) position for smooth movement
+    final lat = _goldDot.lat;
+    final lng = _goldDot.lng;
+    if (lat == null || lng == null) return;
+
     final bytes = _goldDot.currentBytes;
     if (bytes == null) return;
+
     if (_goldDotAnnot != null) {
       try {
         _goldDotAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude));
+          coordinates: mapbox.Position(lng, lat));
         _goldDotAnnot!.image = bytes;
         await mgr.update(_goldDotAnnot!);
         return;
       } catch (_) { _goldDotAnnot = null; }
     }
     _goldDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_currentPosition!.longitude, _currentPosition!.latitude)),
+      geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       image: bytes,
       iconSize: 0.4,
       iconAnchor: mapbox.IconAnchor.CENTER,

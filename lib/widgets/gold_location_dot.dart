@@ -9,11 +9,14 @@ import 'package:flutter/material.dart';
 ///
 /// Design: 3-layer pulsing glow — outer expanding ring, static inner halo,
 /// solid core with subtle brightness pulse. Calm, elegant heartbeat of light.
-/// 2.5 s per full cycle using a sin-based ease curve.
+/// 3 s per full cycle using a sin-based ease curve.
+///
+/// Position interpolation: call [setTarget] with each GPS update.
+/// The dot lerps toward the target every tick for buttery-smooth movement.
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
-  // 25 frames × 100 ms = 2 500 ms (2.5 s) per cycle
-  static const int _frameCount = 25;
+  // 50 frames × 60 ms = 3 000 ms (3 s) per cycle — smooth ~16 fps
+  static const int _frameCount = 50;
   static const double _canvasSize = 160.0;
 
   // Core dot radius — all other layers are relative to this
@@ -23,9 +26,47 @@ class GoldLocationDot {
   int _frame = 0;
   Timer? _timer;
 
+  // ── Position interpolation ──
+  double? _currentLat;
+  double? _currentLng;
+  double? _targetLat;
+  double? _targetLng;
+
+  /// Interpolated position (lat, lng) — use this to place the annotation.
+  double? get lat => _currentLat;
+  double? get lng => _currentLng;
+
   bool get isReady => _frames.isNotEmpty;
 
   Uint8List? get currentBytes => _frames.isEmpty ? null : _frames[_frame];
+
+  /// Set the GPS target position. The dot will smoothly lerp toward it.
+  void setTarget(double lat, double lng) {
+    _targetLat = lat;
+    _targetLng = lng;
+    // First position — snap immediately, no lerp
+    if (_currentLat == null) {
+      _currentLat = lat;
+      _currentLng = lng;
+    }
+  }
+
+  /// Advance interpolated position toward target by [factor] (0–1).
+  void _lerpPosition() {
+    if (_currentLat == null || _targetLat == null) return;
+    // Lerp factor per tick — 0.18 at 60ms ≈ exponential ease-out glide
+    const f = 0.18;
+    _currentLat = _currentLat! + (_targetLat! - _currentLat!) * f;
+    _currentLng = _currentLng! + (_targetLng! - _currentLng!) * f;
+
+    // Snap when close enough to avoid perpetual micro-lerping
+    final dLat = (_targetLat! - _currentLat!).abs();
+    final dLng = (_targetLng! - _currentLng!).abs();
+    if (dLat < 0.0000005 && dLng < 0.0000005) {
+      _currentLat = _targetLat;
+      _currentLng = _targetLng;
+    }
+  }
 
   Future<void> build(VoidCallback onTick) async {
     final frames = <Uint8List>[];
@@ -91,9 +132,10 @@ class GoldLocationDot {
     if (frames.length != _frameCount) return;
     _frames = frames;
 
-    // 100 ms per frame → 2.5 s per full pulse cycle
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    // 60 ms per frame — smooth pulse + position lerp on every tick
+    _timer = Timer.periodic(const Duration(milliseconds: 60), (_) {
       _frame = (_frame + 1) % _frames.length;
+      _lerpPosition();
       onTick();
     });
   }

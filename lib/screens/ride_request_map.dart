@@ -582,16 +582,17 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _drawRoute() {
     final s = _ctrl.state;
     if (s.route == null) return;
+    // Prevent resetting a cinematic that is already in progress
+    if (_cinematicRunning) return;
     _showPinLabels = true;
     final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
     _buildRouteMarkers();
-    // Always replay cinematic — reset state and re-trigger
     _resetCinematic();
     _startCinematicSequence(pts);
   }
 
   /// Reset all cinematic animation state so sequence can replay from scratch.
-  Future<void> _resetCinematic() async {
+  void _resetCinematic() {
     _cinematicDone = false;
     _cinematicRunning = false;
     _hasAppliedSelectionTilt = false;
@@ -605,15 +606,17 @@ extension _RideRequestMap on _RideRequestScreenState {
     _labelPopCtrl?.stop();
     _routeDrawTicker?.stop();
 
-    // Clear existing route annotations so they redraw fresh
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr != null) {
-      if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    }
-
-    // Reset camera to flat so tilt animates from 0°
+    // Reset camera to flat BEFORE any async work so cinematic starts clean
     if (_mapCtrl != null) {
       _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
+    }
+
+    // Clear existing route annotations so they redraw fresh (fire-and-forget)
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null && _routeAnnot != null) {
+      final annot = _routeAnnot!;
+      _routeAnnot = null;
+      polyMgr.delete(annot).catchError((_) {});
     }
   }
 
@@ -630,7 +633,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Replay cinematic if route data is available (used by searching phase).
   /// Only triggers if cinematic hasn't already played.
   void _replayCinematicIfRouteAvailable() {
-    if (_cinematicDone) return;
+    if (_cinematicDone || _cinematicRunning) return;
     final route = _ctrl.state.route;
     if (route == null || route.points.isEmpty) return;
     final pts = _capRouteEndpoints(List<LatLng>.from(route.points));

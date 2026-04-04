@@ -411,8 +411,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     _setState(
                                       () => _rideOptionsExpanded = false,
                                     );
-                                    // Refit route above the collapsed bottom panel
-                                    if (_mapCtrl != null) {
+                                    // Refit route above the collapsed bottom panel,
+                                    // but only after cinematic finishes to avoid
+                                    // conflicting flyTo vs setCamera animations.
+                                    if (_mapCtrl != null && !_cinematicRunning) {
                                       final s = _ctrl.state;
                                       if (s.pickup != null && s.dropoff != null) {
                                         final pts = s.route?.points ?? [
@@ -421,7 +423,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         ];
                                         // Delay to let the panel collapse animate first
                                         Future.delayed(const Duration(milliseconds: 350), () {
-                                          if (mounted) _fitRoute(pts, preserveCamera: true);
+                                          if (mounted && !_cinematicRunning) {
+                                            _fitRoute(pts, preserveCamera: true);
+                                          }
                                         });
                                       }
                                     }

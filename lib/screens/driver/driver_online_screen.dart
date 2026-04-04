@@ -350,7 +350,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _searchPulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 3500),
     )..repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
@@ -1316,21 +1316,21 @@ class _SearchingBorderPainter extends CustomPainter {
     final pm = metricsList.first;
     final total = pm.length;
 
-    const glowFraction = 0.22; // 22% of perimeter — longer, smoother tail
+    const glowFraction = 0.28; // 28% of perimeter — long, silky tail
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
 
-    // Fewer steps = less GPU work per frame → smoother animation
-    const steps = 14;
-    final stepLen = glowLen / steps;
+    // Draw multiple opacity layers for smooth gradient effect (head bright → tail invisible)
+    const layers = 40;
+    final layerLen = glowLen / layers;
 
-    for (int k = 0; k < steps; k++) {
-      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
-      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
-      if (fadeAlpha < 0.03) continue;
+    for (int k = 0; k < layers; k++) {
+      final t = 1.0 - k / layers; // 1.0 at head → 0.0 at tail
+      final fadeAlpha = t * t; // quadratic fade — smooth
+      if (fadeAlpha < 0.02) continue;
 
-      final segEnd = (headDist - k * stepLen + total) % total;
-      final segStart = (segEnd - stepLen + total) % total;
+      final segEnd = (headDist - k * layerLen + total) % total;
+      final segStart = (segEnd - layerLen * 1.1 + total) % total; // slight overlap to avoid gaps
 
       final Path seg;
       if (segStart <= segEnd) {
@@ -1349,20 +1349,20 @@ class _SearchingBorderPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..isAntiAlias = true
           ..color = Color.lerp(_gold, _goldLight, t)!
-              .withValues(alpha: fadeAlpha * 0.85),
+              .withValues(alpha: fadeAlpha * 0.9),
       );
 
-      // Soft outer glow halo — only the head 4 segments
-      if (k < 4) {
+      // Soft outer glow halo — only the head portion
+      if (k < 10) {
         canvas.drawPath(
           seg,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 6
+            ..strokeWidth = 5
             ..strokeCap = StrokeCap.round
             ..isAntiAlias = true
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
-            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.2),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.15),
         );
       }
     }

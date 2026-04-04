@@ -1795,12 +1795,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       return const SizedBox.shrink();
     }
 
-    final messages = [
-      '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
-      '⭐ ${driver.rating.toStringAsFixed(1)} · ${driver.vehiclePlate}',
-      '$firstName ${S.of(context).isOnTheWay}',
-    ];
-
     final pickup = _ctrl.state.pickup;
     final dropoff = _ctrl.state.dropoff;
     final midLat = (pickup != null && dropoff != null)
@@ -2137,41 +2131,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 ),
                               ),
                           ],
-                        ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // ── Pickup address pill ──
-                  FadeTransition(
-                    opacity: CurvedAnimation(
-                      parent: stagger,
-                      curve: const Interval(0.4, 0.65),
-                    ),
-                    child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: gold.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: gold.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 350),
-                          child: Text(
-                            messages[_dfMsgIndex],
-                            key: ValueKey(_dfMsgIndex),
-                            style: const TextStyle(
-                              color: gold,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
                         ),
                     ),
                   ),

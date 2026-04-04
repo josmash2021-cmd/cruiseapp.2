@@ -582,7 +582,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                   isVerified: true,
                                 ),
                                 const SizedBox(width: 12),
-                                // Name + vehicle
+                                // Name + vehicle + rating
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -597,7 +597,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(height: 3),
+                                      const SizedBox(height: 4),
                                       Row(
                                         children: [
                                           Icon(
@@ -605,22 +605,26 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                             size: 13,
                                             color: Colors.white.withValues(alpha: 0.35),
                                           ),
-                                          const SizedBox(width: 3),
+                                          const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
                                               widget.vehicleDesc,
                                               style: TextStyle(
-                                                color: Colors.white.withValues(alpha: 0.45),
+                                                color: Colors.white.withValues(alpha: 0.55),
                                                 fontSize: 13,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
                                           if (widget.driverRating != null) ...[
-                                            const SizedBox(width: 8),
                                             Icon(Icons.star_rounded, size: 13, color: _gold),
-                                            const SizedBox(width: 2),
+                                            const SizedBox(width: 3),
                                             Text(
                                               widget.driverRating!.toStringAsFixed(1),
                                               style: TextStyle(
@@ -634,6 +638,30 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                     ],
                                   ),
                                 ),
+                                // License plate pill (right side)
+                                if (widget.vehiclePlate != null && widget.vehiclePlate!.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _gold.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: _gold.withValues(alpha: 0.3),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      widget.vehiclePlate!,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 1.8,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

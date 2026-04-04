@@ -30,6 +30,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _loading = false;
   bool _saving = false;
 
+  /// Temp path of a newly-picked photo that hasn't been saved yet.
+  /// Null means no new photo was picked in this session.
+  String? _pendingPhotoPath;
+
   @override
   void initState() {
     super.initState();
@@ -121,39 +125,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
     if (xFile == null || !mounted) return;
 
-    // Copy to permanent storage so the photo survives app restarts
-    // This also updates the photoNotifier immediately for all listening screens
-    final permanentPath = await UserSession.saveProfilePhoto(xFile.path);
-    
-    // Clear cached image so new photo shows immediately
-    imageCache.clear();
-    imageCache.clearLiveImages();
-    
-    // Update UI immediately - don't wait for server upload
-    setState(() => _photoPath = permanentPath);
-    
-    // Upload to server + Firebase Storage for cross-device sync
-    ApiService.uploadPhoto(permanentPath).catchError((e) {
-      debugPrint('Photo upload failed (saved locally): $e');
-      return '';
-    });
-    // Sync to Firebase Storage + Firestore so photo works on all devices
-    final userId = await ApiService.getCurrentUserId();
-    if (userId != null) {
-      final user = await UserSession.getUser();
-      final role = user?['role'] ?? 'rider';
-      try {
-        final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
-          permanentPath, userId, role,
-        );
-        await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, role);
-        await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), role, firebaseUrl);
-        UserSession.photoUrlNotifier.value = firebaseUrl;
-        await UserSession.updateField('photoUrl', firebaseUrl);
-      } catch (e) {
-        debugPrint('Firebase photo sync failed: $e');
-      }
-    }
+    // Only store the temp path — don't save or upload until user presses Save
+    setState(() => _pendingPhotoPath = xFile.path);
   }
 
   Widget _photoOption(
@@ -198,13 +171,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _saving = true);
 
+    // ── If user picked a new photo, persist + upload it now ──
+    if (_pendingPhotoPath != null) {
+      final permanentPath =
+          await UserSession.saveProfilePhoto(_pendingPhotoPath!);
+      imageCache.clear();
+      imageCache.clearLiveImages();
+      _photoPath = permanentPath;
+
+      // Upload to backend + Firebase in the background
+      ApiService.uploadPhoto(permanentPath).catchError((e) {
+        debugPrint('Photo upload failed (saved locally): $e');
+        return '';
+      });
+      final userId = await ApiService.getCurrentUserId();
+      if (userId != null) {
+        final user = await UserSession.getUser();
+        final role = user?['role'] ?? 'rider';
+        try {
+          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
+            permanentPath, userId, role,
+          );
+          await FirebaseStorageService.updateFirestorePhotoUrl(
+              userId, firebaseUrl, role);
+          await PhotoRecoveryService.savePhotoEveryWhere(
+              userId.toString(), role, firebaseUrl);
+          UserSession.photoUrlNotifier.value = firebaseUrl;
+          await UserSession.updateField('photoUrl', firebaseUrl);
+        } catch (e) {
+          debugPrint('Firebase photo sync failed: $e');
+        }
+      }
+    }
+
     // Save locally
     await UserSession.updateField('firstName', first);
     await UserSession.updateField('lastName', last);
     await UserSession.updateField('email', _emailCtrl.text.trim());
     await UserSession.updateField('phone', _phoneCtrl.text.trim());
-    // photoPath is already saved by saveProfilePhoto when photo was picked,
-    // but update it again in case user didn't change the photo
     await UserSession.updateField('photoPath', _photoPath);
     if (_gender.isNotEmpty) {
       await UserSession.updateField('gender', _gender);
@@ -220,8 +224,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         if (_gender.isNotEmpty) 'gender': _gender,
       });
     } catch (e) {
-      debugPrint('⚠️ Profile sync failed: $e');
-      // Saved locally — will sync later
+      debugPrint('Profile sync failed: $e');
     }
 
     if (!mounted) return;
@@ -339,13 +342,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 width: 2,
                               ),
                             ),
-                            child: UserProfilePhoto(
-                              photoUrl: _photoUrl,
-                              photoPath: _photoPath,
-                              radius: 50,
-                              fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
-                              uid: UserSession.currentUid,
-                            ),
+                            child: _pendingPhotoPath != null
+                                ? ClipOval(
+                                    child: Image.file(
+                                      File(_pendingPhotoPath!),
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : UserProfilePhoto(
+                                    photoUrl: _photoUrl,
+                                    photoPath: _photoPath,
+                                    radius: 50,
+                                    fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
+                                    uid: UserSession.currentUid,
+                                  ),
                           ),
                           Positioned(
                             bottom: 0,

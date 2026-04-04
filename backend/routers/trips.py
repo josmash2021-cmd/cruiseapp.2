@@ -108,22 +108,34 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         raise HTTPException(500, f"Failed to create trip: {e}")
 
     # Sync trip to Firestore (non-blocking - don't delay API response)
+    # IMPORTANT: use a fresh session — the request-scoped `db` closes when
+    # the handler returns, causing "another operation is in progress" errors.
     if _HAS_FIRESTORE:
+        _trip_snap = {
+            "id": trip.id, "rider_id": trip.rider_id,
+            "pickup_address": trip.pickup_address, "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+            "dropoff_address": trip.dropoff_address, "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
+            "status": trip.status, "fare": trip.fare, "vehicle_type": trip.vehicle_type,
+            "created_at": trip.created_at, "scheduled_at": trip.scheduled_at,
+            "is_airport": trip.is_airport, "airport_code": trip.airport_code,
+            "terminal": trip.terminal, "pickup_zone": trip.pickup_zone, "notes": trip.notes,
+        }
         async def _bg_firestore_sync():
             try:
-                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_result.scalar_one_or_none()
+                async with SessionLocal() as _db:
+                    rider_result = await _db.execute(select(User).where(User.id == _trip_snap["rider_id"]))
+                    rider = rider_result.scalar_one_or_none()
                 firestore_sync.sync_trip(
-                    trip_id=trip.id, rider_id=trip.rider_id,
+                    trip_id=_trip_snap["id"], rider_id=_trip_snap["rider_id"],
                     rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
                     rider_phone=rider.phone or "" if rider else "",
-                    pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
-                    dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
-                    status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
-                    created_at=trip.created_at,
-                    scheduled_at=trip.scheduled_at, is_airport=trip.is_airport,
-                    airport_code=trip.airport_code, terminal=trip.terminal,
-                    pickup_zone=trip.pickup_zone, notes=trip.notes,
+                    pickup_address=_trip_snap["pickup_address"], pickup_lat=_trip_snap["pickup_lat"], pickup_lng=_trip_snap["pickup_lng"],
+                    dropoff_address=_trip_snap["dropoff_address"], dropoff_lat=_trip_snap["dropoff_lat"], dropoff_lng=_trip_snap["dropoff_lng"],
+                    status=_trip_snap["status"], fare=_trip_snap["fare"], vehicle_type=_trip_snap["vehicle_type"],
+                    created_at=_trip_snap["created_at"],
+                    scheduled_at=_trip_snap["scheduled_at"], is_airport=_trip_snap["is_airport"],
+                    airport_code=_trip_snap["airport_code"], terminal=_trip_snap["terminal"],
+                    pickup_zone=_trip_snap["pickup_zone"], notes=_trip_snap["notes"],
                 )
             except Exception as e:
                 logging.error("Firestore sync on create_trip failed: %s", e)

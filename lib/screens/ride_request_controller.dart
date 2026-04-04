@@ -1500,7 +1500,7 @@ extension _RideRequestController on _RideRequestScreenState {
   bool get _hasAnyPaymentMethod => _linkedPaymentMethods.isNotEmpty;
 
   String _paymentLabel(String id) {
-    if (!_hasAnyPaymentMethod) return 'Set up a payment method';
+    if (!_hasAnyPaymentMethod) return S.of(context).selectPaymentMethod;
     final loc = S.of(context);
     switch (id) {
       case 'apple_pay':

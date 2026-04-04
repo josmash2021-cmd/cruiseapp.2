@@ -1381,8 +1381,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!mounted || ticket != _routeAnimationTicket) return;
     _startPinPop();
 
-    // 4. Gold route draw at 300ms more
-    await Future.delayed(const Duration(milliseconds: 300));
+    // 4. Wait for tilt/bearing to finish, then draw the gold route
+    await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted || ticket != _routeAnimationTicket) return;
     await _animateGoldRoute(points);
     if (!mounted || ticket != _routeAnimationTicket) return;

@@ -531,6 +531,8 @@ class S {
   // ── Payment Method ────────────────────────────────────────────────────────
   String get addPaymentMethod =>
       _es ? 'Añadir Método de Pago' : 'Add Payment Method';
+  String get selectPaymentMethod =>
+      _es ? 'Seleccionar método de pago' : 'Select payment method';
   String get creditDebitCard =>
       _es ? 'Tarjeta de crédito o débito' : 'Credit or debit card';
 

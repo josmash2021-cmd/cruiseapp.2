@@ -192,7 +192,7 @@ extension _MapScreenMap on _MapScreenState {
   double _panelBottomInset() {
     switch (_stage) {
       case RideStage.options:
-        return 360.0;
+        return 420.0;
       case RideStage.payment:
       case RideStage.confirmPickup:
         return 300.0;

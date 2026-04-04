@@ -1900,9 +1900,21 @@ extension _MapScreenWidgets on _MapScreenState {
                         ),
                         child: Row(
                           children: [
-                            if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
+                            if (!_linkedPaymentMethods.contains(_selectedPaymentMethod)) ...[
+                              // No linked method — show plain text, no icon
+                              Expanded(
+                                child: Text(
+                                  S.of(context).selectPaymentMethod,
+                                  style: TextStyle(
+                                    color: _c.textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ] else if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
                               Expanded(child: _nativePayLogoWide(_selectedPaymentMethod))
-                            else ...[    
+                            else ...[
                               _paymentMethodInfo(
                                 _selectedPaymentMethod,
                               ).logoWidget,
@@ -1923,18 +1935,9 @@ extension _MapScreenWidgets on _MapScreenState {
                                     ),
                                     const SizedBox(height: 1),
                                     Text(
-                                      _linkedPaymentMethods.contains(
-                                            _selectedPaymentMethod,
-                                          )
-                                          ? S.of(context).tapToChange
-                                          : S.of(context).notAddedTapSetup,
+                                      S.of(context).tapToChange,
                                       style: TextStyle(
-                                        color:
-                                            _linkedPaymentMethods.contains(
-                                              _selectedPaymentMethod,
-                                            )
-                                            ? _c.textTertiary
-                                            : Colors.white,
+                                        color: _c.textTertiary,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -1944,7 +1947,7 @@ extension _MapScreenWidgets on _MapScreenState {
                             ],
                             const SizedBox(width: 8),
                             Icon(
-                              Icons.chevron_right_rounded,
+                              Icons.keyboard_arrow_down_rounded,
                               color: _c.textTertiary,
                               size: 22,
                             ),

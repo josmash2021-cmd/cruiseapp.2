@@ -166,7 +166,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title: title,
       body: body,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           'cruise_premium',
           'Cruise Notifications',
@@ -174,13 +174,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           importance: Importance.high,
           priority: Priority.high,
           playSound: true,
-          sound: RawResourceAndroidNotificationSound('cruise_online'),
+          sound: const RawResourceAndroidNotificationSound('cruise_online'),
           enableVibration: true,
           vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
-          color: Color(0xFFE8C547),
+          color: const Color(0xFFE8C547),
           icon: '@mipmap/ic_launcher',
         ),
-        iOS: DarwinNotificationDetails(
+        iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,

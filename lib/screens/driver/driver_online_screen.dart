@@ -394,6 +394,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
     if (state == AppLifecycleState.paused) {
       _pollT?.cancel();
       _offerSseSub?.cancel();

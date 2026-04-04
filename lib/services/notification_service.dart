@@ -380,13 +380,12 @@ class NotificationService {
   /// Plays 3 times with 2-second intervals to grab driver's attention.
   /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
   static void playOfferSound() {
-    Future<void>(() async {
+    Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         if (!(prefs.getBool('sound_trips') ?? true)) return;
         for (int i = 0; i < 3; i++) {
-          await _offerPlayer.seek(Duration.zero);
-          await _offerPlayer.resume();
+          _offerPlayer.seek(Duration.zero).then((_) => _offerPlayer.resume());
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
       } catch (e) {

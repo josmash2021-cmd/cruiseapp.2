@@ -581,12 +581,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _vehicleDocsApproved = approved;
         _docStatusLoaded = true;
       });
-      if (approved && !wasApproved) {
-        // Animate red → gold transition
-        _btnColorCtrl.forward();
-      } else if (approved) {
-        _btnColorCtrl.value = 1.0;
-      }
+      // Button is always gold — just rebuild for opacity change
+      _btnColorCtrl.value = 1.0;
     } catch (_) {
       if (mounted) setState(() => _docStatusLoaded = true);
     }
@@ -1159,27 +1155,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           final g = _glossCtrl.value;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
 
-          // Interpolate between red and gold
-          const redTop = Color(0xFFE05545);
-          const redBot = Color(0xFFB03030);
+          // Always gold — dim when docs not approved
           const goldTop1 = Color(0xFFF0D060);
           const goldTop2 = Color(0xFFF5DC7A);
           const goldBot = Color(0xFFD4A800);
 
-          final topColor = Color.lerp(
-            redTop,
-            Color.lerp(goldTop1, goldTop2, p)!,
-            colorT,
-          )!;
-          final botColor = Color.lerp(redBot, goldBot, colorT)!;
-          final glowColor = Color.lerp(
-            const Color(0xFFE05545),
-            _gold,
-            colorT,
-          )!;
+          final topColor = Color.lerp(goldTop1, goldTop2, p)!;
+          final botColor = goldBot;
+          final glowColor = _gold;
+
+          // Disabled look when docs missing or not verified
+          final buttonOpacity = !_isVerified ? 0.55
+              : !docsOk ? 0.45
+              : 1.0;
 
           return Opacity(
-            opacity: _isVerified ? 1.0 : 0.55,
+            opacity: buttonOpacity,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: Stack(

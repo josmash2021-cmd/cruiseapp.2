@@ -1556,6 +1556,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _goOffline() {
+    if (!mounted) return;
     // Block going offline while an offer is visible
     if (_pendingOffers.isNotEmpty || _previewingOffer != null) {
       HapticFeedback.heavyImpact();
@@ -1584,6 +1585,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     HapticFeedback.mediumImpact();
     _goOfflineBackend();
+
+    // Cancel all background tasks before navigating to prevent post-dispose crashes
+    _pollT?.cancel();
+    _offerSseSub?.cancel();
+    _clock?.cancel();
+    _earningsRefreshTimer?.cancel();
+
     final result = {
       'earnings': _earnings,
       'trips': _trips,

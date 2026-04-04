@@ -55,6 +55,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
   late final AnimationController _rotateCtrl;
 
+  late final AnimationController _fadeInCtrl;
+  late final Animation<double> _fadeInAnim;
+
   late final AnimationController _fadeOutCtrl;
   late final Animation<double> _fadeOutAnim;
 
@@ -75,6 +78,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   @override
   void initState() {
     super.initState();
+
+    // Content fade-in
+    _fadeInCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fadeInAnim = CurvedAnimation(parent: _fadeInCtrl, curve: Curves.easeOut);
+    _fadeInCtrl.forward();
 
     // Pulse: scale ring 1.0 → 1.06 → 1.0
     _pulseCtrl = AnimationController(
@@ -172,7 +183,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       if (data == null) return;
 
       final status = (data['status'] ?? '').toString().toLowerCase().trim();
-      final hasStartedTs = data['startedAt'] != null || data['started_at'] != null;
+      final hasStartedTs = data['startedAt'] != null || data['started_at'] != null || data['rideStartedAt'] != null;
 
       if (status == 'in_trip' ||
           status == 'in_progress' ||
@@ -184,14 +195,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     });
   }
 
-  /// Called when the driver starts the trip from their side.
+  /// Called when the driver starts the ride from their side.
+  /// Auto-presses the button and shows "Viaje confirmado".
   Future<void> _onDriverStartedTrip() async {
     if (_driverStarted || _pressed) return;
     _driverStarted = true;
     HapticFeedback.mediumImpact();
+    // Stop hint animations like manual press does
+    _handCtrl.stop();
+    _ripple1Ctrl.stop();
+    _ripple2Ctrl.stop();
+    _ripple3Ctrl.stop();
     setState(() {});
 
-    // Let the rider read "Tu conductor ha confirmado que ya estás en el carro"
+    // Let the rider read "¡Viaje confirmado!"
     await Future.delayed(const Duration(milliseconds: 2000));
     if (!mounted) return;
     await _fadeOutCtrl.forward();
@@ -203,6 +220,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _tripSub?.cancel();
     _pulseCtrl.dispose();
     _rotateCtrl.dispose();
+    _fadeInCtrl.dispose();
     _fadeOutCtrl.dispose();
     _ripple1Ctrl.dispose();
     _ripple2Ctrl.dispose();
@@ -266,6 +284,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: FadeTransition(
+        opacity: _fadeInAnim,
+        child: FadeTransition(
         opacity: Tween<double>(begin: 1.0, end: 0.0).animate(_fadeOutAnim),
         child: Scaffold(
           backgroundColor: _bg,
@@ -302,10 +322,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           duration: const Duration(milliseconds: 400),
                           child: isConfirmed
                               ? Text(
-                                  _driverStarted
-                                      ? 'Tu conductor ha confirmado\nque ya estás en el carro'
-                                      : '¡Viaje confirmado!',
-                                  key: ValueKey('title_${_driverStarted ? 'driver' : 'rider'}_confirmed'),
+                                  '¡Viaje confirmado!',
+                                  key: const ValueKey('title_confirmed'),
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: _gold,
@@ -430,12 +448,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                                             size: 52,
                                                           ),
                                                           const SizedBox(height: 10),
-                                                          Text(
-                                                            _driverStarted
-                                                                ? 'En camino'
-                                                                : 'Tu viaje\nconfirmado',
+                                                          const Text(
+                                                            'Tu viaje\nconfirmado',
                                                             textAlign: TextAlign.center,
-                                                            style: const TextStyle(
+                                                            style: TextStyle(
                                                               color: _gold,
                                                               fontSize: 16,
                                                               fontWeight: FontWeight.w700,
@@ -654,6 +670,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             ),
           ),
         ),
+      ),
       ),
     );
   }

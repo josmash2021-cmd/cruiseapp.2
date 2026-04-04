@@ -645,24 +645,40 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     if _cached and (_now - _cached[1]) < _DISPATCH_STATUS_CACHE_TTL:
         return _cached[0]
 
-    # Single JOIN query instead of 4 separate queries
+    # Query with retry on connection errors
     from sqlalchemy.orm import aliased
-    DriverUser = aliased(User)
-    row = await db.execute(
-        select(Trip, DispatchOffer, DriverUser, Vehicle)
-        .outerjoin(DispatchOffer, and_(
-            DispatchOffer.trip_id == Trip.id,
-            DispatchOffer.status == "accepted",
-        ))
-        .outerjoin(DriverUser, DriverUser.id == DispatchOffer.driver_id)
-        .outerjoin(Vehicle, Vehicle.user_id == DispatchOffer.driver_id)
-        .where(Trip.id == trip_id)
-    )
-    result = row.first()
-    if not result:
-        return {"status": "not_found"}
+    trip = accepted = driver = veh = None
+    for _attempt in range(2):
+        try:
+            DriverUser = aliased(User)
+            row = await db.execute(
+                select(Trip, DispatchOffer, DriverUser, Vehicle)
+                .outerjoin(DispatchOffer, and_(
+                    DispatchOffer.trip_id == Trip.id,
+                    DispatchOffer.status == "accepted",
+                ))
+                .outerjoin(DriverUser, DriverUser.id == DispatchOffer.driver_id)
+                .outerjoin(Vehicle, Vehicle.user_id == DispatchOffer.driver_id)
+                .where(Trip.id == trip_id)
+            )
+            result = row.first()
+            if not result:
+                return {"status": "not_found"}
+            trip, accepted, driver, veh = result
+            break
+        except Exception as e:
+            if _attempt == 0:
+                logging.warning("[dispatch/status] DB query failed (retry): %s", e)
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                continue
+            logging.error("[dispatch/status] DB query failed after retry: %s", e)
+            raise HTTPException(503, "Database temporarily unavailable")
 
-    trip, accepted, driver, veh = result
+    if trip is None:
+        return {"status": "not_found"}
 
     # Fetch rider info so driver screens can display the rider's photo
     rider_info = {}

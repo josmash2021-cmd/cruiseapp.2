@@ -19,6 +19,7 @@ import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
+import '../home_screen.dart';
 import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
@@ -111,9 +112,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   @override
   double get panelTravelHeight => _panelExpandedH - _panelCollapsedH;
 
+  /// Bounce non-driver users back to the rider home screen.
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     initPanelAnimation();
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(

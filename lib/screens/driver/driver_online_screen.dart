@@ -41,6 +41,7 @@ import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
+import '../home_screen.dart';
 import 'driver_home_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
@@ -313,9 +314,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  /// Bounce non-driver users back to the rider home screen.
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     WidgetsBinding.instance.addObserver(this);
     // Apply initial position from home screen (avoids white flash)
     if (widget.initialPos != null) {

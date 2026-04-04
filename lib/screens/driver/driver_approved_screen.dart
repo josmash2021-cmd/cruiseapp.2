@@ -29,8 +29,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
   late final AnimationController _logoCtrl;
   // Phase 3: Text fade + slide
   late final AnimationController _textCtrl;
-  // Phase 4: Button slide up
-  late final AnimationController _buttonCtrl;
+  // (Button removed — auto-navigate only)
   // Continuous: particles
   late final AnimationController _particleCtrl;
   // Continuous: ring shimmer
@@ -60,10 +59,6 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
     _textCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
-    );
-    _buttonCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
     );
     _shimmerCtrl = AnimationController(
       vsync: this,
@@ -105,14 +100,9 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
 
     // Text fades in
     _textCtrl.forward();
-    await Future.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-
-    // Button slides up
-    _buttonCtrl.forward();
 
     // Auto-navigate after total ~4s
-    _navTimer = Timer(const Duration(milliseconds: 2500), () {
+    _navTimer = Timer(const Duration(milliseconds: 3500), () {
       if (mounted) _goNext();
     });
   }
@@ -122,7 +112,6 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
     _ringCtrl.dispose();
     _logoCtrl.dispose();
     _textCtrl.dispose();
-    _buttonCtrl.dispose();
     _shimmerCtrl.dispose();
     _particleCtrl.dispose();
     _navTimer?.cancel();
@@ -280,62 +269,6 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
                   ),
 
                   const Spacer(flex: 3),
-
-                  // ── Bottom button ──
-                  AnimatedBuilder(
-                    animation: _buttonCtrl,
-                    builder: (_, child) {
-                      final t = Curves.easeOutCubic
-                          .transform(_buttonCtrl.value.clamp(0.0, 1.0));
-                      return Transform.translate(
-                        offset: Offset(0, 40 * (1 - t)),
-                        child: Opacity(opacity: t, child: child),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(40, 0, 40, 16),
-                      child: GestureDetector(
-                        onTap: () {
-                          _navTimer?.cancel();
-                          _goNext();
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_gold, _goldLight],
-                            ),
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _gold.withValues(alpha: 0.35),
-                                blurRadius: 24,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Continue',
-                                style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Icon(Icons.arrow_forward_rounded,
-                                  color: Colors.black, size: 20),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -348,15 +281,15 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
 
   Widget _buildLogoRing(double shimmer) {
     return SizedBox(
-      width: 140,
-      height: 140,
+      width: 160,
+      height: 160,
       child: Stack(
         alignment: Alignment.center,
         children: [
           // Outer glow
           Container(
-            width: 140,
-            height: 140,
+            width: 160,
+            height: 160,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -368,29 +301,28 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               ],
             ),
           ),
-          // Gold ring
+          // Animated shimmer ring
           CustomPaint(
-            size: const Size(130, 130),
+            size: const Size(150, 150),
             painter: _RingPainter(
               progress: shimmer,
               color: _gold,
-              strokeWidth: 2.5,
+              strokeWidth: 3.0,
             ),
           ),
-          // Inner dark circle with logo
+          // Inner dark circle with car icon
           Container(
-            width: 110,
-            height: 110,
-            decoration: const BoxDecoration(
+            width: 130,
+            height: 130,
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF0F1408),
+              color: const Color(0xFF0F1408),
+              border: Border.all(color: _gold.withValues(alpha: 0.3), width: 1.5),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Image.asset(
-                'assets/images/logoapp.png',
-                fit: BoxFit.contain,
-              ),
+            child: const Icon(
+              Icons.directions_car_rounded,
+              color: _goldLight,
+              size: 60,
             ),
           ),
         ],

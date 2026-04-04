@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../services/user_session.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -72,9 +73,19 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     return s.isEmpty ? fallback : s;
   }
 
+  /// Bounce non-driver users back — this screen is driver-only.
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _chartCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),

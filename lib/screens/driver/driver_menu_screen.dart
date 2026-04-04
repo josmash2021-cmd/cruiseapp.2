@@ -9,6 +9,7 @@ import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
+import '../home_screen.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
 import 'driver_vehicle_screen.dart';
@@ -56,9 +57,22 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   late AnimationController _entranceCtrl;
   late Animation<double> _entranceAnim;
 
+  /// Bounce non-driver users back to the rider home screen.
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _entranceCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),

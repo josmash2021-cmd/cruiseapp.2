@@ -32,7 +32,6 @@ import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
 import 'referral_screen.dart';
 import 'scheduled_rides_screen.dart';
-import 'driver/driver_home_screen.dart'; // unused but keep for potential future use
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});

@@ -211,12 +211,24 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
       setState(() => _uploading = true);
       final bytes = await File(xFile.path).readAsBytes();
+      debugPrint('[Vehicle] Photo size: ${bytes.length} bytes (${(bytes.length / 1024).toStringAsFixed(0)} KB)');
       final base64Photo = base64Encode(bytes);
+      debugPrint('[Vehicle] Base64 size: ${base64Photo.length} chars');
 
-      await ApiService.uploadDocument(
-        docType: docType,
-        photoBase64: base64Photo,
-      );
+      // Try upload with one retry on failure
+      try {
+        await ApiService.uploadDocument(
+          docType: docType,
+          photoBase64: base64Photo,
+        );
+      } catch (firstErr) {
+        debugPrint('[Vehicle] First attempt failed: $firstErr — retrying...');
+        await Future.delayed(const Duration(seconds: 2));
+        await ApiService.uploadDocument(
+          docType: docType,
+          photoBase64: base64Photo,
+        );
+      }
 
       if (!mounted) return;
 
@@ -233,10 +245,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       // Refresh vehicle data
       await _fetchVehicle();
     } catch (e) {
+      debugPrint('[Vehicle] Upload FAILED for $docType: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to upload $title'),
+          content: Text('Failed to upload $title: ${e.toString().length > 80 ? e.toString().substring(0, 80) : e}'),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape:

@@ -2218,18 +2218,24 @@ class ApiService {
     String? expiryDate,
   }) async {
     final h = await _authHeaders();
+    final payload = jsonEncode({
+      'doc_type': docType,
+      if (photoBase64 != null) 'photo': photoBase64,
+      if (docNumber != null) 'doc_number': docNumber,
+      if (expiryDate != null) 'expiry_date': expiryDate,
+    });
+    debugPrint('[ApiService] uploadDocument($docType) payload=${(payload.length / 1024).toStringAsFixed(0)}KB → $_baseUrl/drivers/documents');
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/documents'),
           headers: h,
-          body: jsonEncode({
-            'doc_type': docType,
-            if (photoBase64 != null) 'photo': photoBase64,
-            if (docNumber != null) 'doc_number': docNumber,
-            if (expiryDate != null) 'expiry_date': expiryDate,
-          }),
+          body: payload,
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 60));
+    debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
+    if (res.statusCode >= 300) {
+      debugPrint('[ApiService] uploadDocument ERROR body: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
+    }
     return _parse(res);
   }
 

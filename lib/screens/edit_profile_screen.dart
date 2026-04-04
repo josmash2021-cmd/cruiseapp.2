@@ -179,6 +179,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       imageCache.clearLiveImages();
       _photoPath = permanentPath;
 
+      // Clear stale remote URL so all widgets fall back to the fresh local file
+      // until the Firebase upload completes and sets the new URL.
+      await UserSession.updateField('photoUrl', '');
+      UserSession.photoUrlNotifier.value = '';
+
+      // Evict cached network image for this user so stale photo isn't served
+      final uid = await ApiService.getCurrentUserId();
+      if (uid != null) {
+        UserProfilePhoto.evictCachedPhoto(uid.toString());
+      }
+
       // Fire-and-forget: upload to backend + Firebase Storage
       // Don't await — let the screen pop immediately
       final uploadPath = permanentPath;

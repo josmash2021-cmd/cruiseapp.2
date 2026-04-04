@@ -52,6 +52,12 @@ class UserProfilePhoto extends StatefulWidget {
     await _cacheManager.emptyCache();
   }
 
+  /// Evict cached photo for a specific user so the next load fetches fresh.
+  static void evictCachedPhoto(String uid) {
+    _cacheManager.removeFile('photo_$uid');
+    _cacheManager.removeFile('photo_${uid}_recovered');
+  }
+
   const UserProfilePhoto({
     super.key,
     this.photoUrl,

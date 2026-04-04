@@ -60,8 +60,13 @@ android {
             localPropertiesFile.reader(Charsets.UTF_8).use { localProperties.load(it) }
         }
 
-        manifestPlaceholders["MAPS_API_KEY"] =
-            localProperties.getProperty("MAPS_API_KEY", "")
+        // Inject API keys from local.properties (dev) or CI env vars (prod)
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
+            System.getenv("GOOGLE_MAPS_API_KEY")
+                ?: localProperties.getProperty("GOOGLE_MAPS_API_KEY", "")
+        manifestPlaceholders["MAPBOX_ACCESS_TOKEN"] =
+            System.getenv("MAPBOX_ACCESS_TOKEN")
+                ?: localProperties.getProperty("MAPBOX_ACCESS_TOKEN", "")
 
         applicationId = "com.cruiseinride.app"
         minSdk = flutter.minSdkVersion

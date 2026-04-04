@@ -16,7 +16,8 @@
         android:label="Cruise"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -35,14 +36,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Google Places API Key -->
+        <!-- Google Places API Key — injected from local.properties or CI -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDs8MIOA8qk0JwxOkxd8rGxtAmVTeB7CF0" />
-        <!-- Mapbox Access Token -->
+            android:value="${GOOGLE_MAPS_API_KEY}" />
+        <!-- Mapbox Access Token — injected from local.properties or CI -->
         <meta-data
             android:name="MAPBOX_ACCESS_TOKEN"
-            android:value="pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w" />
+            android:value="${MAPBOX_ACCESS_TOKEN}" />
         <!-- Enable Google Pay -->
         <meta-data
             android:name="com.google.android.gms.wallet.api.enabled"

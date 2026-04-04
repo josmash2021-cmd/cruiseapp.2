@@ -1,10 +1,13 @@
 /// Mapbox configuration — token and style URLs.
+///
+/// Access token is injected at build time via --dart-define=MAPBOX_TOKEN=...
+/// or Codemagic environment variables. No hardcoded token in source.
 class MapboxConfig {
   MapboxConfig._();
 
   static const String accessToken = String.fromEnvironment(
     'MAPBOX_TOKEN',
-    defaultValue: 'pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w',
+    defaultValue: '',
   );
 
   // ── Style URLs — dark-v11 uses standard layer IDs compatible with our navy/gold theme ──

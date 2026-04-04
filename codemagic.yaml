@@ -14,23 +14,21 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 definitions:
-  # ── Shared environment variables (merged into each workflow) ──────────────
+  # ── Shared environment variables ─────────────────────────────────────────
+  # ALL secrets are stored as ENCRYPTED variables in Codemagic UI:
+  #   Team settings → Global variables & secrets → Group: "cruise_secrets"
+  #
+  # Required encrypted variables in the "cruise_secrets" group:
+  #   ENV_API_KEY, ENV_HMAC_SECRET, ENV_EMAILJS_SERVICE_ID,
+  #   ENV_EMAILJS_TEMPLATE_ID, ENV_EMAILJS_PUBLIC_KEY, ENV_EMAILJS_PRIVATE_KEY,
+  #   ENV_STRIPE_PK, ENV_TWILIO_SID, ENV_TWILIO_TOKEN, ENV_TWILIO_SERVICE,
+  #   ENV_MAPS_SERVICES_KEY, ENV_PAYPAL_CLIENT_ID, ENV_PAYPAL_SECRET,
+  #   GOOGLE_MAPS_API_KEY, MAPBOX_ACCESS_TOKEN
+  #
+  # Non-secret defaults (safe to keep in YAML):
   vars: &shared_vars
-    ENV_API_KEY: "HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u"
-    ENV_HMAC_SECRET: "qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h"
-    ENV_EMAILJS_SERVICE_ID: "service_kgjbuew"
-    ENV_EMAILJS_TEMPLATE_ID: "template_oucb3n9"
-    ENV_EMAILJS_PUBLIC_KEY: "5R65y1qr1-lXDwGRb"
-    ENV_EMAILJS_PRIVATE_KEY: "xeR8WDCTgskv9g9ITzote"
-    ENV_STRIPE_PK: "pk_live_51T4BXG4JZyaaA3VKQmdt1gQp3Mi4jGVSmYZ6aWl8ZEQ7k07gzzGzlOKde9n4zdLbhhmclJKysCdAVnNy5Uh8TeMf00YAldU9fo"
     ENV_STRIPE_MERCHANT: "merchant.com.cruise.app"
-    ENV_TWILIO_SID: "AC0bd6acdd300ffe9df86f02d60b6473c9"
-    ENV_TWILIO_TOKEN: "5377a0d1b3b3618e1494d802c578ca11"
-    ENV_TWILIO_SERVICE: "VA023301cd93dfccb77cd2ca95e59f688b"
-    ENV_MAPS_SERVICES_KEY: "AIzaSyCf2Vya3o8KbubNuV0W_MdKEPMprXeisvo"
     ENV_PAYPAL_SANDBOX: "false"
-    ENV_PAYPAL_CLIENT_ID: "REPLACE_WITH_PAYPAL_CLIENT_ID"
-    ENV_PAYPAL_SECRET: "REPLACE_WITH_PAYPAL_SECRET"
 
   # ── Reusable script anchors ───────────────────────────────────────────────
   scripts:
@@ -127,8 +125,17 @@ definitions:
             f.write('\n'.join(lines) + '\n')
         print('env.dart generated successfully')
         PYEOF
-        echo "env.dart contents:"
-        cat lib/config/env.dart
+        echo "env.dart generated"
+
+        # ── Inject API keys for native manifests ──
+        # Android: gradle reads from env vars directly (build.gradle.kts handles this)
+        # iOS: write Secrets.xcconfig so Info.plist resolves $(GOOGLE_MAPS_API_KEY) etc.
+        mkdir -p ios/Flutter
+        cat > ios/Flutter/Secrets.xcconfig << XCEOF
+        GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+        MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-}
+        XCEOF
+        echo "iOS Secrets.xcconfig generated"
 
     - &flutter_pub_get
       name: Get Flutter packages
@@ -268,6 +275,7 @@ workflows:
     environment:
       groups:
         - Default
+        - cruise_secrets
       flutter: stable
       xcode: 26.0
       cocoapods: 1.15.2
@@ -327,6 +335,7 @@ workflows:
     environment:
       groups:
         - Default
+        - cruise_secrets
       flutter: stable
       xcode: 26.0
       cocoapods: 1.15.2
@@ -435,6 +444,7 @@ workflows:
     environment:
       groups:
         - Default
+        - cruise_secrets
       flutter: stable
       xcode: 26.0
       cocoapods: 1.15.2
@@ -651,6 +661,7 @@ workflows:
     environment:
       groups:
         - Default
+        - cruise_secrets
       flutter: stable
       java: 17
       vars:
@@ -699,6 +710,7 @@ workflows:
     environment:
       groups:
         - Default
+        - cruise_secrets
       flutter: stable
       java: 17
       vars:

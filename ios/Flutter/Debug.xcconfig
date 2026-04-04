@@ -1,1 +1,4 @@
 #include "Generated.xcconfig"
+
+// API keys — set in Codemagic CI or local Secrets.xcconfig
+#include? "Secrets.xcconfig"

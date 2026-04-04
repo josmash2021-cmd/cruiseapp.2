@@ -10,12 +10,17 @@
       "$rideId": {
         "messages": {
           ".read": "auth != null",
-          ".write": "auth != null",
-          ".indexOn": ["timestamp", "read"]
+          ".indexOn": ["timestamp", "read"],
+          "$msgId": {
+            ".write": "auth != null && (!data.exists() || data.child('senderId').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['senderId', 'text', 'timestamp']) && newData.child('senderId').val() === auth.uid"
+          }
         },
         "typing": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          "$role": {
+            ".write": "auth != null"
+          }
         },
         "lastMessage": {
           ".read": "auth != null",
@@ -30,13 +35,13 @@
     "driver_locations": {
       "$driverId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null && auth.uid === $driverId"
       }
     },
     "drivers": {
       "$driverId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null && auth.uid === $driverId"
       }
     }
   }

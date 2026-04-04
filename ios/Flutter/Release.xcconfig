@@ -1,1 +1,7 @@
 #include "Generated.xcconfig"
+
+// API keys — set in Codemagic CI or local Secrets.xcconfig
+// To use locally, create ios/Flutter/Secrets.xcconfig with:
+//   GOOGLE_MAPS_API_KEY=AIza...
+//   MAPBOX_ACCESS_TOKEN=pk.eyJ...
+#include? "Secrets.xcconfig"

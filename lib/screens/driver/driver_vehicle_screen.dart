@@ -59,7 +59,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   Future<void> _fetchVehicle() async {
     try {
       final v = await ApiService.getVehicle();
-      if (!mounted || v == null) return;
+      if (!mounted) return;
+      if (v == null) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _make = (v['make'] ?? '') as String;
         _model = (v['model'] ?? '') as String;

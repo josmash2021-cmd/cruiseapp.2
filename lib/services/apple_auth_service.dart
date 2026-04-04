@@ -35,7 +35,8 @@ class AppleAuthService {
   }
 
   /// Returns true on success, false on cancel/failure.
-  Future<bool> signIn({String role = 'rider'}) async {
+  /// When [loginOnly] is true, rejects if no account exists (login screen).
+  Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async {
     try {
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
@@ -56,6 +57,7 @@ class AppleAuthService {
         firstName: credential.givenName,
         lastName: credential.familyName,
         role: role,
+        loginOnly: loginOnly,
       );
 
       final user = result['user'] as Map<String, dynamic>?;

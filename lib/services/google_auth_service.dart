@@ -12,7 +12,8 @@ class GoogleAuthService {
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   /// Returns true on success, false on cancel/failure.
-  Future<bool> signIn({String role = 'rider'}) async {
+  /// When [loginOnly] is true, rejects if no account exists (login screen).
+  Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async {
     try {
       final account = await _googleSignIn.signIn();
       if (account == null) return false; // user cancelled
@@ -31,6 +32,7 @@ class GoogleAuthService {
         lastName: account.displayName?.split(' ').skip(1).join(' '),
         photoUrl: account.photoUrl,
         role: role,
+        loginOnly: loginOnly,
       );
 
       final user = result['user'] as Map<String, dynamic>?;

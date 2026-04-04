@@ -823,6 +823,7 @@ class ApiService {
     String? lastName,
     String? photoUrl,
     String role = 'rider',
+    bool loginOnly = false,
   }) async {
     final res = await _client
         .post(
@@ -835,6 +836,7 @@ class ApiService {
             if (lastName != null) 'last_name': lastName,
             if (photoUrl != null) 'photo_url': photoUrl,
             'role': role,
+            'login_only': loginOnly,
           }),
         )
         .timeout(const Duration(seconds: 15));

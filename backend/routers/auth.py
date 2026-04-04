@@ -691,6 +691,9 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         await db.commit()
         await db.refresh(user)
     else:
+        # Login-only mode: reject if no account exists
+        if body.login_only:
+            raise HTTPException(401, "Invalid credentials")
         # Create new user without password requirement
         import secrets as _secrets
         placeholder_hash = pwd.hash(_secrets.token_hex(32))

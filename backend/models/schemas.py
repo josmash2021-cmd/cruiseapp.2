@@ -81,6 +81,7 @@ class SocialAuthIn(BaseModel):
     last_name: Optional[str] = None
     photo_url: Optional[str] = None
     role: str = "rider"
+    login_only: bool = False
 
 
 class SendOtpIn(BaseModel):

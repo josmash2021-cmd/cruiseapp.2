@@ -62,12 +62,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     );
   }
 
-  /// Sign in with Google OAuth.
+  /// Sign in with Google OAuth (login only — won't create new accounts).
   Future<void> _signInWithGoogle() async {
     if (_socialLoading || _loading) return;
     setState(() { _socialLoading = true; _errorText = null; });
     try {
-      final ok = await GoogleAuthService.instance.signIn(role: 'rider');
+      final ok = await GoogleAuthService.instance.signIn(
+        role: 'rider',
+        loginOnly: true,
+      );
       if (!mounted) return;
       if (ok) {
         _goHome();
@@ -76,19 +79,25 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString();
       setState(() {
         _socialLoading = false;
-        _errorText = 'Google sign-in failed. Please try again.';
+        _errorText = msg.contains('401') || msg.contains('Invalid credentials')
+            ? 'Invalid credentials. No account found with this email.'
+            : 'Google sign-in failed. Please try again.';
       });
     }
   }
 
-  /// Sign in with Apple OAuth.
+  /// Sign in with Apple OAuth (login only — won't create new accounts).
   Future<void> _signInWithApple() async {
     if (_socialLoading || _loading) return;
     setState(() { _socialLoading = true; _errorText = null; });
     try {
-      final ok = await AppleAuthService.instance.signIn(role: 'rider');
+      final ok = await AppleAuthService.instance.signIn(
+        role: 'rider',
+        loginOnly: true,
+      );
       if (!mounted) return;
       if (ok) {
         _goHome();
@@ -97,9 +106,12 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString();
       setState(() {
         _socialLoading = false;
-        _errorText = 'Apple sign-in failed. Please try again.';
+        _errorText = msg.contains('401') || msg.contains('Invalid credentials')
+            ? 'Invalid credentials. No account found with this email.'
+            : 'Apple sign-in failed. Please try again.';
       });
     }
   }

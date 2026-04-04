@@ -500,6 +500,7 @@ class PlacesService {
     final params = <String, String>{
       'q': input,
       'access_token': token,
+      'session_token': _sessionToken,
       'limit': '10',
       'language': 'en,es',
       'country': 'US',

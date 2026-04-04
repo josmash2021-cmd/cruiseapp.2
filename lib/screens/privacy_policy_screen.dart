@@ -27,7 +27,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Effective Date: December 2024',
+              'Effective Date: April 2026',
               style: TextStyle(fontSize: 14, color: c.textSecondary),
             ),
             const SizedBox(height: 24),
@@ -38,7 +38,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             _sectionText(c, '4. Data Security', 'We use encryption (AES-256 for SSN, bcrypt-12 for passwords), HTTPS/TLS 1.3, JWT tokens, rate limiting, IP blacklisting, and parameterized queries to prevent SQL injection.'),
             _sectionText(c, '5. Your Privacy Rights', 'You have rights to access, correct, and delete your data. You can opt-out of marketing emails and disable push notifications.'),
             _sectionText(c, '6. Retention of Data', 'We retain active account data for the duration of your account plus 2 years. Trip history is retained for 7 years for tax/legal purposes.'),
-            _sectionText(c, '7. Children\'s Privacy', 'Our Service is not intended for users under 18 years. We do not knowingly collect personal information from children.'),
+            _sectionText(c, '7. Children\'s Privacy', 'Our Service is not intended for users under 18 years of age. Drivers must be at least 25 years old. We do not knowingly collect personal information from children under 18.'),
             _sectionText(c, '8. Contact Us', 'For privacy inquiries, contact us at privacy@cruiseride.com or through Settings > Support > Send Message.'),
             const SizedBox(height: 32),
           ],

@@ -206,6 +206,46 @@ async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
 async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
 
+    # ── Apple Review demo accounts — skip OTP, return tokens directly ──
+    _DEMO_ACCOUNTS = {
+        "+15550001234": {"password": "CruiseDemo2026!", "role": "rider"},
+        "+15550005678": {"password": "CruiseDemo2026!", "role": "driver"},
+        "applereview@cruiseride.com": {"password": "CruiseDemo2026!", "role": "rider"},
+        "appledriver@cruiseride.com": {"password": "CruiseDemo2026!", "role": "driver"},
+    }
+    identifier_clean = body.identifier.strip().lower() if "@" in body.identifier else body.identifier.strip()
+    demo = _DEMO_ACCOUNTS.get(identifier_clean)
+    if demo and body.password == demo["password"]:
+        role = body.role or demo["role"]
+        # Find or create the demo user
+        q = select(User).where(
+            ((func.lower(User.email) == identifier_clean) | (User.phone == identifier_clean)),
+            User.role == role,
+        )
+        result = await db.execute(q)
+        user = result.scalar_one_or_none()
+        if not user:
+            # Auto-create demo user
+            is_driver = role == "driver"
+            user = User(
+                first_name="Apple" if not is_driver else "Demo",
+                last_name="Reviewer" if not is_driver else "Driver",
+                email=identifier_clean if "@" in identifier_clean else f"demo_{role}@cruiseride.com",
+                phone=identifier_clean if "@" not in identifier_clean else ("+15550001234" if not is_driver else "+15550005678"),
+                password_hash=pwd.hash(demo["password"]),
+                role=role,
+                status="active",
+                email_verified=True,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            logging.info("[DEMO] Auto-created %s account id=%s", role, user.id)
+        token = _create_token(user.id, role=user.role, status=user.status or "active")
+        refresh = _create_refresh_token(user.id)
+        logging.info("[DEMO] Direct login for Apple review account: %s (%s)", identifier_clean, role)
+        return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
     # Layer 5: Brute force protection
     if _check_login_throttle(client_ip):
         _record_violation(client_ip)

@@ -125,18 +125,19 @@ definitions:
             f.write('\n'.join(lines) + '\n')
         print('env.dart generated successfully')
         PYEOF
-        echo "env.dart generated — verifying keys are not empty:"
-        python3 -c "
-with open('lib/config/env.dart') as f:
-    for line in f:
-        line = line.strip()
-        if '=' in line and \"'\" in line:
-            key = line.split('=')[0].strip().split()[-1]
-            val = line.split(\"'\")[1] if \"'\" in line else ''
-            status = 'OK' if val and val != 'dev-api-key-change-in-production' else 'EMPTY/DEFAULT'
-            preview = val[:8] + '...' if len(val) > 8 else val
-            print(f'  {key}: {status} ({preview})')
-"
+        echo "env.dart generated — verifying keys:"
+        python3 << 'VERIFYEOF'
+        with open('lib/config/env.dart') as f:
+            for line in f:
+                line = line.strip()
+                if '=' in line and "'" in line:
+                    parts = line.split('=', 1)
+                    key = parts[0].strip().split()[-1]
+                    val = line.split("'")[1] if "'" in line else ''
+                    ok = 'OK' if val and 'change-in-production' not in val else 'EMPTY/DEFAULT'
+                    preview = val[:8] + '...' if len(val) > 8 else val
+                    print(f'  {key}: {ok} ({preview})')
+        VERIFYEOF
 
         # ── Inject API keys for native manifests ──
         # Android: gradle reads from env vars directly (build.gradle.kts handles this)

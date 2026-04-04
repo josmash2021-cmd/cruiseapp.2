@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
+import '../home_screen.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/common/profile_avatar.dart';
 import 'driver_trip_history_screen.dart';
@@ -55,6 +56,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _loadProfileData();
     _loadVerifiedState();
     // Seed photo from notifier in case initPhotoNotifier already resolved it
@@ -62,6 +64,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     if (cachedUrl.isNotEmpty) _photoUrl = cachedUrl;
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
+  }
+
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
   }
 
   void _onPhotoChanged() {

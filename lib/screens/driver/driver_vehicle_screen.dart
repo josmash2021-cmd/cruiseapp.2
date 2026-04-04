@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
+import '../../services/user_session.dart';
+import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../home_screen.dart';
 
 /// Vehicle management screen – view car details & upload vehicle documents.
 class DriverVehicleScreen extends StatefulWidget {
@@ -38,7 +41,19 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _fetchVehicle();
+  }
+
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
   }
 
   Future<void> _fetchVehicle() async {

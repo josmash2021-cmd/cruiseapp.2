@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
+import '../../services/user_session.dart';
+import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../home_screen.dart';
 
 /// Driver Inbox – tabs: All, Messages, Alerts, Updates, Deals
 class DriverInboxScreen extends StatefulWidget {
@@ -23,8 +26,20 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _tabCtrl = TabController(length: 5, vsync: this);
     _fetchNotifications();
+  }
+
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
   }
 
   Future<void> _fetchNotifications() async {

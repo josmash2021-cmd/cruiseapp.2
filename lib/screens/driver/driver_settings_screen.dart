@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
+import '../../services/user_session.dart';
+import '../home_screen.dart';
 import '../../main.dart' show themeNotifier;
 import '../privacy_screen.dart';
 import 'driver_manage_account_screen.dart';
@@ -32,7 +34,19 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _loadSettings();
+  }
+
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
   }
 
   Future<void> _loadSettings() async {

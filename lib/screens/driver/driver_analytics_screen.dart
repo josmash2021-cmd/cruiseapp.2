@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/user_session.dart';
+import '../../config/page_transitions.dart';
+import '../home_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — ANALYTICS / DRIVING TIME SCREEN
@@ -46,8 +49,20 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _buildSessionData();
     _load();
+  }
+
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
   }
 
   void _buildSessionData() {

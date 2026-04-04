@@ -25,6 +25,8 @@ import '../../navigation/route_snapper.dart';
 import '../../navigation/smooth_motion.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
+import '../../services/user_session.dart';
+import '../home_screen.dart';
 import '../../services/analytics_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/navigation_service.dart';
@@ -205,9 +207,21 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   //  LIFECYCLE
   // =========================================================================
 
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _pos = widget.driverPos;
 
     // Navigation engine

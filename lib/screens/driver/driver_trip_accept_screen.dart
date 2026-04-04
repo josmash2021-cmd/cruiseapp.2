@@ -27,6 +27,8 @@ import '../help_screen.dart';
 import '../../services/chat_service.dart';
 import 'driver_home_screen.dart';
 import 'driver_online_screen.dart';
+import '../../services/user_session.dart';
+import '../home_screen.dart';
 import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
@@ -207,9 +209,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
   int get _tripEta => (_tripKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
+  void _enforceDriverRole() {
+    UserSession.getMode().then((mode) {
+      if (mode != 'driver' && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          fadeThroughRoute(const HomeScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _enforceDriverRole();
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
     _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);

@@ -991,29 +991,64 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ],
       ),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(12, isExpanded ? 8 : 6, 12, isExpanded ? 8 : 6),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, anim) =>
-              FadeTransition(opacity: anim, child: child),
-          child: _buildNormalCardContent(
-                      offer: offer,
-                      offerId: offerId,
-                      fare: fare,
-                      rating: rating,
-                      vehicleType: vehicleType,
-                      etaToPickup: etaToPickup,
-                      distToPickupMi: distToPickupMi,
-                      pickupAddr: pickupAddr,
-                      tripEta: tripEta,
-                      tripDistMi: tripDistMi,
-                      dropoffAddr: dropoffAddr,
-                      isExpanded: isExpanded,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(12, isExpanded ? 8 : 6, 12, isExpanded ? 8 : 6),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
+              child: _buildNormalCardContent(
+                          offer: offer,
+                          offerId: offerId,
+                          fare: fare,
+                          rating: rating,
+                          vehicleType: vehicleType,
+                          etaToPickup: etaToPickup,
+                          distToPickupMi: distToPickupMi,
+                          pickupAddr: pickupAddr,
+                          tripEta: tripEta,
+                          tripDistMi: tripDistMi,
+                          dropoffAddr: dropoffAddr,
+                          isExpanded: isExpanded,
+                        ),
+            ),
+          ),
+          // X Reject button — top-right corner of the card
+          Positioned(
+            right: 6,
+            top: 6,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _rejectOffer(offer);
+              },
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFE53935).withValues(alpha: 0.4),
+                      width: 1,
                     ),
-        ),
+                  ),
+                  child: const Icon(Icons.close, color: Color(0xFFE53935), size: 14),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1041,44 +1076,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── ROW 1: Service badge (centered) · X reject (top-right) ──
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            // Service tier badge (Comfort/VIP/Premium) — centered with shimmer
-            _ShimmerBadge(label: vehicleType),
-            // X Reject button — top-right corner of card
-            Positioned(
-              right: -4,
-              top: -4,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  _rejectOffer(offer);
-                },
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: rejectRed.withValues(alpha: 0.4),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(Icons.close, color: rejectRed, size: 14),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        // ── ROW 1: Service badge (centered) ──
+        _ShimmerBadge(label: vehicleType),
 
         const SizedBox(height: 4),
 

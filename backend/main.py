@@ -32,10 +32,11 @@ from security_guardian import security_guardian
 # Guardian Agent — keeps all systems healthy and connections alive
 from guardian_agent import guardian_agent
 
-# Autonomous Agents — ghost cleanup, safety, document expiry, rating moderation
+# Autonomous Agents — ghost cleanup, safety, document expiry/approval, rating moderation
 from ghost_driver_agent import ghost_driver_agent
 from safety_monitor_agent import safety_monitor_agent
 from document_expiry_agent import document_expiry_agent
+from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
 
 # Automatic PostgreSQL backup system
@@ -287,6 +288,10 @@ async def lifespan(app: FastAPI):
         document_expiry_agent.set_db_session_maker(SessionLocal)
         await document_expiry_agent.start()
 
+        # Start Document Approval Agent (auto-verify driver docs)
+        document_approval_agent.set_db_session_maker(SessionLocal)
+        await document_approval_agent.start()
+
         # Start Rating Moderator Agent
         rating_moderator_agent.set_db_session_maker(SessionLocal)
         await rating_moderator_agent.start()
@@ -313,6 +318,7 @@ async def lifespan(app: FastAPI):
     await ghost_driver_agent.stop()
     await safety_monitor_agent.stop()
     await document_expiry_agent.stop()
+    await document_approval_agent.stop()
     await rating_moderator_agent.stop()
 
 # Use orjson for 2-10x faster JSON serialization if available
@@ -550,6 +556,7 @@ async def health(x_api_key: str = Header(default="")):
             "ghost_driver_agent": ghost_driver_agent.get_status(),
             "safety_monitor_agent": safety_monitor_agent.get_status(),
             "document_expiry_agent": document_expiry_agent.get_status(),
+            "document_approval_agent": document_approval_agent.get_status(),
             "rating_moderator_agent": rating_moderator_agent.get_status(),
             "sse": event_bus.get_stats(),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -595,6 +602,7 @@ async def agents_health(x_api_key: str = Header(default="")):
         "ghost_driver": ghost_driver_agent.get_status(),
         "safety_monitor": safety_monitor_agent.get_status(),
         "document_expiry": document_expiry_agent.get_status(),
+        "document_approval": document_approval_agent.get_status(),
         "rating_moderator": rating_moderator_agent.get_status(),
     }
 

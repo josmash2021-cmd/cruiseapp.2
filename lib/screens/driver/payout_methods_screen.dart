@@ -34,6 +34,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  bool get _hasDebitCard =>
+      _methods.any((m) => m['method_type'] == 'debit_card');
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -257,29 +260,31 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: _linkingBank ? null : _connectDebitCard,
-                      icon: const Icon(Icons.credit_card_rounded, size: 20),
-                      label: Text(
-                        S.of(context).addDebitCard,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                  if (!_hasDebitCard) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: _linkingBank ? null : _connectDebitCard,
+                        icon: const Icon(Icons.credit_card_rounded, size: 20),
+                        label: Text(
+                          S.of(context).addDebitCard,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _gold,
-                        side: BorderSide(color: _gold.withValues(alpha: 0.3)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _gold,
+                          side: BorderSide(color: _gold.withValues(alpha: 0.3)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -358,23 +363,166 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     );
   }
 
+  // ── Card brand detection ──────────────────────────────────────
+  static _CardBrand _detectBrand(String number) {
+    final digits = number.replaceAll(' ', '');
+    if (digits.isEmpty) return _CardBrand.unknown;
+    if (digits.startsWith('4')) return _CardBrand.visa;
+    if (digits.length >= 2) {
+      final prefix2 = int.tryParse(digits.substring(0, 2)) ?? 0;
+      if (prefix2 >= 51 && prefix2 <= 55) return _CardBrand.mastercard;
+      if (prefix2 == 34 || prefix2 == 37) return _CardBrand.amex;
+      if (prefix2 == 65 || prefix2 == 64) return _CardBrand.discover;
+    }
+    if (digits.length >= 4) {
+      final prefix4 = int.tryParse(digits.substring(0, 4)) ?? 0;
+      if (prefix4 >= 2221 && prefix4 <= 2720) return _CardBrand.mastercard;
+      if (prefix4 == 6011) return _CardBrand.discover;
+    }
+    return _CardBrand.unknown;
+  }
+
+  static Widget _brandIcon(_CardBrand brand, {double size = 28}) {
+    switch (brand) {
+      case _CardBrand.visa:
+        return Container(
+          width: size + 8,
+          height: size - 4,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'VISA',
+            style: TextStyle(
+              color: const Color(0xFF1A1F71),
+              fontSize: size * 0.38,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        );
+      case _CardBrand.mastercard:
+        return SizedBox(
+          width: size + 4,
+          height: size - 4,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned(
+                left: 0,
+                child: Container(
+                  width: size * 0.6,
+                  height: size * 0.6,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEB001B),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                child: Container(
+                  width: size * 0.6,
+                  height: size * 0.6,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF79E1B).withValues(alpha: 0.9),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      case _CardBrand.amex:
+        return Container(
+          width: size + 8,
+          height: size - 4,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2E77BC),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'AMEX',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.32,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
+            ),
+          ),
+        );
+      case _CardBrand.discover:
+        return Container(
+          width: size + 8,
+          height: size - 4,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF6600),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'D',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.5,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        );
+      case _CardBrand.unknown:
+        return Icon(
+          Icons.credit_card_rounded,
+          color: const Color(0xFF2196F3),
+          size: size,
+        );
+    }
+  }
+
   Widget _buildMethodCard(Map<String, dynamic> method) {
     final type = method['method_type'] ?? 'bank_account';
     final display = method['display_name'] ?? 'Bank account';
     final isDefault = method['is_default'] == true;
-    // ignore: unused_local_variable
-    final mask = (method['account_mask'] ?? '').toString();
-    // ignore: unused_local_variable
-    final subtype = (method['account_subtype'] ?? '').toString();
     final id = method['id'];
-    IconData icon;
-    Color iconColor;
+    Widget leadingIcon;
     if (type == 'debit_card') {
-      icon = Icons.credit_card_rounded;
-      iconColor = const Color(0xFF2196F3);
+      // Try to detect brand from stored display name (e.g. "Visa ····1234")
+      final brandStr = (method['card_brand'] ?? '').toString().toLowerCase();
+      _CardBrand brand;
+      if (brandStr.contains('visa')) {
+        brand = _CardBrand.visa;
+      } else if (brandStr.contains('master')) {
+        brand = _CardBrand.mastercard;
+      } else if (brandStr.contains('amex') || brandStr.contains('american')) {
+        brand = _CardBrand.amex;
+      } else if (brandStr.contains('discover')) {
+        brand = _CardBrand.discover;
+      } else {
+        // Try from display name
+        final displayLower = display.toLowerCase();
+        if (displayLower.contains('visa')) {
+          brand = _CardBrand.visa;
+        } else if (displayLower.contains('master')) {
+          brand = _CardBrand.mastercard;
+        } else if (displayLower.contains('amex')) {
+          brand = _CardBrand.amex;
+        } else if (displayLower.contains('discover')) {
+          brand = _CardBrand.discover;
+        } else {
+          brand = _CardBrand.unknown;
+        }
+      }
+      leadingIcon = _brandIcon(brand, size: 32);
     } else {
-      icon = Icons.account_balance_rounded;
-      iconColor = const Color(0xFF4CAF50);
+      leadingIcon = Icon(
+        Icons.account_balance_rounded,
+        color: const Color(0xFF4CAF50),
+        size: 24,
+      );
     }
     return Container(
       padding: const EdgeInsets.all(18),
@@ -391,10 +539,12 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
+              color: type == 'debit_card'
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFF4CAF50).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: iconColor, size: 24),
+            child: Center(child: leadingIcon),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -669,141 +819,268 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     final cardCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     final expiryCtrl = TextEditingController();
+    _CardBrand detectedBrand = _CardBrand.unknown;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.all(28),
-          decoration: const BoxDecoration(
-            color: _card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.credit_card_rounded,
-                      color: Color(0xFF2196F3),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      S.of(context).addDebitCardTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: const BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white12,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  S.of(context).addDebitForCashouts,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 13,
                   ),
-                ),
-                const SizedBox(height: 20),
-                _inputField(
-                  S.of(context).cardNumberLabel,
-                  '1234 5678 9012 3456',
-                  cardCtrl,
-                  Icons.credit_card_rounded,
-                  keyboard: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                _inputField(
-                  S.of(context).cardholderNameLabel,
-                  S.of(context).nameLabel,
-                  nameCtrl,
-                  Icons.person_outline_rounded,
-                ),
-                const SizedBox(height: 12),
-                _inputField(
-                  S.of(context).expiryLabel,
-                  'MM/YY',
-                  expiryCtrl,
-                  Icons.calendar_today_rounded,
-                  keyboard: TextInputType.datetime,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.flash_on_rounded,
-                      color: _gold.withValues(alpha: 0.6),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      S.of(context).instantCashoutDebit,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.3),
-                        fontSize: 11,
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.credit_card_rounded,
+                        color: Color(0xFF2196F3),
+                        size: 24,
                       ),
+                      const SizedBox(width: 12),
+                      Text(
+                        S.of(context).addDebitCardTitle,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    S.of(context).addDebitForCashouts,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 13,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (cardCtrl.text.trim().isEmpty) return;
-                      Navigator.pop(ctx);
-                      final num = cardCtrl.text.trim().replaceAll(' ', '');
-                      final last4 = num.length >= 4
-                          ? num.substring(num.length - 4)
-                          : num;
-                      final display = nameCtrl.text.trim().isNotEmpty
-                          ? '${nameCtrl.text.trim()} ····$last4'
-                          : 'Debit ····$last4';
-                      await _addMethod('debit_card', display);
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Card number with brand icon
+                  TextFormField(
+                    controller: cardCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(16),
+                      _CardNumberFormatter(),
+                    ],
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.5,
+                    ),
+                    onChanged: (val) {
+                      final brand = _detectBrand(val);
+                      if (brand != detectedBrand) {
+                        setModalState(() => detectedBrand = brand);
+                      }
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2196F3),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                    decoration: InputDecoration(
+                      labelText: S.of(context).cardNumberLabel,
+                      hintText: '0000 0000 0000 0000',
+                      labelStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
                       ),
-                    ),
-                    child: Text(
-                      S.of(context).addCardButton,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        letterSpacing: 2,
+                      ),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(left: 14, right: 10),
+                        child: _brandIcon(detectedBrand, size: 24),
+                      ),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 48),
+                      suffixIcon: detectedBrand != _CardBrand.unknown
+                          ? Padding(
+                              padding: const EdgeInsets.only(right: 14),
+                              child: Icon(
+                                Icons.check_circle_rounded,
+                                color: const Color(0xFF4CAF50),
+                                size: 20,
+                              ),
+                            )
+                          : null,
+                      suffixIconConstraints: const BoxConstraints(minWidth: 32),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.04),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: _gold.withValues(alpha: 0.5),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
+                  const SizedBox(height: 12),
+
+                  // Cardholder name
+                  _inputField(
+                    S.of(context).cardholderNameLabel,
+                    S.of(context).nameLabel,
+                    nameCtrl,
+                    Icons.person_outline_rounded,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Expiry with MM/YY formatter
+                  TextFormField(
+                    controller: expiryCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(4),
+                      _ExpiryFormatter(),
+                    ],
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: S.of(context).expiryLabel,
+                      hintText: 'MM/YY',
+                      labelStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        letterSpacing: 2,
+                      ),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(left: 14, right: 10),
+                        child: Icon(
+                          Icons.calendar_today_rounded,
+                          color: _gold.withValues(alpha: 0.6),
+                          size: 20,
+                        ),
+                      ),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 48),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.04),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: _gold.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.flash_on_rounded,
+                        color: _gold.withValues(alpha: 0.6),
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        S.of(context).instantCashoutDebit,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final rawCard =
+                            cardCtrl.text.trim().replaceAll(' ', '');
+                        if (rawCard.length < 13 ||
+                            nameCtrl.text.trim().isEmpty ||
+                            expiryCtrl.text.trim().length < 5) {
+                          return;
+                        }
+                        Navigator.pop(ctx);
+                        final last4 = rawCard.substring(rawCard.length - 4);
+                        final brand = _detectBrand(rawCard);
+                        final brandName = _brandDisplayName(brand);
+                        final display = '$brandName ····$last4';
+                        await _addMethod('debit_card', display);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2196F3),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        S.of(context).addCardButton,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  static String _brandDisplayName(_CardBrand brand) {
+    switch (brand) {
+      case _CardBrand.visa:
+        return 'Visa';
+      case _CardBrand.mastercard:
+        return 'Mastercard';
+      case _CardBrand.amex:
+        return 'Amex';
+      case _CardBrand.discover:
+        return 'Discover';
+      case _CardBrand.unknown:
+        return 'Debit';
+    }
   }
 
   Future<void> _addMethod(String type, String displayName) async {
@@ -1067,6 +1344,58 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           borderSide: BorderSide(color: _gold.withValues(alpha: 0.5)),
         ),
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Card brand enum
+// ═══════════════════════════════════════════════════════════════
+enum _CardBrand { visa, mastercard, amex, discover, unknown }
+
+// ═══════════════════════════════════════════════════════════════
+//  Card number formatter: 1234 5678 9012 3456
+// ═══════════════════════════════════════════════════════════════
+class _CardNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(' ', '');
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && i % 4 == 0) buffer.write(' ');
+      buffer.write(digits[i]);
+    }
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Expiry formatter: MM/YY
+// ═══════════════════════════════════════════════════════════════
+class _ExpiryFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll('/', '');
+    if (digits.isEmpty) return newValue;
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 2) buffer.write('/');
+      buffer.write(digits[i]);
+    }
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

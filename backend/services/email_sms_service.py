@@ -38,6 +38,8 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             _params.setdefault("code", _otp_code)
             _params.setdefault("otp_code", _otp_code)
             _params.setdefault("verification_code", _otp_code)
+            _params.setdefault("app_name", "Cruise")
+            _params.setdefault("from_name", "Cruise App")
             _params.setdefault("message", html_body)
             payload = _json.dumps({
                 "service_id": EMAILJS_SERVICE_ID,
@@ -116,7 +118,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     if BREVO_API_KEY:
         try:
             payload = _json.dumps({
-                "sender": {"name": "Cruise App", "email": "royalpurplecorp@gmail.com"},
+                "sender": {"name": "Cruise App", "email": os.getenv("BREVO_SENDER_EMAIL", "noreply@cruiseapp.com")},
                 "to": [{"email": to_email}],
                 "subject": subject,
                 "htmlContent": html_body,

@@ -75,6 +75,8 @@ class EmailService {
           'name': toName,
           'code': code,
           'verification_code': code,
+          'app_name': 'Cruise',
+          'from_name': 'Cruise App',
         },
       };
 

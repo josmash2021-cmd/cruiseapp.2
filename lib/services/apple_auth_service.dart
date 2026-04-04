@@ -79,10 +79,10 @@ class AppleAuthService {
     } on SignInWithAppleAuthorizationException catch (e) {
       if (e.code == AuthorizationErrorCode.canceled) return false;
       debugPrint('[AppleAuth] Auth error: $e');
-      return false;
+      rethrow;
     } catch (e) {
       debugPrint('[AppleAuth] Error: $e');
-      return false;
+      rethrow;
     }
   }
 }

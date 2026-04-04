@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'api_service.dart';
 import 'analytics_service.dart';
@@ -13,8 +14,12 @@ class GoogleAuthService {
 
   /// Returns true on success, false on cancel/failure.
   /// When [loginOnly] is true, rejects if no account exists (login screen).
+  /// Throws on 401 (invalid credentials) so the UI can show the error.
   Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async {
     try {
+      // Disconnect previous session to always show account picker
+      try { await _googleSignIn.signOut(); } catch (_) {}
+
       final account = await _googleSignIn.signIn();
       if (account == null) return false; // user cancelled
 
@@ -51,9 +56,14 @@ class GoogleAuthService {
 
       AnalyticsService.instance.logLogin('google');
       return true;
+    } on PlatformException catch (e) {
+      debugPrint('[GoogleAuth] PlatformException: ${e.code} - ${e.message}');
+      // Re-throw so UI can show error (don't silently swallow)
+      rethrow;
     } catch (e) {
       debugPrint('[GoogleAuth] Error: $e');
-      return false;
+      // Re-throw API errors (401 etc.) so login screen shows message
+      rethrow;
     }
   }
 
@@ -61,6 +71,7 @@ class GoogleAuthService {
   /// Used on the Create Account screen to extract the email for registration.
   Future<String?> getEmail() async {
     try {
+      try { await _googleSignIn.signOut(); } catch (_) {}
       final account = await _googleSignIn.signIn();
       if (account == null) return null; // user cancelled
       return account.email;

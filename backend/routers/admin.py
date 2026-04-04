@@ -202,6 +202,21 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     return _trip_dict(trip)
 
 
+@router.post("/admin/cancel-all-active", dependencies=[Depends(_verify_api_key)])
+async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
+    """Emergency: cancel ALL active trips. Requires API key auth."""
+    active = ["requested", "driver_en_route", "arrived", "in_trip"]
+    result = await db.execute(select(Trip).where(Trip.status.in_(active)))
+    trips = result.scalars().all()
+    canceled = []
+    for t in trips:
+        t.status = "cancelled"
+        t.cancel_reason = "admin_bulk_cleanup"
+        canceled.append(t.id)
+    await db.commit()
+    _security_audit_log("ADMIN_BULK_CANCEL", "api", f"canceled={canceled}")
+    return {"canceled_count": len(canceled), "trip_ids": canceled}
+
 @router.post("/admin/trips/{trip_id}/cancel", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Dedicated cancel endpoint for the dispatch admin app."""

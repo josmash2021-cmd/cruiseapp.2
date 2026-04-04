@@ -34,14 +34,13 @@ else:
     _engine_kwargs["pool_recycle"] = 1800
     _engine_kwargs["pool_timeout"] = 5
     _engine_kwargs["pool_use_lifo"] = True
-    # Private Railway network: no SSL, higher burst capacity
-    # External DB (Supabase/Neon): SSL required, conservative pool
+    # Supabase PostgreSQL: SSL required, PgBouncer-compatible
     _is_private = ".railway.internal" in DATABASE_URL
     if _is_private:
         _engine_kwargs["max_overflow"] = 10
         _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False}
     else:
-        _engine_kwargs["max_overflow"] = 5         # external DB — respect connection limits
+        _engine_kwargs["max_overflow"] = 5
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False

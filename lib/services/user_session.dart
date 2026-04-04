@@ -11,7 +11,6 @@ import 'security_service.dart';
 import 'cache_service.dart';
 import 'firebase_storage_service.dart';
 import 'prefs_cache.dart';
-import '../widgets/user_profile_photo.dart';
 
 /// Stores and retrieves the logged-in user's session.
 ///
@@ -324,15 +323,13 @@ class UserSession {
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
 
-    // Clear local photo keys so photo is not shown until re-downloaded on
-    // next sign-in.  Photos remain in Firestore / Cloud Storage and the
-    // recovery chain will re-fetch them after authentication.
+    // Clear local file path keys — the file is deleted below.
+    // KEEP the photo URL keys so the photo loads instantly on next sign-in
+    // (URLs are permanent Firebase Storage links, not sensitive data).
     if (uid.isNotEmpty) {
       await prefs.remove(_photoKeyForUid(uid));
-      await prefs.remove(_photoUrlKeyForUid(uid));
     }
     await prefs.remove(_photoKey);
-    await prefs.remove(_photoUrlKey);
 
     // Delete the local photo file from the documents directory
     try {
@@ -351,8 +348,8 @@ class UserSession {
     ApiService.clearUserCache();
     await LocalDataService.clearAllUserData();
 
-    // Clear all photo caches so next user starts with fresh app state
-    try { await UserProfilePhoto.clearCache(); } catch (_) {}
+    // Clear in-memory image cache only (not disk cache — photos should
+    // survive logout so they load instantly on next sign-in).
     try {
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();

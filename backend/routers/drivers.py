@@ -16,7 +16,7 @@ from models.schemas import (
 )
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
-    _require_dispatch_auth,
+    _require_dispatch_auth, _sanitize_string,
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,

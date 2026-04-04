@@ -1331,21 +1331,30 @@ class _SearchingBorderPainter extends CustomPainter {
     final pm = metricsList.first;
     final total = pm.length;
 
-    const glowFraction = 0.28; // 28% of perimeter — long, silky tail
+    const glowFraction = 0.28;
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
 
-    // Draw multiple opacity layers for smooth gradient effect (head bright → tail invisible)
-    const layers = 40;
-    final layerLen = glowLen / layers;
+    // Extract the full glow segment as a single path
+    final tailDist = (headDist - glowLen + total) % total;
+    final Path glowPath;
+    if (tailDist <= headDist) {
+      glowPath = pm.extractPath(tailDist, headDist);
+    } else {
+      glowPath = pm.extractPath(tailDist, total)
+        ..addPath(pm.extractPath(0, headDist), Offset.zero);
+    }
 
+    // Draw 12 graduated layers for smooth fade (head bright → tail invisible)
+    const layers = 12;
+    final layerLen = glowLen / layers;
     for (int k = 0; k < layers; k++) {
-      final t = 1.0 - k / layers; // 1.0 at head → 0.0 at tail
-      final fadeAlpha = t * t; // quadratic fade — smooth
-      if (fadeAlpha < 0.02) continue;
+      final t = 1.0 - k / layers;
+      final fadeAlpha = t * t;
+      if (fadeAlpha < 0.03) continue;
 
       final segEnd = (headDist - k * layerLen + total) % total;
-      final segStart = (segEnd - layerLen * 1.1 + total) % total; // slight overlap to avoid gaps
+      final segStart = (segEnd - layerLen * 1.2 + total) % total;
 
       final Path seg;
       if (segStart <= segEnd) {
@@ -1355,7 +1364,6 @@ class _SearchingBorderPainter extends CustomPainter {
           ..addPath(pm.extractPath(0, segEnd), Offset.zero);
       }
 
-      // Bright stroke
       canvas.drawPath(
         seg,
         Paint()
@@ -1366,21 +1374,27 @@ class _SearchingBorderPainter extends CustomPainter {
           ..color = Color.lerp(_gold, _goldLight, t)!
               .withValues(alpha: fadeAlpha * 0.9),
       );
-
-      // Soft outer glow halo — only the head portion
-      if (k < 10) {
-        canvas.drawPath(
-          seg,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 5
-            ..strokeCap = StrokeCap.round
-            ..isAntiAlias = true
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
-            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.15),
-        );
-      }
     }
+
+    // Single soft glow halo at the head
+    final headStart = (headDist - glowLen * 0.25 + total) % total;
+    final Path headSeg;
+    if (headStart <= headDist) {
+      headSeg = pm.extractPath(headStart, headDist);
+    } else {
+      headSeg = pm.extractPath(headStart, total)
+        ..addPath(pm.extractPath(0, headDist), Offset.zero);
+    }
+    canvas.drawPath(
+      headSeg,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+        ..color = _goldLight.withValues(alpha: 0.15),
+    );
   }
 
   @override

@@ -68,7 +68,9 @@ class NotificationService {
     // Pre-load audio players in background — never block init
     Future<void>(() async {
       try {
+        await _onlinePlayer.setReleaseMode(ReleaseMode.stop);
         await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+        await _offerPlayer.setReleaseMode(ReleaseMode.stop);
         await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
       } catch (e) {
         debugPrint('[NotificationService] audio preload error: $e');
@@ -359,12 +361,15 @@ class NotificationService {
   /// Fire-and-forget — never blocks the UI thread.
   /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
   static void playOnlineSound() {
-    Future<void>(() async {
+    // Schedule on next microtask so it never blocks the calling frame
+    Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         if (!(prefs.getBool('notif_sounds') ?? true)) return;
-        await _onlinePlayer.seek(Duration.zero);
-        await _onlinePlayer.resume();
+        // Use unawaited play to avoid blocking the microtask queue
+        _onlinePlayer.seek(Duration.zero).then((_) {
+          _onlinePlayer.resume();
+        });
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');
       }

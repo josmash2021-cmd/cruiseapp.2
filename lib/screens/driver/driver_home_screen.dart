@@ -573,9 +573,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     try {
       final v = await ApiService.getVehicle();
       if (!mounted || v == null) return;
+      final inspOk = v['inspection_valid'] == true;
       final insOk = v['insurance_valid'] == true;
       final regOk = v['registration_valid'] == true;
-      final approved = insOk && regOk;
+      final approved = inspOk && insOk && regOk;
       final wasApproved = _vehicleDocsApproved;
       setState(() {
         _vehicleDocsApproved = approved;

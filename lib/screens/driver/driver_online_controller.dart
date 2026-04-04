@@ -558,11 +558,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       try {
         final v = await ApiService.getVehicle();
         if (v != null) {
+          final inspOk = v['inspection_valid'] == true;
           final insOk = v['insurance_valid'] == true;
           final regOk = v['registration_valid'] == true;
-          if (!insOk || !regOk) {
+          if (!inspOk || !insOk || !regOk) {
             vehicleDocsOk = false;
             final missing = <String>[];
+            if (!inspOk) missing.add('Inspection');
             if (!insOk) missing.add('Insurance');
             if (!regOk) missing.add('Registration');
             vehicleBlockReason = 'Missing: ${missing.join(', ')}';

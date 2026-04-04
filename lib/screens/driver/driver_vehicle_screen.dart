@@ -31,6 +31,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   String _color = '';
   String _plate = '';
   String _vehicleType = 'comfort';
+  bool _inspectionValid = false;
   bool _insuranceValid = false;
   bool _registrationValid = false;
   bool _loading = true;
@@ -67,6 +68,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         _color = (v['color'] ?? '') as String;
         _plate = (v['plate'] ?? '') as String;
         _vehicleType = (v['vehicle_type'] ?? 'comfort') as String;
+        _inspectionValid = v['inspection_valid'] == true;
         _insuranceValid = v['insurance_valid'] == true;
         _registrationValid = v['registration_valid'] == true;
         _loading = false;
@@ -112,9 +114,10 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     }
   }
 
-  bool get _allDocsValid => _insuranceValid && _registrationValid;
+  bool get _allDocsValid => _inspectionValid && _insuranceValid && _registrationValid;
 
   int get _missingDocsCount =>
+      (!_inspectionValid ? 1 : 0) +
       (!_insuranceValid ? 1 : 0) +
       (!_registrationValid ? 1 : 0);
 
@@ -297,6 +300,17 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                             const SizedBox(height: 20),
 
                             // ── Vehicle document cards ──
+                            _buildDocCard(
+                              isValid: _inspectionValid,
+                              title: s.vehicleInspectionValid,
+                              invalidTitle: 'Vehicle Inspection',
+                              subtitle: _inspectionValid
+                                  ? 'Inspection up to date'
+                                  : 'Required to go online',
+                              icon: Icons.fact_check_rounded,
+                              docType: 'inspection',
+                            ),
+                            const SizedBox(height: 10),
                             _buildDocCard(
                               isValid: _insuranceValid,
                               title: s.vehicleInsuranceValid,

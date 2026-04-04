@@ -287,10 +287,20 @@ async def send_otp(body: SendOtpIn, request: Request):
     
     if not phone and not email:
         raise HTTPException(400, "Phone or email required")
-    
+
+    # ── Apple App Review demo account — fixed OTP, no real SMS/email ──
+    REVIEW_PHONE = "+15550001234"
+    REVIEW_EMAIL = "applereview@cruiseride.com"
+    REVIEW_CODE  = "123456"
+    if phone == REVIEW_PHONE or email == REVIEW_EMAIL:
+        otp_key = phone if phone else email
+        _otp_store[otp_key] = {"code": REVIEW_CODE, "expires": time.time() + 86400, "email": email, "phone": phone}
+        logging.info("[OTP] Apple review account — fixed code %s for %s", REVIEW_CODE, otp_key)
+        return {"ok": True, "method": "review_account"}
+
     # Use phone as key for OTP store (or email if no phone)
     otp_key = phone if phone else email
-    
+
     # Generate code immediately
     code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
     _otp_store[otp_key] = {"code": code, "expires": time.time() + _OTP_TTL, "email": email, "phone": phone}

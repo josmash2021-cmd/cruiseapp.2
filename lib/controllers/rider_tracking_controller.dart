@@ -1003,18 +1003,38 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
   }
 
-  /// Smooth chase camera: follows driver at close zoom with bearing + tilt
+  /// Smooth chase camera: follows driver with adaptive zoom based on distance
+  /// to dropoff. Zooms in gently as driver approaches — never too extreme.
   void _followDriver(LatLng position, double bearing) {
     if (_map == null || !mounted) return;
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 32;
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
+
+    // Adaptive zoom: 14.5 when far (>2mi) → 16.0 max when very close (<0.1mi)
+    // Smooth lerp keeps the transition gentle, never snapping.
+    double zoom;
+    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
+      // _distanceMiles: remaining distance to dropoff
+      if (_distanceMiles > 2.0) {
+        zoom = 14.5;
+      } else if (_distanceMiles < 0.1) {
+        zoom = 16.0;
+      } else {
+        // Lerp from 14.5 (at 2mi) to 16.0 (at 0.1mi)
+        final t = (2.0 - _distanceMiles) / 1.9; // 0→1
+        zoom = 14.5 + t * 1.5; // 14.5→16.0
+      }
+    } else {
+      zoom = 15.5; // Default for arriving phase
+    }
+
     _map!.easeTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
           coordinates: mapbox.Position(position.longitude, position.latitude),
         ),
-        zoom: 15.5,
+        zoom: zoom,
         bearing: bearing,
         pitch: 45.0,
         padding: mapbox.MbxEdgeInsets(

@@ -688,11 +688,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (!mounted) { _cinematicRunning = false; return; }
     _unrollLabels();
 
-    // 5. Gold route draws last, with a slightly slower stroke animation
-    await Future.delayed(const Duration(milliseconds: 180));
-    if (!mounted) { _cinematicRunning = false; return; }
-    await _animateGoldRoute(pts);
-    if (!mounted) { _cinematicRunning = false; return; }
+    // 5. Gold route draws last — only if we have a real route (>15 points).
+    //    If still on estimated route, skip draw — it will trigger when real route arrives.
+    if (pts.length > 15) {
+      await Future.delayed(const Duration(milliseconds: 180));
+      if (!mounted) { _cinematicRunning = false; return; }
+      await _animateGoldRoute(pts);
+      if (!mounted) { _cinematicRunning = false; return; }
+    }
 
     // 6. Refit route with panel padding so full route is visible above panel
     _fitRoute(pts, preserveCamera: true);

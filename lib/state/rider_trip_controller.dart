@@ -362,61 +362,68 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
 
-    // INSTANT: Show estimated route (straight line) for map preview only.
-    // Do NOT emit rideOptions yet — prices from straight-line distance are
-    // inaccurate and cause a visible price change when the real route arrives.
-    // The shimmer loading state stays visible until real prices are ready.
+    // INSTANT: Show estimated route + estimated prices immediately.
+    // Cards appear right away — no shimmer wait.
     final estimatedRoute = _directions.getEstimatedRoute(
       origin: origin,
       destination: dest,
     );
+    final estimatedOptions = _generateRideOptions(estimatedRoute);
     _state = _state.copyWith(
       phase: RiderPhase.previewRoute,
       route: estimatedRoute,
-      rideOptions: const [],
+      rideOptions: estimatedOptions,
       selectedOption: null,
       routeFetchFailed: false,
     );
     notifyListeners();
 
-    // BACKGROUND: Fetch real route + surge and update when ready
-    late final RouteResult? routeResult;
+    // BACKGROUND: Fetch real route + surge and refine prices when ready.
+    // Don't let slow surge block cards — fetch both in parallel,
+    // update route+prices as soon as directions arrive.
+    RouteResult? routeResult;
     try {
-      final results = await Future.wait([
-        // Surge multiplier
-        ApiService.getCurrentSurge(_state.pickup!.lat, _state.pickup!.lng)
-            .timeout(const Duration(seconds: 5))
-            .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0}),
-        // Real route from Directions API (with retry + cache)
-        _directions.getRoute(origin: origin, destination: dest),
-      ]);
+      // Fire surge request in parallel but don't block on it
+      final surgeFuture = ApiService.getCurrentSurge(_state.pickup!.lat, _state.pickup!.lng)
+          .timeout(const Duration(seconds: 5))
+          .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0});
+      // Real route from Directions API
+      routeResult = await _directions.getRoute(origin: origin, destination: dest);
 
-      _surgeMultiplier = ((results[0] as Map<String, dynamic>)['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
-      routeResult = results[1] as RouteResult?;
+      // Update with real route immediately (don't wait for surge)
+      if (routeResult != null) {
+        final options = _generateRideOptions(routeResult);
+        _state = _state.copyWith(
+          phase: RiderPhase.previewRoute,
+          route: routeResult,
+          rideOptions: options,
+          selectedOption: null,
+          routeFetchFailed: false,
+        );
+        notifyListeners();
+      }
+
+      // Apply surge multiplier when it arrives and recalculate
+      try {
+        final surgeData = await surgeFuture;
+        final surge = (surgeData['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
+        if (surge != _surgeMultiplier) {
+          _surgeMultiplier = surge;
+          final refreshedOptions = _generateRideOptions(routeResult ?? estimatedRoute);
+          _state = _state.copyWith(rideOptions: refreshedOptions);
+          notifyListeners();
+        }
+      } catch (_) {
+        _surgeMultiplier = 1.0;
+      }
     } catch (_) {
       _surgeMultiplier = 1.0;
-      routeResult = null;
+      if (routeResult == null) {
+        // Route failed — keep estimated prices already shown
+        _state = _state.copyWith(routeFetchFailed: true);
+        notifyListeners();
+      }
     }
-
-    // Update with real route if we got one (smooth transition from estimated)
-    if (routeResult != null) {
-      final options = _generateRideOptions(routeResult);
-      _state = _state.copyWith(
-        phase: RiderPhase.previewRoute,
-        route: routeResult,
-        rideOptions: options,
-        selectedOption: null,
-        routeFetchFailed: false,
-      );
-    } else {
-      // Route failed — fall back to estimated-route prices so user sees something
-      final fallbackOptions = _generateRideOptions(estimatedRoute);
-      _state = _state.copyWith(
-        routeFetchFailed: true,
-        rideOptions: fallbackOptions,
-      );
-    }
-    notifyListeners();
   }
 
   static bool _isAirport(String label) {

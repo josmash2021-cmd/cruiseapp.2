@@ -217,22 +217,17 @@ extension _RideRequestController on _RideRequestScreenState {
       case RiderPhase.selectingRide:
         // Show bottom sheet immediately
         _sheetCtrl.forward();
-        // Place markers immediately but only if real route isn't ready yet.
-        // Once the real route arrives _drawRoute/_rebuildMarkers takes over —
-        // running both concurrently creates duplicate orphaned pins.
-        final hasRealRoute = s.route != null &&
-            s.rideOptions.isNotEmpty &&
-            s.route!.points.length > 15;
-        if (s.pickup != null && s.dropoff != null && !hasRealRoute) {
-          _placeMarkersOnly();
-        }
-        // Draw polyline + cinematic only when REAL route arrives (once).
-        if (hasRealRoute) {
-          _fetchingRoute = false;
+        // Start cinematic + route draw as soon as any route is available.
+        // Estimated route (2 points) triggers markers+tilt; real route
+        // (>15 points) triggers the gold polyline draw.
+        if (s.route != null && s.pickup != null && s.dropoff != null) {
+          final isRealRoute = s.route!.points.length > 15;
+          if (isRealRoute) _fetchingRoute = false;
+
           if (!_cinematicDone && !_cinematicRunning) {
             _drawRoute();
-          } else if (_cinematicDone && _routeAnnot == null) {
-            // Route data arrived after cinematic finished — draw without cinematic
+          } else if (isRealRoute && _routeAnnot == null) {
+            // Real route arrived after/during cinematic — draw polyline
             final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
             _buildRouteMarkers();
             _animateGoldRoute(pts);

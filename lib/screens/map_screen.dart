@@ -1384,7 +1384,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // 4. Gold route draw at 300ms more
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted || ticket != _routeAnimationTicket) return;
-    await _animateGoldRoute(points, const Duration(milliseconds: 1000));
+    await _animateGoldRoute(points);
     if (!mounted || ticket != _routeAnimationTicket) return;
 
     // 5. Save final camera values
@@ -1393,47 +1393,54 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _cinematicDone = true;
   }
 
-  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+  Future<void> _animateGoldRoute(List<LatLng> points, [Duration? duration]) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
 
     // Clear old single-color route
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
 
+    // Pre-create annotation before ticker to avoid async frame skipping
+    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: initCoords),
+      lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    if (!mounted || _routeAnnot == null) return;
+
+    final totalMs = duration?.inMilliseconds ?? (points.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    final totalMs = duration.inMilliseconds;
-    int lastCount = 0;
+    int lastCount = 2;
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
+    _routeDrawTicker = createTicker((_) {
       if (!mounted) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;
       }
+      if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount) {
         lastCount = count;
         final subset = points.sublist(0, count);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final geo = mapbox.LineString(coordinates: coords);
-
-        if (_routeAnnot == null) {
-          try { _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
-        } else {
-          if (_routeAnnot != null) { _routeAnnot!.geometry = geo; try { await polyMgr.update(_routeAnnot!); } catch (_) {} }
-        }
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
+        if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -1463,9 +1470,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     )); } catch (_) {}
     if (!mounted || _routeAnnot == null || ticket != _routeAnimationTicket) return;
 
+    final totalMs = (points.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 1500;
     int lastCount = 2;
     bool updating = false;
 
@@ -1480,7 +1487,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOut.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount) {

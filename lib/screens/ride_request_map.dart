@@ -691,7 +691,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // 5. Gold route draws last, with a slightly slower stroke animation
     await Future.delayed(const Duration(milliseconds: 180));
     if (!mounted) { _cinematicRunning = false; return; }
-    await _animateGoldRoute(pts, const Duration(milliseconds: 850));
+    await _animateGoldRoute(pts);
     if (!mounted) { _cinematicRunning = false; return; }
 
     // 6. Refit route with panel padding so full route is visible above panel
@@ -857,7 +857,7 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   /// Animate gold route draw at 60fps — smooth progressive reveal.
   /// Uses fire-and-forget updates to avoid frame-skipping from async backpressure.
-  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+  Future<void> _animateGoldRoute(List<LatLng> points, [Duration? duration]) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
 
@@ -874,11 +874,15 @@ extension _RideRequestMap on _RideRequestScreenState {
       lineJoin: mapbox.LineJoin.ROUND,
     ));
 
+    // Adaptive duration: short routes get enough time to look smooth,
+    // long routes draw a bit faster so the user doesn't wait.
+    final totalMs = duration?.inMilliseconds ??
+        (points.length * 6).clamp(800, 2200);
+
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    final totalMs = duration.inMilliseconds;
     int lastCount = 2;
-    bool updating = false; // prevent overlapping platform channel calls
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -888,11 +892,11 @@ extension _RideRequestMap on _RideRequestScreenState {
         if (!completer.isCompleted) completer.complete();
         return;
       }
-      if (updating) return; // skip frame if previous update still in flight
+      if (updating) return;
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount && _routeAnnot != null) {
@@ -906,7 +910,6 @@ extension _RideRequestMap on _RideRequestScreenState {
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        // Final full-precision update
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
         if (_routeAnnot != null) polyMgr.update(_routeAnnot!);

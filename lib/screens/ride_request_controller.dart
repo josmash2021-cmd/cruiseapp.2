@@ -235,7 +235,7 @@ extension _RideRequestController on _RideRequestScreenState {
             // Route data arrived after cinematic finished — draw without cinematic
             final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
             _buildRouteMarkers();
-            _animateGoldRoute(pts, const Duration(milliseconds: 850));
+            _animateGoldRoute(pts);
           }
         }
         // Mark options as loaded when rideOptions arrive

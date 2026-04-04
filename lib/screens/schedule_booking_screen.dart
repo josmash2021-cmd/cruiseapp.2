@@ -409,7 +409,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     // 3. Gold route draw 500ms into tilt
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
-    await _animateGoldRoute(routePoints, const Duration(milliseconds: 1000));
+    await _animateGoldRoute(routePoints);
     if (!mounted) return;
 
     // 4. Save camera state
@@ -426,7 +426,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     ));
   }
 
-  Future<void> _animateGoldRoute(List<LatLng> points, Duration duration) async {
+  Future<void> _animateGoldRoute(List<LatLng> points) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
 
@@ -439,9 +439,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     )); } catch (_) {}
     if (!mounted || _routeAnnot == null) return;
 
+    final totalMs = (points.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    final totalMs = duration.inMilliseconds;
     int lastCount = 2;
     bool updating = false;
 
@@ -454,7 +454,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount) {

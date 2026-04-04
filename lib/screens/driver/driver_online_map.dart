@@ -474,60 +474,59 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return completer.future;
   }
 
-  /// Draw a single gold route line with progressive 60fps draw over 1 second.
+  /// Draw a single gold route line with progressive 60fps draw — adaptive duration.
   Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
 
+    // Pre-create annotation before ticker to avoid async frame skipping
+    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    mapbox.PolylineAnnotation? mainLine;
+    try {
+      mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: initCoords),
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+    if (!mounted || mainLine == null) return;
+
+    final totalMs = (points.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 1500;
-
-    mapbox.PolylineAnnotation? mainLine;
-    int lastCount = 0;
+    int lastCount = 2;
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
+    _routeDrawTicker = createTicker((_) {
       if (!mounted || _previewingOffer == null) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;
       }
+      if (updating) return;
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * points.length).round().clamp(2, points.length);
 
       if (count != lastCount) {
         lastCount = count;
         final subset = points.sublist(0, count);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final geo = mapbox.LineString(coordinates: coords);
-
-        if (mainLine == null) {
-          mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } else {
-          mainLine!.geometry = geo;
-          try { await polyMgr.update(mainLine!); } catch (_) {}
-        }
+        mainLine!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        polyMgr.update(mainLine!).then((_) => updating = false).catchError((_) => updating = false);
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final fullGeo = mapbox.LineString(coordinates: fullCoords);
-        if (mainLine != null) {
-          mainLine!.geometry = fullGeo;
-          try { await polyMgr.update(mainLine!); } catch (_) {}
-        }
-        // Store for later cleanup
+        mainLine!.geometry = mapbox.LineString(coordinates: fullCoords);
+        polyMgr.update(mainLine!);
         _previewPickupAnnot = mainLine;
         if (!completer.isCompleted) completer.complete();
       }

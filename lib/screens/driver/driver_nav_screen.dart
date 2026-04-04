@@ -793,10 +793,11 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     await _createRouteAnnotations(mgr, mapbox.LineString(coordinates: initCoords));
     if (!mounted || _routeAnnot == null) { _routeAnimating = false; return; }
 
+    final totalMs = (_routePts.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 1500;
     bool updating = false;
+    int lastCount = 2;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -806,15 +807,19 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         if (!completer.isCompleted) completer.complete();
         return;
       }
-      if (updating) return; // skip frame if previous update still in flight
+      if (updating) return;
       final progress = (stopwatch.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOut.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * _routePts.length).round().clamp(2, _routePts.length);
-      _animatedRoute = _routePts.sublist(0, count);
-      final coords = _animatedRoute.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-      _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-      updating = true;
-      mgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+
+      if (count != lastCount) {
+        lastCount = count;
+        _animatedRoute = _routePts.sublist(0, count);
+        final coords = _animatedRoute.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        mgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();

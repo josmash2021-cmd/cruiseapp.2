@@ -1236,30 +1236,34 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final totalPts = allCoords.length;
-    const drawDurationMs = 2000; // 2 seconds for visible animation
+    final drawDurationMs = (totalPts * 6).clamp(800, 2200);
 
     // Pre-create annotation BEFORE starting ticker to avoid race condition
     final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
     await _createRouteLayers(polyMgr, initGeom);
     if (!mounted || _remainingRouteAnnot == null) return;
 
-    final startTime = DateTime.now();
+    final stopwatch = Stopwatch()..start();
     bool updating = false;
+    int lastCount = 2;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
-      if (updating) return; // skip frame if previous update still in flight
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      if (updating) return;
+      final elapsed = stopwatch.elapsedMilliseconds;
       final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
-      final eased = _easeOutCubic(t);
-      final count = (2 + (totalPts - 2) * eased).round().clamp(2, totalPts);
-      final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
-      updating = true;
-      try {
-        _remainingRouteAnnot!.geometry = geom;
-        polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
-      } catch (_) { updating = false; }
+      final eased = Curves.easeOutCubic.transform(t);
+      final count = (eased * totalPts).round().clamp(2, totalPts);
+      if (count != lastCount) {
+        lastCount = count;
+        final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
+        updating = true;
+        try {
+          _remainingRouteAnnot!.geometry = geom;
+          polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+        } catch (_) { updating = false; }
+      }
       if (t >= 1.0) {
         _routeDrawTicker?.stop();
       }

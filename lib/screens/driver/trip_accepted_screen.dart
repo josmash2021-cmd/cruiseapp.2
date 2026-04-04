@@ -253,9 +253,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     ));
     if (!mounted || _routeAnnot == null) return;
 
+    final totalMs = (_routePoints.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    const totalMs = 500;
     int lastCount = 2;
     bool updating = false;
 
@@ -270,7 +270,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutSine.transform(progress);
+      final eased = Curves.easeOutCubic.transform(progress);
       final count = (eased * _routePoints.length).round().clamp(2, _routePoints.length);
 
       if (count != lastCount) {

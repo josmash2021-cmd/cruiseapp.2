@@ -1502,6 +1502,51 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
             logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
     else:
         logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False - Firestore sync skipped")
+    # ── Send push notification + email to the approved driver ──
+    try:
+        if db_user.fcm_token:
+            await _send_fcm_push(
+                db_user.fcm_token,
+                "You're Approved! 🎉",
+                "Welcome to the Cruise family! Open the app to start driving.",
+                {"type": "driver_approved"},
+            )
+            logging.info("[DISPATCH-APPROVE] FCM push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-APPROVE] FCM push failed: %s", e)
+
+    try:
+        if db_user.email:
+            driver_name = db_user.first_name or "Driver"
+            await _send_email(
+                db_user.email,
+                "Welcome to the Cruise Family!",
+                f"""
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0A0A0A; color: #ffffff; padding: 40px 30px; border-radius: 16px;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #D4AF37, #E8C547); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+                            <span style="font-size: 36px;">✓</span>
+                        </div>
+                        <h1 style="color: #E8C547; font-size: 28px; margin: 0; letter-spacing: 2px;">WELCOME TO THE FAMILY</h1>
+                        <p style="color: #D4AF37; font-size: 22px; letter-spacing: 8px; margin: 8px 0 0;">CRUISE</p>
+                    </div>
+                    <p style="color: #cccccc; font-size: 16px; line-height: 1.6; text-align: center;">
+                        Congratulations <strong style="color: #E8C547;">{driver_name}</strong>! Your application has been approved.
+                        You're now part of the Cruise driver team.
+                    </p>
+                    <p style="color: #999999; font-size: 14px; line-height: 1.6; text-align: center; margin-top: 20px;">
+                        Open the Cruise app to complete your setup and start accepting rides.
+                    </p>
+                    <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #222;">
+                        <p style="color: #666; font-size: 12px;">© Cruise — Premium Rides</p>
+                    </div>
+                </div>
+                """,
+            )
+            logging.info("[DISPATCH-APPROVE] Approval email sent to %s", db_user.email)
+    except Exception as e:
+        logging.warning("[DISPATCH-APPROVE] Email failed: %s", e)
+
     return {"ok": True, "message": f"Driver {user_id} approved", "status": "approved", "approval_status": "approved"}
 
 

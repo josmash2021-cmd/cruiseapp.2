@@ -20,10 +20,16 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
             notification=_fcm.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
             token=token,
-            android=_fcm.AndroidConfig(priority="high"),
+            android=_fcm.AndroidConfig(
+                priority="high",
+                notification=_fcm.AndroidNotification(
+                    sound="cruise_online",
+                    channel_id="cruise_premium",
+                ),
+            ),
             apns=_fcm.APNSConfig(
                 headers={"apns-priority": "10"},
-                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="default", badge=1)),
+                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="cruise_online.wav", badge=1)),
             ),
         )
         _fcm.send(msg)

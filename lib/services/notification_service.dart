@@ -64,8 +64,9 @@ class NotificationService {
     await _createChannels();
 
     // Pre-load audio players so first playback is instant
+    // Both use the same online sound for consistent experience
     await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
-    await _offerPlayer.setSource(AssetSource('sounds/cruise_offer.wav'));
+    await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
 
     _initialized = true;
     debugPrint('[NotificationService] initialized');
@@ -77,26 +78,26 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
 
-    // General notifications
+    // General notifications — cruise_online sound + vibration
     await android.createNotificationChannel(AndroidNotificationChannel(
       'cruise_premium',
       'Cruise Notifications',
       description: 'General notifications from Cruise',
       importance: Importance.high,
-      sound: const RawResourceAndroidNotificationSound('cruise_notification'),
+      sound: const RawResourceAndroidNotificationSound('cruise_online'),
       enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 120, 80, 120]),
+      vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
     ));
 
-    // Trip offer notifications — max importance so they pop over other apps
+    // Trip offer notifications — max importance, same sound
     await android.createNotificationChannel(AndroidNotificationChannel(
       'cruise_offers',
       'Trip Offers',
       description: 'New trip offer alerts for drivers',
       importance: Importance.max,
-      sound: const RawResourceAndroidNotificationSound('cruise_offer'),
+      sound: const RawResourceAndroidNotificationSound('cruise_online'),
       enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 200, 100, 200, 100, 200]),
+      vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
       playSound: true,
       showBadge: true,
     ));
@@ -112,14 +113,15 @@ class NotificationService {
       showBadge: false,
     ));
 
-    // Ride reminders
-    await android.createNotificationChannel(const AndroidNotificationChannel(
+    // Ride reminders — same sound + vibration
+    await android.createNotificationChannel(AndroidNotificationChannel(
       'cruise_reminders',
       'Ride Reminders',
       description: 'Scheduled ride reminders',
       importance: Importance.high,
-      sound: RawResourceAndroidNotificationSound('cruise_notification'),
+      sound: const RawResourceAndroidNotificationSound('cruise_online'),
       enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
     ));
   }
 
@@ -189,20 +191,21 @@ class NotificationService {
       priority: Priority.high,
       playSound: soundsEnabled,
       sound: soundsEnabled
-          ? const RawResourceAndroidNotificationSound('cruise_notification')
+          ? const RawResourceAndroidNotificationSound('cruise_online')
           : null,
       enableVibration: vibrateEnabled,
       vibrationPattern: vibrateEnabled
-          ? Int64List.fromList([0, 120, 80, 120])
+          ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
-      presentSound: true,
+      presentSound: soundsEnabled,
+      sound: soundsEnabled ? 'cruise_online.wav' : null,
     );
 
     await _plugin.show(
@@ -246,11 +249,11 @@ class NotificationService {
       priority: Priority.max,
       playSound: soundsEnabled,
       sound: soundsEnabled
-          ? const RawResourceAndroidNotificationSound('cruise_offer')
+          ? const RawResourceAndroidNotificationSound('cruise_online')
           : null,
       enableVibration: vibrateEnabled,
       vibrationPattern: vibrateEnabled
-          ? Int64List.fromList([0, 200, 100, 200, 100, 200])
+          ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
@@ -265,7 +268,7 @@ class NotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: soundsEnabled,
-      sound: soundsEnabled ? 'cruise_offer.wav' : null,
+      sound: soundsEnabled ? 'cruise_online.wav' : null,
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
@@ -406,20 +409,21 @@ class NotificationService {
       priority: Priority.high,
       playSound: soundsEnabled,
       sound: soundsEnabled
-          ? const RawResourceAndroidNotificationSound('cruise_notification')
+          ? const RawResourceAndroidNotificationSound('cruise_online')
           : null,
       enableVibration: vibrateEnabled,
       vibrationPattern: vibrateEnabled
-          ? Int64List.fromList([0, 120, 80, 120])
+          ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
-      presentSound: true,
+      presentSound: soundsEnabled,
+      sound: soundsEnabled ? 'cruise_online.wav' : null,
     );
 
     await _plugin.zonedSchedule(

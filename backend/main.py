@@ -32,6 +32,12 @@ from security_guardian import security_guardian
 # Guardian Agent — keeps all systems healthy and connections alive
 from guardian_agent import guardian_agent
 
+# Autonomous Agents — ghost cleanup, safety, document expiry, rating moderation
+from ghost_driver_agent import ghost_driver_agent
+from safety_monitor_agent import safety_monitor_agent
+from document_expiry_agent import document_expiry_agent
+from rating_moderator_agent import rating_moderator_agent
+
 # Automatic PostgreSQL backup system
 from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
 
@@ -269,6 +275,22 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_backup_scheduler())
         logging.info("💾 DB Backup Scheduler ACTIVE — backing up every 6 hours")
 
+        # Start Ghost Driver Cleanup Agent
+        ghost_driver_agent.set_db_session_maker(SessionLocal)
+        await ghost_driver_agent.start()
+
+        # Start Safety Monitor Agent
+        safety_monitor_agent.set_db_session_maker(SessionLocal)
+        await safety_monitor_agent.start()
+
+        # Start Document Expiry Agent
+        document_expiry_agent.set_db_session_maker(SessionLocal)
+        await document_expiry_agent.start()
+
+        # Start Rating Moderator Agent
+        rating_moderator_agent.set_db_session_maker(SessionLocal)
+        await rating_moderator_agent.start()
+
         # Periodic cache sweep (memory safety for 1500+ users)
         async def _cache_sweep_loop():
             while True:
@@ -288,6 +310,10 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     await security_guardian.stop_heartbeat()
     await guardian_agent.stop()
+    await ghost_driver_agent.stop()
+    await safety_monitor_agent.stop()
+    await document_expiry_agent.stop()
+    await rating_moderator_agent.stop()
 
 # Use orjson for 2-10x faster JSON serialization if available
 try:
@@ -521,6 +547,10 @@ async def health(x_api_key: str = Header(default="")):
             "security": security_guardian.get_status(),
             "guardian": guardian_agent.get_status(),
             "backup": _backup_status(),
+            "ghost_driver_agent": ghost_driver_agent.get_status(),
+            "safety_monitor_agent": safety_monitor_agent.get_status(),
+            "document_expiry_agent": document_expiry_agent.get_status(),
+            "rating_moderator_agent": rating_moderator_agent.get_status(),
             "sse": event_bus.get_stats(),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
@@ -553,6 +583,20 @@ async def guardian_health(x_api_key: str = Header(default="")):
         raise HTTPException(403, "Forbidden")
     
     return guardian_agent.get_status()
+
+# -- Autonomous Agents Health Endpoints ------------------------------------
+@app.get("/health/agents")
+async def agents_health(x_api_key: str = Header(default="")):
+    """All autonomous agents status — ghost cleanup, safety, docs, ratings.
+    Protected by API key for production safety."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    return {
+        "ghost_driver": ghost_driver_agent.get_status(),
+        "safety_monitor": safety_monitor_agent.get_status(),
+        "document_expiry": document_expiry_agent.get_status(),
+        "rating_moderator": rating_moderator_agent.get_status(),
+    }
 
 # -- One-time migration endpoint (protected by API key) ------------------
 @app.post("/admin/run-migrations")

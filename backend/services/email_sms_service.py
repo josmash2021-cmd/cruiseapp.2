@@ -39,7 +39,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             _params.setdefault("otp_code", _otp_code)
             _params.setdefault("verification_code", _otp_code)
             _params.setdefault("app_name", "Cruise")
-            _params.setdefault("from_name", "Cruise App")
+            _params.setdefault("from_name", "Cruise")
             _params.setdefault("message", html_body)
             payload = _json.dumps({
                 "service_id": EMAILJS_SERVICE_ID,
@@ -70,7 +70,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             import base64 as _b64
             creds = _b64.b64encode(f"api:{MAILGUN_API_KEY}".encode()).decode()
             form = _uparse.urlencode({
-                "from": f"Cruise App <mailgun@{MAILGUN_DOMAIN}>",
+                "from": f"Cruise <noreply@cruiseapp.com>",
                 "to": to_email,
                 "subject": subject,
                 "html": html_body,
@@ -95,7 +95,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         try:
             payload = _json.dumps({
                 "personalizations": [{"to": [{"email": to_email}]}],
-                "from": {"email": "noreply@cruiseapp.com", "name": "Cruise App"},
+                "from": {"email": "noreply@cruiseapp.com", "name": "Cruise"},
                 "subject": subject,
                 "content": [{"type": "text/html", "value": html_body}]
             }).encode()
@@ -118,7 +118,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     if BREVO_API_KEY:
         try:
             payload = _json.dumps({
-                "sender": {"name": "Cruise App", "email": os.getenv("BREVO_SENDER_EMAIL", "noreply@cruiseapp.com")},
+                "sender": {"name": "Cruise", "email": "noreply@cruiseapp.com"},
                 "to": [{"email": to_email}],
                 "subject": subject,
                 "htmlContent": html_body,

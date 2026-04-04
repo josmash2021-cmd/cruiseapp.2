@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, FareSplit, Rating, ChatMessage, SurgeZone,
-    RiderPaymentMethod, Notification,
+    RiderPaymentMethod, Notification, Vehicle,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
@@ -181,17 +181,26 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
     await db.commit()
     await db.refresh(trip)
 
-    # Sync to Firestore
+    # Sync to Firestore (include vehicle info so rider can see plate/model)
     if _HAS_FIRESTORE:
         try:
             drv = await db.execute(select(User).where(User.id == body.driver_id))
             driver = drv.scalar_one_or_none()
+            veh_r = await db.execute(
+                select(Vehicle).where(Vehicle.user_id == body.driver_id).limit(1)
+            )
+            veh = veh_r.scalar_one_or_none()
             firestore_sync.sync_trip_status(
                 trip_id=trip.id, status="driver_en_route",
                 driver_id=body.driver_id,
                 driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
                 driver_phone=driver.phone if driver else None,
                 driver_photo_url=driver.photo_url or "" if driver else None,
+                vehicle_make=veh.make if veh else None,
+                vehicle_model=veh.model if veh else None,
+                vehicle_color=veh.color if veh else None,
+                vehicle_plate=veh.plate if veh else None,
+                vehicle_year=str(veh.year) if veh else None,
             )
         except Exception as e:
             logging.error("Firestore sync on accept_trip failed: %s", e)

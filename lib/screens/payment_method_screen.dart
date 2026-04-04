@@ -269,12 +269,44 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               if (Platform.isIOS || Platform.isAndroid)
                 const SizedBox(height: 16),
 
-              // PayPal
-              _paymentRow(
-                c,
-                icon: const _PayPalIcon(),
-                label: 'PayPal',
-                onAdd: () => _addMethod('paypal'),
+              // PayPal (Coming Soon)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  children: [
+                    Opacity(
+                      opacity: 0.45,
+                      child: _paymentRow(
+                        c,
+                        icon: const _PayPalIcon(),
+                        label: 'PayPal',
+                        onAdd: () {},
+                      ),
+                    ),
+                    Positioned(
+                      top: 6,
+                      right: -18,
+                      child: Transform.rotate(
+                        angle: 0.45,
+                        child: Container(
+                          width: 100,
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          color: const Color(0xFFD4A843),
+                          child: const Text(
+                            'Coming Soon',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 

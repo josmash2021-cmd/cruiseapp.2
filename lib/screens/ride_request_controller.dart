@@ -1244,15 +1244,16 @@ extension _RideRequestController on _RideRequestScreenState {
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
-      if (Platform.isIOS) ('apple_pay', 'Apple Pay'),
-      if (!Platform.isIOS) ('google_pay', 'Google Pay'),
+      if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),
+      if (!Platform.isIOS) ('google_pay', 'Google Pay', true),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null
             ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
             : loc.creditOrDebitCard,
+        true,
       ),
-      ('paypal', 'PayPal'),
+      ('paypal', 'PayPal', false), // Coming Soon
     ];
 
     showModalBottomSheet(
@@ -1294,76 +1295,100 @@ extension _RideRequestController on _RideRequestScreenState {
                 ),
                 const SizedBox(height: 16),
                 ...methods.map((m) {
-                  final (id, label) = m;
+                  final (id, label, enabled) = m;
                   final selected = id == _selectedPaymentMethod;
                   return GestureDetector(
-                    onTap: () {
-                      _setState(() => _selectedPaymentMethod = id);
-                      Navigator.pop(ctx);
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? c.gold.withValues(alpha: 0.08)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        border: selected
-                            ? Border.all(
-                                color: c.gold.withValues(alpha: 0.4),
-                                width: 1.2,
-                              )
-                            : null,
-                      ),
-                      child: Row(
-                        children: [
-                          if (id == 'apple_pay')
-                            const Icon(Icons.apple, color: Colors.white, size: 24)
-                          else if (id == 'google_pay')
-                            const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
-                          else
-                            _paymentLogoWidget(id, 36),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              label,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          if (selected)
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: c.gold,
-                              size: 22,
-                            )
-                          else
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: c.gold.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
+                    onTap: enabled
+                        ? () {
+                            _setState(() => _selectedPaymentMethod = id);
+                            Navigator.pop(ctx);
+                          }
+                        : null,
+                    child: Opacity(
+                      opacity: enabled ? 1.0 : 0.45,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? c.gold.withValues(alpha: 0.08)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                          border: selected
+                              ? Border.all(
+                                  color: c.gold.withValues(alpha: 0.4),
+                                  width: 1.2,
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            if (id == 'apple_pay')
+                              const Icon(Icons.apple, color: Colors.white, size: 24)
+                            else if (id == 'google_pay')
+                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
+                            else
+                              _paymentLogoWidget(id, 36),
+                            const SizedBox(width: 14),
+                            Expanded(
                               child: Text(
-                                loc.added,
-                                style: TextStyle(
-                                  color: c.gold,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                label,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
-                        ],
+                            if (!enabled)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD4A843).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'Coming Soon',
+                                  style: TextStyle(
+                                    color: Color(0xFFD4A843),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              )
+                            else if (selected)
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: c.gold,
+                                size: 22,
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.gold.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  loc.added,
+                                  style: TextStyle(
+                                    color: c.gold,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -1436,7 +1461,10 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Payment helpers ──
 
+  bool get _hasAnyPaymentMethod => _linkedPaymentMethods.isNotEmpty;
+
   String _paymentLabel(String id) {
+    if (!_hasAnyPaymentMethod) return 'Set up a payment method';
     final loc = S.of(context);
     switch (id) {
       case 'apple_pay':

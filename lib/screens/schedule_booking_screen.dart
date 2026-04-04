@@ -677,10 +677,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         ? '${_savedCardBrand![0].toUpperCase()}${_savedCardBrand!.substring(1)} •••• $_savedCardLast4'
         : S.of(context).creditOrDebitCard;
     final methods = [
-      if (Platform.isIOS) ('apple_pay', 'Apple Pay'),
-      if (Platform.isAndroid) ('google_pay', 'Google Pay'),
-      ('credit_card', creditLabel),
-      ('paypal', 'PayPal'),
+      if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),
+      if (Platform.isAndroid) ('google_pay', 'Google Pay', true),
+      ('credit_card', creditLabel, true),
+      ('paypal', 'PayPal', false), // Coming Soon
     ];
     final c = AppColors.of(context);
 
@@ -721,80 +721,89 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
               ),
               const SizedBox(height: 16),
               ...methods.map((m) {
-                final (id, label) = m;
+                final (id, label, enabled) = m;
                 final selected = id == _selectedPaymentMethod;
                 final linked = _linkedPaymentMethods.contains(id);
                 return GestureDetector(
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    setState(() => _selectedPaymentMethod = id);
-                    if (!linked) {
-                      if (!mounted) return;
-                      Navigator.push(
-                        context,
-                        slideFromRightRoute(const PaymentAccountsScreen()),
-                      ).then((_) => _loadPayments());
-                    }
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? _gold.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
-                      border: selected
-                          ? Border.all(
-                              color: _gold.withValues(alpha: 0.4),
-                              width: 1.2,
-                            )
-                          : null,
-                    ),
-    child: Row(
-                      children: [
-                        if (id == 'apple_pay' || id == 'google_pay')
-                          Expanded(child: _nativePayLogoWide(id))
-                        else ...[    
-                          _payLogo(id, 36),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: TextStyle(
-                                    color: c.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                  onTap: enabled
+                      ? () {
+                          Navigator.pop(ctx);
+                          setState(() => _selectedPaymentMethod = id);
+                          if (!linked) {
+                            if (!mounted) return;
+                            Navigator.push(
+                              context,
+                              slideFromRightRoute(const PaymentAccountsScreen()),
+                            ).then((_) => _loadPayments());
+                          }
+                        }
+                      : null,
+                  child: Opacity(
+                    opacity: enabled ? 1.0 : 0.45,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? _gold.withValues(alpha: 0.08)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        border: selected
+                            ? Border.all(
+                                color: _gold.withValues(alpha: 0.4),
+                                width: 1.2,
+                              )
+                            : null,
+                      ),
+                      child: Row(
+                        children: [
+                          if (id == 'apple_pay' || id == 'google_pay')
+                            Expanded(child: _nativePayLogoWide(id))
+                          else ...[
+                            _payLogo(id, 36),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      color: c.textPrimary,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  linked
-                                      ? S.of(context).readyLabel
-                                      : S.of(context).tapToSetUp,
-                                  style: TextStyle(
-                                    color: linked
-                                        ? const Color(0xFF4CAF50)
-                                        : c.textSecondary,
-                                    fontSize: 12,
+                                  Text(
+                                    !enabled
+                                        ? 'Coming Soon'
+                                        : linked
+                                            ? S.of(context).readyLabel
+                                            : S.of(context).tapToSetUp,
+                                    style: TextStyle(
+                                      color: !enabled
+                                          ? const Color(0xFFD4A843)
+                                          : linked
+                                              ? const Color(0xFF4CAF50)
+                                              : c.textSecondary,
+                                      fontSize: 12,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
+                          if (selected && enabled)
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: _gold,
+                              size: 22,
+                            ),
                         ],
-                        if (selected)
-                          const Icon(
-                            Icons.check_circle_rounded,
-                            color: _gold,
-                            size: 22,
-                          ),
-                      ],
+                      ),
                     ),
                   ),
                 );

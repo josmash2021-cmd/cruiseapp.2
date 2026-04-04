@@ -1300,14 +1300,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// Responsive card height: adapts to screen so Accept button never gets cut.
   double _offerCardHeight(BuildContext context) {
-    final screenH = MediaQuery.of(context).size.height;
-    final topPad = MediaQuery.of(context).padding.top;
+    // Tight fit — no wasted space below the Accept button
     final botPad = MediaQuery.of(context).padding.bottom;
-    // Available height below the map area (roughly 55% of screen is card zone)
-    // Card content: badge(44) + price(50) + addresses(~110) + divider(5) + button(48) + padding(12) ≈ 270
-    // Ensure at least 280 so Accept is never clipped, and scale up on big screens
-    final computed = (screenH * 0.38).clamp(280.0, 360.0);
-    return computed;
+    return 275 + (botPad > 20 ? botPad - 10 : 0);
   }
 
   /// Chip widget for time/distance display on offer card (compact).

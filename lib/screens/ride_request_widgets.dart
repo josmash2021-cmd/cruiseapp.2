@@ -594,6 +594,30 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     ),
                                   ),
                                 ),
+                                // ── TEST MODE button (temporary) ──
+                                const SizedBox(height: 6),
+                                GestureDetector(
+                                  onTap: () => _testModeRequest(option),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                                    ),
+                                    child: const Center(
+                                      child: Text(
+                                        'Test Mode',
+                                        style: TextStyle(
+                                          color: Colors.red,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           )

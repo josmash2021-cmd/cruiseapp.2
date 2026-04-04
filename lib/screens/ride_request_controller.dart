@@ -858,6 +858,37 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
+  /// TEST MODE: skip payment and request ride directly (temporary).
+  Future<void> _testModeRequest(RideOption? option) async {
+    if (option == null) return;
+    if (_rideFlowLocked) return;
+    _rideFlowLocked = true;
+    try {
+      if (!mounted) return;
+      if (widget.applyPromo) await LocalDataService.setPromoUsed();
+      AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
+
+      if (_ctrl.state.scheduledAt != null) {
+        await _createScheduledTrip();
+        return;
+      }
+
+      final nav = Navigator.of(context);
+      await nav.push<bool>(
+        searchingDriverRoute(
+          onCancel: _cancelSearching,
+          paymentCallback: null,
+          initiallyDeclined: false,
+          onPaymentDeclined: () {},
+        ),
+      );
+      if (!mounted) return;
+      _ctrl.requestRide();
+    } finally {
+      _rideFlowLocked = false;
+    }
+  }
+
   /// Triggers the native payment confirmation for the selected payment method.
   /// Returns true if payment was authorized, false if user cancelled.
   /// Throws on failure.

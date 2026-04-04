@@ -479,7 +479,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(coordinates: mapbox.Position(_center!.longitude, _center!.latitude)),
                     zoom: 15.5,
-                    pitch: 0.0,
+                    pitch: 45.0,
                   ),
                   onMapCreated: (ctrl) async {
                     _mapCtrl = ctrl;

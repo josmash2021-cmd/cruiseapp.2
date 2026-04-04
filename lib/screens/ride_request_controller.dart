@@ -1173,6 +1173,11 @@ extension _RideRequestController on _RideRequestScreenState {
             dropoffAddress: state.dropoffLabel,
             vehicleType: state.selectedOption?.name ?? 'Comfort',
             fare: state.selectedOption?.priceEstimate ?? 0,
+            pickupLat: state.pickup?.lat,
+            pickupLng: state.pickup?.lng,
+            dropoffLat: state.dropoff?.lat,
+            dropoffLng: state.dropoff?.lng,
+            routePoints: state.route?.points,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

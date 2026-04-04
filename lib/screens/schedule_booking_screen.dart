@@ -657,6 +657,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
             dropoffAddress: _dropoffAddress,
             vehicleType: vehicleName,
             fare: fareVal,
+            pickupLat: _pickupLatLng?.latitude,
+            pickupLng: _pickupLatLng?.longitude,
+            dropoffLat: _dropoffLatLng?.latitude,
+            dropoffLng: _dropoffLatLng?.longitude,
           ),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),

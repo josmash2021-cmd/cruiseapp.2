@@ -806,9 +806,6 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     if photo_b64:
         if not isinstance(photo_b64, str) or len(photo_b64) > 6 * 1024 * 1024:
             raise HTTPException(413, "Document image too large (max ~4.5MB)")
-        import os as _os
-        docs_dir = _os.path.join(_os.path.dirname(__file__), "uploads", "documents")
-        _os.makedirs(docs_dir, exist_ok=True)
         try:
             decoded = base64.b64decode(photo_b64, validate=True)
         except Exception:
@@ -817,18 +814,29 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             raise HTTPException(413, "Decoded document too large (max 4MB)")
         # Validate magic bytes
         if decoded[:2] == b'\xff\xd8':
-            ext = "jpg"
+            ext, ct = "jpg", "image/jpeg"
         elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
-            ext = "png"
+            ext, ct = "png", "image/png"
         elif decoded[:4] == b'%PDF':
-            ext = "pdf"
+            ext, ct = "pdf", "application/pdf"
         else:
             raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
         fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
-        fpath = _os.path.join(docs_dir, fname)
-        with open(fpath, "wb") as f:
-            f.write(decoded)
-        file_path = f"/uploads/documents/{fname}"
+        # Upload to Firebase Storage (persistent), fallback to local
+        fb_url = None
+        if _HAS_FIRESTORE and firestore_sync:
+            fb_path = f"documents/user_{user.id}/{fname}"
+            fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, ct)
+        if fb_url:
+            file_path = fb_url
+        else:
+            import os as _os
+            docs_dir = _os.path.join(_os.path.dirname(__file__), "uploads", "documents")
+            _os.makedirs(docs_dir, exist_ok=True)
+            fpath = _os.path.join(docs_dir, fname)
+            with open(fpath, "wb") as f:
+                f.write(decoded)
+            file_path = f"/uploads/documents/{fname}"
 
     # Check if doc of this type already exists ï¿½ update it
     result = await db.execute(

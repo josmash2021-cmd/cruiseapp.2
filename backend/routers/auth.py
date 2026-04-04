@@ -925,13 +925,20 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
     else:
         raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
     filename = f"user_{user.id}.{ext}"
-    filepath = os.path.join(PHOTOS_DIR, filename)
-    with open(filepath, "wb") as f:
-        f.write(photo_bytes)
+    content_type = "image/jpeg" if ext == "jpg" else "image/png"
+    # Upload to Firebase Storage (persistent), fallback to local
+    full_photo_url = None
+    if firestore_sync:
+        fb_path = f"photos/user_{user.id}/profile.{ext}"
+        full_photo_url = firestore_sync.upload_to_firebase_storage(photo_bytes, fb_path, content_type)
+    if not full_photo_url:
+        filepath = os.path.join(PHOTOS_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(photo_bytes)
+        full_photo_url = f"{PUBLIC_URL}/photos/{filename}"
     # Update user photo_url in DB
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
-    full_photo_url = f"{PUBLIC_URL}/photos/{filename}"
     if db_user:
         db_user.photo_url = full_photo_url
         await db.commit()
@@ -1294,27 +1301,35 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         ("selfie_photo", "selfie"),
         ("id_photo", "id_doc"),
     ]
-    if docs_dir:
-        for field, label in photo_fields:
-            b64 = body.get(field)
-            if not b64 or not isinstance(b64, str):
-                continue
-            if len(b64) > 6 * 1024 * 1024:
-                continue  # skip oversized
+    for field, label in photo_fields:
+        b64 = body.get(field)
+        if not b64 or not isinstance(b64, str):
+            continue
+        if len(b64) > 6 * 1024 * 1024:
+            continue  # skip oversized
+        try:
+            decoded = base64.b64decode(b64, validate=True)
+        except Exception:
+            continue
+        if len(decoded) > 4 * 1024 * 1024:
+            continue
+        if decoded[:2] == b'\xff\xd8':
+            ext = "jpg"
+        elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
+            ext = "png"
+        else:
+            continue
+        content_type = "image/jpeg" if ext == "jpg" else "image/png"
+        fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
+        # Upload to Firebase Storage (persistent), fallback to local
+        fb_url = None
+        if firestore_sync:
+            fb_path = f"documents/user_{db_user.id}/{fname}"
+            fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, content_type)
+        if fb_url:
+            saved_urls[label] = fb_url
+        elif docs_dir:
             try:
-                decoded = base64.b64decode(b64, validate=True)
-            except Exception:
-                continue
-            if len(decoded) > 4 * 1024 * 1024:
-                continue
-            if decoded[:2] == b'\xff\xd8':
-                ext = "jpg"
-            elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
-                ext = "png"
-            else:
-                continue
-            try:
-                fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
                 fpath = os.path.join(docs_dir, fname)
                 with open(fpath, "wb") as f:
                     f.write(decoded)
@@ -1325,17 +1340,26 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     # Handle verification video (MP4)
     video_b64 = body.get("verification_video")
     video_url = None
-    if docs_dir and video_b64 and isinstance(video_b64, str):
+    if video_b64 and isinstance(video_b64, str):
         if len(video_b64) <= 20 * 1024 * 1024:  # 20MB limit for video
             try:
                 video_decoded = base64.b64decode(video_b64, validate=True)
                 if len(video_decoded) <= 15 * 1024 * 1024:
                     vname = f"verify_{db_user.id}_liveness_{int(time.time())}.mp4"
-                    vpath = os.path.join(docs_dir, vname)
-                    with open(vpath, "wb") as f:
-                        f.write(video_decoded)
-                    video_url = f"{PUBLIC_URL}/uploads/documents/{vname}"
-                    saved_urls["video"] = video_url
+                    # Upload to Firebase Storage (persistent), fallback to local
+                    fb_url = None
+                    if firestore_sync:
+                        fb_path = f"documents/user_{db_user.id}/{vname}"
+                        fb_url = firestore_sync.upload_to_firebase_storage(video_decoded, fb_path, "video/mp4")
+                    if fb_url:
+                        video_url = fb_url
+                    elif docs_dir:
+                        vpath = os.path.join(docs_dir, vname)
+                        with open(vpath, "wb") as f:
+                            f.write(video_decoded)
+                        video_url = f"{PUBLIC_URL}/uploads/documents/{vname}"
+                    if video_url:
+                        saved_urls["video"] = video_url
             except Exception:
                 pass  # skip invalid video
 

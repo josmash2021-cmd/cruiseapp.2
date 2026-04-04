@@ -229,6 +229,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final double _tgtBrg = 0;
   Timer? _camTimer;
 
+  /// Velocity tracking for smooth prediction between GPS updates
+  double _velocityMps = 0; // meters per second along route
+  DateTime _lastGpsTime = DateTime.now();
+
   // ── Real-time tracking via Firestore ──
   StreamSubscription<LatLng>? _driverLocSub;
   StreamSubscription<Map<String, dynamic>?>? _tripStatusSub;

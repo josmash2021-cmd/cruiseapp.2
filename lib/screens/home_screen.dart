@@ -596,7 +596,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           ).listen((Position p) {
             if (!mounted) return;
             final ll = LatLng(p.latitude, p.longitude);
-            _currentLatLng = ll; // Update without setState — map pins move via annotations
+            _currentLatLng = ll;
+            _miniDot.setTarget(ll.latitude, ll.longitude);
             _animateToLocation(ll);
           });
     } catch (e) {

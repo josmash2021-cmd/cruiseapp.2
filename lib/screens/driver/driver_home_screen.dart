@@ -304,37 +304,45 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  bool _updatingLocAnnot = false;
+
   Future<void> _updateMyLocAnnotation() async {
-    final mgr = _pointAnnotMgr;
-    if (mgr == null || _currentLatLng == null) return;
-    final bytes = _goldDot.currentBytes;
-    if (bytes == null) return; // Dot not ready yet
+    if (_updatingLocAnnot) return;
+    _updatingLocAnnot = true;
+    try {
+      final mgr = _pointAnnotMgr;
+      if (mgr == null) return;
+      final bytes = _goldDot.currentBytes;
+      if (bytes == null) return;
 
-    final point = mapbox.Point(
-      coordinates: mapbox.Position(
-        _currentLatLng!.longitude, _currentLatLng!.latitude));
+      // Use interpolated position from GoldLocationDot for smooth gliding
+      final lat = _goldDot.lat ?? _currentLatLng?.latitude;
+      final lng = _goldDot.lng ?? _currentLatLng?.longitude;
+      if (lat == null || lng == null) return;
 
-    if (_myLocAnnot == null) {
-      // First time: create the annotation once
-      _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-        geometry: point,
-        image: bytes,
-        iconSize: 1.0,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-    } else {
-      // Update existing — no delete/recreate, no duplicates
-      _myLocAnnot!.geometry = point;
-      _myLocAnnot!.image = bytes;
-      try { await mgr.update(_myLocAnnot!); } catch (_) {}
+      final point = mapbox.Point(coordinates: mapbox.Position(lng, lat));
+
+      if (_myLocAnnot == null) {
+        _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: point,
+          image: bytes,
+          iconSize: 1.0,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      } else {
+        _myLocAnnot!.geometry = point;
+        _myLocAnnot!.image = bytes;
+        try { await mgr.update(_myLocAnnot!); } catch (_) {}
+      }
+    } finally {
+      _updatingLocAnnot = false;
     }
   }
 
   /// Re-sync the location dot annotation whenever the dot animation frame changes.
   void _syncDotAnnotation() {
-    if (!mounted || _currentLatLng == null) return;
-    // Update annotation without full setState - just refresh the icon
+    if (!mounted) return;
     _updateMyLocAnnotation();
   }
 
@@ -430,7 +438,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       final last = await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {
-        setState(() => _currentLatLng = LatLng(last.latitude, last.longitude));
+        _currentLatLng = LatLng(last.latitude, last.longitude);
+        _goldDot.setTarget(last.latitude, last.longitude);
+        setState(() {});
       }
 
       final pos = await Geolocator.getCurrentPosition(
@@ -440,7 +450,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
       );
       if (!mounted) return;
-      setState(() => _currentLatLng = LatLng(pos.latitude, pos.longitude));
+      _currentLatLng = LatLng(pos.latitude, pos.longitude);
+      _goldDot.setTarget(pos.latitude, pos.longitude);
+      setState(() {});
       _updateMyLocAnnotation();
       _mapController?.flyTo(
         mapbox.CameraOptions(
@@ -451,21 +463,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
 
       // ── Real-time GPS stream (high accuracy, 10m filter — battery-friendly) ──
-      // bestForNavigation uses the most expensive GPS mode continuously.
-      // 'high' is accurate enough for showing driver position on map
-      // while generating significantly less heat.
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 10, // 10 meters — driver home screen, not active nav
+          distanceFilter: 10,
         ),
       ).listen((p) {
         if (!mounted) return;
         final ll = LatLng(p.latitude, p.longitude);
-        setState(() => _currentLatLng = ll);
-        _updateMyLocAnnotation();
-        // Smooth 800ms flyTo — no jumps
+        _currentLatLng = ll;
+        _goldDot.setTarget(ll.latitude, ll.longitude);
+        // Camera follows smoothly — dot glides via GoldLocationDot interpolation
         _mapController?.flyTo(
           mapbox.CameraOptions(
             center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),

@@ -168,13 +168,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
       final lateralM = _hav(ll, snappedPos) * 1609.34;
       if (lateralM < 150) {
-        // Enforce forward-only: never jump backward (GPS noise can project behind)
         final clampedM = projectedM.clamp(0.0, _segDist.last);
         if (clampedM >= _traveledM - 5) {
-          // Allow up to 5m backward tolerance for GPS jitter, otherwise only forward
-          _tgtTraveledM = math.max(clampedM, _traveledM);
+          final newTarget = math.max(clampedM, _traveledM);
+          // Track velocity for smooth prediction between GPS updates
+          final now = DateTime.now();
+          final dtSec = now.difference(_lastGpsTime).inMilliseconds / 1000.0;
+          if (dtSec > 0.05 && dtSec < 5.0) {
+            final distDelta = newTarget - _tgtTraveledM;
+            if (distDelta > 0) {
+              // Smooth velocity with exponential average (avoid spikes)
+              final newVel = distDelta / dtSec;
+              _velocityMps = _velocityMps * 0.4 + newVel * 0.6;
+            }
+          }
+          _lastGpsTime = now;
+          _tgtTraveledM = newTarget;
         }
-        _directTargetPos = null; // on route — disable raw fallback
+        _directTargetPos = null;
         _directTargetBearing = null;
       } else {
         // Too far from route — use raw GPS lerp as fallback
@@ -875,24 +886,30 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
 
-    // ── Ultra-smooth exponential advance — buttery, car-like motion ──
-    final diff = _tgtTraveledM - _traveledM;
-    // 22% catch-up per frame for responsive real-car feel.
-    // 6m cap supports smooth highway-speed tracking.
-    final step = (diff * 0.22).clamp(-6.0, 6.0);
+    // ── Ultra-smooth advance with velocity prediction ──
+    // Predict ahead based on measured velocity so the car never stalls
+    // between GPS updates. Prediction adds ~200ms of forward movement.
+    final predicted = _tgtTraveledM + _velocityMps * 0.20;
+    final effectiveTarget = math.min(predicted, _segDist.last);
+    final diff = effectiveTarget - _traveledM;
+    // 24% catch-up per frame for instant-feel responsiveness.
+    // 8m cap supports smooth highway-speed tracking.
+    final step = (diff * 0.24).clamp(-8.0, 8.0);
     if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {
       _traveledM += step;
     }
+    // Decay velocity when idle so prediction fades out naturally
+    _velocityMps *= 0.998;
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: 30% rotation per frame — car nose always faces forward ──
+    // ── Bearing: 35% rotation per frame — car nose snaps forward fast ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.30) % 360;
+    final newBearing = (_animBearing + db * 0.35) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;

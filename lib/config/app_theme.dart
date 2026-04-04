@@ -100,16 +100,64 @@ class AppColors {
 
 // ── Theme data builders ──
 
-// Fade + subtle slide-up — consistent across all platforms
+// Smooth fade for ALL platforms — consistent cross-platform feel
 const _pageTransitions = PageTransitionsTheme(
   builders: {
-    TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-    TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+    TargetPlatform.android: _CruiseFadeTransitionBuilder(),
+    TargetPlatform.iOS: _CruiseFadeTransitionBuilder(),
+    TargetPlatform.windows: _CruiseFadeTransitionBuilder(),
+    TargetPlatform.macOS: _CruiseFadeTransitionBuilder(),
+    TargetPlatform.linux: _CruiseFadeTransitionBuilder(),
   },
 );
+
+/// Smooth fade-in + fade-out page transition with a subtle slide.
+/// The outgoing page fades out while the incoming page fades in,
+/// creating a fluid, premium feel across all navigation.
+class _CruiseFadeTransitionBuilder extends PageTransitionsBuilder {
+  const _CruiseFadeTransitionBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // Incoming page: fade in + subtle slide up
+    final fadeIn = CurvedAnimation(
+      parent: animation,
+      curve: const Cubic(0.25, 1, 0.5, 1),
+    );
+    final slideIn = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: animation,
+      curve: const Cubic(0.25, 1, 0.5, 1),
+    ));
+
+    // Outgoing page: subtle fade out + scale down slightly
+    final fadeOut = Tween<double>(begin: 1.0, end: 0.92).animate(
+      CurvedAnimation(
+        parent: secondaryAnimation,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    return FadeTransition(
+      opacity: fadeOut,
+      child: FadeTransition(
+        opacity: fadeIn,
+        child: SlideTransition(
+          position: slideIn,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
 
 // Poppins (titles/headlines) + Inter (body/labels) — modern, clean, very readable
 TextTheme _cinzelHeadlines(TextTheme base) {

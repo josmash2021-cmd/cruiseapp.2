@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -985,8 +983,7 @@ class NewDriverInstructionsScreen extends StatefulWidget {
 }
 
 class _NewDriverInstructionsScreenState
-    extends State<NewDriverInstructionsScreen>
-    with TickerProviderStateMixin {
+    extends State<NewDriverInstructionsScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   static const _bg = Color(0xFF0A0A0A);
@@ -995,47 +992,16 @@ class _NewDriverInstructionsScreenState
   int _currentPage = 0;
   bool _viewedAllPages = false;
 
-  late final AnimationController _buttonCtrl;
-  late final Animation<double> _buttonSlide;
-  late final Animation<double> _buttonFade;
-
-  // Scene animation — drives all animated illustrations
-  late final AnimationController _sceneCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _buttonCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _buttonSlide = Tween<double>(begin: 60, end: 0).animate(
-      CurvedAnimation(parent: _buttonCtrl, curve: Curves.easeOutBack),
-    );
-    _buttonFade = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _buttonCtrl, curve: Curves.easeIn),
-    );
-
-    _sceneCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-  }
-
   @override
   void dispose() {
     _pageCtrl.dispose();
-    _buttonCtrl.dispose();
-    _sceneCtrl.dispose();
     super.dispose();
   }
 
   void _onPageChanged(int page) {
     setState(() => _currentPage = page);
     if (page == 2 && !_viewedAllPages) {
-      _viewedAllPages = true;
-      _buttonCtrl.forward();
+      setState(() => _viewedAllPages = true);
     }
   }
 
@@ -1103,15 +1069,16 @@ class _NewDriverInstructionsScreenState
             ),
             const SizedBox(height: 16),
 
-            // ── Swipeable pages ──
+            // ── Swipeable pages (swipe only, no scroll) ──
             Expanded(
               child: PageView(
                 controller: _pageCtrl,
                 onPageChanged: _onPageChanged,
-                physics: const _SmoothPagePhysics(),
+                physics: const ClampingScrollPhysics(),
                 children: [
                   _buildPage(
-                    scene: _SceneType.vehicle,
+                    icon: Icons.local_car_wash_rounded,
+                    iconColor: const Color(0xFF2196F3),
                     title: 'Keep Your Vehicle Spotless',
                     subtitle: 'First impressions matter',
                     items: const [
@@ -1119,34 +1086,31 @@ class _NewDriverInstructionsScreenState
                         icon: Icons.local_car_wash_rounded,
                         color: Color(0xFF2196F3),
                         title: 'Clean Inside & Out',
-                        body:
-                            'Wash your car regularly. Vacuum seats and floor mats. A clean vehicle earns higher ratings.',
+                        body: 'Wash your car regularly. Vacuum seats and floor mats. A clean vehicle earns higher ratings.',
                       ),
                       _InstructionItem(
                         icon: Icons.ac_unit_rounded,
                         color: Color(0xFF00BCD4),
                         title: 'Fresh & Comfortable',
-                        body:
-                            'Keep the cabin fresh. Maintain a comfortable temperature. Offer water bottles for riders.',
+                        body: 'Keep the cabin fresh. Maintain a comfortable temperature. Offer water bottles for riders.',
                       ),
                       _InstructionItem(
                         icon: Icons.phone_android_rounded,
                         color: Color(0xFF9C27B0),
                         title: 'Phone Mount & Charger',
-                        body:
-                            'Use a secure phone mount for navigation. Offer a charging cable. Keep your phone charged.',
+                        body: 'Use a secure phone mount for navigation. Offer a charging cable. Keep your phone charged.',
                       ),
                       _InstructionItem(
                         icon: Icons.dry_cleaning_rounded,
                         color: Color(0xFF4CAF50),
                         title: 'Professional Appearance',
-                        body:
-                            'Dress neatly and present yourself professionally. You represent Cruise with every ride.',
+                        body: 'Dress neatly and present yourself professionally. You represent Cruise with every ride.',
                       ),
                     ],
                   ),
                   _buildPage(
-                    scene: _SceneType.safety,
+                    icon: Icons.shield_rounded,
+                    iconColor: const Color(0xFF4CAF50),
                     title: 'Drive Safe, Always',
                     subtitle: 'Safety is your #1 priority',
                     items: const [
@@ -1154,34 +1118,31 @@ class _NewDriverInstructionsScreenState
                         icon: Icons.speed_rounded,
                         color: Color(0xFF4CAF50),
                         title: 'Obey Traffic Laws',
-                        body:
-                            'Follow speed limits, stop at red lights, use turn signals. No exceptions.',
+                        body: 'Follow speed limits, stop at red lights, use turn signals. No exceptions.',
                       ),
                       _InstructionItem(
                         icon: Icons.no_drinks_rounded,
                         color: Color(0xFFE53935),
                         title: 'Zero Tolerance Policy',
-                        body:
-                            'Never drive under the influence. If you feel drowsy or unwell, go offline immediately.',
+                        body: 'Never drive under the influence. If you feel drowsy or unwell, go offline immediately.',
                       ),
                       _InstructionItem(
                         icon: Icons.visibility_rounded,
                         color: Color(0xFFFF9800),
                         title: 'Stay Focused',
-                        body:
-                            'No texting while driving. Set navigation before starting. Eyes on the road at all times.',
+                        body: 'No texting while driving. Set navigation before starting. Eyes on the road at all times.',
                       ),
                       _InstructionItem(
                         icon: Icons.health_and_safety_rounded,
                         color: Color(0xFF2196F3),
                         title: 'Seatbelt Required',
-                        body:
-                            'Ensure all passengers have seatbelts fastened before starting. Safety first, every trip.',
+                        body: 'Ensure all passengers have seatbelts fastened before starting. Safety first, every trip.',
                       ),
                     ],
                   ),
                   _buildPage(
-                    scene: _SceneType.service,
+                    icon: Icons.star_rounded,
+                    iconColor: _gold,
                     title: 'Deliver 5-Star Service',
                     subtitle: 'Make every ride memorable',
                     items: const [
@@ -1189,29 +1150,25 @@ class _NewDriverInstructionsScreenState
                         icon: Icons.waving_hand_rounded,
                         color: Color(0xFFE8C547),
                         title: 'Greet Every Rider',
-                        body:
-                            'Welcome riders by name. A simple greeting goes a long way. Confirm their destination.',
+                        body: 'Welcome riders by name. A simple greeting goes a long way. Confirm their destination.',
                       ),
                       _InstructionItem(
                         icon: Icons.route_rounded,
                         color: Color(0xFF4CAF50),
                         title: 'Efficient Routes',
-                        body:
-                            'Follow GPS navigation. If you know a faster route, ask the rider first.',
+                        body: 'Follow GPS navigation. If you know a faster route, ask the rider first.',
                       ),
                       _InstructionItem(
                         icon: Icons.tune_rounded,
                         color: Color(0xFF9C27B0),
                         title: 'Respect Preferences',
-                        body:
-                            'Keep music low or ask the rider. Some prefer conversation, others quiet. Read the room.',
+                        body: 'Keep music low or ask the rider. Some prefer conversation, others quiet. Read the room.',
                       ),
                       _InstructionItem(
                         icon: Icons.star_rounded,
                         color: Color(0xFFFF9800),
                         title: 'Go the Extra Mile',
-                        body:
-                            'Help with luggage, open the door. Small gestures lead to 5-star ratings.',
+                        body: 'Help with luggage, open the door. Small gestures lead to 5-star ratings.',
                       ),
                     ],
                   ),
@@ -1219,19 +1176,9 @@ class _NewDriverInstructionsScreenState
               ),
             ),
 
-            // ── Animated "Let's Go" button ──
-            AnimatedBuilder(
-              animation: _buttonCtrl,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _buttonSlide.value),
-                  child: Opacity(
-                    opacity: _buttonFade.value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Padding(
+            // ── "Let's Go" button (appears after viewing all pages) ──
+            if (_viewedAllPages)
+              Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: SizedBox(
                   width: double.infinity,
@@ -1251,16 +1198,14 @@ class _NewDriverInstructionsScreenState
                       ],
                     ),
                     child: ElevatedButton(
-                      onPressed: _viewedAllPages
-                          ? () {
-                              HapticFeedback.mediumImpact();
-                              Navigator.of(context).pushAndRemoveUntil(
-                                slideFromRightRoute(
-                                    const DriverProfilePhotoScreen()),
-                                (_) => false,
-                              );
-                            }
-                          : null,
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        Navigator.of(context).pushAndRemoveUntil(
+                          slideFromRightRoute(
+                              const DriverProfilePhotoScreen()),
+                          (_) => false,
+                        );
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
@@ -1288,7 +1233,6 @@ class _NewDriverInstructionsScreenState
                   ),
                 ),
               ),
-            ),
 
             // Swipe hint when button is not yet visible
             if (!_viewedAllPages)
@@ -1318,33 +1262,29 @@ class _NewDriverInstructionsScreenState
   }
 
   Widget _buildPage({
-    required _SceneType scene,
+    required IconData icon,
+    required Color iconColor,
     required String title,
     required String subtitle,
     required List<_InstructionItem> items,
   }) {
-    return ListView(
-      physics: const BouncingScrollPhysics(),
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      children: [
-        const SizedBox(height: 4),
-        // ── Animated scene illustration ──
-        SizedBox(
-          height: 140,
-          child: AnimatedBuilder(
-            animation: _sceneCtrl,
-            builder: (_, __) => CustomPaint(
-              size: const Size(double.infinity, 140),
-              painter: _InstructionScenePainter(
-                scene: scene,
-                progress: _sceneCtrl.value,
-              ),
+      child: Column(
+        children: [
+          const SizedBox(height: 4),
+          // ── Static icon ──
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
             ),
+            child: Icon(icon, color: iconColor, size: 32),
           ),
-        ),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
+          const SizedBox(height: 12),
+          Text(
             title,
             style: const TextStyle(
               color: Colors.white,
@@ -1353,10 +1293,8 @@ class _NewDriverInstructionsScreenState
               letterSpacing: -0.5,
             ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Center(
-          child: Text(
+          const SizedBox(height: 4),
+          Text(
             subtitle,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
@@ -1364,11 +1302,18 @@ class _NewDriverInstructionsScreenState
               fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        ...items.map((item) => _buildInstructionCard(item)),
-        const SizedBox(height: 8),
-      ],
+          const SizedBox(height: 16),
+          // ── Cards fill remaining space ──
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                children: items.map((item) => _buildInstructionCard(item)).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1424,9 +1369,6 @@ class _NewDriverInstructionsScreenState
   }
 }
 
-// ── Scene types ──
-enum _SceneType { vehicle, safety, service }
-
 // ── Data class ──
 class _InstructionItem {
   final IconData icon;
@@ -1441,526 +1383,7 @@ class _InstructionItem {
   });
 }
 
-// Smooth snappy page physics — no bounce, crisp deceleration
-class _SmoothPagePhysics extends ScrollPhysics {
-  const _SmoothPagePhysics({super.parent});
-  @override
-  _SmoothPagePhysics applyTo(ScrollPhysics? ancestor) =>
-      _SmoothPagePhysics(parent: buildParent(ancestor));
-  @override
-  SpringDescription get spring => const SpringDescription(mass: 80, stiffness: 100, damping: 1);
-}
 
-// ═══════════════════════════════════════════════════════════════
-//  Animated Scene Painter — premium 3D-style illustrations
-//  with gradients, shadows, depth, and fluid motion
-// ═══════════════════════════════════════════════════════════════
-
-class _InstructionScenePainter extends CustomPainter {
-  final _SceneType scene;
-  final double progress; // 0.0 → 1.0, repeats
-
-  static const _gold = Color(0xFFE8C547);
-  static const _goldDim = Color(0xFFB08C35);
-  static const _blue = Color(0xFF2196F3);
-  static const _blueDark = Color(0xFF1565C0);
-  static const _green = Color(0xFF4CAF50);
-  static const _greenDark = Color(0xFF2E7D32);
-
-  _InstructionScenePainter({required this.scene, required this.progress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    switch (scene) {
-      case _SceneType.vehicle:
-        _paintVehicleScene(canvas, size);
-      case _SceneType.safety:
-        _paintSafetyScene(canvas, size);
-      case _SceneType.service:
-        _paintServiceScene(canvas, size);
-    }
-  }
-
-  // ─────────────────────────────────────────
-  //  Scene 1 — Vehicle Cleaning
-  // ─────────────────────────────────────────
-  void _paintVehicleScene(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height * 0.52;
-
-    // Ground reflection
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 42), width: 180, height: 14),
-      Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(cx, cy + 42), 90,
-          [Colors.white.withValues(alpha: 0.04), Colors.transparent],
-        ),
-    );
-
-    // ── 3D Car ──
-    _draw3DCar(canvas, cx, cy, _blue, scale: 1.3);
-
-    // ── Person (right side) ──
-    final pX = cx + 85;
-    final pY = cy - 6;
-    _draw3DPerson(canvas, pX, pY, _blue, armAngle: math.sin(progress * math.pi * 2) * 0.35);
-
-    // ── Animated sponge on car ──
-    final spongeX = cx + 12 + math.sin(progress * math.pi * 2) * 30;
-    final spongeY = cy - 26;
-    // Sponge shadow
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(spongeX, spongeY + 6), width: 16, height: 4),
-      Paint()..color = Colors.black.withValues(alpha: 0.15),
-    );
-    // Sponge body with gradient
-    final spongeRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(spongeX, spongeY), width: 16, height: 11),
-      const Radius.circular(4),
-    );
-    canvas.drawRRect(spongeRect, Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(spongeX - 8, spongeY - 5),
-        Offset(spongeX + 8, spongeY + 5),
-        [_blue.withValues(alpha: 0.8), _blueDark.withValues(alpha: 0.6)],
-      ));
-
-    // ── Sparkle particles ──
-    for (int i = 0; i < 6; i++) {
-      final angle = progress * math.pi * 2 + i * 1.05;
-      final r = 14.0 + i * 3.5;
-      final sparkAlpha = (0.6 + 0.4 * math.sin(progress * math.pi * 4 + i)).clamp(0.0, 1.0);
-      final sx = spongeX + math.cos(angle) * r;
-      final sy = spongeY + math.sin(angle) * r * 0.6;
-      // Glow
-      canvas.drawCircle(Offset(sx, sy), 3,
-        Paint()..color = _blue.withValues(alpha: 0.08 * sparkAlpha)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
-      // Dot
-      canvas.drawCircle(Offset(sx, sy), 1.2,
-        Paint()..color = Colors.white.withValues(alpha: 0.5 * sparkAlpha));
-    }
-
-    // ── Water bucket (left) ──
-    final bx = cx - 72;
-    final by = cy + 12;
-    _drawBucket(canvas, bx, by, _blue);
-  }
-
-  // ─────────────────────────────────────────
-  //  Scene 2 — Safety / Traffic
-  // ─────────────────────────────────────────
-  void _paintSafetyScene(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height * 0.52;
-
-    // ── Road with perspective ──
-    final roadGrad = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(0, cy + 16), Offset(0, cy + 46),
-        [const Color(0xFF1E1E22), const Color(0xFF141417)],
-      );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(20, cy + 16, size.width - 40, 30),
-        const Radius.circular(3),
-      ),
-      roadGrad,
-    );
-    // Animated dashes
-    final dashOffset = (progress * 30) % 30;
-    final dashP = Paint()
-      ..color = Colors.white.withValues(alpha: 0.18)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    for (double x = 30 - dashOffset; x < size.width - 30; x += 30) {
-      canvas.drawLine(Offset(x, cy + 31), Offset(x + 12, cy + 31), dashP);
-    }
-
-    // ── Car driving ──
-    final carBob = math.sin(progress * math.pi * 4) * 1.5;
-    _draw3DCar(canvas, cx - 15, cy + 6 + carBob, _green, scale: 1.0);
-
-    // ── Shield (center-left, above car) ──
-    final sx = cx - 10;
-    final sy = cy - 42;
-    final pulse = 0.96 + 0.04 * math.sin(progress * math.pi * 2);
-    canvas.save();
-    canvas.translate(sx, sy);
-    canvas.scale(pulse);
-
-    // Shield glow
-    canvas.drawCircle(Offset.zero, 28, Paint()
-      ..color = _green.withValues(alpha: 0.06)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12));
-
-    // Shield body
-    final shieldPath = Path()
-      ..moveTo(0, -22)
-      ..lineTo(18, -13)
-      ..lineTo(18, 4)
-      ..quadraticBezierTo(18, 18, 0, 25)
-      ..quadraticBezierTo(-18, 18, -18, 4)
-      ..lineTo(-18, -13)
-      ..close();
-    canvas.drawPath(shieldPath, Paint()
-      ..shader = ui.Gradient.linear(
-        const Offset(0, -22), const Offset(0, 25),
-        [_green.withValues(alpha: 0.20), _greenDark.withValues(alpha: 0.08)],
-      ));
-    canvas.drawPath(shieldPath, Paint()
-      ..color = _green.withValues(alpha: 0.6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..strokeJoin = StrokeJoin.round);
-
-    // Checkmark
-    final checkP = Paint()
-      ..color = _green
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.8
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(Path()
-      ..moveTo(-7, 2)..lineTo(-2, 8)..lineTo(9, -5), checkP);
-    canvas.restore();
-
-    // ── Traffic light (right) ──
-    _drawTrafficLight(canvas, cx + 75, cy - 18, progress);
-
-    // ── Pedestrian (far left) ──
-    _draw3DPerson(canvas, cx - 82, cy + 4, _green, armAngle: 0.15, scale: 0.85);
-  }
-
-  // ─────────────────────────────────────────
-  //  Scene 3 — 5-Star Service
-  // ─────────────────────────────────────────
-  void _paintServiceScene(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height * 0.52;
-
-    // Ground glow
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 42), width: 200, height: 14),
-      Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(cx, cy + 42), 100,
-          [_gold.withValues(alpha: 0.04), Colors.transparent],
-        ),
-    );
-
-    // ── Car ──
-    _draw3DCar(canvas, cx, cy + 10, _gold, scale: 1.1);
-
-    // ── Driver (left, waving) ──
-    final wave = 0.3 + 0.5 * math.sin(progress * math.pi * 2);
-    _draw3DPerson(canvas, cx - 58, cy - 2, _gold, armAngle: wave);
-
-    // ── Rider (right, with luggage) ──
-    _draw3DPerson(canvas, cx + 62, cy - 2, const Color(0xFF9C27B0), armAngle: -0.1);
-    // Luggage
-    final lugRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(cx + 74, cy + 16, 12, 18),
-      const Radius.circular(3),
-    );
-    canvas.drawRRect(lugRect, Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(cx + 74, cy + 16), Offset(cx + 86, cy + 34),
-        [const Color(0xFF9C27B0).withValues(alpha: 0.35), const Color(0xFF7B1FA2).withValues(alpha: 0.2)],
-      ));
-    canvas.drawLine(Offset(cx + 78, cy + 16), Offset(cx + 78, cy + 11),
-      Paint()..color = const Color(0xFF9C27B0).withValues(alpha: 0.45)..strokeWidth = 2..strokeCap = StrokeCap.round);
-
-    // ── 5 Stars (cascading glow animation) ──
-    for (int i = 0; i < 5; i++) {
-      final delay = i * 0.12;
-      final t = ((progress - delay) % 1.0).clamp(0.0, 1.0);
-      final pulse = math.sin(t * math.pi);
-      final starAlpha = (0.35 + 0.65 * pulse).clamp(0.0, 1.0);
-      final starY = cy - 48 - pulse * 5;
-      final starX = cx - 38 + i * 19.0;
-      // Star glow
-      canvas.drawCircle(Offset(starX, starY), 8,
-        Paint()..color = _gold.withValues(alpha: 0.06 * pulse)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
-      _drawStar(canvas, starX, starY, 7.0, _gold.withValues(alpha: starAlpha));
-    }
-
-    // ── Speech bubble ──
-    final bAlpha = (0.5 + 0.5 * math.sin(progress * math.pi * 2)).clamp(0.0, 1.0);
-    final bRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(cx - 88, cy - 40, 44, 20),
-      const Radius.circular(10),
-    );
-    canvas.drawRRect(bRect, Paint()
-      ..color = _gold.withValues(alpha: 0.10 * bAlpha));
-    canvas.drawRRect(bRect, Paint()
-      ..color = _gold.withValues(alpha: 0.25 * bAlpha)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1);
-    // Tail
-    canvas.drawPath(Path()
-      ..moveTo(cx - 62, cy - 20)..lineTo(cx - 56, cy - 16)..lineTo(cx - 68, cy - 20)..close(),
-      Paint()..color = _gold.withValues(alpha: 0.10 * bAlpha));
-
-    final tp = TextPainter(
-      text: TextSpan(
-        text: 'Hello!',
-        style: TextStyle(
-          color: _gold.withValues(alpha: 0.7 * bAlpha),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas, Offset(cx - 80, cy - 36));
-  }
-
-  // ═════════════════════════════════════════
-  //  Premium helpers
-  // ═════════════════════════════════════════
-
-  /// 3D-style car with gradients, reflections, and depth
-  void _draw3DCar(Canvas canvas, double x, double y, Color accent, {double scale = 1.0}) {
-    canvas.save();
-    canvas.translate(x, y);
-    canvas.scale(scale);
-
-    // Shadow
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(0, 24), width: 80, height: 10),
-      Paint()..color = Colors.black.withValues(alpha: 0.20)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-
-    // Body
-    final bodyRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset.zero, width: 76, height: 26),
-      const Radius.circular(7),
-    );
-    canvas.drawRRect(bodyRect, Paint()
-      ..shader = ui.Gradient.linear(
-        const Offset(0, -13), const Offset(0, 13),
-        [const Color(0xFF3A3A40), const Color(0xFF222226)],
-      ));
-    // Body highlight
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: const Offset(0, -6), width: 70, height: 6),
-        const Radius.circular(3),
-      ),
-      Paint()..color = Colors.white.withValues(alpha: 0.04),
-    );
-
-    // Roof
-    final roof = Path()
-      ..moveTo(-20, -13)
-      ..lineTo(-12, -28)
-      ..lineTo(12, -28)
-      ..lineTo(20, -13)
-      ..close();
-    canvas.drawPath(roof, Paint()
-      ..shader = ui.Gradient.linear(
-        const Offset(0, -28), const Offset(0, -13),
-        [const Color(0xFF444448), const Color(0xFF2E2E32)],
-      ));
-
-    // Windshield
-    final wsPath = Path()
-      ..moveTo(-11, -27)..lineTo(-4, -14)..lineTo(4, -14)..lineTo(11, -27)..close();
-    canvas.drawPath(wsPath, Paint()
-      ..shader = ui.Gradient.linear(
-        const Offset(0, -27), const Offset(0, -14),
-        [accent.withValues(alpha: 0.18), accent.withValues(alpha: 0.06)],
-      ));
-
-    // Wheels
-    for (final wx in [-22.0, 22.0]) {
-      // Tire
-      canvas.drawCircle(Offset(wx, 13), 8, Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(wx - 2, 11), 8,
-          [const Color(0xFF3A3A3E), const Color(0xFF1A1A1E)],
-        ));
-      // Hub
-      canvas.drawCircle(Offset(wx, 13), 3.5, Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(wx - 1, 12), 3.5,
-          [const Color(0xFF666668), const Color(0xFF444446)],
-        ));
-    }
-
-    // Headlights
-    canvas.drawCircle(const Offset(36, -2), 3, Paint()
-      ..color = accent.withValues(alpha: 0.5));
-    canvas.drawCircle(const Offset(36, -2), 6, Paint()
-      ..color = accent.withValues(alpha: 0.08)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    // Taillights
-    canvas.drawCircle(const Offset(-36, -2), 3, Paint()
-      ..color = const Color(0xFFE53935).withValues(alpha: 0.4));
-    canvas.drawCircle(const Offset(-36, -2), 5, Paint()
-      ..color = const Color(0xFFE53935).withValues(alpha: 0.06)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
-
-    canvas.restore();
-  }
-
-  /// 3D-style person with filled body, gradient head, and natural proportions
-  void _draw3DPerson(Canvas canvas, double x, double y, Color color,
-      {double armAngle = 0.0, double scale = 1.0}) {
-    canvas.save();
-    canvas.translate(x, y);
-    canvas.scale(scale);
-
-    final bodyP = Paint()
-      ..color = color.withValues(alpha: 0.65)
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    // Head with gradient
-    canvas.drawCircle(const Offset(0, -18), 8, Paint()
-      ..shader = ui.Gradient.radial(
-        const Offset(-2, -20), 8,
-        [color.withValues(alpha: 0.6), color.withValues(alpha: 0.3)],
-      ));
-    // Head highlight
-    canvas.drawCircle(const Offset(-2, -21), 3, Paint()
-      ..color = Colors.white.withValues(alpha: 0.08));
-
-    // Body
-    canvas.drawLine(const Offset(0, -10), const Offset(0, 12), bodyP);
-    // Left arm
-    final la = Offset(-14 * math.cos(armAngle), -2 + 14 * math.sin(armAngle));
-    canvas.drawLine(const Offset(0, -5), la, bodyP);
-    // Right arm
-    final ra = Offset(14 * math.cos(armAngle), -2 - 14 * math.sin(armAngle));
-    canvas.drawLine(const Offset(0, -5), ra, bodyP);
-    // Legs
-    canvas.drawLine(const Offset(0, 12), const Offset(-9, 28), bodyP);
-    canvas.drawLine(const Offset(0, 12), const Offset(9, 28), bodyP);
-
-    canvas.restore();
-  }
-
-  /// Traffic light with glow effects
-  void _drawTrafficLight(Canvas canvas, double x, double y, double t) {
-    // Pole
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 2.5, y - 8, 5, 52),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(x - 2.5, y), Offset(x + 2.5, y),
-          [const Color(0xFF444448), const Color(0xFF2A2A2E)],
-        ),
-    );
-    // Housing
-    final housing = RRect.fromRectAndRadius(
-      Rect.fromLTWH(x - 12, y - 42, 24, 44),
-      const Radius.circular(5),
-    );
-    canvas.drawRRect(housing, Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(x - 12, y - 42), Offset(x + 12, y + 2),
-        [const Color(0xFF333338), const Color(0xFF1E1E22)],
-      ));
-    canvas.drawRRect(housing, Paint()
-      ..color = Colors.white.withValues(alpha: 0.06)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5);
-
-    // Smooth phase transition (not abrupt)
-    final phase = (t * 3) % 3;
-    final colors = [
-      const Color(0xFFE53935), const Color(0xFFFFB300), _green,
-    ];
-    final offColors = [
-      const Color(0xFF3A1010), const Color(0xFF3A3010), const Color(0xFF103A10),
-    ];
-    final positions = [y - 30, y - 18, y - 6];
-
-    for (int i = 0; i < 3; i++) {
-      final isActive = phase.floor() == i;
-      final c = isActive ? colors[i] : offColors[i];
-      final cy = positions[i];
-      // Glow behind active light
-      if (isActive) {
-        canvas.drawCircle(Offset(x, cy), 10, Paint()
-          ..color = c.withValues(alpha: 0.15)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
-      }
-      // Light
-      canvas.drawCircle(Offset(x, cy), 5.5, Paint()
-        ..shader = ui.Gradient.radial(
-          Offset(x - 1, cy - 1), 5.5,
-          [c, c.withValues(alpha: isActive ? 0.6 : 0.3)],
-        ));
-    }
-  }
-
-  /// Water bucket with 3D shading
-  void _drawBucket(Canvas canvas, double x, double y, Color color) {
-    final bucketPath = Path()
-      ..moveTo(x - 12, y - 8)
-      ..lineTo(x - 8, y + 10)
-      ..lineTo(x + 8, y + 10)
-      ..lineTo(x + 12, y - 8)
-      ..close();
-    canvas.drawPath(bucketPath, Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(x - 12, y - 8), Offset(x + 12, y + 10),
-        [color.withValues(alpha: 0.25), color.withValues(alpha: 0.10)],
-      ));
-    canvas.drawPath(bucketPath, Paint()
-      ..color = color.withValues(alpha: 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeJoin = StrokeJoin.round);
-    // Water surface
-    canvas.drawLine(
-      Offset(x - 10, y - 4), Offset(x + 10, y - 4),
-      Paint()..color = color.withValues(alpha: 0.25)..strokeWidth = 1.5..strokeCap = StrokeCap.round,
-    );
-    // Handle
-    final handlePath = Path()
-      ..moveTo(x - 8, y - 8)
-      ..quadraticBezierTo(x, y - 18, x + 8, y - 8);
-    canvas.drawPath(handlePath, Paint()
-      ..color = color.withValues(alpha: 0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round);
-  }
-
-  /// 5-pointed star with proper inner/outer radii
-  void _drawStar(Canvas canvas, double x, double y, double r, Color color) {
-    final path = Path();
-    final innerR = r * 0.4;
-    for (int i = 0; i < 10; i++) {
-      final angle = -math.pi / 2 + i * math.pi / 5;
-      final radius = i.isEven ? r : innerR;
-      final px = x + radius * math.cos(angle);
-      final py = y + radius * math.sin(angle);
-      if (i == 0) {
-        path.moveTo(px, py);
-      } else {
-        path.lineTo(px, py);
-      }
-    }
-    path.close();
-    canvas.drawPath(path, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_InstructionScenePainter old) =>
-      old.progress != progress || old.scene != scene;
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  BUG REPORTER SCREEN

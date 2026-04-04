@@ -310,7 +310,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               strokeWidth: 3.0,
             ),
           ),
-          // Inner dark circle with car icon
+          // Inner dark circle with app logo
           Container(
             width: 130,
             height: 130,
@@ -319,10 +319,14 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               color: const Color(0xFF0F1408),
               border: Border.all(color: _gold.withValues(alpha: 0.3), width: 1.5),
             ),
-            child: const Icon(
-              Icons.directions_car_rounded,
-              color: _goldLight,
-              size: 60,
+            child: ClipOval(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Image.asset(
+                  'assets/images/logoapp.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
             ),
           ),
         ],

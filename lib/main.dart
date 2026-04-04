@@ -369,7 +369,7 @@ Future<void> heavyInit() async {
 
     // ── Stripe ──
     () async {
-      if (!kIsWeb && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
+      if (!kIsWeb && ApiKeys.stripePublishableKey.isNotEmpty && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
         try {
           Stripe.publishableKey = ApiKeys.stripePublishableKey;
           Stripe.merchantIdentifier = ApiKeys.stripeMerchantId;

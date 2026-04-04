@@ -255,6 +255,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false;   // true after first-appearance pop completes
   double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
+  bool _annotUpdateBusy = false; // prevents overlapping annotation updates
 
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();

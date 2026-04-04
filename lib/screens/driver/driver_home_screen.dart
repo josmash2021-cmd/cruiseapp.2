@@ -83,6 +83,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Animations ──
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
+  late AnimationController _glossCtrl; // gloss shimmer sweep
   late AnimationController _statsCtrl;
   // ignore: unused_field
   late Animation<double> _statsAnim;
@@ -152,6 +153,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       begin: 0.3,
       end: 1.0,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+
+    // Gloss shimmer sweep across button
+    _glossCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
 
     // Red → gold color transition for Go Online button
     _btnColorCtrl = AnimationController(
@@ -262,6 +269,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     disposePanelAnimation();
     _pulseCtrl.dispose();
+    _glossCtrl.dispose();
     _btnColorCtrl.dispose();
     _statsCtrl.dispose();
     _fabCtrl.dispose();
@@ -1144,10 +1152,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               await _ensureVerified();
             },
       child: AnimatedBuilder(
-        animation: Listenable.merge([_pulseAnim, _btnColorAnim]),
+        animation: Listenable.merge([_pulseAnim, _btnColorAnim, _glossCtrl]),
         builder: (_, __) {
           final p = _pulseAnim.value;
           final colorT = _btnColorAnim.value;
+          final g = _glossCtrl.value;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
 
           // Interpolate between red and gold
@@ -1171,30 +1180,34 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
           return Opacity(
             opacity: _isVerified ? 1.0 : 0.55,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
-                    blurRadius: 16 + 8 * p,
-                    spreadRadius: docsOk ? 0 : 0,
-                    offset: const Offset(0, 3),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.28),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [topColor, botColor],
-                ),
-              ),
-              child: Row(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: Stack(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
+                          blurRadius: 16 + 8 * p,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 3),
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.28),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [topColor, botColor],
+                      ),
+                    ),
+                    child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
@@ -1228,6 +1241,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+                  // ── Gloss shimmer sweep ──
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Transform.translate(
+                        offset: Offset((g * 3.0 - 1.0) * 200, 0), // sweep left to right
+                        child: Container(
+                          width: 60,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.white.withValues(alpha: 0.0),
+                                Colors.white.withValues(alpha: 0.18),
+                                Colors.white.withValues(alpha: 0.0),
+                              ],
+                              stops: const [0.0, 0.5, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],

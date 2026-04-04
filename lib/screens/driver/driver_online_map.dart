@@ -7,7 +7,18 @@ part of 'driver_online_screen.dart';
 extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Update the driver car / golden dot annotation on the Mapbox map.
+  /// Uses a boolean lock to prevent overlapping async updates from the 60fps ticker.
   Future<void> _updateDriverAnnotation() async {
+    if (!mounted || _annotUpdateBusy) return;
+    _annotUpdateBusy = true;
+    try {
+      await _updateDriverAnnotationInner();
+    } finally {
+      _annotUpdateBusy = false;
+    }
+  }
+
+  Future<void> _updateDriverAnnotationInner() async {
     if (!mounted) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null) return;

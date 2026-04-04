@@ -641,8 +641,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         .then((_) {
           debugPrint('âœ… Driver online successfully');
           AnalyticsService.instance.logDriverOnline();
-          // Show persistent background notification (sound removed — caused 2s freeze)
+          // Show persistent notification + play sound (fire-and-forget, non-blocking)
           NotificationService.showDriverOnlineNotification();
+          NotificationService.playOnlineSound();
         })
         .catchError((e) {
           debugPrint('âŒ Failed to go online: $e');

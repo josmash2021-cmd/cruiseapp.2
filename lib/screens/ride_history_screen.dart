@@ -5,6 +5,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/api_service.dart';
+import '../widgets/tier_badge.dart';
 import 'trip_receipt_screen.dart';
 
 class RideHistoryScreen extends StatefulWidget {
@@ -44,6 +45,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
         if (backendTrips.isNotEmpty) {
           final parsed = backendTrips.map((t) {
             return TripHistoryItem(
+              tripId: (t['id'] as num?)?.toInt(),
               pickup: t['pickup_address']?.toString() ?? '',
               dropoff: t['dropoff_address']?.toString() ?? '',
               rideName: t['vehicle_type']?.toString() ?? 'Comfort',
@@ -331,20 +333,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(
-                  Icons.directions_car_rounded,
-                  size: 18,
-                  color: c.textSecondary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  trip.rideName,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
-                  ),
-                ),
+                TierBadge(rideName: trip.rideName),
                 const Spacer(),
                 Text(
                   '${trip.miles} · ${trip.duration}',

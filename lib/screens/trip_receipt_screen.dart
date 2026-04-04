@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../widgets/tier_badge.dart';
 
 class TripReceiptScreen extends StatefulWidget {
   final TripHistoryItem trip;
@@ -111,8 +112,8 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                 '✓  Ride Completed\n\n'
                 'Ride Type:  ${trip.rideName}\n'
                 'Total:      ${trip.price}\n'
-                'Distance:   ${trip.miles}\n'
-                'Duration:   ${trip.duration}\n'
+                'Distance:   $_effectiveMiles\n'
+                'Duration:   $_effectiveDuration\n'
                 'Date:       $date\n\n'
                 '── Route ──────────────────────\n'
                 '◉  Pickup:   ${trip.pickup}\n'
@@ -217,8 +218,8 @@ Receipt #: $receiptNum
 
 Ride Type:  ${trip.rideName}
 Total:      ${trip.price}
-Distance:   ${trip.miles}
-Duration:   ${trip.duration}
+Distance:   $_effectiveMiles
+Duration:   $_effectiveDuration
 Date:       $date
 ${paymentMethod != null ? 'Payment:    $paymentMethod\n' : ''}
 ── Route ──────────────────────
@@ -341,76 +342,77 @@ Thank you for riding with Cruise!
                       ),
                       const SizedBox(height: 28),
 
-                      // ── TOTAL AMOUNT CARD ──
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [_gold, _goldLight],
+                      // ── TOTAL AMOUNT CARD (tier-colored) ──
+                      Builder(builder: (context) {
+                        final tier = TierInfo.from(trip.rideName);
+                        return Container(
+                          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: tier.gradient,
+                            ),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: tier.color.withValues(alpha: 0.3),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _gold.withValues(alpha: 0.3),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            // Status badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0x2208090C),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    color: Color(0xFF08090C),
-                                    size: 13,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    'Completed · ${_formatDate(trip.createdAt)}',
-                                    style: const TextStyle(
-                                      color: Color(0xBB08090C),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                          child: Column(
+                            children: [
+                              // Status badge
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x2208090C),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Color(0xFF08090C),
+                                      size: 13,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Completed · ${_formatDate(trip.createdAt)}',
+                                      style: const TextStyle(
+                                        color: Color(0xBB08090C),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 18),
-                            // Total amount
-                            Text(
-                              trip.price,
-                              style: const TextStyle(
-                                color: Color(0xFF08090C),
-                                fontSize: 44,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -1,
+                              const SizedBox(height: 18),
+                              // Total amount
+                              Text(
+                                trip.price,
+                                style: const TextStyle(
+                                  color: Color(0xFF08090C),
+                                  fontSize: 44,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -1,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              trip.rideName,
-                              style: const TextStyle(
-                                color: Color(0x9908090C),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(height: 8),
+                              // Animated tier badge
+                              TierBadge(
+                                rideName: trip.rideName,
+                                fontSize: 11,
+                                iconSize: 13,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
+                            ],
+                          ),
+                        );
+                      }),
                       const SizedBox(height: 16),
 
                       // ── TRIP DETAILS CARD ──

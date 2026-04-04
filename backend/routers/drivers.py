@@ -1,7 +1,7 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -865,6 +865,78 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.commit()
     await db.refresh(doc)
     return _doc_dict(doc)
+
+@router.post("/drivers/documents/upload", dependencies=[Depends(_verify_api_key)])
+async def upload_document_multipart(
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a vehicle document via multipart form (more reliable than base64)."""
+    _sanitize_string(doc_type)
+    allowed_types = {"drivers_license", "insurance", "registration", "background_check", "vehicle_inspection", "profile_photo"}
+    if doc_type not in allowed_types:
+        raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
+
+    data = await file.read()
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(413, "Document too large (max 4MB)")
+
+    # Validate magic bytes
+    jpeg_sig = bytes([0xFF, 0xD8])
+    png_sig = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    if data[:2] == jpeg_sig:
+        ext, ct = "jpg", "image/jpeg"
+    elif data[:8] == png_sig:
+        ext, ct = "png", "image/png"
+    elif data[:4] == b'%PDF':
+        ext, ct = "pdf", "application/pdf"
+    else:
+        raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
+
+    fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
+    file_path = None
+
+    # Upload to Firebase Storage (persistent), fallback to local
+    fb_url = None
+    if _HAS_FIRESTORE and firestore_sync:
+        fb_path = f"documents/user_{user.id}/{fname}"
+        fb_url = firestore_sync.upload_to_firebase_storage(data, fb_path, ct)
+    if fb_url:
+        file_path = fb_url
+    else:
+        import os as _os
+        docs_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "uploads", "documents")
+        _os.makedirs(docs_dir, exist_ok=True)
+        fpath = _os.path.join(docs_dir, fname)
+        with open(fpath, "wb") as f:
+            f.write(data)
+        file_path = f"/uploads/documents/{fname}"
+
+    # Upsert document record
+    result = await db.execute(
+        select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.status = "pending"
+        existing.file_path = file_path or existing.file_path
+        existing.rejection_reason = None
+        existing.updated_at = datetime.now(timezone.utc)
+        doc = existing
+    else:
+        doc = Document(
+            user_id=user.id,
+            doc_type=doc_type,
+            status="pending",
+            file_path=file_path,
+        )
+        db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return _doc_dict(doc)
+
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  CHECKR  BACKGROUND  CHECK  ENDPOINTS

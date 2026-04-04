@@ -2210,13 +2210,37 @@ class ApiService {
     return [];
   }
 
-  /// Upload a document (base64 photo).
+  /// Upload a document via multipart file upload (no base64 overhead).
+  /// [filePath] is the local file path to upload.
   static Future<Map<String, dynamic>> uploadDocument({
     required String docType,
     String? photoBase64,
     String? docNumber,
     String? expiryDate,
+    String? filePath,
   }) async {
+    // ── Multipart upload (preferred — sends raw file, no base64 bloat) ──
+    if (filePath != null) {
+      final h = await _authHeaders();
+      final uri = Uri.parse('$_baseUrl/drivers/documents/upload');
+      final req = http.MultipartRequest('POST', uri);
+      // Copy auth headers (skip content-type — multipart sets its own)
+      h.forEach((k, v) {
+        if (k.toLowerCase() != 'content-type') req.headers[k] = v;
+      });
+      req.fields['doc_type'] = docType;
+      req.files.add(await http.MultipartFile.fromPath('file', filePath));
+      debugPrint('[ApiService] uploadDocument($docType) multipart file=${filePath.split('/').last} → $uri');
+      final streamed = await req.send().timeout(const Duration(seconds: 60));
+      final res = await http.Response.fromStream(streamed);
+      debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
+      if (res.statusCode >= 300) {
+        debugPrint('[ApiService] uploadDocument ERROR: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
+      }
+      return _parse(res);
+    }
+
+    // ── Fallback: base64 JSON upload (legacy) ──
     final h = await _authHeaders();
     final payload = jsonEncode({
       'doc_type': docType,
@@ -2224,7 +2248,7 @@ class ApiService {
       if (docNumber != null) 'doc_number': docNumber,
       if (expiryDate != null) 'expiry_date': expiryDate,
     });
-    debugPrint('[ApiService] uploadDocument($docType) payload=${(payload.length / 1024).toStringAsFixed(0)}KB → $_baseUrl/drivers/documents');
+    debugPrint('[ApiService] uploadDocument($docType) base64 payload=${(payload.length / 1024).toStringAsFixed(0)}KB');
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/documents'),
@@ -2234,7 +2258,7 @@ class ApiService {
         .timeout(const Duration(seconds: 60));
     debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
     if (res.statusCode >= 300) {
-      debugPrint('[ApiService] uploadDocument ERROR body: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
+      debugPrint('[ApiService] uploadDocument ERROR: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
     }
     return _parse(res);
   }

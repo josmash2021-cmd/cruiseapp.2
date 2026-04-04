@@ -451,7 +451,7 @@ async def rate_limit_middleware(request: Request, call_next):
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
 _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
 _MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
-_LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents"}
+_LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/documents/upload"}
 
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -210,23 +209,22 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       if (xFile == null || !mounted) return;
 
       setState(() => _uploading = true);
-      final bytes = await File(xFile.path).readAsBytes();
-      debugPrint('[Vehicle] Photo size: ${bytes.length} bytes (${(bytes.length / 1024).toStringAsFixed(0)} KB)');
-      final base64Photo = base64Encode(bytes);
-      debugPrint('[Vehicle] Base64 size: ${base64Photo.length} chars');
+      final fileSize = await File(xFile.path).length();
+      debugPrint('[Vehicle] Photo file: ${xFile.path} size: ${(fileSize / 1024).toStringAsFixed(0)} KB');
 
-      // Try upload with one retry on failure
+      // Multipart upload (sends raw file — no base64 bloat)
+      // Retry once on failure
       try {
         await ApiService.uploadDocument(
           docType: docType,
-          photoBase64: base64Photo,
+          filePath: xFile.path,
         );
       } catch (firstErr) {
         debugPrint('[Vehicle] First attempt failed: $firstErr — retrying...');
         await Future.delayed(const Duration(seconds: 2));
         await ApiService.uploadDocument(
           docType: docType,
-          photoBase64: base64Photo,
+          filePath: xFile.path,
         );
       }
 

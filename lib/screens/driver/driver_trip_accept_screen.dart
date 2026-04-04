@@ -562,27 +562,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final data = snap.data();
       if (data == null) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
-        _riderConfirmedPickup = true;
         HapticFeedback.mediumImpact();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'El pasajero ha confirmado que está en tu vehículo',
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              backgroundColor: const Color(0xFFD4A843),
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+          setState(() => _riderConfirmedPickup = true);
         }
       }
     });
@@ -2165,6 +2147,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 child: _buildHangingInstruction(widget.dropoffInstructions),
               ),
             const SizedBox(height: 10),
+
+            // ── Rider confirmed notification ──
+            if (_riderConfirmedPickup)
+              Padding(
+                padding: EdgeInsets.fromLTRB(Responsive.w(16), 8, Responsive.w(16), 0),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'El pasajero ha confirmado que está en tu vehículo',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _gold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             const Spacer(),
 

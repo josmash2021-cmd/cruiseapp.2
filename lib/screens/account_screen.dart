@@ -426,38 +426,6 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
               const SizedBox(height: 28),
 
-              // ── Email verification banner ──
-              if (!_emailVerified && _user != null)
-                GestureDetector(
-                  onTap: _showEmailVerification,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _gold.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _gold.withValues(alpha: 0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.email_outlined, color: _gold, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Verify your email to secure your account',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.chevron_right_rounded,
-                            color: Colors.white.withValues(alpha: 0.4), size: 20),
-                      ],
-                    ),
-                  ),
-                ),
-
               // ── Menu grid ──
               _buildMenuGrid(c),
 

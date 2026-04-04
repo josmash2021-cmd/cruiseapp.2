@@ -171,7 +171,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _saving = true);
 
-    // ── If user picked a new photo, persist + upload it now ──
+    // ── If user picked a new photo, persist locally + upload in background ──
     if (_pendingPhotoPath != null) {
       final permanentPath =
           await UserSession.saveProfilePhoto(_pendingPhotoPath!);
@@ -179,18 +179,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       imageCache.clearLiveImages();
       _photoPath = permanentPath;
 
-      // Upload to backend + Firebase in the background
-      ApiService.uploadPhoto(permanentPath).catchError((e) {
-        debugPrint('Photo upload failed (saved locally): $e');
-        return '';
-      });
-      final userId = await ApiService.getCurrentUserId();
-      if (userId != null) {
+      // Fire-and-forget: upload to backend + Firebase Storage
+      // Don't await — let the screen pop immediately
+      final uploadPath = permanentPath;
+      Future<void>(() async {
+        ApiService.uploadPhoto(uploadPath).catchError((e) {
+          debugPrint('Photo upload failed (saved locally): $e');
+          return '';
+        });
+        final userId = await ApiService.getCurrentUserId();
+        if (userId == null) return;
         final user = await UserSession.getUser();
         final role = user?['role'] ?? 'rider';
         try {
           final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
-            permanentPath, userId, role,
+            uploadPath, userId, role,
           );
           await FirebaseStorageService.updateFirestorePhotoUrl(
               userId, firebaseUrl, role);
@@ -201,7 +204,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         } catch (e) {
           debugPrint('Firebase photo sync failed: $e');
         }
-      }
+      });
     }
 
     // Save locally

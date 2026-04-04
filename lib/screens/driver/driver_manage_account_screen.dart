@@ -98,6 +98,8 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
         } catch (_) {}
       }
       if (!mounted) return;
+      imageCache.clear();
+      imageCache.clearLiveImages();
       setState(() {
         _photoUrl = url;
         _localPhotoPath = file.path;

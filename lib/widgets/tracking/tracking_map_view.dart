@@ -1222,7 +1222,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   /// Animated route draw: progressively reveals the gold route line to dropoff
-  void _startAnimatedRouteDraw() {
+  Future<void> _startAnimatedRouteDraw() async {
     if (_routeDrawDone || _routePts.length < 2) return;
     _routeDrawDone = true;
     final polyMgr = _polylineAnnotMgr;
@@ -1237,21 +1237,29 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final totalPts = allCoords.length;
     const drawDurationMs = 2000; // 2 seconds for visible animation
-    final startTime = DateTime.now();
 
-    // Create route layer with just 2 initial points
+    // Pre-create annotation BEFORE starting ticker to avoid race condition
     final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
-    _createRouteLayers(polyMgr, initGeom);
+    await _createRouteLayers(polyMgr, initGeom);
+    if (!mounted || _remainingRouteAnnot == null) return;
+
+    final startTime = DateTime.now();
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
+      if (updating) return; // skip frame if previous update still in flight
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
       final eased = _easeOutCubic(t);
       final count = (2 + (totalPts - 2) * eased).round().clamp(2, totalPts);
       final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
-      _updateRouteLayers(polyMgr, geom);
+      updating = true;
+      try {
+        _remainingRouteAnnot!.geometry = geom;
+        polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      } catch (_) { updating = false; }
       if (t >= 1.0) {
         _routeDrawTicker?.stop();
       }

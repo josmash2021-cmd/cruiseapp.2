@@ -784,9 +784,19 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _drawRouteAnimated() async {
     if (_routePts.length < 2) return;
     _routeAnimating = true;
+
+    // Pre-create annotation before ticker to avoid async-in-ticker issues
+    final mgr = _polyMgr;
+    if (mgr == null) { _routeAnimating = false; return; }
+    if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    final initCoords = _routePts.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    await _createRouteAnnotations(mgr, mapbox.LineString(coordinates: initCoords));
+    if (!mounted || _routeAnnot == null) { _routeAnimating = false; return; }
+
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     const totalMs = 1500;
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -796,17 +806,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         if (!completer.isCompleted) completer.complete();
         return;
       }
+      if (updating) return; // skip frame if previous update still in flight
       final progress = (stopwatch.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
       final eased = Curves.easeInOut.transform(progress);
-      final count = (eased * _routePts.length).round().clamp(1, _routePts.length);
+      final count = (eased * _routePts.length).round().clamp(2, _routePts.length);
       _animatedRoute = _routePts.sublist(0, count);
-      _updateRouteAnnotationAnimated(_animatedRoute);
+      final coords = _animatedRoute.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+      updating = true;
+      mgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         _routeAnimating = false;
         _animatedRoute = List.from(_routePts);
-        _updateRouteAnnotationAnimated(_routePts);
         if (!completer.isCompleted) completer.complete();
       }
     });

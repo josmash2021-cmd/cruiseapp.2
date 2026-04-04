@@ -603,19 +603,28 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
   Future<void> _animateRoute(List<LatLng> points) async {
     if (_polyAnnotMgr == null || points.length < 2) return;
+
+    // Pre-create annotation before animation to avoid async frame skipping
+    if (_routeAnnot != null) { try { await _polyAnnotMgr!.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    try { _routeAnnot = await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: initCoords),
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 4.5,
+      lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    if (!mounted || _routeAnnot == null) return;
+
     _routeAnimCtrl?.dispose();
     _routeAnimCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
     final completer = Completer<void>();
-    int lastCount = 0;
-    _routeAnimCtrl!.addListener(() async {
-      if (!mounted) {
-        _routeAnimCtrl?.stop();
-        if (!completer.isCompleted) completer.complete();
-        return;
-      }
+    int lastCount = 2;
+    bool updating = false;
+    _routeAnimCtrl!.addListener(() {
+      if (!mounted || updating) return;
       final eased = Curves.easeInOutSine.transform(_routeAnimCtrl!.value);
       final count = (eased * points.length).round().clamp(2, points.length);
       if (count != lastCount) {
@@ -624,22 +633,9 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             .sublist(0, count)
             .map((p) => mapbox.Position(p.longitude, p.latitude))
             .toList();
-        final geo = mapbox.LineString(coordinates: coords);
-        if (_routeAnnot == null) {
-          try {
-            _routeAnnot = await _polyAnnotMgr!.create(
-              mapbox.PolylineAnnotationOptions(
-                geometry: geo,
-                lineColor: const Color(0xFFFFD700).toARGB32(),
-                lineWidth: 4.5,
-                lineJoin: mapbox.LineJoin.ROUND,
-              ),
-            );
-          } catch (_) {}
-        } else {
-          _routeAnnot!.geometry = geo;
-          try { await _polyAnnotMgr!.update(_routeAnnot!); } catch (_) {}
-        }
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        _polyAnnotMgr!.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       }
     });
     _routeAnimCtrl!.addStatusListener((s) {

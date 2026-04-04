@@ -1455,19 +1455,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _routeAnnot = null;
     }
 
+    // Pre-create annotation before ticker to avoid async frame skipping
+    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    try { _routeAnnot = await _polylineAnnotMgr?.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: initCoords),
+      lineColor: _routeColor.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    if (!mounted || _routeAnnot == null || ticket != _routeAnimationTicket) return;
+
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     const totalMs = 1500;
-    int lastCount = 0;
+    int lastCount = 2;
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
+    _routeDrawTicker = createTicker((_) {
       if (!mounted || ticket != _routeAnimationTicket) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;
       }
+      if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
       final eased = Curves.easeInOut.transform(progress);
@@ -1477,16 +1487,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         lastCount = count;
         final subset = points.sublist(0, count);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final geo = mapbox.LineString(coordinates: coords);
-
-        if (_routeAnnot == null) {
-          try { _routeAnnot = await _polylineAnnotMgr?.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo, lineColor: _routeColor.toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
-          )); } catch (_) {}
-        } else {
-          _routeAnnot!.geometry = geo;
-          try { await _polylineAnnotMgr?.update(_routeAnnot!); } catch (_) {}
-        }
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        _polylineAnnotMgr?.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();

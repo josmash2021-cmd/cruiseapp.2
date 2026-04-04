@@ -242,19 +242,32 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     final polyMgr = _polyMgr;
     if (polyMgr == null || _routePoints.length < 2) return;
 
+    // Pre-create annotation before ticker to avoid async-in-ticker frame skipping
+    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
+    final initCoords = _routePoints.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: mapbox.LineString(coordinates: initCoords),
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
+    if (!mounted || _routeAnnot == null) return;
+
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     const totalMs = 500;
-    int lastCount = 0;
+    int lastCount = 2;
+    bool updating = false;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) async {
+    _routeDrawTicker = createTicker((_) {
       if (!mounted) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;
       }
+      if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
       final eased = Curves.easeInOutSine.transform(progress);
@@ -264,19 +277,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
         lastCount = count;
         final subset = _routePoints.sublist(0, count);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        final geo = mapbox.LineString(coordinates: coords);
-
-        if (_routeAnnot == null) {
-          _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geo,
-            lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } else {
-          _routeAnnot!.geometry = geo;
-          await polyMgr.update(_routeAnnot!);
-        }
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();

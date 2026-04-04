@@ -38,12 +38,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('âŒ Could not get driver ID after 3 attempts');
     }
     // Run GPS + icon loading in parallel — they are independent
-    await Future.wait([_locate(), _buildVehicleIcons()]);
-    // Gate: check verification / background check status before going online
-    await _verifyDriverApproval();
+    // Start non-blocking tasks immediately so UI stays responsive
+    _startClock();
+    _startPolling();
+    _startPosStream();
+    _loadAllEarnings();
+    _startEarningsRefresh();
+
+    // Run GPS + icon loading + approval gate all in parallel
+    await Future.wait([
+      _locate(),
+      _buildVehicleIcons(),
+      _verifyDriverApproval(),
+    ]);
     _goOnlineBackend();
 
-    // Pre-cache map tiles around driver's current area (silent background)
+    // Pre-cache map tiles in background (fire-and-forget)
     if (_pos != null) {
       MapCacheService().precacheArea(
         regionId: 'driver_area_${_driverId ?? 0}',
@@ -54,12 +64,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         radiusKm: 5.0,
       );
     }
-
-    _startClock();
-    _startPolling();
-    _startPosStream();
-    _loadAllEarnings();
-    _startEarningsRefresh();
   }
 
   /// Start a periodic timer to refresh earnings every 45 seconds.
@@ -554,13 +558,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       try {
         final v = await ApiService.getVehicle();
         if (v != null) {
-          final inspOk = v['inspection_valid'] == true;
           final insOk = v['insurance_valid'] == true;
           final regOk = v['registration_valid'] == true;
-          if (!inspOk || !insOk || !regOk) {
+          if (!insOk || !regOk) {
             vehicleDocsOk = false;
             final missing = <String>[];
-            if (!inspOk) missing.add('Inspection');
             if (!insOk) missing.add('Insurance');
             if (!regOk) missing.add('Registration');
             vehicleBlockReason = 'Missing: ${missing.join(', ')}';

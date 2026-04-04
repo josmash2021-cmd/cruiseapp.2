@@ -62,7 +62,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          fadeThroughRoute(const HomeScreen()),
           (_) => false,
         );
       }

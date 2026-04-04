@@ -30,6 +30,7 @@ import 'driver_trip_accept_screen.dart';
 import 'driver_inbox_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
+import 'driver_vehicle_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -109,6 +110,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   int? _driverId;
   Map<String, dynamic>? _activeTripData;
 
+  // ── Vehicle document approval ──
+  bool _vehicleDocsApproved = false;
+  bool _docStatusLoaded = false;
+  late AnimationController _btnColorCtrl;
+  late Animation<double> _btnColorAnim;
+
   @override
   double get panelTravelHeight => _panelExpandedH - _panelCollapsedH;
 
@@ -117,7 +124,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          fadeThroughRoute(const HomeScreen()),
           (_) => false,
         );
       }
@@ -146,6 +153,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       end: 1.0,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
+    // Red → gold color transition for Go Online button
+    _btnColorCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _btnColorAnim = CurvedAnimation(
+      parent: _btnColorCtrl,
+      curve: Curves.easeInOut,
+    );
+
     // Stats panel entrance
     _statsCtrl = AnimationController(
       vsync: this,
@@ -173,6 +190,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _initLocation();
     _loadDriverData();
     _checkVerification();
+    _checkVehicleDocStatus();
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
@@ -244,6 +262,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     disposePanelAnimation();
     _pulseCtrl.dispose();
+    _btnColorCtrl.dispose();
     _statsCtrl.dispose();
     _fabCtrl.dispose();
     _goldDot.dispose();
@@ -259,6 +278,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Always re-check vehicle doc approval when app comes back
+      if (!_vehicleDocsApproved) _checkVehicleDocStatus();
+    }
     if (state == AppLifecycleState.resumed && _isStillOnline && mounted) {
       // App returned from background — refresh trip status then restart polling
       _refreshActiveTripStatus().then((_) {
@@ -536,11 +559,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   // ═══════════════════════════════════════════════════
+  //  VEHICLE DOCUMENT STATUS CHECK
+  // ═══════════════════════════════════════════════════
+  Future<void> _checkVehicleDocStatus() async {
+    try {
+      final v = await ApiService.getVehicle();
+      if (!mounted || v == null) return;
+      final insOk = v['insurance_valid'] == true;
+      final regOk = v['registration_valid'] == true;
+      final approved = insOk && regOk;
+      final wasApproved = _vehicleDocsApproved;
+      setState(() {
+        _vehicleDocsApproved = approved;
+        _docStatusLoaded = true;
+      });
+      if (approved && !wasApproved) {
+        // Animate red → gold transition
+        _btnColorCtrl.forward();
+      } else if (approved) {
+        _btnColorCtrl.value = 1.0;
+      }
+    } catch (_) {
+      if (mounted) setState(() => _docStatusLoaded = true);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
   //  GO ONLINE — navigate to DriverOnlineScreen
   // ═══════════════════════════════════════════════════
   void _goOnline() async {
     if (!await _ensureVerified()) return;
     if (!mounted) return;
+
+    // If vehicle docs not approved, navigate to vehicle documents page
+    if (!_vehicleDocsApproved) {
+      HapticFeedback.mediumImpact();
+      await Navigator.of(context).push(
+        slideFromRightRoute(const DriverVehicleScreen()),
+      );
+      // Re-check doc status when returning from vehicle screen
+      if (mounted) await _checkVehicleDocStatus();
+      return;
+    }
 
     if (_driverId == null) {
       await _resolveDriverId();
@@ -1083,10 +1143,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           : () async {
               await _ensureVerified();
             },
-      child: ListenableBuilder(
-        listenable: _pulseAnim,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_pulseAnim, _btnColorAnim]),
         builder: (_, __) {
           final p = _pulseAnim.value;
+          final colorT = _btnColorAnim.value;
+          final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
+
+          // Interpolate between red and gold
+          const redTop = Color(0xFFE05545);
+          const redBot = Color(0xFFB03030);
+          const goldTop1 = Color(0xFFF0D060);
+          const goldTop2 = Color(0xFFF5DC7A);
+          const goldBot = Color(0xFFD4A800);
+
+          final topColor = Color.lerp(
+            redTop,
+            Color.lerp(goldTop1, goldTop2, p)!,
+            colorT,
+          )!;
+          final botColor = Color.lerp(redBot, goldBot, colorT)!;
+          final glowColor = Color.lerp(
+            const Color(0xFFE05545),
+            _gold,
+            colorT,
+          )!;
+
           return Opacity(
             opacity: _isVerified ? 1.0 : 0.55,
             child: Container(
@@ -1095,9 +1177,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: [
                   BoxShadow(
-                    color: _gold.withValues(alpha: 0.3 + 0.15 * p),
+                    color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
                     blurRadius: 16 + 8 * p,
-                    spreadRadius: 0,
+                    spreadRadius: docsOk ? 0 : 0,
                     offset: const Offset(0, 3),
                   ),
                   BoxShadow(
@@ -1109,14 +1191,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Color.lerp(
-                      const Color(0xFFF0D060),
-                      const Color(0xFFF5DC7A),
-                      p,
-                    )!,
-                    const Color(0xFFD4A800),
-                  ],
+                  colors: [topColor, botColor],
                 ),
               ),
               child: Row(
@@ -1130,9 +1205,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      (_activeTripData != null || _isStillOnline)
-                          ? Icons.play_arrow_rounded
-                          : Icons.power_settings_new_rounded,
+                      !docsOk
+                          ? Icons.upload_file_rounded
+                          : (_activeTripData != null || _isStillOnline)
+                              ? Icons.play_arrow_rounded
+                              : Icons.power_settings_new_rounded,
                       color: Colors.black87,
                       size: 16,
                     ),
@@ -1140,9 +1217,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   const SizedBox(width: 10),
                   Text(
                     _isVerified
-                    ? ((_activeTripData != null || _isStillOnline)
-                              ? S.of(context).resumeOnline
-                              : S.of(context).goOnline)
+                        ? (!docsOk
+                            ? 'DOCUMENTS'
+                            : (_activeTripData != null || _isStillOnline)
+                                ? S.of(context).resumeOnline
+                                : S.of(context).goOnline)
                         : S.of(context).verifyFirst,
                     style: const TextStyle(
                       color: Colors.black87,

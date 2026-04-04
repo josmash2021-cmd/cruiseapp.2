@@ -1859,9 +1859,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (!mounted) return;
     HapticFeedback.lightImpact();
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const DriverHomeScreen(returnFromTrip: true),
-      ),
+      fadeThroughRoute(const DriverHomeScreen(returnFromTrip: true)),
       (route) => false,
     );
   }

@@ -745,9 +745,7 @@ class LearningCenterScreen extends StatelessWidget {
                       HapticFeedback.selectionClick();
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => _LearningTopicScreen(topic: topic),
-                        ),
+                        slideFromRightRoute(_LearningTopicScreen(topic: topic)),
                       );
                     },
                     child: Container(

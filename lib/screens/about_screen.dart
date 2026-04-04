@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../config/page_transitions.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
 import 'package:flutter/material.dart';
@@ -157,9 +158,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 Icons.description_outlined,
                 S.of(context).termsOfService,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const TermsOfServiceScreen(),
-                  ),
+                  slideFromRightRoute(const TermsOfServiceScreen()),
                 ),
               ),
               const SizedBox(height: 10),
@@ -168,9 +167,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 Icons.privacy_tip_outlined,
                 S.of(context).privacyPolicy,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const PrivacyPolicyScreen(),
-                  ),
+                  slideFromRightRoute(const PrivacyPolicyScreen()),
                 ),
               ),
               const SizedBox(height: 10),

@@ -63,12 +63,17 @@ class NotificationService {
     // registers their sounds before the first notification fires.
     await _createChannels();
 
-    // Pre-load audio players so first playback is instant
-    // Both use the same online sound for consistent experience
-    await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
-    await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
-
     _initialized = true;
+
+    // Pre-load audio players in background — never block init
+    Future<void>(() async {
+      try {
+        await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+        await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+      } catch (e) {
+        debugPrint('[NotificationService] audio preload error: $e');
+      }
+    });
     debugPrint('[NotificationService] initialized');
   }
 

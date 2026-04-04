@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../config/page_transitions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
@@ -516,9 +517,9 @@ class _MessagesTabState extends State<_MessagesTab> {
   }
 
   void _openConversation(Map<String, dynamic> chat) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _ConversationDetailScreen(chat: chat),
-    ));
+    Navigator.of(context).push(
+      slideFromRightRoute(_ConversationDetailScreen(chat: chat)),
+    );
   }
 
   @override

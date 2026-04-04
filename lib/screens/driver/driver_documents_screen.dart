@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
 import '../../config/driver_colors.dart';
@@ -925,9 +926,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                           Navigator.pop(ctx);
                           final result = await Navigator.push<Map<String, dynamic>>(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => const BackgroundCheckConsentScreen(),
-                            ),
+                            slideFromRightRoute<Map<String, dynamic>>(const BackgroundCheckConsentScreen()),
                           );
                           if (result != null) {
                             if (!mounted) return;

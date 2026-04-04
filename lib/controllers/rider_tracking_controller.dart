@@ -150,6 +150,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Process real-time driver location from RTDB.
   void _onRealDriverLocation(LatLng ll, {double? bearing}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
+    // Validate bearing — NaN/Infinity would break rotation interpolation
+    if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     // Wake up the ticker if it was idling — new GPS data means new animation to run
     if (_interpIdle) {
       _interpIdle = false;
@@ -558,7 +560,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _pollFailCount = 0;
       if (_connectionLost) _setState(() => _connectionLost = false);
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
-    }, onError: (_) {});
+    }, onError: (e) {
+      debugPrint('[RiderTracking] RTDB stream error: $e');
+      _pollFailCount++;
+      if (_pollFailCount >= 3 && mounted && !_connectionLost) {
+        _setState(() => _connectionLost = true);
+      }
+    });
   }
 
   Future<void> _saveChatToInbox() async {

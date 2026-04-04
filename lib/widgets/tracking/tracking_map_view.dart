@@ -975,7 +975,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // First-time setup or recovery path (async)
     if (_carUpdateInProgress) return;
     _carUpdateInProgress = true;
-    _updateCarGeoJsonOnly().whenComplete(() => _carUpdateInProgress = false);
+    _updateCarGeoJsonOnly()
+        .then((_) => _carUpdateInProgress = false)
+        .catchError((_) => _carUpdateInProgress = false);
   }
 
   // Handles first-time source/layer creation and caches source references for the sync hot path.
@@ -1319,10 +1321,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final curLng = a.longitude + (b.longitude - a.longitude) * t;
 
     // Build remaining coords: interpolated current point + all points ahead
+    final ahead = hi < _routePts.length ? _routePts.length - hi : 0;
     final remaining = <mapbox.Position>[
       mapbox.Position(curLng, curLat),
       ...List.generate(
-        _routePts.length - hi,
+        ahead,
         (i) => mapbox.Position(_routePts[hi + i].longitude, _routePts[hi + i].latitude),
       ),
     ];
@@ -1418,6 +1421,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _arrivedStateInitialized = true;
 
     // STEP 1: Fade out the route polyline over 600ms
+    _routeFadeTimer?.cancel();
     const fadeDuration = 600;
     final startTime = DateTime.now();
     _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {

@@ -59,6 +59,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _rideId => widget.tripId?.toString() ?? '';
 
   bool _useRtdb = false; // true for trip chats, false for support
+  bool _chatReady = false; // true after _initChat completes
 
   // ── Support-mode fallback (polling) ──
   final List<_SupportMessage> _supportMessages = [];
@@ -125,6 +126,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
 
+    _chatReady = true;
     if (mounted) setState(() {});
   }
 
@@ -201,6 +203,12 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    if (!_chatReady) {
+      debugPrint('[Chat] send blocked — chat not ready yet');
+      return;
+    }
+
     _controller.clear();
 
     if (_useRtdb) {
@@ -330,7 +338,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // ── Messages ──
             Expanded(
-              child: _useRtdb ? _buildRtdbMessages(s) : _buildSupportMessages(s),
+              child: !_chatReady
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4A843)))
+                  : _useRtdb ? _buildRtdbMessages(s) : _buildSupportMessages(s),
             ),
 
             // ── Typing indicator (RTDB only) ──

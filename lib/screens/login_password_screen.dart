@@ -6,10 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/apple_auth_service.dart';
-import '../services/google_auth_service.dart';
 import '../services/sms_service.dart';
-import '../services/user_session.dart';
 import '../services/analytics_service.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
@@ -29,10 +26,11 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
 
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passFocus = FocusNode();
   bool _obscure = true;
   bool _canLogin = false;
   bool _loading = false;
-  bool _socialLoading = false;
   String? _errorText;
 
   @override
@@ -46,67 +44,23 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _emailFocus.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
-  /// Extract email from Apple and auto-fill the email field.
-  Future<void> _autoFillWithApple() async {
-    if (_socialLoading) return;
-    if (!Platform.isIOS && !Platform.isMacOS) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Apple Sign In is only available on iOS')),
-      );
-      return;
-    }
-    setState(() {
-      _socialLoading = true;
-      _errorText = null;
+  /// Trigger autofill to fill email + password from saved credentials.
+  /// Works with Google Password Manager (Android) and Apple Keychain (iOS).
+  void _triggerAutofill() {
+    // Focus the email field to trigger the system autofill overlay
+    _emailFocus.requestFocus();
+    // On Android, request autofill explicitly
+    TextInput.finishAutofillContext(shouldSave: false);
+    // Small delay then trigger autofill hints
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      _emailFocus.requestFocus();
     });
-    try {
-      final email = await AppleAuthService.instance.getEmail();
-      if (!mounted) return;
-      setState(() => _socialLoading = false);
-      if (email != null && email.isNotEmpty) {
-        _emailCtrl.text = email;
-        _passCtrl.clear();
-        _validate();
-      } else {
-        setState(() => _errorText = 'Apple Sign In was cancelled');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _socialLoading = false;
-        _errorText = 'Apple Sign In error: $e';
-      });
-    }
-  }
-
-  /// Extract email from Google and auto-fill the email field.
-  Future<void> _autoFillWithGoogle() async {
-    if (_socialLoading) return;
-    setState(() {
-      _socialLoading = true;
-      _errorText = null;
-    });
-    try {
-      final email = await GoogleAuthService.instance.getEmail();
-      if (!mounted) return;
-      setState(() => _socialLoading = false);
-      if (email != null && email.isNotEmpty) {
-        _emailCtrl.text = email;
-        _passCtrl.clear();
-        _validate();
-      } else {
-        setState(() => _errorText = 'Google Sign In was cancelled');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _socialLoading = false;
-        _errorText = 'Google Sign In error: $e';
-      });
-    }
   }
 
   void _validate() {
@@ -530,82 +484,96 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
               const SizedBox(height: 28),
 
-              // ── Email/phone field ──
-              Container(
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: c.border),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: TextField(
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  style: TextStyle(color: c.textPrimary, fontSize: 16),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: S.of(context).emailOrPhone,
-                    hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-                    prefixIcon: Icon(
-                      Icons.person_outline_rounded,
-                      color: c.textTertiary,
-                      size: 20,
-                    ),
-                    prefixIconConstraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 0,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // ── Password field ──
-              Container(
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: c.border),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: TextField(
-                  controller: _passCtrl,
-                  obscureText: _obscure,
-                  style: TextStyle(color: c.textPrimary, fontSize: 16),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: S.of(context).password,
-                    hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-                    prefixIcon: Icon(
-                      Icons.lock_outline_rounded,
-                      color: c.textTertiary,
-                      size: 20,
-                    ),
-                    prefixIconConstraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 0,
-                    ),
-                    suffixIcon: GestureDetector(
-                      onTap: () => setState(() => _obscure = !_obscure),
-                      child: Icon(
-                        _obscure
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: c.textTertiary,
-                        size: 20,
+              // ── Email/phone + Password fields (AutofillGroup) ──
+              AutofillGroup(
+                child: Column(
+                  children: [
+                    // ── Email/phone field ──
+                    Container(
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: c.border),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: TextField(
+                        controller: _emailCtrl,
+                        focusNode: _emailFocus,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [
+                          AutofillHints.email,
+                          AutofillHints.username,
+                        ],
+                        style: TextStyle(color: c.textPrimary, fontSize: 16),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: S.of(context).emailOrPhone,
+                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+                          prefixIcon: Icon(
+                            Icons.person_outline_rounded,
+                            color: c.textTertiary,
+                            size: 20,
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 0,
+                          ),
+                        ),
                       ),
                     ),
-                    suffixIconConstraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 0,
+                    const SizedBox(height: 16),
+
+                    // ── Password field ──
+                    Container(
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: c.border),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: TextField(
+                        controller: _passCtrl,
+                        focusNode: _passFocus,
+                        obscureText: _obscure,
+                        autofillHints: const [AutofillHints.password],
+                        style: TextStyle(color: c.textPrimary, fontSize: 16),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: S.of(context).password,
+                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+                          prefixIcon: Icon(
+                            Icons.lock_outline_rounded,
+                            color: c.textTertiary,
+                            size: 20,
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 0,
+                          ),
+                          suffixIcon: GestureDetector(
+                            onTap: () => setState(() => _obscure = !_obscure),
+                            child: Icon(
+                              _obscure
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              color: c.textTertiary,
+                              size: 20,
+                            ),
+                          ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 0,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
 
@@ -726,7 +694,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ── Google Sign-In ──
+              // ── Google autofill ──
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -738,21 +706,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       borderRadius: BorderRadius.circular(28),
                     ),
                   ),
-                  onPressed: _socialLoading ? null : _autoFillWithGoogle,
-                  icon: _socialLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: Image.asset(
-                            'assets/images/google_logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
+                  onPressed: _triggerAutofill,
+                  icon: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Image.asset(
+                      'assets/images/google_logo.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                   label: const Text(
                     'Sign in with Google',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -760,7 +722,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 ),
               ),
 
-              // ── Apple Sign-In (iOS only) ──
+              // ── Apple autofill (iOS only) ──
               if (Platform.isIOS) ...[
                 const SizedBox(height: 12),
                 SizedBox(
@@ -774,7 +736,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    onPressed: _socialLoading ? null : _autoFillWithApple,
+                    onPressed: _triggerAutofill,
                     icon: const Icon(Icons.apple, size: 24),
                     label: const Text(
                       'Sign in with Apple',

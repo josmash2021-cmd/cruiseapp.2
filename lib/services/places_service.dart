@@ -335,18 +335,24 @@ class PlacesService {
         }
       }
 
-      // Geocode fallback if very few results
-      if (merged.length < 3) {
+      // Geocode fallback if very few results — try both Google + Mapbox
+      if (merged.length < 5) {
         try {
-          final geocoded = await _geocodeFallback(cleanInput);
-          if (seq == _autocompleteSeq && geocoded.isNotEmpty) {
-            merged.addAll(geocoded);
+          final fallbacks = await Future.wait([
+            _geocodeFallback(cleanInput).catchError((_) => <PlaceSuggestion>[]),
+            _mapboxGeocodeFallback(cleanInput, lat: latitude, lon: longitude)
+                .catchError((_) => <PlaceSuggestion>[]),
+          ]);
+          if (seq == _autocompleteSeq) {
+            for (final batch in fallbacks) {
+              merged.addAll(batch);
+            }
           }
         } catch (_) {}
       }
 
       if (merged.isEmpty) return [];
-      return _dedupeByDescription(merged).take(25).toList();
+      return _dedupeByDescription(merged).take(15).toList();
     } catch (_) {
       return [];
     }
@@ -801,6 +807,63 @@ class PlacesService {
           })
           .whereType<PlaceSuggestion>()
           .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ─── Mapbox Geocode Fallback (no Google dependency) ────────────────
+
+  Future<List<PlaceSuggestion>> _mapboxGeocodeFallback(
+    String query, {
+    double? lat,
+    double? lon,
+  }) async {
+    final token = MapboxConfig.accessToken;
+    if (token.isEmpty) return [];
+
+    final encoded = Uri.encodeComponent(query);
+    final params = <String, String>{
+      'access_token': token,
+      'limit': '5',
+      'language': 'en',
+      'country': 'us',
+      'types': 'address,poi,place,locality,neighborhood,district,region',
+    };
+    if (lat != null && lon != null) {
+      params['proximity'] = '$lon,$lat';
+    }
+
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/geocoding/v5/mapbox.places/$encoded.json',
+      params,
+    );
+
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final features = data['features'] as List? ?? [];
+      return features.take(5).map<PlaceSuggestion?>((f) {
+        final placeName = f['place_name']?.toString() ?? '';
+        if (placeName.isEmpty) return null;
+        final coords = f['geometry']?['coordinates'] as List?;
+        final lng = (coords != null && coords.length >= 2)
+            ? (coords[0] as num).toDouble()
+            : null;
+        final latV = (coords != null && coords.length >= 2)
+            ? (coords[1] as num).toDouble()
+            : null;
+        return PlaceSuggestion(
+          description: placeName,
+          placeId: latV != null && lng != null
+              ? 'mapbox:$latV,$lng:$placeName'
+              : '',
+          lat: latV,
+          lng: lng,
+        );
+      }).whereType<PlaceSuggestion>().where((s) => s.placeId.isNotEmpty).toList();
     } catch (_) {
       return [];
     }

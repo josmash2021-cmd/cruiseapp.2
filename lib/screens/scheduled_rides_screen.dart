@@ -518,16 +518,16 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         _tripDuration = route.durationText;
         _routeLoaded = true;
       });
-      // Fit camera (flat)
-      await _fitCamera([pickup, dropoff], pitch: 0);
-      // Place pins
-      await _placePins(pickup, dropoff);
       // Cap route endpoints to exact pin coordinates
       final cappedPts = List<LatLng>.from(route.points);
       if (cappedPts.length >= 2) {
         cappedPts[0] = pickup;
         cappedPts[cappedPts.length - 1] = dropoff;
       }
+      // Fit camera to full route (flat)
+      await _fitCamera(cappedPts, pitch: 0);
+      // Place pins
+      await _placePins(pickup, dropoff);
       // Animate golden route line
       await _animateRoute(cappedPts);
       // Cinematic tilt to 55°
@@ -538,7 +538,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             center: curCam.center,
             zoom: curCam.zoom,
             bearing: curCam.bearing,
-            pitch: 55,
+            pitch: 35,
           ),
           mapbox.MapAnimationOptions(duration: 700),
         );
@@ -560,7 +560,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
           mapbox.Point(coordinates: mapbox.Position(lngs.last, lats.last)),
         ],
         mapbox.CameraOptions(pitch: pitch),
-        mapbox.MbxEdgeInsets(top: 40, left: 30, bottom: 50, right: 30),
+        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 60, right: 50),
         null,
         null,
       );
@@ -575,15 +575,15 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     }
     _markerAnnots.clear();
     final pickupBytes =
-        await renderCircularPinBytes(icon: CircularPinIcon.dot, isPickup: true, radius: 28);
+        await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 44);
     final dropBytes =
-        await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 28);
+        await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
     if (!mounted) return;
     try {
       final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
         image: pickupBytes,
-        iconSize: 0.9,
+        iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
@@ -593,7 +593,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude)),
         image: dropBytes,
-        iconSize: 0.9,
+        iconSize: 0.65,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
@@ -1083,9 +1083,12 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             styleUri: MapboxConfig.styleDark,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(
-                coordinates: mapbox.Position(_pickupLng!, _pickupLat!),
+                coordinates: mapbox.Position(
+                  (_pickupLng! + (_dropoffLng ?? _pickupLng!)) / 2,
+                  (_pickupLat! + (_dropoffLat ?? _pickupLat!)) / 2,
+                ),
               ),
-              zoom: 13.0,
+              zoom: 11.5,
             ),
             onMapCreated: _onMapCreated,
             onStyleLoadedListener: (_) async {

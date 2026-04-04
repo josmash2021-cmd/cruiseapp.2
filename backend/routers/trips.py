@@ -447,6 +447,22 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         raise HTTPException(404, "Trip not found")
     trip.status = status
     trip.updated_at = datetime.now(timezone.utc)
+    # Record ride start/end timestamps for duration calculation
+    if status == "in_trip" and not trip.started_at:
+        trip.started_at = datetime.now(timezone.utc)
+    if status == "completed":
+        trip.completed_at = datetime.now(timezone.utc)
+        # Auto-calculate distance (haversine) if not already set
+        if not trip.distance and trip.pickup_lat and trip.dropoff_lat:
+            dist_km = _haversine(trip.pickup_lat, trip.pickup_lng,
+                                 trip.dropoff_lat, trip.dropoff_lng)
+            trip.distance = round(dist_km * 0.621371, 1)  # km → miles
+        # Auto-calculate duration from started_at → completed_at
+        if not trip.duration and trip.started_at:
+            delta = trip.completed_at - trip.started_at
+            trip.duration = max(1, int(delta.total_seconds() / 60))
+        elif not trip.duration and trip.distance:
+            trip.duration = max(1, int(trip.distance * 2))
     # Auto-calculate earnings split (vehicle-type-dependent commission)
     if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
         platform_rate, driver_rate = _get_commission(trip.vehicle_type)
@@ -471,9 +487,14 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # Sync status to Firestore (non-blocking)
     if _HAS_FIRESTORE:
+        _fs_dist = trip.distance
+        _fs_dur = trip.duration
         def _sync_fs():
             try:
-                firestore_sync.sync_trip_status(trip_id=trip.id, status=status)
+                firestore_sync.sync_trip_status(
+                    trip_id=trip.id, status=status,
+                    distance=_fs_dist, duration=_fs_dur,
+                )
             except Exception as e:
                 logging.error("Firestore sync on update_trip_status failed: %s", e)
         asyncio.get_event_loop().run_in_executor(None, _sync_fs)

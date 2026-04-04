@@ -831,7 +831,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             file_path = fb_url
         else:
             import os as _os
-            docs_dir = _os.path.join(_os.path.dirname(__file__), "uploads", "documents")
+            docs_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "uploads", "documents")
             _os.makedirs(docs_dir, exist_ok=True)
             fpath = _os.path.join(docs_dir, fname)
             with open(fpath, "wb") as f:

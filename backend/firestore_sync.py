@@ -705,6 +705,9 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
 def sync_trip_status(trip_id: int, status: str,
                      driver_id: int = None, driver_name: str = None, driver_phone: str = None,
                      driver_photo_url: str = None,
+                     vehicle_make: str = None, vehicle_model: str = None,
+                     vehicle_color: str = None, vehicle_plate: str = None,
+                     vehicle_year: str = None,
                      cancel_reason: str = None,
                      cancellation_fee: float = None,
                      cancelled_by: str = None):
@@ -731,12 +734,26 @@ def sync_trip_status(trip_id: int, status: str,
         data[ts_field] = now
     if driver_id:
         data["driverId"] = str(driver_id)
+        data["driver_id"] = driver_id  # snake_case for Flutter compatibility
         if driver_name:
             data["driverName"] = driver_name
+            data["driver_name"] = driver_name
         if driver_phone:
             data["driverPhone"] = driver_phone
+            data["driver_phone"] = driver_phone
         if driver_photo_url:
             data["driverPhotoUrl"] = driver_photo_url
+            data["driver_photo_url"] = driver_photo_url
+        if vehicle_make:
+            data["vehicle_make"] = vehicle_make
+        if vehicle_model:
+            data["vehicle_model"] = vehicle_model
+        if vehicle_color:
+            data["vehicle_color"] = vehicle_color
+        if vehicle_plate:
+            data["vehicle_plate"] = vehicle_plate
+        if vehicle_year:
+            data["vehicle_year"] = str(vehicle_year)
     if cancel_reason:
         data["cancelReason"] = cancel_reason
     if cancellation_fee is not None and cancellation_fee > 0:

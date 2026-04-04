@@ -813,36 +813,36 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Prevent duplicate processing from in-flight polls after SSE match
     if (_driverMatched) return;
 
+    // Helper: read field supporting both snake_case (SSE/polling) and camelCase (Firestore)
+    String? field(String snake, String camel) =>
+        data[snake]?.toString() ?? data[camel]?.toString();
+
     // Validate driver_id exists before creating MatchedDriver.
-    // Do NOT set _driverMatched=true until validation passes — otherwise a stale
-    // poll response without driver_id permanently blocks the rider (timers already
-    // cancelled, flag prevents future polls from re-triggering this method).
-    final driverId = data['driver_id']?.toString();
+    final driverId = field('driver_id', 'driverId');
     if (driverId == null || driverId.isEmpty) {
       debugPrint('⚠️ Driver matched but driver_id is null/empty — will retry on next poll');
-      // Restart polling so we can try again with a fresh response
       _startDispatchPolling(tripId);
       return;
     }
     _driverMatched = true;
 
     // Extract photo URL — try flat field first, then nested driver object
-    final photoUrl = data['driver_photo_url']?.toString() ??
+    final photoUrl = field('driver_photo_url', 'driverPhotoUrl') ??
         (data['driver'] is Map ? (data['driver'] as Map)['photo_url']?.toString() : null) ??
         '';
 
     final driver = MatchedDriver(
       id: driverId,
-      name: data['driver_name']?.toString() ?? 'Driver',
-      rating: (data['driver_rating'] as num?)?.toDouble() ?? 4.9,
-      totalTrips: (data['driver_trips'] as num?)?.toInt() ?? 0,
-      vehicleMake: data['vehicle_make']?.toString() ?? '',
-      vehicleModel: data['vehicle_model']?.toString() ?? '',
-      vehicleColor: data['vehicle_color']?.toString() ?? '',
-      vehiclePlate: data['vehicle_plate']?.toString() ?? '',
-      vehicleYear: data['vehicle_year']?.toString() ?? '',
+      name: field('driver_name', 'driverName') ?? 'Driver',
+      rating: (data['driver_rating'] ?? data['driverRating'] as num?)?.toDouble() ?? 4.9,
+      totalTrips: (data['driver_trips'] ?? data['driverTrips'] as num?)?.toInt() ?? 0,
+      vehicleMake: field('vehicle_make', 'vehicleMake') ?? '',
+      vehicleModel: field('vehicle_model', 'vehicleModel') ?? '',
+      vehicleColor: field('vehicle_color', 'vehicleColor') ?? '',
+      vehiclePlate: field('vehicle_plate', 'vehiclePlate') ?? '',
+      vehicleYear: field('vehicle_year', 'vehicleYear') ?? '',
       photoUrl: photoUrl.isNotEmpty ? photoUrl : null,
-      phone: data['driver_phone']?.toString() ?? '',
+      phone: field('driver_phone', 'driverPhone') ?? '',
     );
 
     _state = _state.copyWith(

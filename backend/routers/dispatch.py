@@ -454,12 +454,19 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 async with SessionLocal() as _db:
                     drv_result = await _db.execute(select(User).where(User.id == driver_id))
                     drv = drv_result.scalar_one_or_none()
+                    veh_result = await _db.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
+                    veh = veh_result.scalar_one_or_none()
                     firestore_sync.sync_trip_status(
                         trip_id=trip.id, status="driver_en_route",
                         driver_id=driver_id,
                         driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
                         driver_phone=drv.phone if drv else None,
                         driver_photo_url=(_abs_photo_url(drv.photo_url) or "") if drv else None,
+                        vehicle_make=veh.make if veh else None,
+                        vehicle_model=veh.model if veh else None,
+                        vehicle_color=veh.color if veh else None,
+                        vehicle_plate=veh.plate if veh else None,
+                        vehicle_year=str(veh.year) if veh else None,
                     )
             except Exception as e:
                 logging.error("Firestore sync on accept_offer failed: %s", e)

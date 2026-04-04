@@ -625,7 +625,7 @@ class _AccountScreenState extends State<AccountScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label address saved'),
-        backgroundColor: c.surface,
+        // Uses global snackBarTheme
       ),
     );
   }

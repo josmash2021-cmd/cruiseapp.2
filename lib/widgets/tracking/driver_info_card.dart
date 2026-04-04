@@ -273,8 +273,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Phone number not available for $name'),
-          backgroundColor: const Color(0xFF1A1A1A),
-          behavior: SnackBarBehavior.floating,
+          // Uses global snackBarTheme
         ),
       );
       return;

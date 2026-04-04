@@ -131,7 +131,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: c.isDark ? c.surface : Colors.black87,
+        // Uses global snackBarTheme
       ),
     );
   }

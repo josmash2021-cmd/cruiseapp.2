@@ -208,6 +208,22 @@ final _textButtonTheme = TextButtonThemeData(
   ),
 );
 
+const _snackBarTheme = SnackBarThemeData(
+  behavior: SnackBarBehavior.floating,
+  backgroundColor: Color(0xFFE8C547),
+  contentTextStyle: TextStyle(
+    color: Colors.black,
+    fontWeight: FontWeight.w600,
+    fontSize: 14,
+  ),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(14)),
+  ),
+  elevation: 8,
+  dismissDirection: DismissDirection.down,
+  insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+);
+
 final ThemeData darkTheme = ThemeData.dark().copyWith(
   scaffoldBackgroundColor: const Color(0xFF08090C),
   brightness: Brightness.dark,
@@ -221,6 +237,7 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
   pageTransitionsTheme: _pageTransitions,
   elevatedButtonTheme: _elevatedButtonTheme,
   textButtonTheme: _textButtonTheme,
+  snackBarTheme: _snackBarTheme,
 );
 
 final ThemeData lightTheme = ThemeData.light().copyWith(
@@ -236,4 +253,5 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
   pageTransitionsTheme: _pageTransitions,
   elevatedButtonTheme: _elevatedButtonTheme,
   textButtonTheme: _textButtonTheme,
+  snackBarTheme: _snackBarTheme,
 );

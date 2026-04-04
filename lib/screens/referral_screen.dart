@@ -108,10 +108,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Code copied to clipboard!'),
-        backgroundColor: _card,
-        behavior: SnackBarBehavior.floating,
+        // Uses global snackBarTheme
         duration: const Duration(seconds: 2),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

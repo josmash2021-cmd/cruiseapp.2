@@ -50,7 +50,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: c.isDark ? c.surface : Colors.black87,
+        // Uses global snackBarTheme
       ),
     );
   }

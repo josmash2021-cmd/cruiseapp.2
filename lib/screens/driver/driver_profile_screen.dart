@@ -420,9 +420,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                 const SnackBar(
                                   content: Text(
                                     'Dispatch password copied',
-                                    style: TextStyle(color: Colors.white),
                                   ),
-                                  backgroundColor: Colors.black,
+                                  // Uses global snackBarTheme
                                 ),
                               );
                             },

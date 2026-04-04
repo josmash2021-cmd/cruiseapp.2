@@ -63,15 +63,11 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.white.withValues(alpha: 0.6),
           content: Text(
             S.of(context).passwordNotFound,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          // Uses global snackBarTheme
         ),
       );
       return;

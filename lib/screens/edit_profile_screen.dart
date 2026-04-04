@@ -241,7 +241,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: c.isDark ? c.surface : Colors.black87,
+        // Uses global snackBarTheme (gold, floating, swipe-to-dismiss)
       ),
     );
   }

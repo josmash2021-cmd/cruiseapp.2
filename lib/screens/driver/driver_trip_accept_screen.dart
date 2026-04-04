@@ -1280,7 +1280,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Reporte enviado. El equipo lo revisará.'),
-        backgroundColor: Color(0xFF1a1a2e),
+        // Uses global snackBarTheme
       ));
     } catch (e) {
       if (!mounted) return;

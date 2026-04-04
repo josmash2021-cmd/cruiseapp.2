@@ -260,7 +260,7 @@ class _AboutScreenState extends State<AboutScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(S.of(context).thankYou),
-          backgroundColor: sc.isDark ? sc.surface : Colors.black87,
+          // Uses global snackBarTheme
         ),
       );
     }

@@ -66,8 +66,7 @@ class _WalletScreenState extends State<WalletScreen> {
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
         content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF23262F),
+        // Uses global snackBarTheme
       ));
   }
 

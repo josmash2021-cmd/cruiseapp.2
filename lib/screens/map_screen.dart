@@ -2745,8 +2745,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(S.of(context).googlePayNotAvailable),
-            backgroundColor: _c.surface,
-            behavior: SnackBarBehavior.floating,
+            // Uses global snackBarTheme
           ),
         );
       }

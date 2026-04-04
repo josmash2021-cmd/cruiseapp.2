@@ -283,6 +283,11 @@ class UserSession {
     required String uid,
     required String role,
   }) async {
+    // Reset photo notifiers immediately so previous user's photo
+    // never shows during the login transition
+    photoNotifier.value = '';
+    photoUrlNotifier.value = '';
+
     // Clear in-memory image cache from any previous account
     // Disk cache stays intact (keyed by URL, safe across accounts)
     try {
@@ -294,10 +299,10 @@ class UserSession {
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
     await prefs.setString('cruise_active_uid', uid);
     await prefs.setString('cruise_active_role', role);
-    
+
     // Update cached UID for quick access
     _cachedUid = uid;
-    
+
     debugPrint('[UserSession] Active account set: uid=$uid, role=$role');
   }
 

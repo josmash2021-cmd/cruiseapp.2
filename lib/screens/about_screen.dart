@@ -119,11 +119,14 @@ class _AboutScreenState extends State<AboutScreen> {
                           ),
                         ],
                       ),
-                      child: Center(
-                        child: Icon(
-                          Icons.local_taxi_rounded,
-                          size: 40,
-                          color: Colors.black,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Image.asset(
+                            'assets/images/logoapp.png',
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                     ),
@@ -268,6 +271,13 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   Future<void> _shareCruise() async {
-    await Share.share(S.of(context).shareAppText);
+    final storeUrl = Platform.isIOS
+        ? 'https://apps.apple.com/app/id0000000000'
+        : 'https://play.google.com/store/apps/details?id=com.cruise_app';
+    final text = S.of(context).shareAppText.replaceAll(
+      'https://cruiseride.com/download',
+      storeUrl,
+    );
+    await Share.share(text);
   }
 }

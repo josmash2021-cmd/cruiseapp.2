@@ -269,44 +269,12 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               if (Platform.isIOS || Platform.isAndroid)
                 const SizedBox(height: 16),
 
-              // PayPal (Coming Soon)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  children: [
-                    Opacity(
-                      opacity: 0.45,
-                      child: _paymentRow(
-                        c,
-                        icon: const _PayPalIcon(),
-                        label: 'PayPal',
-                        onAdd: () {},
-                      ),
-                    ),
-                    Positioned(
-                      top: 6,
-                      right: -18,
-                      child: Transform.rotate(
-                        angle: 0.45,
-                        child: Container(
-                          width: 100,
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          color: const Color(0xFFD4A843),
-                          child: const Text(
-                            'Coming Soon',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              // PayPal
+              _paymentRow(
+                c,
+                icon: const _PayPalIcon(),
+                label: 'PayPal',
+                onAdd: () => _addMethod('paypal'),
               ),
               const SizedBox(height: 16),
 
@@ -321,13 +289,16 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               const SizedBox(height: 32),
 
               // ── Security notice ──
-              Text(
-                S.of(context).paymentInfoSecure,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: c.textTertiary,
-                  height: 1.5,
+              SizedBox(
+                width: double.infinity,
+                child: Text(
+                  S.of(context).paymentInfoSecure,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: c.textTertiary,
+                    height: 1.5,
+                  ),
                 ),
               ),
 
@@ -473,7 +444,7 @@ class _GooglePayIcon extends StatelessWidget {
   }
 }
 
-/// PayPal icon — P in blue circle
+/// PayPal icon — real brand logo asset
 class _PayPalIcon extends StatelessWidget {
   const _PayPalIcon();
 
@@ -483,17 +454,16 @@ class _PayPalIcon extends StatelessWidget {
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: const Color(0xFF003087),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Center(
-        child: Text(
-          'P',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            fontStyle: FontStyle.italic,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Image.asset(
+            'assets/images/paypal_logo.png',
+            fit: BoxFit.contain,
           ),
         ),
       ),

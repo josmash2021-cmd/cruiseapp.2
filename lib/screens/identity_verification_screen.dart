@@ -741,7 +741,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     return Padding(
       key: const ValueKey(4),
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Spacer(flex: 2),
@@ -794,6 +796,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 24),
         ],
+      ),
       ),
     );
   }

@@ -1,38 +1,36 @@
 """
 Document Auto-Approval Agent — THE FAST-TRACK VERIFIER
 
-Automatically reviews and approves driver verification requests that meet
-ALL required criteria, dramatically reducing wait times from hours to minutes.
+Automatically reviews and approves driver vehicle documents,
+dramatically reducing wait times from hours to minutes.
 
-Approval Checklist (ALL must pass):
-1. ✅ License front photo uploaded (URL exists and is reachable)
-2. ✅ License back photo uploaded
-3. ✅ Vehicle registration photo uploaded
-4. ✅ Insurance photo uploaded
-5. ✅ Selfie photo uploaded
-6. ✅ Vehicle registered in system (make, model, year, plate)
-7. ✅ SSN provided (format: XXX-XX-XXXX)
-8. ✅ Profile photo exists
-9. ✅ Valid phone number
-10. ✅ Valid email address
+═══════════════════════════════════════════════════════════
+  PHASE 1 (ACTIVE): Vehicle documents only
+  - Vehicle Insurance
+  - Vehicle Registration
 
-Auto-REJECT if:
-- Any photo URL returns 404 (broken upload)
-- SSN format is invalid
-- No vehicle registered
-- Account created < 5 minutes ago (anti-bot)
+  PHASE 2 (FUTURE — activate by setting FULL_VERIFICATION=True):
+  - License front/back photos
+  - Selfie photo
+  - SSN validation
+  - Profile photo
+  - Video verification
+  - Email/phone validation
+  - Account age anti-bot checks
+═══════════════════════════════════════════════════════════
 
-Flag for MANUAL review if:
-- Multiple verification attempts (3+) — possible fraud
-- Account age < 24 hours — new account rush
-- Missing video verification
+Phase 1 Flow:
+1. Driver uploads insurance/registration on Vehicle page
+2. Document saved to `documents` table with status="pending"
+3. This agent scans every 2 minutes for pending vehicle docs
+4. If photo URL exists and is reachable → AUTO-APPROVE
+   - Set Document.status = "approved"
+   - Set Vehicle.insurance_valid / registration_valid = True
+   - Push notification to driver
+   - Sync to Firestore
+5. If photo URL broken → AUTO-REJECT with reason
 
-Actions:
-- AUTO-APPROVE → Set verified, sync Firestore, push notification, admin log
-- AUTO-REJECT → Set rejected with reason, push notification
-- FLAG → Leave as pending, create admin alert for manual review
-
-Runs every 2 minutes, scanning all pending verifications.
+Runs every 2 minutes.
 """
 
 import asyncio
@@ -45,14 +43,21 @@ from sqlalchemy import select, and_, func
 
 logger = logging.getLogger(__name__)
 
+# ══════════════════════════════════════════════════════════════════════
+#  MASTER SWITCH — set True to enable full driver verification
+# ══════════════════════════════════════════════════════════════════════
+FULL_VERIFICATION = False  # Phase 2: flip to True to activate all checks
+
 # ── Configuration ─────────────────────────────────────────────────────
 SCAN_INTERVAL_SECONDS = 120     # Check every 2 minutes
-MIN_ACCOUNT_AGE_MINUTES = 5     # Anti-bot: account must be 5+ min old
-FLAG_ACCOUNT_AGE_HOURS = 24     # Flag for review if account < 24h old
-MAX_VERIFICATION_ATTEMPTS = 3   # Flag if 3+ attempts
 PHOTO_CHECK_TIMEOUT = 8         # Seconds to wait for photo URL check
 
-# Required driver documents for auto-approval
+# Phase 1: Vehicle document types that get auto-approved
+VEHICLE_DOC_TYPES = ["insurance", "registration"]
+
+# Phase 2 settings (inactive until FULL_VERIFICATION=True)
+MIN_ACCOUNT_AGE_MINUTES = 5     # Anti-bot: account must be 5+ min old
+FLAG_ACCOUNT_AGE_HOURS = 24     # Flag for review if account < 24h old
 REQUIRED_DRIVER_DOCS = [
     "license_front_url",
     "license_back_url",
@@ -61,14 +66,15 @@ REQUIRED_DRIVER_DOCS = [
     "selfie_url",
 ]
 
-# Track processed verifications to avoid re-processing
-_processed: Dict[int, float] = {}
+# Track processed docs to avoid re-processing
+_processed: Dict[str, float] = {}  # key: "doc_{id}" or "user_{id}"
 _MAX_PROCESSED_CACHE = 10000
-_REPROCESS_COOLDOWN = 300  # Don't re-check same user within 5 min
+_REPROCESS_COOLDOWN = 300  # Don't re-check same doc within 5 min
 
 
 class DocumentApprovalAgent:
-    """Autonomous agent that auto-approves or flags driver verifications."""
+    """Autonomous agent that auto-approves vehicle documents (Phase 1)
+    and full driver verification (Phase 2 — future)."""
 
     def __init__(self):
         self._db_session_maker = None
@@ -83,6 +89,7 @@ class DocumentApprovalAgent:
             "last_scan_at": None,
             "last_scan_duration_ms": 0,
             "started_at": None,
+            "mode": "vehicle_docs_only" if not FULL_VERIFICATION else "full_verification",
         }
 
     def set_db_session_maker(self, session_maker):
@@ -94,7 +101,8 @@ class DocumentApprovalAgent:
         self._running = True
         self._stats["started_at"] = datetime.now(timezone.utc).isoformat()
         self._task = asyncio.create_task(self._loop())
-        logger.info("✅ Document Approval Agent ACTIVE — auto-verifying every %ds", SCAN_INTERVAL_SECONDS)
+        mode = "FULL verification" if FULL_VERIFICATION else "vehicle docs (insurance + registration)"
+        logger.info("✅ Document Approval Agent ACTIVE — mode: %s, every %ds", mode, SCAN_INTERVAL_SECONDS)
 
     async def stop(self):
         self._running = False
@@ -111,6 +119,7 @@ class DocumentApprovalAgent:
             "agent": "document_approval",
             "running": self._running,
             **self._stats,
+            "full_verification_enabled": FULL_VERIFICATION,
             "processed_cache_size": len(_processed),
         }
 
@@ -130,39 +139,12 @@ class DocumentApprovalAgent:
         t0 = time.time()
         now = datetime.now(timezone.utc)
 
-        from models.database import User, Vehicle
+        # ── PHASE 1: Vehicle document auto-approval ───────────
+        await self._scan_vehicle_docs(now)
 
-        async with self._db_session_maker() as db:
-            # Find all pending verification requests
-            result = await db.execute(
-                select(User).where(
-                    and_(
-                        User.verification_status == "pending",
-                        User.role == "driver",
-                    )
-                )
-            )
-            pending_drivers = result.scalars().all()
-            self._stats["pending_count"] = len(pending_drivers)
-
-            for driver in pending_drivers:
-                # Skip if recently processed
-                last_check = _processed.get(driver.id, 0)
-                if time.time() - last_check < _REPROCESS_COOLDOWN:
-                    continue
-                _processed[driver.id] = time.time()
-
-                # Run the verification checklist
-                decision, reasons = await self._evaluate_driver(db, driver, now)
-
-                if decision == "approve":
-                    await self._auto_approve(db, driver, now)
-                elif decision == "reject":
-                    await self._auto_reject(db, driver, reasons, now)
-                elif decision == "flag":
-                    await self._flag_for_review(driver, reasons)
-
-            await db.commit()
+        # ── PHASE 2: Full driver verification (future) ────────
+        if FULL_VERIFICATION:
+            await self._scan_full_verification(now)
 
         # Update stats
         self._stats["scans"] += 1
@@ -176,31 +158,184 @@ class DocumentApprovalAgent:
             for k in stale:
                 del _processed[k]
 
-        if pending_drivers:
-            logger.info(
-                "[DocApproval] Scan #%d — %d pending, "
-                "%d approved, %d rejected, %d flagged (%.0fms)",
-                self._stats["scans"],
-                len(pending_drivers),
-                self._stats["auto_approved"],
-                self._stats["auto_rejected"],
-                self._stats["flagged_for_review"],
-                self._stats["last_scan_duration_ms"],
-            )
+    # ══════════════════════════════════════════════════════════════════
+    #  PHASE 1 — Vehicle Insurance + Registration auto-approval
+    # ══════════════════════════════════════════════════════════════════
 
-    async def _evaluate_driver(
+    async def _scan_vehicle_docs(self, now: datetime):
+        """Scan pending vehicle documents (insurance, registration) and auto-approve."""
+        from models.database import Document, Vehicle, User
+
+        async with self._db_session_maker() as db:
+            # Find all pending vehicle documents (insurance + registration)
+            result = await db.execute(
+                select(Document).where(
+                    and_(
+                        Document.status == "pending",
+                        Document.doc_type.in_(VEHICLE_DOC_TYPES),
+                    )
+                )
+            )
+            pending_docs = result.scalars().all()
+            self._stats["pending_count"] = len(pending_docs)
+
+            approved_count = 0
+            rejected_count = 0
+
+            for doc in pending_docs:
+                cache_key = f"doc_{doc.id}"
+                last_check = _processed.get(cache_key, 0)
+                if time.time() - last_check < _REPROCESS_COOLDOWN:
+                    continue
+                _processed[cache_key] = time.time()
+
+                # Get the driver who owns this document
+                driver_result = await db.execute(
+                    select(User).where(User.id == doc.user_id)
+                )
+                driver = driver_result.scalar_one_or_none()
+                if not driver:
+                    continue
+
+                # ── Validate: photo file exists ───────────────
+                if not doc.file_path or len(doc.file_path) < 5:
+                    # No file uploaded — reject
+                    doc.status = "rejected"
+                    doc.rejection_reason = "No se subió archivo. Intenta nuevamente."
+                    rejected_count += 1
+                    self._stats["auto_rejected"] += 1
+
+                    logger.warning(
+                        "[DocApproval] REJECTED %s for driver #%d — no file",
+                        doc.doc_type, driver.id,
+                    )
+
+                    if driver.fcm_token:
+                        self._send_rejection_push(
+                            driver, doc.doc_type,
+                            "No se detectó archivo. Por favor sube el documento nuevamente."
+                        )
+                    continue
+
+                # ── Validate: photo URL reachable ─────────────
+                url_ok = await self._check_url_reachable(doc.file_path)
+                if not url_ok:
+                    doc.status = "rejected"
+                    doc.rejection_reason = "El archivo subido no es accesible. Intenta nuevamente."
+                    rejected_count += 1
+                    self._stats["auto_rejected"] += 1
+
+                    logger.warning(
+                        "[DocApproval] REJECTED %s for driver #%d — URL unreachable: %s",
+                        doc.doc_type, driver.id, doc.file_path[:80],
+                    )
+
+                    if driver.fcm_token:
+                        self._send_rejection_push(
+                            driver, doc.doc_type,
+                            "Hubo un error con tu archivo. Por favor súbelo nuevamente."
+                        )
+                    continue
+
+                # ── ALL CHECKS PASSED — AUTO-APPROVE ──────────
+                doc.status = "approved"
+                doc.rejection_reason = None
+                doc.updated_at = now
+                approved_count += 1
+                self._stats["auto_approved"] += 1
+
+                # Update Vehicle validity flags
+                vehicle_result = await db.execute(
+                    select(Vehicle).where(Vehicle.user_id == driver.id)
+                )
+                vehicle = vehicle_result.scalar_one_or_none()
+
+                if vehicle:
+                    if doc.doc_type == "insurance":
+                        vehicle.insurance_valid = True
+                    elif doc.doc_type == "registration":
+                        vehicle.registration_valid = True
+
+                logger.info(
+                    "[DocApproval] APPROVED %s for driver #%d (%s %s)",
+                    doc.doc_type, driver.id, driver.first_name, driver.last_name,
+                )
+
+                # Push notification
+                if driver.fcm_token:
+                    self._send_approval_push(driver, doc.doc_type)
+
+                # Sync to Firestore
+                await self._sync_vehicle_doc_approved(driver, vehicle, doc.doc_type)
+
+                # Check if ALL vehicle docs are now valid → notify driver
+                if vehicle and vehicle.insurance_valid and vehicle.registration_valid:
+                    if driver.fcm_token:
+                        self._send_all_docs_complete_push(driver)
+                    await self._alert_admin(
+                        driver, "vehicle_docs_complete",
+                        f"Driver #{driver.id} ({driver.first_name} {driver.last_name}) "
+                        f"tiene todos los documentos de vehículo aprobados. Listo para conducir.",
+                        severity="low",
+                    )
+
+            if approved_count or rejected_count:
+                await db.commit()
+                logger.info(
+                    "[DocApproval] Vehicle docs scan — %d pending, %d approved, %d rejected",
+                    len(pending_docs), approved_count, rejected_count,
+                )
+
+    # ══════════════════════════════════════════════════════════════════
+    #  PHASE 2 — Full driver verification (FUTURE — activate later)
+    # ══════════════════════════════════════════════════════════════════
+
+    async def _scan_full_verification(self, now: datetime):
+        """Full driver verification: license, selfie, SSN, vehicle, contact.
+        Only runs when FULL_VERIFICATION=True."""
+        from models.database import User, Vehicle
+
+        async with self._db_session_maker() as db:
+            result = await db.execute(
+                select(User).where(
+                    and_(
+                        User.verification_status == "pending",
+                        User.role == "driver",
+                    )
+                )
+            )
+            pending_drivers = result.scalars().all()
+
+            for driver in pending_drivers:
+                cache_key = f"user_{driver.id}"
+                last_check = _processed.get(cache_key, 0)
+                if time.time() - last_check < _REPROCESS_COOLDOWN:
+                    continue
+                _processed[cache_key] = time.time()
+
+                decision, reasons = await self._evaluate_full_verification(
+                    db, driver, now
+                )
+
+                if decision == "approve":
+                    await self._full_approve(db, driver, now)
+                elif decision == "reject":
+                    await self._full_reject(db, driver, reasons, now)
+                elif decision == "flag":
+                    await self._flag_for_review(driver, reasons)
+
+            await db.commit()
+
+    async def _evaluate_full_verification(
         self, db, driver, now: datetime
     ) -> Tuple[str, List[str]]:
-        """
-        Evaluate a driver's verification submission.
-        Returns: ("approve"|"reject"|"flag", [reasons])
-        """
+        """Full verification checklist (Phase 2). Returns (decision, reasons)."""
         from models.database import Vehicle
 
         reject_reasons = []
         flag_reasons = []
 
-        # ── CHECK 1: Account age (anti-bot) ───────────────────
+        # CHECK 1: Account age (anti-bot)
         created = driver.created_at
         if created:
             if created.tzinfo is None:
@@ -212,271 +347,299 @@ class DocumentApprovalAgent:
                     f"Cuenta creada hace {account_age_min:.0f} min "
                     f"(mínimo: {MIN_ACCOUNT_AGE_MINUTES} min). Posible bot."
                 )
-
             elif account_age_min < FLAG_ACCOUNT_AGE_HOURS * 60:
                 flag_reasons.append(
-                    f"Cuenta creada hace {account_age_min/60:.1f}h "
-                    f"(< {FLAG_ACCOUNT_AGE_HOURS}h). Cuenta nueva."
+                    f"Cuenta creada hace {account_age_min/60:.1f}h. Cuenta nueva."
                 )
 
-        # ── CHECK 2: Required document photos ────��────────────
+        # CHECK 2: Required document photos
         missing_docs = []
         for field in REQUIRED_DRIVER_DOCS:
             url = getattr(driver, field, None)
             if not url or not isinstance(url, str) or len(url) < 10:
                 doc_name = field.replace("_url", "").replace("_", " ").title()
                 missing_docs.append(doc_name)
-
         if missing_docs:
-            reject_reasons.append(
-                f"Documentos faltantes: {', '.join(missing_docs)}"
-            )
+            reject_reasons.append(f"Documentos faltantes: {', '.join(missing_docs)}")
 
-        # ── CHECK 3: Photo URLs are reachable ─────────────────
+        # CHECK 3: Photo URLs reachable
         broken_urls = []
         for field in REQUIRED_DRIVER_DOCS:
             url = getattr(driver, field, None)
             if url and isinstance(url, str) and len(url) > 10:
-                is_valid = await self._check_url_reachable(url)
-                if not is_valid:
+                if not await self._check_url_reachable(url):
                     doc_name = field.replace("_url", "").replace("_", " ").title()
                     broken_urls.append(doc_name)
-
         if broken_urls:
-            reject_reasons.append(
-                f"Fotos inaccesibles (upload fallido): {', '.join(broken_urls)}"
-            )
+            reject_reasons.append(f"Fotos inaccesibles: {', '.join(broken_urls)}")
 
-        # ── CHECK 4: SSN provided and valid format ────────────
+        # CHECK 4: SSN
         ssn = driver.ssn
         if not ssn or not isinstance(ssn, str):
             reject_reasons.append("SSN no proporcionado")
         else:
             import re
             if not re.match(r'^\d{3}-\d{2}-\d{4}$', ssn):
-                reject_reasons.append(f"Formato de SSN inválido: {ssn[:3]}...")
+                reject_reasons.append("Formato de SSN inválido")
 
-        # ── CHECK 5: Vehicle registered ───────────────────────
+        # CHECK 5: Vehicle registered
         veh_result = await db.execute(
             select(Vehicle).where(Vehicle.user_id == driver.id)
         )
         vehicle = veh_result.scalar_one_or_none()
-
         if not vehicle:
-            reject_reasons.append("No tiene vehículo registrado en el sistema")
+            reject_reasons.append("No tiene vehículo registrado")
         else:
-            # Validate vehicle has required fields
             v_missing = []
-            if not vehicle.make:
-                v_missing.append("marca")
-            if not vehicle.model:
-                v_missing.append("modelo")
-            if not vehicle.year:
-                v_missing.append("año")
-            if not vehicle.plate:
-                v_missing.append("placa")
+            if not vehicle.make: v_missing.append("marca")
+            if not vehicle.model: v_missing.append("modelo")
+            if not vehicle.year: v_missing.append("año")
+            if not vehicle.plate: v_missing.append("placa")
             if v_missing:
-                reject_reasons.append(
-                    f"Datos de vehículo incompletos: {', '.join(v_missing)}"
-                )
+                reject_reasons.append(f"Vehículo incompleto: {', '.join(v_missing)}")
 
-        # ── CHECK 6: Contact info ─────────────────────────────
+        # CHECK 6: Contact info
         if not driver.phone or len(driver.phone) < 7:
             reject_reasons.append("Teléfono no válido")
         if not driver.email or "@" not in (driver.email or ""):
             reject_reasons.append("Email no válido")
 
-        # ─�� CHECK 7: Profile photo ────────────────────────────
+        # CHECK 7: Profile photo (flag, not reject)
         if not driver.photo_url:
             flag_reasons.append("Sin foto de perfil")
 
-        # ── CHECK 8: Video verification ───────────────────────
+        # CHECK 8: Video verification (flag, not reject)
         if not driver.video_url:
             flag_reasons.append("Sin video de verificación")
 
-        # ── CHECK 9: Multiple attempts detection ──────────────
-        # Check if verification_reason has been set before (indicates previous rejection)
+        # CHECK 9: Previously rejected
         if driver.verification_reason and "rechazado" in (driver.verification_reason or "").lower():
-            flag_reasons.append(
-                "Verificación previamente rechazada. Requiere revisión manual."
-            )
+            flag_reasons.append("Verificación previamente rechazada. Revisión manual.")
 
-        # ── DECISION ──────────────────────────────────────────
+        # DECISION
         if reject_reasons:
             return "reject", reject_reasons
         if flag_reasons:
             return "flag", flag_reasons
         return "approve", []
 
+    # ══════════════════════════════════════════════════════════════════
+    #  URL VALIDATION
+    # ══════════════════════════════════════════════════════════════════
+
     async def _check_url_reachable(self, url: str) -> bool:
         """Check if a document URL is reachable (HEAD request)."""
         try:
-            # For Firebase Storage URLs and local URLs
             if "firebasestorage" in url or "localhost" in url or "railway" in url:
-                # Trust Firebase/internal URLs — they're managed by us
-                return True
+                return True  # Trust internal URLs
 
             import urllib.request
             req = urllib.request.Request(url, method="HEAD")
             req.add_header("User-Agent", "CruiseApp-DocVerifier/1.0")
 
             loop = asyncio.get_event_loop()
-
             def _head():
                 try:
                     with urllib.request.urlopen(req, timeout=PHOTO_CHECK_TIMEOUT) as resp:
                         return resp.status == 200
                 except Exception:
                     return False
-
             return await loop.run_in_executor(None, _head)
         except Exception:
-            return True  # Assume valid on error (don't reject for network issues)
+            return True  # Assume valid on error
 
-    async def _auto_approve(self, db, driver, now: datetime):
-        """Auto-approve a driver's verification."""
+    # ══════════════════════════════════════════════════════════════════
+    #  PUSH NOTIFICATIONS
+    # ══════════════════════════════════════════════════════════════════
+
+    def _send_approval_push(self, driver, doc_type: str):
+        """Notify driver that a vehicle document was approved."""
+        try:
+            from services.fcm_service import _send_fcm_push
+            doc_names = {
+                "insurance": "Seguro del vehículo",
+                "registration": "Registro del vehículo",
+            }
+            doc_name = doc_names.get(doc_type, doc_type)
+            _send_fcm_push(
+                driver.fcm_token,
+                title=f"✅ {doc_name} aprobado",
+                body=f"Tu {doc_name.lower()} ha sido verificado y aprobado.",
+                data={
+                    "type": "vehicle_doc_approved",
+                    "doc_type": doc_type,
+                    "driver_id": str(driver.id),
+                },
+            )
+        except Exception as e:
+            logger.warning("[DocApproval] Approval push failed: %s", e)
+
+    def _send_rejection_push(self, driver, doc_type: str, reason: str):
+        """Notify driver that a vehicle document was rejected."""
+        try:
+            from services.fcm_service import _send_fcm_push
+            doc_names = {
+                "insurance": "Seguro del vehículo",
+                "registration": "Registro del vehículo",
+            }
+            doc_name = doc_names.get(doc_type, doc_type)
+            _send_fcm_push(
+                driver.fcm_token,
+                title=f"❌ {doc_name} rechazado",
+                body=reason,
+                data={
+                    "type": "vehicle_doc_rejected",
+                    "doc_type": doc_type,
+                    "reason": reason,
+                    "driver_id": str(driver.id),
+                },
+            )
+        except Exception as e:
+            logger.warning("[DocApproval] Rejection push failed: %s", e)
+
+    def _send_all_docs_complete_push(self, driver):
+        """Notify driver that ALL vehicle documents are approved — ready to drive."""
+        try:
+            from services.fcm_service import _send_fcm_push
+            _send_fcm_push(
+                driver.fcm_token,
+                title="🚗 ¡Documentos completos!",
+                body="Todos tus documentos de vehículo están aprobados. "
+                     "Ya puedes conectarte y comenzar a recibir viajes.",
+                data={
+                    "type": "all_vehicle_docs_approved",
+                    "driver_id": str(driver.id),
+                },
+            )
+        except Exception as e:
+            logger.warning("[DocApproval] All-docs push failed: %s", e)
+
+    # ══════════════════════════════════════════════════════════════════
+    #  PHASE 2 — Full verification approve/reject (future)
+    # ══════════════════════════════════════════════════════════════════
+
+    async def _full_approve(self, db, driver, now: datetime):
+        """Phase 2: Auto-approve full driver verification."""
         driver.verification_status = "approved"
         driver.is_verified = True
         driver.verified_at = now
         driver.verification_reason = None
-
         self._stats["auto_approved"] += 1
 
         logger.info(
-            "[DocApproval] AUTO-APPROVED driver #%d (%s %s) — "
-            "all documents verified",
+            "[DocApproval] FULL APPROVED driver #%d (%s %s)",
             driver.id, driver.first_name, driver.last_name,
         )
 
-        # Push notification to driver
         if driver.fcm_token:
             try:
                 from services.fcm_service import _send_fcm_push
                 _send_fcm_push(
                     driver.fcm_token,
                     title="✅ ¡Cuenta verificada!",
-                    body="Tus documentos han sido aprobados. "
-                         "Ya puedes conectarte y comenzar a recibir viajes.",
-                    data={
-                        "type": "verification_approved",
-                        "driver_id": str(driver.id),
-                    },
+                    body="Tus documentos han sido aprobados. Ya puedes conducir.",
+                    data={"type": "verification_approved", "driver_id": str(driver.id)},
                 )
             except Exception as e:
-                logger.warning("[DocApproval] Approval push failed: %s", e)
+                logger.warning("[DocApproval] Full approval push failed: %s", e)
 
-        # Sync to Firestore
         try:
             from config import _HAS_FIRESTORE, firestore_sync
             if _HAS_FIRESTORE and firestore_sync:
                 firestore_sync.write_approval(
-                    user_id=driver.id,
-                    action="approve",
-                    reason=None,
-                    role="driver",
+                    user_id=driver.id, action="approve", reason=None, role="driver",
                 )
         except Exception as e:
-            logger.warning("[DocApproval] Firestore approval sync failed: %s", e)
+            logger.warning("[DocApproval] Firestore sync failed: %s", e)
 
-        # Admin log
         await self._alert_admin(
-            driver,
-            "auto_approved",
+            driver, "auto_approved",
             f"Driver #{driver.id} ({driver.first_name} {driver.last_name}) "
-            f"auto-aprobado. Todos los documentos verificados.",
+            f"auto-aprobado. Verificación completa.",
             severity="low",
         )
 
-    async def _auto_reject(self, db, driver, reasons: List[str], now: datetime):
-        """Auto-reject a driver's verification with specific reasons."""
+    async def _full_reject(self, db, driver, reasons: List[str], now: datetime):
+        """Phase 2: Auto-reject full driver verification."""
         reason_text = " | ".join(reasons)
         driver.verification_status = "rejected"
         driver.is_verified = False
         driver.verification_reason = f"Auto-rechazado: {reason_text}"
-
         self._stats["auto_rejected"] += 1
 
         logger.warning(
-            "[DocApproval] AUTO-REJECTED driver #%d (%s %s) — %s",
-            driver.id, driver.first_name, driver.last_name, reason_text,
+            "[DocApproval] FULL REJECTED driver #%d — %s",
+            driver.id, reason_text,
         )
 
-        # Push notification with reason
         if driver.fcm_token:
             try:
                 from services.fcm_service import _send_fcm_push
-                # User-friendly reason (first reason only)
                 friendly = reasons[0] if reasons else "Documentación incompleta"
                 _send_fcm_push(
                     driver.fcm_token,
                     title="❌ Verificación rechazada",
-                    body=f"Motivo: {friendly}. "
-                         "Por favor corrige y envía nuevamente.",
-                    data={
-                        "type": "verification_rejected",
-                        "reason": friendly,
-                        "driver_id": str(driver.id),
-                    },
+                    body=f"Motivo: {friendly}. Corrige y envía nuevamente.",
+                    data={"type": "verification_rejected", "reason": friendly, "driver_id": str(driver.id)},
                 )
             except Exception as e:
-                logger.warning("[DocApproval] Rejection push failed: %s", e)
+                logger.warning("[DocApproval] Full rejection push failed: %s", e)
 
-        # Sync to Firestore
         try:
             from config import _HAS_FIRESTORE, firestore_sync
             if _HAS_FIRESTORE and firestore_sync:
                 firestore_sync.write_approval(
-                    user_id=driver.id,
-                    action="reject",
-                    reason=f"Auto-rechazado: {reason_text}",
-                    role="driver",
+                    user_id=driver.id, action="reject",
+                    reason=f"Auto-rechazado: {reason_text}", role="driver",
                 )
         except Exception as e:
-            logger.warning("[DocApproval] Firestore rejection sync failed: %s", e)
+            logger.warning("[DocApproval] Firestore sync failed: %s", e)
 
-        # Admin log
         await self._alert_admin(
-            driver,
-            "auto_rejected",
-            f"Driver #{driver.id} ({driver.first_name} {driver.last_name}) "
-            f"auto-rechazado: {reason_text}",
+            driver, "auto_rejected",
+            f"Driver #{driver.id} auto-rechazado: {reason_text}",
             severity="medium",
         )
 
     async def _flag_for_review(self, driver, reasons: List[str]):
-        """Flag verification for manual admin review (leave as pending)."""
-        reason_text = " | ".join(reasons)
-
+        """Phase 2: Flag for manual admin review."""
         self._stats["flagged_for_review"] += 1
-
-        logger.info(
-            "[DocApproval] FLAGGED driver #%d for manual review — %s",
-            driver.id, reason_text,
-        )
-
-        # Alert admin — needs human eyes
+        logger.info("[DocApproval] FLAGGED driver #%d — %s", driver.id, " | ".join(reasons))
         await self._alert_admin(
-            driver,
-            "needs_manual_review",
+            driver, "needs_manual_review",
             f"Driver #{driver.id} ({driver.first_name} {driver.last_name}) "
-            f"requiere revisión manual: {reason_text}",
+            f"requiere revisión manual: {' | '.join(reasons)}",
             severity="high",
         )
+
+    # ══════════════════════════════════════════════════════════════════
+    #  FIRESTORE SYNC & ADMIN ALERTS
+    # ══════════════════════════════════════════════════════════════════
+
+    async def _sync_vehicle_doc_approved(self, driver, vehicle, doc_type: str):
+        """Sync vehicle document approval to Firestore."""
+        try:
+            from config import _HAS_FIRESTORE, firestore_sync
+            if _HAS_FIRESTORE and firestore_sync:
+                update_data = {f"{doc_type}_valid": True}
+                if vehicle:
+                    if vehicle.insurance_valid and vehicle.registration_valid:
+                        update_data["all_docs_valid"] = True
+                firestore_sync._db.collection("drivers").document(
+                    f"sql_{driver.id}"
+                ).update(update_data)
+        except Exception as e:
+            logger.warning("[DocApproval] Firestore vehicle sync failed: %s", e)
 
     async def _alert_admin(
         self, driver, alert_type: str, message: str, severity: str = "medium"
     ):
         try:
             from services.admin_alerts import send_alert, CRITICAL, HIGH, MEDIUM, LOW
-            severity_map = {
-                "critical": CRITICAL,
-                "high": HIGH,
-                "medium": MEDIUM,
-                "low": LOW,
-            }
+            severity_map = {"critical": CRITICAL, "high": HIGH, "medium": MEDIUM, "low": LOW}
             await send_alert(
                 alert_type=f"doc_approval_{alert_type}",
-                title=f"Verificación: {alert_type.replace('_', ' ').title()}",
+                title=f"Docs: {alert_type.replace('_', ' ').title()}",
                 message=message,
                 severity=severity_map.get(severity, MEDIUM),
                 data={

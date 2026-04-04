@@ -8,9 +8,12 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/sms_service.dart';
 import '../services/analytics_service.dart';
+import '../services/google_auth_service.dart';
+import '../services/apple_auth_service.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
+import 'home_screen.dart';
 
 /// Screen for users who already have an account — enter email/phone + password.
 class LoginPasswordScreen extends StatefulWidget {
@@ -31,6 +34,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   bool _obscure = true;
   bool _canLogin = false;
   bool _loading = false;
+  bool _socialLoading = false;
   String? _errorText;
 
   @override
@@ -49,18 +53,55 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     super.dispose();
   }
 
-  /// Trigger autofill to fill email + password from saved credentials.
-  /// Works with Google Password Manager (Android) and Apple Keychain (iOS).
-  void _triggerAutofill() {
-    // Focus the email field to trigger the system autofill overlay
-    _emailFocus.requestFocus();
-    // On Android, request autofill explicitly
-    TextInput.finishAutofillContext(shouldSave: false);
-    // Small delay then trigger autofill hints
-    Future.delayed(const Duration(milliseconds: 100), () {
+  /// Navigate to home after successful social auth.
+  void _goHome() {
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      smoothFadeRoute(const HomeScreen(), durationMs: 600),
+      (route) => false,
+    );
+  }
+
+  /// Sign in with Google OAuth.
+  Future<void> _signInWithGoogle() async {
+    if (_socialLoading || _loading) return;
+    setState(() { _socialLoading = true; _errorText = null; });
+    try {
+      final ok = await GoogleAuthService.instance.signIn(role: 'rider');
       if (!mounted) return;
-      _emailFocus.requestFocus();
-    });
+      if (ok) {
+        _goHome();
+      } else {
+        setState(() { _socialLoading = false; });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _socialLoading = false;
+        _errorText = 'Google sign-in failed. Please try again.';
+      });
+    }
+  }
+
+  /// Sign in with Apple OAuth.
+  Future<void> _signInWithApple() async {
+    if (_socialLoading || _loading) return;
+    setState(() { _socialLoading = true; _errorText = null; });
+    try {
+      final ok = await AppleAuthService.instance.signIn(role: 'rider');
+      if (!mounted) return;
+      if (ok) {
+        _goHome();
+      } else {
+        setState(() { _socialLoading = false; });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _socialLoading = false;
+        _errorText = 'Apple sign-in failed. Please try again.';
+      });
+    }
   }
 
   void _validate() {
@@ -694,7 +735,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ── Google autofill ──
+              // ── Google Sign-In ──
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -706,15 +747,20 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       borderRadius: BorderRadius.circular(28),
                     ),
                   ),
-                  onPressed: _triggerAutofill,
-                  icon: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: Image.asset(
-                      'assets/images/google_logo.png',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
+                  onPressed: _socialLoading ? null : _signInWithGoogle,
+                  icon: _socialLoading
+                      ? SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                        )
+                      : SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: Image.asset(
+                            'assets/images/google_logo.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                   label: const Text(
                     'Sign in with Google',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -722,7 +768,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 ),
               ),
 
-              // ── Apple autofill (iOS only) ──
+              // ── Apple Sign-In (iOS only) ──
               if (Platform.isIOS) ...[
                 const SizedBox(height: 12),
                 SizedBox(
@@ -736,7 +782,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    onPressed: _triggerAutofill,
+                    onPressed: _socialLoading ? null : _signInWithApple,
                     icon: const Icon(Icons.apple, size: 24),
                     label: const Text(
                       'Sign in with Apple',

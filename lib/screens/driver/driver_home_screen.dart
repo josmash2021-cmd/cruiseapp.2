@@ -172,14 +172,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Resolve driver ID for trip polling
     _resolveDriverId();
-    // Check for active trip — if returning from trip screen, auto-resume it
-    _refreshActiveTripStatus().then((_) {
-      if (!mounted) return;
-      if (widget.returnFromTrip && _activeTripData != null) {
-        // Driver still has an active trip → go back immediately
-        _resumeActiveTrip();
-      }
-    });
+    // Check for active trip so the button shows "REANUDAR" immediately.
+    // Do NOT auto-resume — let the driver see the home screen and tap
+    // REANUDAR themselves when they're ready to return to the trip.
+    _refreshActiveTripStatus();
     _registerFcmToken();
 
     // Observe lifecycle — restart polling when app returns from background

@@ -357,7 +357,9 @@ async def driver_pending_sse(
                     break
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=20.0)
-                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                    evt_type = event.get('type', 'message')
+                    evt_data = event.get('data', event)
+                    yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"
                 except asyncio.TimeoutError:
                     # Send keepalive ping every 20s to prevent proxy timeout
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
@@ -403,7 +405,9 @@ async def trip_status_sse(
                     break
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=20.0)
-                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                    evt_type = event.get('type', 'message')
+                    evt_data = event.get('data', event)
+                    yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"
                 except asyncio.TimeoutError:
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
         finally:

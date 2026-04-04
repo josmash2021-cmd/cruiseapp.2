@@ -60,11 +60,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _useRtdb = false; // true for trip chats, false for support
   bool _chatReady = false; // true after _initChat completes
+  bool _rtdbFailed = false; // true when RTDB stream errors → REST fallback
 
   // ── Support-mode fallback (polling) ──
   final List<_SupportMessage> _supportMessages = [];
   Timer? _pollTimer;
   final bool _connectionError = false;
+
+  // ── REST fallback messages (used when RTDB fails) ──
+  final List<ChatMessage> _restMessages = [];
+  Timer? _restPollTimer;
 
   // ── Typing ──
   Timer? _typingTimer;
@@ -154,15 +159,66 @@ class _ChatScreenState extends State<ChatScreen> {
     ChatScreen.activeTripId = null;
     _pollTimer?.cancel();
     _typingTimer?.cancel();
+    _restPollTimer?.cancel();
     _rtdbConnectionSub?.cancel();
     // Stop typing indicator when leaving
-    if (_useRtdb) {
+    if (_useRtdb && !_rtdbFailed) {
       _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
     }
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  // ── REST API fallback ────────────────────────────────────────────────
+  void _startRestPolling() {
+    _fetchRestMessages(); // immediate first fetch
+    _restPollTimer?.cancel();
+    _restPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _fetchRestMessages();
+    });
+  }
+
+  Future<void> _fetchRestMessages() async {
+    if (widget.tripId == null) return;
+    try {
+      final msgs = await ApiService.getChatMessages(widget.tripId!);
+      if (!mounted) return;
+      final parsed = msgs.map((m) {
+        return ChatMessage(
+          id: m['id']?.toString() ?? '',
+          senderId: m['sender_id']?.toString() ?? '',
+          senderRole: m['sender_role']?.toString() ?? 'rider',
+          text: m['message']?.toString() ?? m['text']?.toString() ?? '',
+          timestamp: _parseTimestamp(m['created_at'] ?? m['timestamp']),
+          read: m['is_read'] == true,
+        );
+      }).toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      if (!mounted) return;
+      setState(() => _restMessages
+        ..clear()
+        ..addAll(parsed));
+
+      if (parsed.length != _lastMsgCount) {
+        _lastMsgCount = parsed.length;
+        _scrollToBottom();
+      }
+    } catch (e) {
+      debugPrint('[Chat] REST poll error: $e');
+    }
+  }
+
+  int _parseTimestamp(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is String) {
+      final dt = DateTime.tryParse(value);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
   }
 
   void _startConnectionListener() {
@@ -185,15 +241,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Color _connectionDotColor() {
     if (!_useRtdb) return const Color(0xFF4CAF50);
+    if (_rtdbFailed) return const Color(0xFF4CAF50); // REST fallback active
     if (_rtdbConnected == true) return const Color(0xFF4CAF50);
-    // Show amber while connecting or reconnecting
     return const Color(0xFFF59E0B);
   }
 
   String _connectionLabel(S s) {
     if (!_useRtdb) return s.online;
+    if (_rtdbFailed) return s.online; // REST fallback active
     if (_rtdbConnected == true) return s.activeNow;
-    // Show "Reconnecting..." instead of alarming "Connection lost"
     if (_hadFirstConnect) return 'Reconnecting...';
     return 'Connecting...';
   }
@@ -221,6 +277,23 @@ class _ChatScreenState extends State<ChatScreen> {
         debugPrint('[Chat] Cannot send: rideId is empty');
         return;
       }
+
+      if (_rtdbFailed) {
+        // REST-only mode: send via API and poll for updates
+        if (widget.tripId != null) {
+          try {
+            await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+            await _fetchRestMessages(); // refresh immediately
+          } catch (e) {
+            debugPrint('[Chat] REST send failed: $e');
+            if (mounted) {
+              ErrorService.show(context, 'Message failed to send. Check your connection.');
+            }
+          }
+        }
+        return;
+      }
+
       try {
         await _chat.sendMessage(
           rideId: _rideId,
@@ -234,6 +307,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ErrorService.show(context, 'Message failed to send. Check your connection.');
         }
       }
+      // Also persist via REST API
       if (widget.tripId != null) {
         unawaited(
           ApiService.sendChatMessage(tripId: widget.tripId!, message: text)
@@ -467,58 +541,26 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_rideId.isEmpty) {
       return _buildEmptyState(s);
     }
+
+    // If RTDB failed, show messages from REST API polling
+    if (_rtdbFailed) {
+      return _buildRestMessages(s);
+    }
+
     return StreamBuilder<List<ChatMessage>>(
       stream: _chat.messagesStream(_rideId),
       initialData: const <ChatMessage>[],
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          debugPrint('[Chat] messagesStream error: ${snapshot.error}');
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.wifi_off_rounded, size: 36,
-                      color: Colors.white.withValues(alpha: 0.2)),
-                  const SizedBox(height: 12),
-                  Text(
-                    S.of(context).connectionIssueRetrying,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () {
-                      // Force rebuild to retry the stream
-                      setState(() {});
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: _gold.withValues(alpha: 0.3)),
-                      ),
-                      child: Text(
-                        'Retry',
-                        style: TextStyle(
-                          color: _gold,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          debugPrint('[Chat] RTDB stream error: ${snapshot.error} — switching to REST polling');
+          // Switch to REST fallback on next frame
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _rtdbFailed) return;
+            setState(() => _rtdbFailed = true);
+            _startRestPolling();
+          });
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFFD4A843)),
           );
         }
 
@@ -553,6 +595,28 @@ class _ChatScreenState extends State<ChatScreen> {
               isRead: msg.read,
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildRestMessages(S s) {
+    if (_restMessages.isEmpty) {
+      return _buildEmptyState(s);
+    }
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: _restMessages.length,
+      itemBuilder: (context, index) {
+        final msg = _restMessages[index];
+        final isMe = msg.senderId == _myUserId;
+        final time = DateTime.fromMillisecondsSinceEpoch(msg.timestamp);
+        return _buildBubble(
+          text: msg.text,
+          isMe: isMe,
+          time: time,
+          isRead: msg.read,
         );
       },
     );

@@ -239,7 +239,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               SizedBox(width: Responsive.w(8)),
               _buildCardIconBtn(
                 icon: Icons.share_rounded,
-                onTap: _handleShareDriverLocation,
+                onTap: _handleShareTrip,
               ),
               SizedBox(width: Responsive.w(8)),
               _buildMoreMenuButton(),

@@ -25,69 +25,49 @@ class SmoothTransitions {
   static const _fadeDuration = Duration(milliseconds: 280);
   static const _fadeReverse = Duration(milliseconds: 220);
 
-  /// Slide from right with fade — forward navigation
+  /// Forward navigation — smooth fade in/out (no slide)
   static PageRouteBuilder<T> fadeSlide<T>({
     required Widget page,
     bool fromRight = true,
   }) {
-    final begin = fromRight ? const Offset(1.0, 0) : const Offset(-1.0, 0);
     return PageRouteBuilder<T>(
       transitionDuration: _fadeDuration,
       reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final slide = Tween<Offset>(begin: begin, end: Offset.zero).animate(
-          CurvedAnimation(parent: animation, curve: _easeOutQuart),
-        );
-        final fade = CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
-        );
         return FadeTransition(
-          opacity: fade,
-          child: SlideTransition(position: slide, child: child),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Scale + fade — for modals/dialogs
+  /// Modal/dialog navigation — smooth fade in/out (no slide/scale)
   static PageRouteBuilder<T> scaleFade<T>(Widget page) {
     return PageRouteBuilder<T>(
       transitionDuration: _fadeDuration,
       reverseTransitionDuration: _fadeReverse,
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final scale = Tween<double>(begin: 0.92, end: 1.0).animate(
-          CurvedAnimation(parent: animation, curve: _easeOutBack),
-        );
-        final fade = CurvedAnimation(parent: animation, curve: Curves.easeOut);
         return FadeTransition(
-          opacity: fade,
-          child: ScaleTransition(scale: scale, child: child),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );
   }
 
-  /// Slide up from bottom — for bottom sheets / full screen overlays
+  /// Modal/overlay navigation — smooth fade in/out (no slide)
   static PageRouteBuilder<T> slideUp<T>(Widget page) {
     return PageRouteBuilder<T>(
       transitionDuration: const Duration(milliseconds: 350),
       reverseTransitionDuration: const Duration(milliseconds: 280),
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final slide = Tween<Offset>(
-          begin: const Offset(0, 0.08),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(parent: animation, curve: _easeOutExpo));
-        final fade = CurvedAnimation(
-          parent: animation,
-          curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-        );
         return FadeTransition(
-          opacity: fade,
-          child: SlideTransition(position: slide, child: child),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+          child: child,
         );
       },
     );

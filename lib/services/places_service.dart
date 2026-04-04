@@ -283,7 +283,7 @@ class PlacesService {
     final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
-    // ── Run Mapbox + SearchBox + Google/backend in parallel for comprehensive results ──
+    // ── Run Mapbox + SearchBox + Google + backend in parallel for comprehensive results ──
     final futures = <Future<List<PlaceSuggestion>>>[];
 
     // Always try Mapbox Geocoding v5 (addresses, regions)
@@ -298,7 +298,7 @@ class PlacesService {
           .catchError((_) => <PlaceSuggestion>[]),
     );
 
-    // Also try Google (or backend proxy if no key)
+    // Google Places (local key) + backend proxy — always try both for maximum coverage
     if (isKeyValid) {
       futures.add(
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
@@ -308,12 +308,12 @@ class PlacesService {
         _googleAutocomplete(cleanInput, lat: latitude, lon: longitude, types: 'geocode')
             .catchError((_) => <PlaceSuggestion>[]),
       );
-    } else {
-      futures.add(
-        _backendAutocomplete(cleanInput, lat: latitude, lon: longitude)
-            .catchError((_) => <PlaceSuggestion>[]),
-      );
     }
+    // Always add backend proxy as well — server-side key may have better API access
+    futures.add(
+      _backendAutocomplete(cleanInput, lat: latitude, lon: longitude)
+          .catchError((_) => <PlaceSuggestion>[]),
+    );
 
     try {
       final allResults = await Future.wait(futures);

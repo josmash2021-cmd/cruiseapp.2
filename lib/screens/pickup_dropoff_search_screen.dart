@@ -170,7 +170,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       setState(() => _suggestions = []);
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 350), () {
+    _debounce = Timer(const Duration(milliseconds: 250), () {
       _search(text.trim());
     });
   }

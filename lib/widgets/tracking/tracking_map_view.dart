@@ -763,20 +763,20 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
 
     final segLen = _segDist[hi] - _segDist[lo];
-    // Use smooth step interpolation for natural acceleration/deceleration
-    final rawT = segLen > 0.01 ? (distM - _segDist[lo]) / segLen : 0.0;
-    // Apply smoothstep curve: 3t² - 2t³ for ease-in-out effect
-    final t = rawT * rawT * (3.0 - 2.0 * rawT);
-    
+    // Linear interpolation along segments — smoothstep was causing
+    // micro-stutters at segment boundaries. The exponential decay in
+    // _interpolate() already provides all the easing we need.
+    final t = segLen > 0.01 ? (distM - _segDist[lo]) / segLen : 0.0;
+
     final a = _routePts[lo];
     final b = _routePts[hi];
     final lat = a.latitude + (b.latitude - a.latitude) * t;
     final lng = a.longitude + (b.longitude - a.longitude) * t;
     final pos = LatLng(lat, lng);
 
-    // Enhanced bearing calculation with look-ahead for smoother turning
-    // Look ahead 8 meters for more responsive but smooth turning
-    final lookAhead = math.min(distM + 8, totalM);
+    // Look ahead 18 meters for realistic turn anticipation — car nose
+    // starts rotating into turns early, like a real driver steering.
+    final lookAhead = math.min(distM + 18, totalM);
     int llo = lo, lhi = hi;
     if (lookAhead > _segDist[hi]) {
       llo = hi;
@@ -786,12 +786,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       }
     }
     final lookSegLen = _segDist[lhi] - _segDist[llo];
-    final lookRawT = lookSegLen > 0.01
+    final lookT = lookSegLen > 0.01
         ? (lookAhead - _segDist[llo]) / lookSegLen
         : 0.0;
-    // Apply smoothstep to look-ahead as well
-    final lookT = lookRawT * lookRawT * (3.0 - 2.0 * lookRawT);
-    
+
     final la = _routePts[llo];
     final lb = _routePts[lhi];
     final lookPos = LatLng(

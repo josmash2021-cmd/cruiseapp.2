@@ -545,10 +545,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _checkTripStatusFallback();
         }
       });
-      // Throttle: max 5 updates/sec for smoother car animation
+      // Throttle: max 8 updates/sec — more GPS data = smoother interpolation
       final now = DateTime.now();
       if (lastRtdbUpdate != null &&
-          now.difference(lastRtdbUpdate!).inMilliseconds < 200) {
+          now.difference(lastRtdbUpdate!).inMilliseconds < 125) {
         return;
       }
       lastRtdbUpdate = now;
@@ -848,7 +848,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_segDist.isEmpty) {
       final tgt = _directTargetPos;
       if (tgt != null) {
-        const factor = 0.16;
+        // Aggressive lerp for responsive real-car feel
+        const factor = 0.22;
         final dLat = tgt.latitude - _animPos.latitude;
         final dLng = tgt.longitude - _animPos.longitude;
         final newLat = _animPos.latitude + dLat * factor;
@@ -860,9 +861,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           double d = tgtBrg - _animBearing;
           if (d > 180) d -= 360;
           if (d < -180) d += 360;
-          _animBearing = (_animBearing + d * 0.18) % 360;
+          // Fast bearing snap — car nose always points forward
+          _animBearing = (_animBearing + d * 0.30) % 360;
           _driverBearing = _animBearing;
-          // Idle when position AND bearing have both fully converged
           if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
             _interpIdle = true;
             _interpTicker?.stop();
@@ -874,13 +875,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
 
-    // ── Smooth exponential advance — buttery motion ──
-    // Use exponential decay so the car accelerates toward the target
-    // and decelerates as it approaches — no jolts, no teleports.
+    // ── Ultra-smooth exponential advance — buttery, car-like motion ──
     final diff = _tgtTraveledM - _traveledM;
-    // Exponential catch-up: 18% of remaining distance per frame.
-    // Higher cap (4m) allows faster highway speeds without jolts.
-    final step = (diff * 0.18).clamp(-4.0, 4.0);
+    // 22% catch-up per frame for responsive real-car feel.
+    // 6m cap supports smooth highway-speed tracking.
+    final step = (diff * 0.22).clamp(-6.0, 6.0);
     if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {
@@ -889,11 +888,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: smooth 22% rotation per frame — responsive yet fluid ──
+    // ── Bearing: 30% rotation per frame — car nose always faces forward ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.22) % 360;
+    final newBearing = (_animBearing + db * 0.30) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
@@ -903,7 +902,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
-      const lerpFactor = 0.16; // smooth catch-up, never teleport
+      const lerpFactor = 0.22;
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
       final fallbackBearing = _directTargetBearing;
@@ -915,7 +914,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         double dbo = desiredBearing - _animBearing;
         if (dbo > 180) dbo -= 360;
         if (dbo < -180) dbo += 360;
-        _animBearing = (_animBearing + dbo * 0.18) % 360;
+        _animBearing = (_animBearing + dbo * 0.30) % 360;
       }
     }
 
@@ -995,9 +994,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Start real-time camera tracking - follows driver every 2s
   void _startCameraFollowTracking() {
     if (_map == null) return;
-    
+
     _cameraFollowTimer?.cancel();
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) {
+    // Follow every 1.5s for fluid chase camera that keeps up with the car
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       _followDriver(_animPos, _animBearing);
     });
@@ -1012,23 +1012,21 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
 
     // Adaptive zoom: 14.5 when far (>2mi) → 16.0 max when very close (<0.1mi)
-    // Smooth lerp keeps the transition gentle, never snapping.
     double zoom;
     if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
-      // _distanceMiles: remaining distance to dropoff
       if (_distanceMiles > 2.0) {
         zoom = 14.5;
       } else if (_distanceMiles < 0.1) {
         zoom = 16.0;
       } else {
-        // Lerp from 14.5 (at 2mi) to 16.0 (at 0.1mi)
-        final t = (2.0 - _distanceMiles) / 1.9; // 0→1
-        zoom = 14.5 + t * 1.5; // 14.5→16.0
+        final t = (2.0 - _distanceMiles) / 1.9;
+        zoom = 14.5 + t * 1.5;
       }
     } else {
-      zoom = 15.5; // Default for arriving phase
+      zoom = 15.5;
     }
 
+    // Longer animation = smoother camera glide between positions
     _map!.easeTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -1044,7 +1042,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           right: 40,
         ),
       ),
-      mapbox.MapAnimationOptions(duration: 1500),
+      mapbox.MapAnimationOptions(duration: 1800),
     );
   }
 

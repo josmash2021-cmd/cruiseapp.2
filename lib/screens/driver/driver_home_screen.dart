@@ -625,12 +625,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl),
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
+        transitionDuration: const Duration(milliseconds: 500),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
+          final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
-            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-            child: child,
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              child: child,
+            ),
           );
         },
       ),
@@ -714,12 +718,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl),
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
+        transitionDuration: const Duration(milliseconds: 500),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
+          final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
-            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-            child: child,
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              child: child,
+            ),
           );
         },
       ),

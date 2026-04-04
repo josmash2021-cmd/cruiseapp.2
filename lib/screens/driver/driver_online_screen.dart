@@ -365,7 +365,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _searchPulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3500),
+      duration: const Duration(milliseconds: 4200),
     )..repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
@@ -1292,6 +1292,7 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
 }
 
 /// Paints an animated gold glow segment around the "Finding trips" panel.
+/// Uses 48 micro-segments for a smooth, fluid gradient — no pixelation.
 /// [expansion] 0.0 = collapsed (glow runs around ALL 4 sides),
 ///             1.0 = expanded  (glow runs only across the top edge).
 class _SearchingBorderPainter extends CustomPainter {
@@ -1305,7 +1306,6 @@ class _SearchingBorderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    // Bottom corners shrink from 20→0 as panel expands; top stays 20
     final botRadius = 20.0 * (1.0 - expansion);
     final rrect = RRect.fromRectAndCorners(
       rect,
@@ -1325,37 +1325,33 @@ class _SearchingBorderPainter extends CustomPainter {
         ..color = _gold.withValues(alpha: 0.08),
     );
 
-    // Build the border path from the RRect
     final borderPath = Path()..addRRect(rrect);
     final metricsList = borderPath.computeMetrics().toList();
     if (metricsList.isEmpty) return;
     final pm = metricsList.first;
     final total = pm.length;
 
-    const glowFraction = 0.28;
+    const glowFraction = 0.30;
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
 
-    // Extract the full glow segment as a single path
-    final tailDist = (headDist - glowLen + total) % total;
-    final Path glowPath;
-    if (tailDist <= headDist) {
-      glowPath = pm.extractPath(tailDist, headDist);
-    } else {
-      glowPath = pm.extractPath(tailDist, total)
-        ..addPath(pm.extractPath(0, headDist), Offset.zero);
-    }
-
-    // Draw 12 graduated layers for smooth fade (head bright → tail invisible)
-    const layers = 12;
+    // 48 micro-segments for silky smooth gradient (head bright → tail invisible)
+    const layers = 48;
     final layerLen = glowLen / layers;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+
     for (int k = 0; k < layers; k++) {
-      final t = 1.0 - k / layers;
-      final fadeAlpha = t * t;
-      if (fadeAlpha < 0.03) continue;
+      final t = 1.0 - k / layers; // 1.0 at head, 0.0 at tail
+      // Cubic ease-out for a natural fade
+      final fadeAlpha = t * t * t;
+      if (fadeAlpha < 0.02) continue;
 
       final segEnd = (headDist - k * layerLen + total) % total;
-      final segStart = (segEnd - layerLen * 1.2 + total) % total;
+      final segStart = (segEnd - layerLen * 1.05 + total) % total;
 
       final Path seg;
       if (segStart <= segEnd) {
@@ -1365,20 +1361,14 @@ class _SearchingBorderPainter extends CustomPainter {
           ..addPath(pm.extractPath(0, segEnd), Offset.zero);
       }
 
-      canvas.drawPath(
-        seg,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0
-          ..strokeCap = StrokeCap.round
-          ..isAntiAlias = true
-          ..color = Color.lerp(_gold, _goldLight, t)!
-              .withValues(alpha: fadeAlpha * 0.9),
-      );
+      // Blend gold→bright gold at the head for warmth
+      paint.color = Color.lerp(_gold, _goldLight, t * t)!
+          .withValues(alpha: fadeAlpha * 0.85);
+      canvas.drawPath(seg, paint);
     }
 
-    // Single soft glow halo at the head
-    final headStart = (headDist - glowLen * 0.25 + total) % total;
+    // Soft glow halo at the head for a polished look
+    final headStart = (headDist - glowLen * 0.18 + total) % total;
     final Path headSeg;
     if (headStart <= headDist) {
       headSeg = pm.extractPath(headStart, headDist);
@@ -1390,11 +1380,11 @@ class _SearchingBorderPainter extends CustomPainter {
       headSeg,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5
+        ..strokeWidth = 6
         ..strokeCap = StrokeCap.round
         ..isAntiAlias = true
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
-        ..color = _goldLight.withValues(alpha: 0.15),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+        ..color = _goldLight.withValues(alpha: 0.12),
     );
   }
 

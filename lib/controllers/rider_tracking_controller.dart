@@ -801,7 +801,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   Future<void> _initFromPersistence() async {
     final activeRide = await LocalDataService.getActiveRide();
     if (activeRide == null) {
-      // No persisted ride - initialize fresh
+      // No persisted ride - initialize fresh, but use backend status as fallback
+      _applyInitialStatus();
       await _initRoute();
       return;
     }
@@ -842,7 +843,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     _buildSegDist();
 
-    // Restore phase
+    // Restore phase from persistence
     if (activeRide.phase != null) {
       switch (activeRide.phase) {
         case 'arriving':
@@ -856,6 +857,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         default:
           _phase = _TrackPhase.arriving;
       }
+    }
+
+    // If persisted phase seems behind the backend status, upgrade it.
+    // e.g., persistence says 'arriving' but backend says 'in_trip'
+    final s = (widget.initialStatus ?? '').toLowerCase().trim();
+    final isBackendInTrip = s == 'in_trip' || s == 'in_progress' || s == 'rider_onboard' || s == 'on_trip';
+    final isBackendArrived = s == 'arrived' || s == 'driver_arrived' || s == 'arrived_at_pickup';
+    if (isBackendInTrip && (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
+      _phase = _TrackPhase.onTrip;
+    } else if (isBackendArrived && _phase == _TrackPhase.arriving) {
+      _phase = _TrackPhase.arrived;
     }
 
     // Restore traveled distance for ETA calculation
@@ -887,6 +899,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fitAllPoints();
     });
+  }
+
+  /// Use the backend trip status (passed via widget.initialStatus) to set
+  /// the correct phase when local persistence is unavailable (reinstall, etc.)
+  void _applyInitialStatus() {
+    final s = (widget.initialStatus ?? '').toLowerCase().trim();
+    if (s == 'in_trip' || s == 'in_progress' || s == 'rider_onboard' || s == 'on_trip') {
+      _phase = _TrackPhase.onTrip;
+    } else if (s == 'arrived' || s == 'driver_arrived' || s == 'arrived_at_pickup') {
+      _phase = _TrackPhase.arrived;
+    }
+    // else keep default = arriving
   }
 
   /// Save current ride state for resuming later

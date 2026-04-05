@@ -70,6 +70,7 @@ class RiderTrackingScreen extends StatefulWidget {
     this.driverPhotoUrl,
     this.driverId,
     this.onTripComplete,
+    this.initialStatus,
   });
 
   final LatLng pickupLatLng;
@@ -92,6 +93,10 @@ class RiderTrackingScreen extends StatefulWidget {
   final String? driverPhotoUrl;
   final String? driverId;
   final VoidCallback? onTripComplete;
+  /// Backend trip status used as fallback when local persistence is empty
+  /// (e.g. after reinstall). Maps to _TrackPhase so the rider resumes
+  /// at the correct state.
+  final String? initialStatus;
 
   @override
   State<RiderTrackingScreen> createState() => _RiderTrackingScreenState();

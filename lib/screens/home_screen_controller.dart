@@ -914,6 +914,7 @@ extension _HomeScreenController on _HomeScreenState {
             firestoreTripId: 'sql_$tripId',
             driverPhotoUrl: driverPhotoUrl,
             driverId: driverId,
+            initialStatus: status,
             onTripComplete: () {
               LocalDataService.clearActiveRide();
               Navigator.of(context).pop();

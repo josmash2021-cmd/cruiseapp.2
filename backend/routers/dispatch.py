@@ -187,6 +187,37 @@ async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
     return {"ok": True, "fixed": len(fixed), "details": fixed}
 
 
+async def _filter_drivers_by_vehicle_tier(
+    db: AsyncSession, driver_ids: list[int], requested_type: str
+) -> set[int]:
+    """Return driver IDs whose vehicle matches the requested tier.
+    VIP requests → only VIP vehicles
+    Premium requests → premium or VIP vehicles
+    Comfort requests → any vehicle (no filter)
+    """
+    requested = (requested_type or "comfort").lower().strip()
+    if requested == "comfort":
+        return set(driver_ids)  # comfort accepts any vehicle
+    if not driver_ids:
+        return set()
+
+    result = await db.execute(
+        select(Vehicle.user_id, Vehicle.vehicle_type).where(
+            Vehicle.user_id.in_(driver_ids)
+        )
+    )
+    rows = result.all()
+
+    eligible = set()
+    for uid, vtype in rows:
+        vt = (vtype or "comfort").lower()
+        if requested == "vip" and vt == "vip":
+            eligible.add(uid)
+        elif requested == "premium" and vt in ("premium", "vip"):
+            eligible.add(uid)
+    return eligible
+
+
 @router.post("/dispatch/request", dependencies=[Depends(_verify_api_key)])
 async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     data = body.model_dump()
@@ -255,6 +286,18 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     )
     drivers = result.scalars().all()
     drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
+
+    # Filter by vehicle tier: VIP/Premium requests only go to matching drivers
+    requested_type = (trip.vehicle_type or "comfort").lower()
+    if requested_type in ("vip", "premium") and drivers_sorted:
+        all_ids = [d.id for d in drivers_sorted]
+        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, requested_type)
+        tier_matched = [d for d in drivers_sorted if d.id in eligible_ids]
+        if tier_matched:
+            drivers_sorted = tier_matched
+            logging.info("[Dispatch] Trip %d: filtered to %d %s-tier drivers", trip.id, len(tier_matched), requested_type)
+        else:
+            logging.warning("[Dispatch] Trip %d: no %s-tier drivers available, using closest driver", trip.id, requested_type)
 
     # â”€â”€ Debug logging: always log dispatch result for Railway visibility â”€â”€
     if drivers_sorted:
@@ -628,6 +671,14 @@ async def reject_offer(
         )
         drivers = drivers_result.scalars().all()
         drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
+        # Filter by vehicle tier on reassign too
+        req_type = (trip.vehicle_type or "comfort").lower()
+        if req_type in ("vip", "premium") and drivers_sorted:
+            all_ids = [d.id for d in drivers_sorted]
+            eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, req_type)
+            tier_matched = [d for d in drivers_sorted if d.id in eligible_ids]
+            if tier_matched:
+                drivers_sorted = tier_matched
         if drivers_sorted:
             next_driver = drivers_sorted[0]
             new_offer = DispatchOffer(trip_id=trip.id, driver_id=next_driver.id)

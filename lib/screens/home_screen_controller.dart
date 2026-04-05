@@ -879,6 +879,7 @@ extension _HomeScreenController on _HomeScreenState {
       final driverRating = (trip['driver_rating'] as num?)?.toDouble() ?? 4.9;
       final driverPhotoUrl = (trip['driver_photo_url'] ?? '').toString();
       final driverId = (trip['driver_id'] ?? '').toString();
+      final driverPhone = (trip['driver_phone'] ?? '').toString();
       final vehicleMake = (trip['vehicle_make'] ?? '').toString();
       final vehicleModel = (trip['vehicle_model'] ?? '').toString();
       final vehicleColor = (trip['vehicle_color'] ?? '').toString();
@@ -898,6 +899,7 @@ extension _HomeScreenController on _HomeScreenState {
             pickupLatLng: LatLng(pickupLat, pickupLng),
             dropoffLatLng: LatLng(dropoffLat, dropoffLng),
             driverName: driverName,
+            driverPhone: driverPhone.isNotEmpty ? driverPhone : null,
             driverRating: driverRating,
             vehicleMake: vehicleMake,
             vehicleModel: vehicleModel,

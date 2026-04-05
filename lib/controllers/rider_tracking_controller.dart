@@ -1174,8 +1174,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           coordinates: mapbox.Position(position.longitude, position.latitude),
         ),
         zoom: zoom,
-        bearing: bearing,
-        pitch: 45.0,
+        bearing: 0,
+        pitch: 0,
         padding: mapbox.MbxEdgeInsets(
           top: topInset,
           bottom: bottomInset,

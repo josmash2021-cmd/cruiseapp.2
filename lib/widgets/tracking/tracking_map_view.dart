@@ -1623,11 +1623,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // This is handled by _handleDriverArrived
   }
 
-  /// Animate camera to 45° locked nav follow centred on driver position.
+  /// Animate camera to top-down follow centred on driver position.
   /// Called during the ride-start animation sequence (Phase 4).
   void _flyToDriverAt45() {
     if (_map == null) return;
-    final bearing = _animBearing;
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
@@ -1638,8 +1637,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               mapbox.Position(_animPos.longitude, _animPos.latitude),
         ),
         zoom: 16.5,
-        bearing: bearing,
-        pitch: 45.0,
+        bearing: 0,
+        pitch: 0,
         padding: mapbox.MbxEdgeInsets(
           top: topInset,
           bottom: bottomInset,

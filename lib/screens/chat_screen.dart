@@ -307,12 +307,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ErrorService.show(context, 'Message failed to send. Check your connection.');
         }
       }
-      // Also persist via REST API
+      // Also persist via REST API (triggers FCM push notification to recipient)
       if (widget.tripId != null) {
-        unawaited(
-          ApiService.sendChatMessage(tripId: widget.tripId!, message: text)
-              .catchError((_) => <String, dynamic>{}),
-        );
+        try {
+          await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+        } catch (e) {
+          debugPrint('[Chat] REST backup send failed: $e');
+        }
       }
     } else if (widget.isSupport) {
       if (widget.tripId == null) {

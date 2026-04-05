@@ -12,8 +12,8 @@
           ".read": "auth != null",
           ".indexOn": ["timestamp", "read"],
           "$msgId": {
-            ".write": "auth != null && (!data.exists() || data.child('senderId').val() === auth.uid)",
-            ".validate": "newData.hasChildren(['senderId', 'text', 'timestamp']) && newData.child('senderId').val() === auth.uid"
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['senderId', 'text', 'timestamp'])"
           }
         },
         "typing": {

@@ -962,16 +962,18 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
             sender_role = "driver" if user.id == trip.driver_id else "rider"
             _send_fcm_push(
                 receiver_user.fcm_token,
-                title=f"' {sender_name}",
+                title=f"Message from {sender_name}",
                 body=msg_text[:200],
                 data={"type": "chat_message", "trip_id": str(trip_id), "sender_role": sender_role},
             )
     except Exception:
         pass  # Never let notification failure block chat
 
+    sender_role_resp = "driver" if user.id == trip.driver_id else "rider"
     return {
         "id": msg.id, "trip_id": msg.trip_id, "sender_id": msg.sender_id,
-        "receiver_id": msg.receiver_id, "message": msg.message,
+        "receiver_id": msg.receiver_id, "sender_role": sender_role_resp,
+        "message": msg.message,
         "is_read": msg.is_read, "created_at": msg.created_at.isoformat() if msg.created_at else None,
     }
 
@@ -993,6 +995,7 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
     await db.commit()
     return [
         {"id": m.id, "sender_id": m.sender_id, "receiver_id": m.receiver_id,
+         "sender_role": "driver" if m.sender_id == trip.driver_id else "rider",
          "message": m.message, "is_read": m.is_read,
          "created_at": m.created_at.isoformat() if m.created_at else None}
         for m in messages

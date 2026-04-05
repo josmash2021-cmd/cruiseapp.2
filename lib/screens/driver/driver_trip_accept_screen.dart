@@ -1743,7 +1743,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return [o, d];
   }
 
-  /// Smooth 60fps gold route draw — adaptive duration, fire-and-forget updates.
+  /// Smooth 60fps gold route draw with distance-based interpolation.
+  /// The line tip smoothly glides along the road geometry instead of jumping
+  /// between discrete polyline vertices.
   Future<void> _animateGoldRoute({
     required List<LatLng> points,
     Duration? duration,
@@ -1762,11 +1764,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ));
     if (!mounted || _routeAnnot == null) return;
 
-    final totalMs = duration?.inMilliseconds ?? (points.length * 6).clamp(800, 2200);
+    // Pre-compute cumulative distances for distance-based interpolation
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < points.length; i++) {
+      final dx = points[i].longitude - points[i - 1].longitude;
+      final dy = points[i].latitude - points[i - 1].latitude;
+      cumDist.add(cumDist.last + math.sqrt(dx * dx + dy * dy));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist <= 0) return;
+
+    final totalMs = duration?.inMilliseconds ?? (points.length * 6).clamp(1000, 2400);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    int lastCount = 2;
     bool updating = false;
+    double lastFrac = -1;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -1779,17 +1791,40 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeOutCubic.transform(progress);
-      final count = (eased * points.length).round().clamp(2, points.length);
+      // S-curve easing for fluid acceleration/deceleration
+      final eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - math.pow(-2 * progress + 2, 3) / 2;
+      final targetDist = eased * totalDist;
 
-      if (count != lastCount) {
-        lastCount = count;
-        final subset = points.sublist(0, count);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        updating = true;
-        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      // Find which segment the tip falls in
+      int seg = 0;
+      for (int i = 1; i < cumDist.length; i++) {
+        if (cumDist[i] >= targetDist) { seg = i - 1; break; }
+        if (i == cumDist.length - 1) seg = i - 1;
       }
+
+      // Fractional position within segment for smooth interpolation
+      final segLen = cumDist[seg + 1] - cumDist[seg];
+      final frac = segLen > 0 ? (targetDist - cumDist[seg]) / segLen : 1.0;
+      final quantized = (seg * 1000 + (frac * 100).round()).toDouble();
+      if (quantized == lastFrac) return;
+      lastFrac = quantized;
+
+      // Build coords: all points up to seg + interpolated tip
+      final coords = <mapbox.Position>[];
+      for (int i = 0; i <= seg; i++) {
+        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
+      }
+      // Interpolated tip point
+      final tipLat = points[seg].latitude + frac * (points[seg + 1].latitude - points[seg].latitude);
+      final tipLng = points[seg].longitude + frac * (points[seg + 1].longitude - points[seg].longitude);
+      coords.add(mapbox.Position(tipLng, tipLat));
+
+      _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+      updating = true;
+      polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();

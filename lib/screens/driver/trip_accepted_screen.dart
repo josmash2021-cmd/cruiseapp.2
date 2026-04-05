@@ -253,11 +253,21 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     ));
     if (!mounted || _routeAnnot == null) return;
 
-    final totalMs = (_routePoints.length * 6).clamp(800, 2200);
+    // Pre-compute cumulative distances for smooth distance-based interpolation
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < _routePoints.length; i++) {
+      final dx = _routePoints[i].longitude - _routePoints[i - 1].longitude;
+      final dy = _routePoints[i].latitude - _routePoints[i - 1].latitude;
+      cumDist.add(cumDist.last + math.sqrt(dx * dx + dy * dy));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist <= 0) return;
+
+    final totalMs = (_routePoints.length * 6).clamp(1000, 2400);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    int lastCount = 2;
     bool updating = false;
+    double lastFrac = -1;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -270,19 +280,40 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeOutCubic.transform(progress);
-      final count = (eased * _routePoints.length).round().clamp(2, _routePoints.length);
+      final eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - math.pow(-2 * progress + 2, 3) / 2;
+      final targetDist = eased * totalDist;
 
-      if (count != lastCount) {
-        lastCount = count;
-        final subset = _routePoints.sublist(0, count);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        updating = true;
-        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      int seg = 0;
+      for (int i = 1; i < cumDist.length; i++) {
+        if (cumDist[i] >= targetDist) { seg = i - 1; break; }
+        if (i == cumDist.length - 1) seg = i - 1;
       }
+
+      final segLen = cumDist[seg + 1] - cumDist[seg];
+      final frac = segLen > 0 ? (targetDist - cumDist[seg]) / segLen : 1.0;
+      final quantized = (seg * 1000 + (frac * 100).round()).toDouble();
+      if (quantized == lastFrac) return;
+      lastFrac = quantized;
+
+      final coords = <mapbox.Position>[];
+      for (int i = 0; i <= seg; i++) {
+        coords.add(mapbox.Position(_routePoints[i].longitude, _routePoints[i].latitude));
+      }
+      final tipLat = _routePoints[seg].latitude + frac * (_routePoints[seg + 1].latitude - _routePoints[seg].latitude);
+      final tipLng = _routePoints[seg].longitude + frac * (_routePoints[seg + 1].longitude - _routePoints[seg].longitude);
+      coords.add(mapbox.Position(tipLng, tipLat));
+
+      _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
+      updating = true;
+      polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
+        final fullCoords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
+        if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
         if (!completer.isCompleted) completer.complete();
       }
     });

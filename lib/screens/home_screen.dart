@@ -983,6 +983,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         if (verified) _verificationStatus = 'approved';
       }
     });
+    // If not verified locally, check backend — handles reinstall/new device
+    if (!_isVerified) {
+      _checkBackendVerification();
+    }
+
     // Start ride countdown if there's an active ride
     if (activeRide != null) {
       _startCountdown(activeRide.etaMinutes ?? 10);

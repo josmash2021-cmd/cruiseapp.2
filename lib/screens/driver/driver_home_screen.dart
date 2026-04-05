@@ -16,6 +16,7 @@ import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
@@ -661,12 +662,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       return;
     }
 
+    // Resolve driver ID + refresh active trip in parallel to reduce delay
     if (_driverId == null) {
       await _resolveDriverId();
     }
 
-    // Always refresh active-trip state before deciding where Resume goes.
-    await _refreshActiveTripStatus();
+    // Quick check: if we already know there's an active trip, resume immediately
+    if (_activeTripData != null) {
+      await _resumeActiveTrip();
+      return;
+    }
+
+    // Refresh active trip state — but with a short timeout to avoid freeze
+    await _refreshActiveTripStatus().timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {},
+    );
     if (!mounted) return;
 
     if (_activeTripData != null) {
@@ -675,6 +686,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
 
     HapticFeedback.heavyImpact();
+    NotificationService.playOnlineSound();
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
@@ -1721,8 +1733,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       if (!mounted) return;
       setState(() {
-        _activeTripData = active;
-        if (active != null) _isStillOnline = true;
+        // Only overwrite if Firestore found a trip, OR if backend hasn't set one.
+        // This prevents Firestore (empty cache) from erasing backend-found trip data.
+        if (active != null) {
+          _activeTripData = active;
+          _isStillOnline = true;
+        } else if (_activeTripData == null) {
+          _activeTripData = null; // both sources found nothing
+        }
       });
     } catch (_) {
       // Keep current UI state if this lookup fails.

@@ -122,6 +122,29 @@ extension _HomeScreenController on _HomeScreenState {
     }, onError: (_) {});
   }
 
+  /// Check backend /auth/me for verification status.
+  /// Handles reinstall/new device where SharedPreferences is empty but the
+  /// user was already approved via dispatch.
+  Future<void> _checkBackendVerification() async {
+    try {
+      final me = await ApiService.getMe();
+      if (me == null || !mounted) return;
+      final backendVerified = me['is_verified'] == true;
+      final backendStatus = (me['verification_status'] ?? '').toString();
+      if (backendVerified || backendStatus == 'approved') {
+        await LocalDataService.setIdentityVerified('license');
+        await UserSession.updateField('isVerified', 'true');
+        await UserSession.updateField('verificationStatus', 'approved');
+        if (mounted) {
+          _setState(() {
+            _isVerified = true;
+            _verificationStatus = 'approved';
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   void _showApprovalDialog() {
     showDialog<void>(
       context: context,

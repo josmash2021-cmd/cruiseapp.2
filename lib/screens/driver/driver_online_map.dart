@@ -330,10 +330,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Auto-trigger cinematic route preview when first offer arrives.
-  /// Uses the same logic as card tap but runs automatically.
+  /// Guards against duplicate triggers from SSE + polling overlap.
   void _autoTriggerRoutePreview(Map<String, dynamic> offer) {
+    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+    if (oid == _lastAutoTriggeredOfferId) return; // already triggered for this offer
+    _lastAutoTriggeredOfferId = oid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _pendingOffers.isEmpty) return;
+      if (!mounted || _pendingOffers.isEmpty || _isCardAnimating) return;
       _onOfferCardTap(offer);
     });
   }
@@ -422,13 +425,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);
     }
-
-    // Re-fit camera for final framing (next frame)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _previewingOffer != null) {
-        _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
-      }
-    });
     _isCardAnimating = false;
   }
 
@@ -485,10 +481,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return completer.future;
   }
 
-  /// Draw a single gold route line with progressive 60fps draw — adaptive duration.
+  /// Draw a single gold route line with distance-based interpolation — smooth 60fps.
   Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
+
+    // Pre-compute cumulative distances for distance-based interpolation
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < points.length; i++) {
+      cumDist.add(cumDist.last + _hav(points[i - 1], points[i]));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist < 1e-9) return;
 
     // Pre-create annotation before ticker to avoid async frame skipping
     final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
@@ -506,7 +510,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final totalMs = (points.length * 6).clamp(800, 2200);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    int lastCount = 2;
     bool updating = false;
 
     _routeDrawTicker?.stop();
@@ -521,13 +524,30 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeOutCubic.transform(progress);
-      final count = (eased * points.length).round().clamp(2, points.length);
+      // S-curve easing for smooth acceleration/deceleration
+      final t = progress;
+      final eased = t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
+      final targetDist = eased * totalDist;
 
-      if (count != lastCount) {
-        lastCount = count;
-        final subset = points.sublist(0, count);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      // Find the segment where targetDist falls and interpolate tip point
+      int segIdx = 0;
+      for (int i = 1; i < cumDist.length; i++) {
+        if (cumDist[i] >= targetDist) { segIdx = i - 1; break; }
+        if (i == cumDist.length - 1) segIdx = i - 1;
+      }
+      final segLen = cumDist[segIdx + 1] - cumDist[segIdx];
+      final frac = segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
+      final tipLat = points[segIdx].latitude + (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
+      final tipLng = points[segIdx].longitude + (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
+
+      // Build coords: all points up to segIdx + interpolated tip
+      final coords = <mapbox.Position>[];
+      for (int i = 0; i <= segIdx; i++) {
+        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
+      }
+      coords.add(mapbox.Position(tipLng, tipLat));
+
+      if (coords.length >= 2) {
         mainLine!.geometry = mapbox.LineString(coordinates: coords);
         updating = true;
         polyMgr.update(mainLine!).then((_) => updating = false).catchError((_) => updating = false);
@@ -629,6 +649,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
+    _lastAutoTriggeredOfferId = null;
     _setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;

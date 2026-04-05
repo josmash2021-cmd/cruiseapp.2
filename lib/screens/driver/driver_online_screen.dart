@@ -179,6 +179,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
   String? _acceptingCardId;
   final Set<String> _tappedCardIds = {};
+  String? _lastAutoTriggeredOfferId; // prevent duplicate auto-trigger
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──

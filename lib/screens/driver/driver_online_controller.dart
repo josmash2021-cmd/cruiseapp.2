@@ -1158,6 +1158,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // ── Reset offer state and navigate to full-screen accepted screen ──
     _tappedCardIds.clear();
+    _lastAutoTriggeredOfferId = null;
     _setState(() {
       _offerAcceptState = _OfferAcceptState.normal;
       _acceptingCardId = null;

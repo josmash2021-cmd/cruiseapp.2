@@ -623,18 +623,31 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     HapticFeedback.mediumImpact();
     setState(() => _linkingBank = true);
     try {
-      final linkToken = await ApiService.createPlaidLinkToken();
+      // Use Stripe Connect for bank account setup — handles everything securely
+      final url = await ApiService.getStripeConnectLink();
       if (!mounted) return;
-      final plaidUrl = Uri.parse(
-        'https://cdn.plaid.com/link/v2/stable/link.html?'
-        'token=$linkToken&isWebview=true&isMobile=true',
-      );
-      await launchUrl(plaidUrl, mode: LaunchMode.inAppBrowserView);
-      if (mounted) {
-        await Future.delayed(const Duration(seconds: 1));
-        _showBankEntryForm();
+      if (url.isNotEmpty) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        // Wait for driver to complete Stripe onboarding, then refresh
+        if (mounted) {
+          await Future.delayed(const Duration(seconds: 3));
+          // Check if Stripe Connect is now active
+          try {
+            final status = await ApiService.getStripeConnectStatus();
+            if (status['connected'] == true && mounted) {
+              final acctId = (status['stripe_account_id'] ?? '').toString();
+              final display = 'Stripe Connect ····${acctId.length > 4 ? acctId.substring(acctId.length - 4) : acctId}';
+              await _addMethod('bank_account', display);
+            }
+          } catch (_) {}
+          await _loadMethods();
+        }
+      } else {
+        // Fallback to manual bank entry form
+        if (mounted) _showBankEntryForm();
       }
     } catch (e) {
+      debugPrint('[Payout] Stripe Connect error: $e');
       if (mounted) _showBankEntryForm();
     } finally {
       if (mounted) setState(() => _linkingBank = false);

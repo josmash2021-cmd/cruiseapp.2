@@ -41,7 +41,7 @@ class Env {
 
   // ── PayPal ──
   static const bool paypalSandbox = bool.fromEnvironment(
-    'PAYPAL_SANDBOX', defaultValue: true);
+    'PAYPAL_SANDBOX', defaultValue: false);
   static const String paypalClientId = String.fromEnvironment(
     'PAYPAL_CLIENT_ID', defaultValue: '');
   static const String paypalSecret = String.fromEnvironment(

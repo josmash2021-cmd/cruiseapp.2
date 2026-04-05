@@ -558,15 +558,70 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         .doc(_fsDocId)
         .snapshots()
         .listen((snap) {
-      if (!mounted || _riderConfirmedPickup || _rideStarted) return;
+      if (!mounted) return;
       final data = snap.data();
       if (data == null) return;
+
+      // Detect external completion (dispatch admin finished the trip)
+      final status = (data['status'] ?? '').toString().toLowerCase();
+      if (status == 'completed' && !_tripFinished) {
+        debugPrint('[Driver] Trip completed externally (dispatch) → navigating to rating');
+        _onExternalCompletion();
+        return;
+      }
+
+      if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
         HapticFeedback.mediumImpact();
         if (mounted) {
           setState(() => _riderConfirmedPickup = true);
         }
       }
+    });
+  }
+
+  /// Handle trip completed externally (by dispatch admin).
+  /// Skip the API status update (already done) but still show completion
+  /// overlay and navigate to rating screen.
+  void _onExternalCompletion() {
+    if (_tripFinished) return;
+    setState(() => _tripFinished = true);
+    HapticFeedback.heavyImpact();
+
+    _finishFadeCtrl.forward(from: 0);
+
+    // Cleanup (fire-and-forget)
+    unawaited(() async {
+      final gps = GpsService();
+      try { await gps.clearTripLocation(); } catch (_) {}
+      gps.setActiveTrip(null);
+      try {
+        await TripFirestoreService.clearDriverLocation(_fsDocId);
+      } catch (_) {}
+    }());
+
+    // Navigate to rating screen after brief overlay
+    _finishNavTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => DriverRateRiderScreen(
+            tripId: widget.tripId,
+            riderName: widget.riderName,
+            riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
+            riderId: widget.riderId,
+            fare: widget.fare,
+            dropoffLat: widget.dropoffLatLng.latitude,
+            dropoffLng: widget.dropoffLatLng.longitude,
+          ),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+        (route) => false,
+      );
     });
   }
 

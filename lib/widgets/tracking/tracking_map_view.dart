@@ -1236,7 +1236,21 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     final totalPts = allCoords.length;
-    final drawDurationMs = (totalPts * 6).clamp(800, 2200);
+
+    // ── Compute cumulative distances for smooth distance-based interpolation ──
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < totalPts; i++) {
+      final prev = allCoords[i - 1];
+      final cur = allCoords[i];
+      final dx = cur.lng.toDouble() - prev.lng.toDouble();
+      final dy = cur.lat.toDouble() - prev.lat.toDouble();
+      cumDist.add(cumDist.last + math.sqrt(dx * dx + dy * dy));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist < 0.00001) return;
+
+    // Duration: longer routes draw slightly slower, 1200-2400ms
+    final drawDurationMs = (totalPts * 8).clamp(1200, 2400);
 
     // Pre-create annotation BEFORE starting ticker to avoid race condition
     final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
@@ -1245,7 +1259,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     final stopwatch = Stopwatch()..start();
     bool updating = false;
-    int lastCount = 2;
+    double lastFrac = 0.0;
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -1253,18 +1267,49 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (updating) return;
       final elapsed = stopwatch.elapsedMilliseconds;
       final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
-      final eased = Curves.easeOutCubic.transform(t);
-      final count = (eased * totalPts).round().clamp(2, totalPts);
-      if (count != lastCount) {
-        lastCount = count;
-        final geom = mapbox.LineString(coordinates: allCoords.sublist(0, count));
-        updating = true;
-        try {
-          _remainingRouteAnnot!.geometry = geom;
-          polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
-        } catch (_) { updating = false; }
+      // Smooth S-curve: slow start, fast middle, gentle end — like water flowing
+      final eased = t < 0.5
+          ? 4 * t * t * t
+          : 1 - math.pow(-2 * t + 2, 3) / 2;
+      final targetDist = eased * totalDist;
+
+      // Skip if barely moved (avoid unnecessary updates)
+      if ((eased - lastFrac).abs() < 0.003 && t < 1.0) return;
+      lastFrac = eased;
+
+      // ── Find exact interpolated position on route at targetDist ──
+      int seg = 0;
+      for (int i = 1; i < totalPts; i++) {
+        if (cumDist[i] >= targetDist) { seg = i - 1; break; }
+        if (i == totalPts - 1) seg = i - 1;
       }
+      final segLen = cumDist[seg + 1] - cumDist[seg];
+      final frac = segLen > 0.00001 ? (targetDist - cumDist[seg]) / segLen : 1.0;
+
+      // Interpolated tip point — this is what makes it flow like water
+      final a = allCoords[seg];
+      final b = allCoords[seg + 1];
+      final tipLng = a.lng.toDouble() + (b.lng.toDouble() - a.lng.toDouble()) * frac;
+      final tipLat = a.lat.toDouble() + (b.lat.toDouble() - a.lat.toDouble()) * frac;
+
+      // Build coords: all full segments + interpolated tip
+      final coords = <mapbox.Position>[
+        ...allCoords.sublist(0, seg + 1),
+        mapbox.Position(tipLng, tipLat),
+      ];
+
+      if (coords.length < 2) return;
+      final geom = mapbox.LineString(coordinates: coords);
+      updating = true;
+      try {
+        _remainingRouteAnnot!.geometry = geom;
+        polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      } catch (_) { updating = false; }
+
       if (t >= 1.0) {
+        // Final: set full route to ensure no rounding gaps
+        _remainingRouteAnnot!.geometry = mapbox.LineString(coordinates: allCoords);
+        polyMgr.update(_remainingRouteAnnot!).catchError((_) {});
         _routeDrawTicker?.stop();
       }
     })..start();

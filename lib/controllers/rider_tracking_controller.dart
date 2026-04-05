@@ -1135,12 +1135,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Start real-time camera tracking - follows driver every 2s
   void _startCameraFollowTracking() {
-    if (_map == null) return;
-
     _cameraFollowTimer?.cancel();
     // Follow every 1.5s for fluid chase camera that keeps up with the car
     _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
+      if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
       _followDriver(_animPos, _animBearing);
     });
   }

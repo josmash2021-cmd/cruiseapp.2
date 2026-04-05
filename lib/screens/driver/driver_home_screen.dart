@@ -581,9 +581,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
-      // If driver account is approved, they should always be able to go online
-      final vStatus = await LocalDataService.getDriverApprovalStatus();
-      if (vStatus == 'approved') {
+      // Check local approval status first
+      final localStatus = await LocalDataService.getDriverApprovalStatus();
+      if (localStatus == 'approved') {
         setState(() {
           _vehicleDocsApproved = true;
           _hasExpiredDocs = false;
@@ -593,25 +593,57 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
 
+      // Fetch profile + vehicle + docs in parallel
       final results = await Future.wait([
         ApiService.getVehicle(),
         ApiService.getDocuments(),
+        ApiService.getMe().catchError((_) => null),
       ]);
       if (!mounted) return;
       final v = results[0] as Map<String, dynamic>?;
       final docs = results[1] as List<Map<String, dynamic>>? ?? [];
+      final profile = results[2] as Map<String, dynamic>? ?? {};
+
+      // Check backend verification_status (most reliable source)
+      final backendStatus = (profile['verification_status'] ?? '').toString().toLowerCase();
+      if (backendStatus == 'approved') {
+        await LocalDataService.setDriverApprovalStatus('approved');
+        setState(() {
+          _vehicleDocsApproved = true;
+          _hasExpiredDocs = false;
+          _docStatusLoaded = true;
+        });
+        _btnColorCtrl.value = 1.0;
+        return;
+      }
+
+      // Check if ALL documents are approved (regardless of vehicle flags)
+      if (docs.isNotEmpty) {
+        final allApproved = docs.every((d) =>
+          (d['status'] as String? ?? '').toLowerCase() == 'approved');
+        if (allApproved && docs.length >= 3) {
+          // All docs approved — let them go online
+          setState(() {
+            _vehicleDocsApproved = true;
+            _hasExpiredDocs = false;
+            _docStatusLoaded = true;
+          });
+          _btnColorCtrl.value = 1.0;
+          return;
+        }
+      }
 
       if (v == null) {
         setState(() => _docStatusLoaded = true);
         return;
       }
 
-      // Primary check: vehicle-level flags (set by approval agent)
+      // Vehicle-level flags check
       final insOk = v['insurance_valid'] == true;
       final regOk = v['registration_valid'] == true;
       bool vehicleFlagsOk = insOk && regOk;
 
-      // Fallback: if vehicle flags are not set, check actual document statuses
+      // Fallback: check actual document statuses
       if (!vehicleFlagsOk && docs.isNotEmpty) {
         bool hasApprovedIns = false;
         bool hasApprovedReg = false;

@@ -112,7 +112,7 @@ const String _carShadowSourceId = 'car-shadow-source';
 const String _carShadowLayerId = 'car-shadow-layer';
 const String _carShadowImageId = 'car-shadow-image';
 const String _arrowImageId = 'arrow-image';
-const double _kCarScale = 0.06;
+const double _kCarScale = 0.35;
 const double _entranceDuration = 800.0;
 const int _maxPollFailsBeforeBanner = 3;
 

@@ -147,14 +147,40 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Also load navigation arrow icon
     await _loadArrowIcon();
 
+    debugPrint('[CarIcon] _loadCarIcon complete: bytes=${_carIconBytes?.length ?? 0} w=$_carIconWidth h=$_carIconHeight');
     if (mounted) _setState(() {});
   }
 
   /// Decode PNG bytes to raw RGBA pixel data for MbxImage.
-  Future<(Uint8List, int, int)?> _decodePngToRgba(Uint8List pngBytes) async {
+  /// Resizes large images to maxDim to prevent GPU texture issues on some devices.
+  Future<(Uint8List, int, int)?> _decodePngToRgba(Uint8List pngBytes, {int maxDim = 160}) async {
     final codec = await ui.instantiateImageCodec(pngBytes);
     final frame = await codec.getNextFrame();
     final img = frame.image;
+
+    // Resize if the image is too large (e.g. 940x788 → ~160x134)
+    if (img.width > maxDim || img.height > maxDim) {
+      final scale = maxDim / math.max(img.width, img.height);
+      final newW = (img.width * scale).round();
+      final newH = (img.height * scale).round();
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()));
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()),
+        Paint()..filterQuality = FilterQuality.high,
+      );
+      final picture = recorder.endRecording();
+      final resized = await picture.toImage(newW, newH);
+      final byteData = await resized.toByteData(format: ui.ImageByteFormat.rawRgba);
+      resized.dispose();
+      picture.dispose();
+      img.dispose();
+      if (byteData == null) return null;
+      return (byteData.buffer.asUint8List(), newW, newH);
+    }
+
     final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (byteData == null) return null;
     return (byteData.buffer.asUint8List(), img.width, img.height);
@@ -1008,7 +1034,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Future<void> _updateCarGeoJsonOnly() async {
     if (_map == null) return;
     final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
-    if (iconBytes == null) return;
+    if (iconBytes == null) {
+      debugPrint('[CarIcon] iconBytes is null — car icon not loaded yet (w=$_carIconWidth h=$_carIconHeight)');
+      return;
+    }
     try {
       final style = _map!.style;
       final imageId = _navArrowMode ? _arrowImageId : _carImageId;
@@ -1025,10 +1054,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           false, [], [], null);
         _arrowImageAdded = true;
       } else if (!isArrow && !_carImageAdded && _carIconBytes != null) {
+        debugPrint('[CarIcon] Adding car image to style: ${_carIconWidth}x$_carIconHeight (${_carIconBytes!.length} bytes)');
         await style.addStyleImage(_carImageId, 1.0,
           mapbox.MbxImage(width: _carIconWidth, height: _carIconHeight, data: _carIconBytes!),
           false, [], [], null);
         _carImageAdded = true;
+        debugPrint('[CarIcon] Car image added successfully');
         _carShadowBytes ??= await _generateShadowImage();
         if (_carShadowBytes != null && !_carShadowAdded) {
           await style.addStyleImage(_carShadowImageId, 1.0,
@@ -1080,7 +1111,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         final shadowSrc = await style.getSource(_carShadowSourceId);
         if (shadowSrc != null) _cachedShadowSource = shadowSrc as mapbox.GeoJsonSource;
       }
-    } catch (_) {}
+      debugPrint('[CarIcon] Car layer created and cached (source=${_cachedCarSource != null})');
+    } catch (e) {
+      debugPrint('[CarIcon] _updateCarGeoJsonOnly FAILED: $e');
+    }
   }
 
   /// Update layer visual properties — icon-size during entrance animation, icon-image on mode change.

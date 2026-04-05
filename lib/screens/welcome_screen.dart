@@ -127,69 +127,79 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 36),
 
-                  // Logo
+                  // ── CRUISE title (centered) ──
                   FadeTransition(
                     opacity: _logoFade,
-                    child: RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: 'Cruise',
-                            style: GoogleFonts.cinzel(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w900,
-                              color: _gold,
-                              letterSpacing: 6,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  // Main text
-                  FadeTransition(
-                    opacity: _textFade,
                     child: Text(
-                      S.of(context).welcomeHeadline,
-                      style: TextStyle(
-                        fontSize: 44,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.1,
-                        letterSpacing: -1,
+                      'CRUISE',
+                      style: GoogleFonts.cinzel(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: _gold,
+                        letterSpacing: 8,
                       ),
                     ),
                   ),
 
                   const SizedBox(height: 12),
 
+                  // ── Gold diamond separator (centered) ──
+                  FadeTransition(
+                    opacity: _logoFade,
+                    child: SizedBox(
+                      width: 200,
+                      height: 14,
+                      child: CustomPaint(painter: _DiamondSeparatorPainter()),
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // ── Headline (centered) ──
+                  FadeTransition(
+                    opacity: _textFade,
+                    child: Text(
+                      S.of(context).welcomeHeadline,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.1,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // ── Subheadline (small, centered) ──
                   FadeTransition(
                     opacity: _textFade,
                     child: Text(
                       S.of(context).welcomeSubheadline,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white60,
                         fontWeight: FontWeight.w400,
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 32),
 
-                  // Get started button
-                  FadeTransition(
-                    opacity: _btnFade,
-                    child: SizedBox(
+                  // ── Get started button (gold filled) ──
+                  SlideTransition(
+                    position: _btnSlide,
+                    child: FadeTransition(
+                      opacity: _btnFade,
+                      child: SizedBox(
                         width: double.infinity,
-                        height: 58,
+                        height: 56,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _gold,
@@ -198,17 +208,15 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             ),
-                            shadowColor: _gold.withValues(alpha: 0.3),
                           ),
                           onPressed: () {
-                            Navigator.of(
-                              context,
-                            ).push(slideUpFadeRoute(const LoginScreen()));
+                            Navigator.of(context)
+                                .push(slideUpFadeRoute(const LoginScreen()));
                           },
                           child: Text(
                             S.of(context).getStarted,
-                            style: TextStyle(
-                              fontSize: 18,
+                            style: const TextStyle(
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.2,
                             ),
@@ -216,48 +224,72 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                       ),
                     ),
+                  ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
-                  // ── Sign up to drive ──
-                  FadeTransition(
-                    opacity: _btnFade,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 58,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: _gold, width: 1.5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
+                  // ── Already have account? button (outlined) ──
+                  SlideTransition(
+                    position: _btnSlide,
+                    child: FadeTransition(
+                      opacity: _btnFade,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1.2),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
-                          elevation: 0,
-                        ),
-                        onPressed: () {
-                          Navigator.of(context)
-                              .push(slideUpFadeRoute(const DriverLoginScreen()));
-                        },
-                        icon: Icon(
-                          Icons.directions_car_filled_rounded,
-                          color: _gold,
-                          size: 20,
-                        ),
-                        label: const Text(
-                          'Sign up to drive',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
-                            color: Colors.white,
+                          onPressed: () {
+                            Navigator.of(context)
+                                .push(slideUpFadeRoute(const LoginScreen()));
+                          },
+                          child: Text(
+                            S.of(context).alreadyHaveAccount,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white70,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
+
+                  // ── Want to drive? Sign up to drive (text link) ──
+                  FadeTransition(
+                    opacity: _btnFade,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context)
+                            .push(slideUpFadeRoute(const DriverLoginScreen()));
+                      },
+                      child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(fontSize: 14, color: Colors.white54),
+                          children: [
+                            const TextSpan(text: 'Want to drive? '),
+                            TextSpan(
+                              text: 'Sign up to drive',
+                              style: TextStyle(
+                                color: _gold,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
                 ],
               ),
             ),
@@ -266,4 +298,41 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       ),
     );
   }
+}
+
+/// Gold line with centered diamond shape — matches foto 3 separator.
+class _DiamondSeparatorPainter extends CustomPainter {
+  static const _gold = Color(0xFFE8C547);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _gold.withValues(alpha: 0.6)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    final cy = size.height / 2;
+    final cx = size.width / 2;
+    const diamondSize = 5.0;
+
+    // Left line
+    canvas.drawLine(Offset(0, cy), Offset(cx - diamondSize - 6, cy), paint);
+    // Right line
+    canvas.drawLine(Offset(cx + diamondSize + 6, cy), Offset(size.width, cy), paint);
+
+    // Diamond (filled)
+    final diamondPaint = Paint()
+      ..color = _gold
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(cx, cy - diamondSize)
+      ..lineTo(cx + diamondSize, cy)
+      ..lineTo(cx, cy + diamondSize)
+      ..lineTo(cx - diamondSize, cy)
+      ..close();
+    canvas.drawPath(path, diamondPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

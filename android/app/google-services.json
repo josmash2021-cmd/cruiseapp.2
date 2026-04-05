@@ -31,7 +31,16 @@
           "package_name": "com.cruiseinride.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "562266680819-h77napkfd2kge0o0vn47k0v1203j2nqs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cruiseinride.app",
+            "certificate_hash": "a8cb8fd34f4e6c4712d41cb7572c77bc96def38c"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA17wn7sSLxa7WInC8Z8FCA-Pjkb-a2eIw"

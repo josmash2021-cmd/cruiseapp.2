@@ -66,6 +66,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _approachAnnot = null;
       }
     }
+    final carMgr = _carAnnotMgr;
+    if (carMgr != null && _carAnnot != null) {
+      try { await carMgr.delete(_carAnnot!); } catch (_) {}
+      _carAnnot = null;
+    }
     final ptMgr = _pointAnnotMgr;
     if (ptMgr != null) {
       if (_pickupAnnot != null) {
@@ -109,6 +114,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
   }
   
+  /// Load the car PNG and resize it to a reasonable map icon size.
+  /// Stores PNG bytes (not RGBA) for use with PointAnnotation.
   Future<void> _loadCarIcon() async {
     final rideName = widget.rideName.toLowerCase();
     String carAsset;
@@ -123,198 +130,50 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     debugPrint('[CarIcon] rideName="$rideName" → asset=$carAsset');
 
     try {
-      final pngBytes = await rootBundle.load(carAsset);
-      final decoded = await _decodePngToRgba(pngBytes.buffer.asUint8List());
-      if (decoded != null) {
-        _carIconBytes = decoded.$1;
-        _carIconWidth = decoded.$2;
-        _carIconHeight = decoded.$3;
-      }
-      _currentCarType = carAsset;
+      final raw = await rootBundle.load(carAsset);
+      _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 160);
+      debugPrint('[CarIcon] loaded ${_carPngBytes!.length} PNG bytes');
     } catch (e) {
-      // Fallback to economy if specific car not found
+      debugPrint('[CarIcon] FAILED to load $carAsset: $e');
       try {
-        final pngBytes = await rootBundle.load('assets/images/car_economy.png');
-        final decoded = await _decodePngToRgba(pngBytes.buffer.asUint8List());
-        if (decoded != null) {
-          _carIconBytes = decoded.$1;
-          _carIconWidth = decoded.$2;
-          _carIconHeight = decoded.$3;
-        }
-        _currentCarType = 'assets/images/car_economy.png';
+        final raw = await rootBundle.load('assets/images/car_economy.png');
+        _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 160);
       } catch (_) {}
     }
-
-    // Also load navigation arrow icon
-    await _loadArrowIcon();
-
-    debugPrint('[CarIcon] _loadCarIcon complete: bytes=${_carIconBytes?.length ?? 0} w=$_carIconWidth h=$_carIconHeight');
     if (mounted) _setState(() {});
   }
 
-  /// Decode PNG bytes to raw RGBA pixel data for MbxImage.
-  /// Resizes large images to maxDim to prevent GPU texture issues on some devices.
-  Future<(Uint8List, int, int)?> _decodePngToRgba(Uint8List pngBytes, {int maxDim = 160}) async {
+  /// Resize a PNG image and return PNG bytes (not RGBA).
+  Future<Uint8List> _resizePngForMap(Uint8List pngBytes, {int maxDim = 160}) async {
     final codec = await ui.instantiateImageCodec(pngBytes);
     final frame = await codec.getNextFrame();
     final img = frame.image;
 
-    // Resize if the image is too large (e.g. 940x788 → ~160x134)
-    if (img.width > maxDim || img.height > maxDim) {
-      final scale = maxDim / math.max(img.width, img.height);
-      final newW = (img.width * scale).round();
-      final newH = (img.height * scale).round();
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()));
-      canvas.drawImageRect(
-        img,
-        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-        Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()),
-        Paint()..filterQuality = FilterQuality.high,
-      );
-      final picture = recorder.endRecording();
-      final resized = await picture.toImage(newW, newH);
-      final byteData = await resized.toByteData(format: ui.ImageByteFormat.rawRgba);
-      resized.dispose();
-      picture.dispose();
-      img.dispose();
-      if (byteData == null) return null;
-      return (byteData.buffer.asUint8List(), newW, newH);
-    }
+    final scale = maxDim / math.max(img.width, img.height);
+    final newW = (img.width * scale).round().clamp(1, maxDim);
+    final newH = (img.height * scale).round().clamp(1, maxDim);
 
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) return null;
-    return (byteData.buffer.asUint8List(), img.width, img.height);
-  }
-  
-  /// Load navigation arrow icon for centering mode
-  Future<void> _loadArrowIcon() async {
-    // Generate a golden arrow icon
-    _arrowIconBytes = await _renderNavigationArrow();
-  }
-  
-  /// Render a golden navigation arrow
-  Future<Uint8List> _renderNavigationArrow() async {
-    const double size = 100;
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    const cx = size / 2;
-    const cy = size / 2;
-    const gold = Color(0xFFE8C547);
-    
-    // Drop shadow
-    canvas.drawCircle(
-      const Offset(cx, cy + 2),
-      size * 0.4,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.4)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()));
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()),
+      Paint()..filterQuality = FilterQuality.high,
     );
-    
-    // Gold circle background
-    canvas.drawCircle(
-      const Offset(cx, cy),
-      size * 0.38,
-      Paint()..color = gold,
-    );
-    
-    // White arrow pointing up
-    final arrowPath = Path()
-      ..moveTo(cx, cy - size * 0.22)
-      ..lineTo(cx - size * 0.18, cy + size * 0.08)
-      ..lineTo(cx - size * 0.06, cy + size * 0.08)
-      ..lineTo(cx - size * 0.06, cy + size * 0.22)
-      ..lineTo(cx + size * 0.06, cy + size * 0.22)
-      ..lineTo(cx + size * 0.06, cy + size * 0.08)
-      ..lineTo(cx + size * 0.18, cy + size * 0.08)
-      ..close();
-    
-    canvas.drawPath(
-      arrowPath,
-      Paint()..color = Colors.white,
-    );
-    
-    // Inner highlight
-    canvas.drawCircle(
-      Offset(cx - size * 0.1, cy - size * 0.1),
-      size * 0.15,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-    
     final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) return Uint8List(0);
-    return byteData.buffer.asUint8List();
+    final resized = await picture.toImage(newW, newH);
+    // Return PNG bytes (PointAnnotation expects PNG, not raw RGBA)
+    final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+    resized.dispose();
+    picture.dispose();
+    img.dispose();
+    return byteData!.buffer.asUint8List();
   }
 
-
-  /// Inicia la animación de entrada del carro - transición profesional estilo "formación"
-  void _startCarEntranceAnimation() {
-    if (_carEntranceStarted || _carEntranceComplete) return;
-    
-    _carEntranceStarted = true;
-    _entranceStartTime = DateTime.now();
-    
-    // Animar a 60fps durante 800ms
-    _entranceTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      if (_entranceStartTime == null) {
-        timer.cancel();
-        return;
-      }
-      
-      final elapsed = DateTime.now().difference(_entranceStartTime!).inMilliseconds;
-      final progress = (elapsed / _entranceDuration).clamp(0.0, 1.0);
-      
-      // Easing curve elástico (bounce out)
-      _carEntranceProgress = _elasticOut(progress);
-      
-      // Redibujar el carro con la nueva escala
-      _updateCarSmooth();
-      
-      if (progress >= 1.0) {
-        _carEntranceComplete = true;
-        timer.cancel();
-        _entranceTimer = null;
-      }
-    });
-  }
-
-  /// Elastic bounce easing - para efecto "formación" profesional
-  double _elasticOut(double t) {
-    const p = 0.3;
-    return math.pow(2.0, -10 * t) * math.sin((t - p / 4) * (2 * math.pi) / p) + 1.0;
-  }
-
-  /// Ease out cubic - para transición suave final
+  /// Ease out cubic
   double _easeOutCubic(double t) {
     return 1.0 - math.pow(1.0 - t, 3);
-  }
-
-  /// Genera imagen de sombra con efecto fade/blur
-  Future<Uint8List> _generateShadowImage() async {
-    const double size = 80.0;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size, size));
-    
-    // Dibujar círculo negro difuminado (sombra)
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
-    
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2 + 5), // Ligeramente desplazada hacia abajo
-      size * 0.35,
-      shadowPaint,
-    );
-    
-    final picture = recorder.endRecording();
-    final img = picture.toImageSync(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) return Uint8List(0);
-    return byteData.buffer.asUint8List();
   }
 
   /// Detect location type from address label for contextual icon
@@ -955,18 +814,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
               } catch (_) {}
+              // Separate annotation manager for car icon (icon-anchor: center, on top)
+              _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              try {
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
+              } catch (_) {}
               _updateAnnotations();
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
-              // Reset car image flags so the car is re-added after style reload
-              _carImageAdded = false;
-              _carShadowAdded = false;
-              _arrowImageAdded = false;
-              _cachedCarSource = null;
-              _cachedShadowSource = null;
-              _lastNavArrowModeRendered = !_navArrowMode;
-              _carUpdateInProgress = false;
+              // Car annotation survives style reload (managed by annotation manager)
+              // Reset creation guard so car can be re-created if needed
+              _carAnnotCreating = false;
             },
           ),
         ),
@@ -997,160 +860,58 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
 
-  // ── Fast path: update only the car GeoJSON (called every 60fps frame) ──
+  // ── Car update: uses PointAnnotation (same proven approach as pins) ──
   void _updateCarSmooth() {
     if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+    if (_carPngBytes == null) return;
 
-    final lng = _animPos.longitude;
-    final lat = _animPos.latitude;
-    final brg = _animBearing;
+    final mgr = _carAnnotMgr;
+    if (mgr == null) return;
 
-    // ── Sync hot path: zero async overhead when sources are cached ──
-    if (_cachedCarSource != null) {
+    if (_carAnnot != null) {
+      // Fast path: just update position of existing annotation
       try {
-        final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
-        _cachedCarSource!.updateGeoJSON(geoJson);
-        if (!_navArrowMode && _cachedShadowSource != null) {
-          _cachedShadowSource!.updateGeoJSON(
-            '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}',
-          );
-        }
-      } catch (_) {
-        // Stale source (e.g. map style reload) — clear cache, re-create next frame
-        _cachedCarSource = null;
-        _cachedShadowSource = null;
-        _carImageAdded = false;
-        _carShadowAdded = false;
-        _lastNavArrowModeRendered = !_navArrowMode; // force re-init
-      }
-      // Only do async layer-property updates when something actually changes
-      final needsAsync = !_carEntranceComplete || (_navArrowMode != _lastNavArrowModeRendered);
-      if (needsAsync && !_carLayerPropsUpdating) {
-        _carLayerPropsUpdating = true;
-        _updateCarLayerProperties().whenComplete(() => _carLayerPropsUpdating = false);
-      }
-      return;
-    }
-
-    // First-time setup or recovery path (async)
-    if (_carUpdateInProgress) return;
-    _carUpdateInProgress = true;
-    _updateCarGeoJsonOnly()
-        .then((_) => _carUpdateInProgress = false)
-        .catchError((_) => _carUpdateInProgress = false);
-  }
-
-  // Handles first-time source/layer creation and caches source references for the sync hot path.
-  Future<void> _updateCarGeoJsonOnly() async {
-    if (_map == null) return;
-    final iconBytes = _navArrowMode && _arrowIconBytes != null ? _arrowIconBytes! : _carIconBytes;
-    if (iconBytes == null) {
-      debugPrint('[CarIcon] iconBytes is null — car icon not loaded yet (w=$_carIconWidth h=$_carIconHeight)');
-      return;
-    }
-    try {
-      final style = _map!.style;
-      final imageId = _navArrowMode ? _arrowImageId : _carImageId;
-      final isArrow = _navArrowMode;
-      final lng = _animPos.longitude;
-      final lat = _animPos.latitude;
-      final brg = _animBearing;
-      final geoJson = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{"bearing":$brg}}]}';
-
-      // ── Add images if not yet added ──
-      if (isArrow && !_arrowImageAdded && _arrowIconBytes != null) {
-        await style.addStyleImage(_arrowImageId, 1.0,
-          mapbox.MbxImage(width: 100, height: 100, data: _arrowIconBytes!),
-          false, [], [], null);
-        _arrowImageAdded = true;
-      } else if (!isArrow && !_carImageAdded && _carIconBytes != null) {
-        debugPrint('[CarIcon] Adding car image to style: ${_carIconWidth}x$_carIconHeight (${_carIconBytes!.length} bytes)');
-        await style.addStyleImage(_carImageId, 1.0,
-          mapbox.MbxImage(width: _carIconWidth, height: _carIconHeight, data: _carIconBytes!),
-          false, [], [], null);
-        _carImageAdded = true;
-        debugPrint('[CarIcon] Car image added successfully');
-        _carShadowBytes ??= await _generateShadowImage();
-        if (_carShadowBytes != null && !_carShadowAdded) {
-          await style.addStyleImage(_carShadowImageId, 1.0,
-            mapbox.MbxImage(width: 80, height: 80, data: _carShadowBytes!),
-            false, [], [], null);
-          _carShadowAdded = true;
-        }
-      }
-
-      final sourceExists = await style.styleSourceExists(_carSourceId);
-      if (!sourceExists) {
-        // Create shadow source + layer first
-        if (!isArrow && _carShadowAdded) {
-          final shadowGeo = '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[$lng,$lat]},"properties":{}}]}';
-          await style.addSource(mapbox.GeoJsonSource(id: _carShadowSourceId, data: shadowGeo));
-          await style.addLayer(mapbox.SymbolLayer(
-            id: _carShadowLayerId, sourceId: _carShadowSourceId,
-            iconImage: _carShadowImageId, iconSize: 0.7,
-            iconAnchor: mapbox.IconAnchor.CENTER,
-            iconAllowOverlap: true, iconIgnorePlacement: true, iconOpacity: 0.5,
-          ));
-        }
-        // Create car source + layer
-        final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
-        await style.addSource(mapbox.GeoJsonSource(id: _carSourceId, data: geoJson));
-        await style.addLayer(mapbox.SymbolLayer(
-          id: _carLayerId, sourceId: _carSourceId,
-          iconImage: imageId,
-          iconSize: scale,
-          iconOpacity: 1.0,
-          iconRotate: brg,
-          iconRotationAlignment: mapbox.IconRotationAlignment.MAP,
-          iconAllowOverlap: true, iconIgnorePlacement: true,
-        ));
-        // Data-driven bearing: rotation is driven by GeoJSON properties — no per-frame async call needed
-        if (!isArrow) {
-          await style.setStyleLayerProperty(_carLayerId, 'icon-rotate', ['get', 'bearing']);
-        }
-        try { await style.moveStyleLayer(_carLayerId, null); } catch (_) {}
-        if (!isArrow) _startCarEntranceAnimation();
-        _lastRenderedScale = scale;
-        _lastNavArrowModeRendered = isArrow;
-      }
-
-      // Cache source references for the sync fast path
-      final src = await style.getSource(_carSourceId);
-      if (src != null) _cachedCarSource = src as mapbox.GeoJsonSource;
-      if (!isArrow) {
-        final shadowSrc = await style.getSource(_carShadowSourceId);
-        if (shadowSrc != null) _cachedShadowSource = shadowSrc as mapbox.GeoJsonSource;
-      }
-      debugPrint('[CarIcon] Car layer created and cached (source=${_cachedCarSource != null})');
-    } catch (e) {
-      debugPrint('[CarIcon] _updateCarGeoJsonOnly FAILED: $e');
-    }
-  }
-
-  /// Update layer visual properties — icon-size during entrance animation, icon-image on mode change.
-  /// Only called when something actually changes (not every 60fps frame).
-  Future<void> _updateCarLayerProperties() async {
-    if (_map == null) return;
-    try {
-      final style = _map!.style;
-      final isArrow = _navArrowMode;
-      final imageId = isArrow ? _arrowImageId : _carImageId;
-      final scale = isArrow ? 1.0 : (_carEntranceProgress * _kCarScale).clamp(0.001, _kCarScale);
-
-      if (isArrow != _lastNavArrowModeRendered) {
-        await style.setStyleLayerProperty(_carLayerId, 'icon-image', imageId);
-        // Data expression for car bearing, static 0 for arrow
-        await style.setStyleLayerProperty(
-          _carLayerId, 'icon-rotate', isArrow ? 0.0 : ['get', 'bearing'],
+        _carAnnot!.geometry = mapbox.Point(
+          coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
-        _lastNavArrowModeRendered = isArrow;
+        mgr.update(_carAnnot!);
+      } catch (e) {
+        debugPrint('[CarIcon] update failed: $e — will recreate');
+        _carAnnot = null;
+        _carAnnotCreating = false;
       }
-      if ((scale - _lastRenderedScale).abs() > 0.001) {
-        await style.setStyleLayerProperty(_carLayerId, 'icon-size', scale);
-        _lastRenderedScale = scale;
-      }
-    } catch (_) {}
+      return;
+    }
+
+    // First-time creation (async, guarded)
+    if (_carAnnotCreating) return;
+    _carAnnotCreating = true;
+    _createCarAnnotation().then((_) {
+      _carAnnotCreating = false;
+    }).catchError((_) {
+      _carAnnotCreating = false;
+    });
+  }
+
+  /// Create the car PointAnnotation — called once, then updated in-place.
+  Future<void> _createCarAnnotation() async {
+    final mgr = _carAnnotMgr;
+    if (mgr == null || _carPngBytes == null) return;
+    try {
+      _carAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(
+          coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+        ),
+        image: _carPngBytes!,
+        iconSize: _kCarAnnotScale,
+        iconAnchor: mapbox.IconAnchor.CENTER,
+        iconOffset: [0, 0],
+      ));
+      debugPrint('[CarIcon] PointAnnotation created at ${_animPos.latitude},${_animPos.longitude}');
+    } catch (e) {
+      debugPrint('[CarIcon] PointAnnotation creation FAILED: $e');
+    }
   }
   Future<void> _updateStaticAnnotationsOnce() async {
     if (_staticAnnotsDone) return;

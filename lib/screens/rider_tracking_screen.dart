@@ -105,15 +105,7 @@ class RiderTrackingScreen extends StatefulWidget {
 enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
-const String _carSourceId = 'car-source';
-const String _carLayerId = 'car-layer';
-const String _carImageId = 'car-image';
-const String _carShadowSourceId = 'car-shadow-source';
-const String _carShadowLayerId = 'car-shadow-layer';
-const String _carShadowImageId = 'car-shadow-image';
-const String _arrowImageId = 'arrow-image';
-const double _kCarScale = 0.35;
-const double _entranceDuration = 800.0;
+const double _kCarAnnotScale = 0.30;  // PointAnnotation icon scale
 const int _maxPollFailsBeforeBanner = 3;
 
 String? _normalizeRemotePhotoUrl(String? rawUrl) {
@@ -134,7 +126,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { setState(fn); }
   mapbox.MapboxMap? _map;
-  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
+  mapbox.PointAnnotationManager? _carAnnotMgr;     // for car (icon-anchor: center)
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
@@ -157,29 +150,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _cinematicBearing = 0;
   bool _cinematicDone = false;
 
-  // ── Car marker using GeoJSON source (correct approach for v10 SDK) ──
-  Uint8List? _carIconBytes;
-  int _carIconWidth = 64;
-  int _carIconHeight = 64;
-  Uint8List? _carShadowBytes; // Sombra difuminada
-  String _currentCarType = '';
-  bool _carImageAdded = false;
-  bool _carShadowAdded = false;
-  bool _carUpdateInProgress = false; // guard: prevents 60fps async race conditions
-  // ── Cached GeoJSON source refs — make hot path sync (zero async overhead at 60fps) ──
-  mapbox.GeoJsonSource? _cachedCarSource;
-  mapbox.GeoJsonSource? _cachedShadowSource;
-  bool _carLayerPropsUpdating = false;
-  double _lastRenderedScale = -1;
-  bool _lastNavArrowModeRendered = false;
+  // ── Car marker using PointAnnotation (reliable, same as pins) ──
+  Uint8List? _carPngBytes;       // PNG bytes for PointAnnotation image
+  mapbox.PointAnnotation? _carAnnot;  // The car annotation on the map
+  bool _carAnnotCreating = false; // guard: prevents async race
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
-  bool _arrowImageAdded = false;
-  bool _carEntranceStarted = false;
-  bool _carEntranceComplete = false;
-  double _carEntranceProgress = 0.0;
-  DateTime? _entranceStartTime;
-  Timer? _entranceTimer;
 
   // ── Animated route draw ──
   Ticker? _routeDrawTicker;
@@ -295,7 +271,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void dispose() {
     _interpTicker?.dispose();
     _camTimer?.cancel();
-    _entranceTimer?.cancel();
+    // car annotation cleaned up with pointAnnotMgr
     _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
@@ -321,9 +297,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     super.dispose();
   }
 
-  // ── Navigation arrow mode (when centering/navigation active) ──
+  // ── Navigation arrow mode (unused for now, kept for future) ──
   final bool _navArrowMode = false;
-  Uint8List? _arrowIconBytes;
 
   // ── Camera: fit bounds to show full route (throttled, not every frame) ──
   DateTime _lastBoundsFit = DateTime(2000);

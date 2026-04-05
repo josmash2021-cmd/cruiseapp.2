@@ -2,17 +2,37 @@
 
 import logging
 
+# Check if Firebase Admin is available (initialized by firestore_sync or main app)
+_HAS_FIREBASE = False
 try:
-    import firestore_sync
-    _HAS_FIRESTORE = True
-except Exception as _fs_err:
-    _HAS_FIRESTORE = False
-    logging.warning("firestore_sync not available: %s", _fs_err)
+    import firebase_admin
+    if firebase_admin._apps:
+        _HAS_FIREBASE = True
+        logging.info("[FCM] Firebase Admin already initialized — FCM enabled")
+    else:
+        # Try to initialize if not done yet
+        import os
+        from firebase_admin import credentials
+        sa_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+        if sa_raw:
+            import json, base64
+            try:
+                sa_json = base64.b64decode(sa_raw).decode("utf-8")
+            except Exception:
+                sa_json = sa_raw
+            cred = credentials.Certificate(json.loads(sa_json))
+            firebase_admin.initialize_app(cred)
+            _HAS_FIREBASE = True
+            logging.info("[FCM] Firebase Admin initialized from env var — FCM enabled")
+        else:
+            logging.warning("[FCM] No Firebase credentials — push notifications disabled")
+except Exception as _e:
+    logging.warning("[FCM] Firebase Admin not available: %s", _e)
 
 
 def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
     """Send FCM push notification. Silently skips if Firebase not available."""
-    if not _HAS_FIRESTORE or not token:
+    if not _HAS_FIREBASE or not token:
         return
     try:
         from firebase_admin import messaging as _fcm

@@ -744,6 +744,137 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  VEHICLE TIER AUTO-CLASSIFICATION
+# ═══════════════════════════════════════════════════════════════
+
+# SUV / luxury models that qualify for VIP (year 2021+)
+_VIP_MODELS = {
+    "escalade", "escalade esv", "xt5", "xt6", "lyriq",
+    "suburban", "tahoe", "traverse",
+    "yukon", "yukon xl", "acadia",
+    "expedition", "expedition max", "explorer",
+    "navigator", "navigator l", "aviator",
+    "range rover", "range rover sport", "range rover evoque", "defender",
+    "x5", "x6", "x7",
+    "gle", "gls", "g-class", "gls 450", "gle 350",
+    "q7", "q8", "e-tron",
+    "lx", "gx", "rx",
+    "qx60", "qx80",
+    "xc90",
+    "model x",
+    "gv80",
+    "grand cherokee", "grand cherokee l", "wagoneer", "grand wagoneer",
+}
+
+# Premium-eligible sedans (year 2019+, rating 4.7+)
+_PREMIUM_MODELS = {
+    "camry", "avalon", "crown",
+    "accord",
+    "altima", "maxima",
+    "sonata",
+    "k5", "stinger",
+    "fusion",
+    "malibu", "impala",
+    "3 series", "5 series", "330i", "530i",
+    "c-class", "e-class", "c 300", "e 350",
+    "a4", "a6",
+    "es", "is", "gs",
+    "g70", "g80",
+    "model 3", "model s",
+    "passat", "arteon",
+    "giulia", "tonale",
+    "tlx", "integra",
+    "q50", "q60",
+    "s60", "s90",
+    "charger",
+    "300",
+}
+
+
+def _classify_vehicle_tier(make: str, model: str, year: int) -> str:
+    """Classify vehicle into vip/premium/comfort based on make, model, year.
+    VIP: SUV/luxury models, year 2021+
+    Premium: Good sedans, year 2019+ (requires rating 4.7+ checked separately)
+    Comfort: Everything else
+    """
+    model_lower = (model or "").strip().lower()
+    year = year or 0
+    if year >= 2021 and model_lower in _VIP_MODELS:
+        return "vip"
+    if year >= 2019 and model_lower in _PREMIUM_MODELS:
+        return "premium"
+    return "comfort"
+
+
+async def _get_driver_avg_rating(db: AsyncSession, driver_id: int) -> float:
+    """Get driver's average star rating. Returns 5.0 if no ratings yet."""
+    result = await db.execute(
+        select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
+    )
+    avg = result.scalar()
+    return round(avg, 2) if avg else 5.0
+
+
+async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
+    """Re-evaluate driver's vehicle tier based on vehicle + rating.
+    VIP: fixed by vehicle (SUV 2021+) — never downgraded by rating.
+    Premium: requires rating >= 4.7 AND premium-eligible vehicle.
+    If rating drops below 4.5 → Comfort. Rises to 4.7+ → Premium.
+    """
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.user_id == driver_id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        return
+
+    base_tier = _classify_vehicle_tier(vehicle.make, vehicle.model, vehicle.year)
+
+    # VIP is locked — never changed by rating
+    if base_tier == "vip":
+        if vehicle.vehicle_type != "vip":
+            vehicle.vehicle_type = "vip"
+            await db.commit()
+        return
+
+    # Premium requires rating check
+    if base_tier == "premium":
+        avg = await _get_driver_avg_rating(db, driver_id)
+        if avg >= 4.7:
+            new_tier = "premium"
+        elif avg < 4.5:
+            new_tier = "comfort"
+        else:
+            new_tier = vehicle.vehicle_type if vehicle.vehicle_type in ("premium", "comfort") else "comfort"
+
+        if vehicle.vehicle_type != new_tier:
+            old_tier = vehicle.vehicle_type
+            vehicle.vehicle_type = new_tier
+            await db.commit()
+            logging.info("[Tier] Driver %s: %s -> %s (avg_rating=%.2f)", driver_id, old_tier, new_tier, avg)
+            try:
+                drv_r = await db.execute(select(User).where(User.id == driver_id))
+                drv = drv_r.scalar_one_or_none()
+                if drv and drv.fcm_token:
+                    if new_tier == "premium":
+                        _send_fcm_push(drv.fcm_token, title="Upgraded to Premium!",
+                            body="Your excellent rating earned you Premium status. You'll receive higher-paying rides!",
+                            data={"type": "tier_upgrade", "tier": "premium"})
+                    elif new_tier == "comfort" and old_tier == "premium":
+                        _send_fcm_push(drv.fcm_token, title="Tier Update",
+                            body="Your tier changed to Comfort. Improve your rating to 4.7+ to regain Premium status.",
+                            data={"type": "tier_downgrade", "tier": "comfort"})
+            except Exception:
+                pass
+        return
+
+    # Comfort vehicle — stays comfort regardless of rating
+    if vehicle.vehicle_type != "comfort":
+        vehicle.vehicle_type = "comfort"
+        await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════
 #  VEHICLE  ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -761,7 +892,7 @@ async def create_or_update_vehicle(request: Request, user: User = Depends(_get_c
     result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
     v = result.scalar_one_or_none()
     if v:
-        for k in ("make", "model", "year", "color", "plate", "vin", "vehicle_type"):
+        for k in ("make", "model", "year", "color", "plate", "vin"):
             if k in body:
                 setattr(v, k, body[k])
     else:
@@ -773,11 +904,27 @@ async def create_or_update_vehicle(request: Request, user: User = Depends(_get_c
             color=body.get("color"),
             plate=body.get("plate", ""),
             vin=body.get("vin"),
-            vehicle_type=body.get("vehicle_type", "comfort"),
+            vehicle_type="comfort",  # will be auto-classified below
         )
         db.add(v)
+
+    # Auto-classify vehicle tier based on make/model/year + driver rating
+    make = v.make or body.get("make", "")
+    model = v.model or body.get("model", "")
+    year = v.year or body.get("year", 0)
+    base_tier = _classify_vehicle_tier(make, model, year)
+
+    if base_tier == "vip":
+        v.vehicle_type = "vip"
+    elif base_tier == "premium":
+        avg = await _get_driver_avg_rating(db, user.id)
+        v.vehicle_type = "premium" if avg >= 4.7 else "comfort"
+    else:
+        v.vehicle_type = "comfort"
+
     await db.commit()
     await db.refresh(v)
+    logging.info("[Vehicle] Driver %s: %s %s %s → tier=%s", user.id, make, model, year, v.vehicle_type)
     return {"vehicle": _vehicle_dict(v)}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

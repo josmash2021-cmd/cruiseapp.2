@@ -150,6 +150,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // ── UI state ──────────────────────────────────────────────────────────────
   bool   _isMuted          = false;
   bool   _nearPickup        = false;
+  bool   _notified5MinAway  = false;
   bool   _completing       = false;
   double _slideVal         = 0;
   bool   _slid             = false;
@@ -401,6 +402,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     // Auto-proximity check for phase transitions
     _sm.checkProximity(raw);
+
+    // Notify rider when driver is ~5 min away (once per trip)
+    if (_phase == TripPhase.toPickup && !_notified5MinAway && _etaMinutes <= 5 && _etaMinutes > 0) {
+      _notified5MinAway = true;
+      ApiService.updateTripStatus(tripId: widget.tripId, status: 'driver_arriving')
+          .catchError((_) {});
+    }
 
     // Show slide "Arrived" when ≤ 1 min ETA or within ~100 m of pickup
     if (_phase == TripPhase.toPickup && !_nearPickup && !_waitingForStart) {

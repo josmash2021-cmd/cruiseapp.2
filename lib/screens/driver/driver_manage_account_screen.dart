@@ -77,6 +77,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
     final file = await picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 800,
+      imageQuality: 85,
     );
     if (file == null) return;
     setState(() => _saving = true);
@@ -84,24 +85,22 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
       final url = await ApiService.uploadPhoto(file.path);
       // Persist photo locally so it survives reinstall/update
       await UserSession.saveProfilePhoto(file.path);
-      // Sync to Firebase Storage + Firestore for cross-device availability
-      final userId = await ApiService.getCurrentUserId();
-      if (userId != null) {
-        try {
-          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
-            file.path, userId, 'driver',
-          );
-          await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, 'driver');
-          await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), 'driver', firebaseUrl);
-          UserSession.photoUrlNotifier.value = firebaseUrl;
-          await UserSession.updateField('photoUrl', firebaseUrl);
-        } catch (_) {}
-      }
+      // ApiService.uploadPhoto already handles Firebase Storage + Firestore sync,
+      // so just update local state — no need to re-upload.
+      UserSession.photoUrlNotifier.value = url;
       if (!mounted) return;
+      // Clear ALL image caches to force fresh photo display
       imageCache.clear();
       imageCache.clearLiveImages();
+      // Evict user-specific cached photo so CachedNetworkImage re-fetches
+      final uid = UserSession.currentUid;
+      if (uid.isNotEmpty) UserProfilePhoto.evictCachedPhoto(uid);
+      await UserProfilePhoto.clearCache();
+      // Add cache-bust param so CachedNetworkImage doesn't serve stale version
+      final cacheBust = DateTime.now().millisecondsSinceEpoch;
+      final freshUrl = url.contains('?') ? '$url&cb=$cacheBust' : '$url?cb=$cacheBust';
       setState(() {
-        _photoUrl = url;
+        _photoUrl = freshUrl;
         _localPhotoPath = file.path;
         _saving = false;
       });

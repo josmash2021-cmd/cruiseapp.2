@@ -269,6 +269,18 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
         except Exception as e:
             logging.error("Firestore sync on accept_trip failed: %s", e)
 
+    # FCM push: "Driver Found" notification to rider
+    try:
+        rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_res.scalar_one_or_none()
+        if rider and rider.fcm_token:
+            driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Your driver"
+            _send_fcm_push(rider.fcm_token, title="Driver Found!",
+                body=f"{driver_name} is on the way to pick you up.",
+                data={"type": "driver_found", "trip_id": str(trip_id)})
+    except Exception as _fcm_err:
+        logging.warning("[FCM] Driver found push failed: %s", _fcm_err)
+
     return _trip_dict_for_user(trip, user)
 
 async def _charge_trip(trip, db: AsyncSession) -> dict:
@@ -586,15 +598,19 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             if status == "driver_en_route":
-                _send_fcm_push(rider.fcm_token, title="-- Driver On The Way",
+                _send_fcm_push(rider.fcm_token, title="Driver On The Way",
                     body="Your driver is heading to your pickup location.",
                     data={"type": "driver_en_route", "trip_id": str(trip_id)})
+            elif status == "driver_arriving":
+                _send_fcm_push(rider.fcm_token, title="Driver Almost There",
+                    body="Your driver is about 5 minutes away!",
+                    data={"type": "driver_arriving", "trip_id": str(trip_id)})
             elif status == "arrived":
                 _send_fcm_push(rider.fcm_token, title="Driver Arrived",
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
             elif status == "in_trip":
-                _send_fcm_push(rider.fcm_token, title="-- Trip Started",
+                _send_fcm_push(rider.fcm_token, title="Trip Started",
                     body="Your trip has started. Enjoy your ride!",
                     data={"type": "trip_started", "trip_id": str(trip_id)})
             elif status == "completed":

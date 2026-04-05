@@ -636,29 +636,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       return;
     }
 
-    // Resolve driver ID + refresh active trip in parallel to reduce delay
-    if (_driverId == null) {
-      await _resolveDriverId();
-    }
-
     // Quick check: if we already know there's an active trip, resume immediately
     if (_activeTripData != null) {
       await _resumeActiveTrip();
       return;
     }
 
-    // Refresh active trip state — but with a short timeout to avoid freeze
-    await _refreshActiveTripStatus().timeout(
-      const Duration(seconds: 2),
-      onTimeout: () {},
-    );
-    if (!mounted) return;
-
-    if (_activeTripData != null) {
-      await _resumeActiveTrip();
-      return;
+    // Resolve driver ID in background — don't block navigation
+    if (_driverId == null) {
+      unawaited(_resolveDriverId());
     }
 
+    // Navigate immediately — no waiting on API calls
     HapticFeedback.heavyImpact();
     NotificationService.playOnlineSound();
     final result = await Navigator.of(context).push<Map<String, dynamic>>(

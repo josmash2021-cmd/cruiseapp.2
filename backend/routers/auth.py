@@ -238,11 +238,37 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
                 role=role,
                 status="active",
                 email_verified=True,
+                verification_status="approved" if is_driver else "none",
+                is_verified=True if is_driver else False,
             )
             db.add(user)
             await db.commit()
             await db.refresh(user)
+            # Auto-create vehicle for demo driver so they can go online
+            if is_driver:
+                existing_v = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+                if not existing_v.scalar_one_or_none():
+                    v = Vehicle(
+                        user_id=user.id,
+                        make="Chevrolet",
+                        model="Suburban",
+                        year="2024",
+                        color="Black",
+                        plate="DEMO-001",
+                        vehicle_type="vip",
+                        insurance_valid=True,
+                        registration_valid=True,
+                    )
+                    db.add(v)
+                    await db.commit()
+                    logging.info("[DEMO] Auto-created vehicle for driver id=%s", user.id)
             logging.info("[DEMO] Auto-created %s account id=%s", role, user.id)
+        # Ensure existing demo drivers are approved
+        if is_driver and user.verification_status != "approved":
+            user.verification_status = "approved"
+            user.is_verified = True
+            await db.commit()
+            await db.refresh(user)
         token = _create_token(user.id, role=user.role, status=user.status or "active")
         refresh = _create_refresh_token(user.id)
         logging.info("[DEMO] Direct login for Apple review account: %s (%s)", identifier_clean, role)

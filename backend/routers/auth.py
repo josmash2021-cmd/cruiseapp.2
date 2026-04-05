@@ -217,21 +217,23 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     demo = _DEMO_ACCOUNTS.get(identifier_clean)
     if demo and body.password == demo["password"]:
         role = body.role or demo["role"]
-        # Find or create the demo user
+        is_driver = role == "driver"
+        demo_email = identifier_clean if "@" in identifier_clean else ("appledriver@cruiseride.com" if is_driver else "applereview@cruiseride.com")
+        demo_phone = identifier_clean if "@" not in identifier_clean else ("+15550005678" if is_driver else "+15550001234")
+        # Find demo user by email OR phone (covers both login methods)
         q = select(User).where(
-            ((func.lower(User.email) == identifier_clean) | (User.phone == identifier_clean)),
+            ((func.lower(User.email) == demo_email) | (User.phone == demo_phone)),
             User.role == role,
         )
         result = await db.execute(q)
         user = result.scalar_one_or_none()
         if not user:
             # Auto-create demo user
-            is_driver = role == "driver"
             user = User(
                 first_name="Apple" if not is_driver else "Demo",
                 last_name="Reviewer" if not is_driver else "Driver",
-                email=identifier_clean if "@" in identifier_clean else f"demo_{role}@cruiseride.com",
-                phone=identifier_clean if "@" not in identifier_clean else ("+15550001234" if not is_driver else "+15550005678"),
+                email=demo_email,
+                phone=demo_phone,
                 password_hash=pwd.hash(demo["password"]),
                 role=role,
                 status="active",

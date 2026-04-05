@@ -1335,58 +1335,60 @@ class _SearchingBorderPainter extends CustomPainter {
     const glowFraction = 0.30;
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
+    final tailDist = (headDist - glowLen + total) % total;
 
-    // 48 micro-segments for silky smooth gradient (head bright → tail invisible)
-    const layers = 48;
-    final layerLen = glowLen / layers;
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-
-    for (int k = 0; k < layers; k++) {
-      final t = 1.0 - k / layers; // 1.0 at head, 0.0 at tail
-      // Cubic ease-out for a natural fade
-      final fadeAlpha = t * t * t;
-      if (fadeAlpha < 0.02) continue;
-
-      final segEnd = (headDist - k * layerLen + total) % total;
-      final segStart = (segEnd - layerLen * 1.05 + total) % total;
-
-      final Path seg;
-      if (segStart <= segEnd) {
-        seg = pm.extractPath(segStart, segEnd);
-      } else {
-        seg = pm.extractPath(segStart, total)
-          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
-      }
-
-      // Blend gold→bright gold at the head for warmth
-      paint.color = Color.lerp(_gold, _goldLight, t * t)!
-          .withValues(alpha: fadeAlpha * 0.85);
-      canvas.drawPath(seg, paint);
-    }
-
-    // Soft glow halo at the head for a polished look
-    final headStart = (headDist - glowLen * 0.18 + total) % total;
-    final Path headSeg;
-    if (headStart <= headDist) {
-      headSeg = pm.extractPath(headStart, headDist);
+    // Extract the full glow path as a single continuous segment
+    final Path glowPath;
+    if (tailDist <= headDist) {
+      glowPath = pm.extractPath(tailDist, headDist);
     } else {
-      headSeg = pm.extractPath(headStart, total)
+      glowPath = pm.extractPath(tailDist, total)
         ..addPath(pm.extractPath(0, headDist), Offset.zero);
     }
-    canvas.drawPath(
-      headSeg,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..strokeCap = StrokeCap.round
-        ..isAntiAlias = true
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
-        ..color = _goldLight.withValues(alpha: 0.12),
-    );
+
+    // Sample points along the glow path for gradient stops
+    final glowMetrics = glowPath.computeMetrics().toList();
+    if (glowMetrics.isEmpty) return;
+    final glowPm = glowMetrics.first;
+    final glowTotal = glowMetrics.fold<double>(0, (s, m) => s + m.length);
+    if (glowTotal < 1) return;
+
+    // Get head and tail positions for sweep gradient
+    final headTangent = glowPm.getTangentForOffset(glowPm.length);
+    final tailTangent = glowPm.getTangentForOffset(0);
+    if (headTangent == null || tailTangent == null) return;
+
+    // Draw single smooth path with layered opacity for gradient effect
+    // Use 3 passes: wide soft glow, medium, sharp head — all continuous paths
+    final passes = <(double width, double alpha, MaskFilter? blur)>[
+      (6.0, 0.08, const MaskFilter.blur(BlurStyle.normal, 4)),
+      (2.5, 0.6, null),
+    ];
+
+    for (final (width, alpha, blur) in passes) {
+      // Draw 6 sub-segments with decreasing opacity for smooth fade
+      const segs = 6;
+      for (int i = 0; i < segs; i++) {
+        final t0 = i / segs;
+        final t1 = (i + 1) / segs;
+        final segAlpha = alpha * (0.15 + 0.85 * t1); // tail=15% → head=100%
+
+        final start = glowPm.length * t0;
+        final end = glowPm.length * t1;
+        final seg = glowPm.extractPath(start, end);
+
+        final paint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..isAntiAlias = true
+          ..color = Color.lerp(_gold, _goldLight, t1 * t1)!
+              .withValues(alpha: segAlpha);
+        if (blur != null) paint.maskFilter = blur;
+        canvas.drawPath(seg, paint);
+      }
+    }
   }
 
   @override

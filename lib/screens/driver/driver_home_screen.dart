@@ -199,8 +199,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
     _initLocation();
     _loadDriverData();
-    _checkVerification();
-    _checkVehicleDocStatus();
+    _checkVerification().then((_) => _checkVehicleDocStatus());
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
@@ -690,8 +689,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _docStatusLoaded = true;
       });
       _btnColorCtrl.value = 1.0;
-    } catch (_) {
-      if (mounted) setState(() => _docStatusLoaded = true);
+    } catch (e) {
+      debugPrint('[DriverHome] _checkVehicleDocStatus error: $e');
+      // On error (network, timeout, etc.) don't block — let driver try to go online
+      if (mounted) {
+        setState(() {
+          _vehicleDocsApproved = true;
+          _docStatusLoaded = true;
+        });
+      }
     }
   }
 

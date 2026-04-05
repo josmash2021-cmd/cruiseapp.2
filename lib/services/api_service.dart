@@ -2299,6 +2299,25 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  ACTIVE TRIP
+  // ═══════════════════════════════════════════════════════
+
+  /// Fetch the current user's active (in-progress) trip, if any.
+  /// Returns null if no active trip exists.
+  static Future<Map<String, dynamic>?> getActiveTrip() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/trips/active'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body == null || (body is String && body == 'null')) return null;
+      if (body is Map<String, dynamic>) return body;
+    }
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  CHAT  ENDPOINTS
   // ═══════════════════════════════════════════════════════
 

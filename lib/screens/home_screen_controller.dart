@@ -856,6 +856,75 @@ extension _HomeScreenController on _HomeScreenState {
     );
   }
 
+  /// Check backend for an active trip (handles reinstall / re-login where
+  /// SharedPreferences are cleared but trip is still in-progress).
+  Future<void> _checkBackendActiveTrip() async {
+    try {
+      final trip = await ApiService.getActiveTrip();
+      if (!mounted || trip == null) return;
+      final status = (trip['status'] ?? '').toString();
+      // Only resume trips that have a driver assigned
+      if (trip['driver_id'] == null && trip['driver_name'] == null) return;
+      // Skip completed/cancelled trips
+      if (status == 'completed' || status == 'canceled' || status == 'cancelled') return;
+
+      final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
+      final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
+      final dropoffLat = (trip['dropoff_lat'] as num?)?.toDouble();
+      final dropoffLng = (trip['dropoff_lng'] as num?)?.toDouble();
+      if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) return;
+
+      final tripId = trip['id'] as int?;
+      final driverName = (trip['driver_name'] ?? 'Driver').toString();
+      final driverRating = (trip['driver_rating'] as num?)?.toDouble() ?? 4.9;
+      final driverPhotoUrl = (trip['driver_photo_url'] ?? '').toString();
+      final driverId = (trip['driver_id'] ?? '').toString();
+      final vehicleMake = (trip['vehicle_make'] ?? '').toString();
+      final vehicleModel = (trip['vehicle_model'] ?? '').toString();
+      final vehicleColor = (trip['vehicle_color'] ?? '').toString();
+      final vehiclePlate = (trip['vehicle_plate'] ?? '').toString();
+      final vehicleYear = (trip['vehicle_year'] ?? '').toString();
+      final vehicleType = (trip['vehicle_type'] ?? 'Ride').toString();
+      final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
+      final pickupLabel = (trip['pickup_address'] ?? '').toString();
+      final dropoffLabel = (trip['dropoff_address'] ?? '').toString();
+
+      _didAutoResumeRide = true;
+
+      if (!mounted) return;
+      Navigator.of(context).push(
+        slideUpFadeRoute(
+          RiderTrackingScreen(
+            pickupLatLng: LatLng(pickupLat, pickupLng),
+            dropoffLatLng: LatLng(dropoffLat, dropoffLng),
+            driverName: driverName,
+            driverRating: driverRating,
+            vehicleMake: vehicleMake,
+            vehicleModel: vehicleModel,
+            vehicleColor: vehicleColor,
+            vehiclePlate: vehiclePlate,
+            vehicleYear: vehicleYear,
+            rideName: vehicleType,
+            price: fare,
+            pickupLabel: pickupLabel,
+            dropoffLabel: dropoffLabel,
+            tripId: tripId,
+            firestoreTripId: 'sql_$tripId',
+            driverPhotoUrl: driverPhotoUrl,
+            driverId: driverId,
+            onTripComplete: () {
+              LocalDataService.clearActiveRide();
+              Navigator.of(context).pop();
+              _loadSavedData();
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[HomeScreen] Backend active trip check failed: $e');
+    }
+  }
+
   /// Full-screen autocomplete address picker using PlacesService.
   Future<String?> _showAddressAutocomplete({
     required String title,

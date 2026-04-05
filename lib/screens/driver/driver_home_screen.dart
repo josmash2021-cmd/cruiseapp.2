@@ -213,10 +213,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Resolve driver ID for trip polling
     _resolveDriverId();
-    // Check for active trip so the button shows "REANUDAR" immediately.
-    // Do NOT auto-resume — let the driver see the home screen and tap
-    // REANUDAR themselves when they're ready to return to the trip.
+    // Check for active trip — auto-resume so drivers return directly
+    // to their in-progress trip after reinstall or re-login.
     _refreshActiveTripStatus();
+    _checkBackendAndAutoResume();
     _registerFcmToken();
 
     // Observe lifecycle — restart polling when app returns from background
@@ -1719,6 +1719,86 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       });
     } catch (_) {
       // Keep current UI state if this lookup fails.
+    }
+  }
+
+  /// Check backend for active trip and auto-navigate (handles reinstall / re-login).
+  Future<void> _checkBackendAndAutoResume() async {
+    try {
+      final trip = await ApiService.getActiveTrip();
+      if (!mounted || trip == null) return;
+      final status = (trip['status'] ?? '').toString();
+      if (status == 'completed' || status == 'canceled' || status == 'cancelled') return;
+      // Only resume trips with active statuses
+      final activeStatuses = {'accepted', 'driver_en_route', 'driver_arriving',
+          'en_route_to_pickup', 'arrived', 'driver_arrived', 'in_trip',
+          'in_progress', 'rider_onboard', 'on_trip'};
+      if (!activeStatuses.contains(status)) return;
+
+      // Convert backend response to the format _resumeActiveTrip expects
+      // and navigate directly
+      final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
+      final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
+      final dropoffLat = (trip['dropoff_lat'] as num?)?.toDouble();
+      final dropoffLng = (trip['dropoff_lng'] as num?)?.toDouble();
+      if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) return;
+
+      final pickup = LatLng(pickupLat, pickupLng);
+      final dropoff = LatLng(dropoffLat, dropoffLng);
+      final driverPos = _currentLatLng ?? pickup;
+      final tripId = trip['id'] as int? ?? 0;
+      final riderName = (trip['rider_name'] ?? 'Rider').toString();
+      final riderPhone = (trip['rider_phone'] ?? '').toString();
+      final pickupAddress = (trip['pickup_address'] ?? 'Pickup').toString();
+      final dropoffAddress = (trip['dropoff_address'] ?? 'Drop-off').toString();
+      final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
+      final vehicleType = (trip['vehicle_type'] ?? 'Ride').toString();
+      final riderPhotoUrl = (trip['rider_photo_url'] ?? '').toString();
+      final riderRating = (trip['rider_rating'] as num?)?.toDouble() ?? 4.8;
+      final riderIdRaw = (trip['rider_id'] ?? '').toString();
+      final riderId = int.tryParse(riderIdRaw.replaceFirst('sql_', ''));
+
+      final distKm = _haversineKm(driverPos, pickup);
+      final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+      final arrivedAtPickup = (status == 'arrived' || status == 'driver_arrived');
+      final rideStarted = (status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard');
+
+      if (!mounted) return;
+      setState(() => _isStillOnline = true);
+
+      await Navigator.of(context).push(
+        slideFromRightRoute(
+          DriverTripAcceptScreen(
+            tripId: tripId,
+            riderName: riderName,
+            riderPhotoUrl: riderPhotoUrl,
+            riderRating: riderRating,
+            riderId: riderId,
+            pickupLatLng: pickup,
+            dropoffLatLng: dropoff,
+            pickupAddress: pickupAddress,
+            dropoffAddress: dropoffAddress,
+            fare: fare,
+            vehicleType: vehicleType,
+            driverPos: driverPos,
+            distToPickupKm: distKm,
+            etaMinutes: etaMinutes,
+            riderPhone: riderPhone,
+            arrivedAtPickup: arrivedAtPickup,
+            rideStarted: rideStarted,
+            tripAlreadyStarted: true,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      await _refreshActiveTripStatus();
+      if (_activeTripData != null) {
+        _resumeActiveTrip();
+      } else if (_isStillOnline) {
+        _startTripPolling();
+      }
+    } catch (e) {
+      debugPrint('[DriverHome] Backend active trip check failed: $e');
     }
   }
 

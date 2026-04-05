@@ -13,7 +13,7 @@ from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url
 from services.fcm_service import _send_fcm_push
 from services.n8n_webhooks import fire as _n8n_fire
 from services.event_bus import event_bus
@@ -68,6 +68,57 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
 # ---====================================================
 #  TRIP  ENDPOINTS
 # ---====================================================
+
+_ACTIVE_TRIP_STATUSES = [
+    "requested", "accepted", "driver_en_route", "driver_arriving",
+    "arrived", "driver_arrived", "in_trip", "in_progress",
+    "rider_onboard", "on_trip", "en_route_to_pickup",
+]
+
+@router.get("/trips/active", dependencies=[Depends(_verify_api_key)])
+async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return the user's active (in-progress) trip, if any.
+    Works for both riders (by rider_id) and drivers (by driver_id)."""
+    if user.role == "driver":
+        result = await db.execute(
+            select(Trip, User).outerjoin(User, Trip.rider_id == User.id)
+            .where(and_(Trip.driver_id == user.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
+            .order_by(Trip.id.desc()).limit(1)
+        )
+        row = result.first()
+        if not row:
+            return None
+        trip, rider = row
+        data = _driver_visible_trip_dict(trip)
+        data["rider_name"] = f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "Rider"
+        data["rider_phone"] = (rider.phone or "") if rider else ""
+        data["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+        data["rider_rating"] = float(rider.rating or 4.8) if rider else 4.8
+        return data
+    else:
+        result = await db.execute(
+            select(Trip, User).outerjoin(User, Trip.driver_id == User.id)
+            .where(and_(Trip.rider_id == user.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
+            .order_by(Trip.id.desc()).limit(1)
+        )
+        row = result.first()
+        if not row:
+            return None
+        trip, driver = row
+        data = _trip_dict(trip)
+        data["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip() if driver else ""
+        data["driver_phone"] = (driver.phone or "") if driver else ""
+        data["driver_photo_url"] = (_abs_photo_url(driver.photo_url) or "") if driver else ""
+        data["driver_rating"] = float(driver.rating or 4.9) if driver else 4.9
+        # Vehicle info for rider tracking screen
+        data["vehicle_make"] = getattr(driver, "vehicle_make", "") or "" if driver else ""
+        data["vehicle_model"] = getattr(driver, "vehicle_model", "") or "" if driver else ""
+        data["vehicle_color"] = getattr(driver, "vehicle_color", "") or "" if driver else ""
+        data["vehicle_plate"] = getattr(driver, "license_plate", "") or "" if driver else ""
+        data["vehicle_year"] = getattr(driver, "vehicle_year", "") or "" if driver else ""
+        data["driver_id"] = str(driver.id) if driver else ""
+        return data
+
 
 @router.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

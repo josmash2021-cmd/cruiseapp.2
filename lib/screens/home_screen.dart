@@ -993,6 +993,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           if (mounted && _activeRide != null) _resumeActiveRide();
         });
       }
+    } else if (!_didAutoResumeRide) {
+      // No local active ride — check backend (handles reinstall / re-login)
+      _checkBackendActiveTrip();
     }
 
     // Update imminent ride countdown

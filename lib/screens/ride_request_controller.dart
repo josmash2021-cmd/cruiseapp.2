@@ -763,6 +763,13 @@ extension _RideRequestController on _RideRequestScreenState {
         debugPrint('Payment error: $e');
         Navigator.of(context).pop(); // close payment modal
         _setState(() => _showPaymentDeclinedBanner = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment declined. Please check your card or try another payment method.'),
+            backgroundColor: Color(0xFFB71C1C),
+            duration: Duration(seconds: 4),
+          ),
+        );
         return;
       }
 
@@ -819,6 +826,21 @@ extension _RideRequestController on _RideRequestScreenState {
           nativePayFailed = true;
         }
         _setState(() => _isProcessingPayment = false);
+
+        // Payment declined — show banner immediately and don't proceed
+        if (nativePayFailed) {
+          if (mounted) {
+            _setState(() => _showPaymentDeclinedBanner = true);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Payment declined. Please check your card or try another payment method.'),
+                backgroundColor: Color(0xFFB71C1C),
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
       }
 
       if (!mounted) return;
@@ -852,37 +874,6 @@ extension _RideRequestController on _RideRequestScreenState {
       if (!mounted) return;
 
       _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
-      _ctrl.requestRide();
-    } finally {
-      _rideFlowLocked = false;
-    }
-  }
-
-  /// TEST MODE: skip payment and request ride directly (temporary).
-  Future<void> _testModeRequest(RideOption? option) async {
-    if (option == null) return;
-    if (_rideFlowLocked) return;
-    _rideFlowLocked = true;
-    try {
-      if (!mounted) return;
-      if (widget.applyPromo) await LocalDataService.setPromoUsed();
-      AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
-
-      if (_ctrl.state.scheduledAt != null) {
-        await _createScheduledTrip();
-        return;
-      }
-
-      final nav = Navigator.of(context);
-      await nav.push<bool>(
-        searchingDriverRoute(
-          onCancel: _cancelSearching,
-          paymentCallback: null,
-          initiallyDeclined: false,
-          onPaymentDeclined: () {},
-        ),
-      );
-      if (!mounted) return;
       _ctrl.requestRide();
     } finally {
       _rideFlowLocked = false;

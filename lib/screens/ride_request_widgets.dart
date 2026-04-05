@@ -547,28 +547,39 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 const SizedBox(height: 10),
                                 // ── Request Ride button ──
                                 GestureDetector(
-                                  onTap: _isProcessingPayment
+                                  onTap: (_isProcessingPayment || !_hasAnyPaymentMethod)
                                       ? null
                                       : () => _startRideDirectly(c, option),
-                                  child: Container(
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 350),
+                                    curve: Curves.easeInOut,
                                     width: double.infinity,
                                     height: 52,
                                     decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFFE8C547),
-                                          Color(0xFFD4A520),
-                                        ],
-                                      ),
+                                      gradient: _hasAnyPaymentMethod
+                                          ? const LinearGradient(
+                                              colors: [
+                                                Color(0xFFE8C547),
+                                                Color(0xFFD4A520),
+                                              ],
+                                            )
+                                          : LinearGradient(
+                                              colors: [
+                                                const Color(0xFFE8C547).withValues(alpha: 0.35),
+                                                const Color(0xFFD4A520).withValues(alpha: 0.35),
+                                              ],
+                                            ),
                                       borderRadius: BorderRadius.circular(14),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFFD4A520)
-                                              .withValues(alpha: 0.35),
-                                          blurRadius: 12,
-                                          offset: const Offset(0, 4),
-                                        ),
-                                      ],
+                                      boxShadow: _hasAnyPaymentMethod
+                                          ? [
+                                              BoxShadow(
+                                                color: const Color(0xFFD4A520)
+                                                    .withValues(alpha: 0.35),
+                                                blurRadius: 12,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ]
+                                          : [],
                                     ),
                                     child: Center(
                                       child: _isProcessingPayment
@@ -580,41 +591,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                                 color: Colors.black,
                                               ),
                                             )
-                                          : Text(
-                                              widget.scheduledAt != null
-                                                  ? S.of(context).bookScheduledRide
-                                                  : S.of(context).requestRide,
-                                              style: const TextStyle(
-                                                color: Colors.black,
+                                          : AnimatedDefaultTextStyle(
+                                              duration: const Duration(milliseconds: 350),
+                                              style: TextStyle(
+                                                color: _hasAnyPaymentMethod
+                                                    ? Colors.black
+                                                    : Colors.black.withValues(alpha: 0.4),
                                                 fontSize: 17,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: -0.3,
                                               ),
+                                              child: Text(
+                                                widget.scheduledAt != null
+                                                    ? S.of(context).bookScheduledRide
+                                                    : S.of(context).requestRide,
+                                              ),
                                             ),
-                                    ),
-                                  ),
-                                ),
-                                // ── TEST MODE button (temporary) ──
-                                const SizedBox(height: 6),
-                                GestureDetector(
-                                  onTap: () => _testModeRequest(option),
-                                  child: Container(
-                                    width: double.infinity,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                                    ),
-                                    child: const Center(
-                                      child: Text(
-                                        'Test Mode',
-                                        style: TextStyle(
-                                          color: Colors.red,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
                                     ),
                                   ),
                                 ),

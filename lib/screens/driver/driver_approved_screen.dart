@@ -179,7 +179,9 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
 
             // ── Main content ──
             SafeArea(
-              child: Column(
+              child: SizedBox.expand(
+                child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const Spacer(flex: 2),
 
@@ -272,6 +274,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
                   const SizedBox(height: 24),
                 ],
               ),
+              ),
             ),
           ],
         ),
@@ -320,12 +323,11 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               border: Border.all(color: _gold.withValues(alpha: 0.3), width: 1.5),
             ),
             child: ClipOval(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Image.asset(
-                  'assets/images/logoapp.png',
-                  fit: BoxFit.contain,
-                ),
+              child: Image.asset(
+                'assets/images/logoapp.png',
+                width: 130,
+                height: 130,
+                fit: BoxFit.cover,
               ),
             ),
           ),

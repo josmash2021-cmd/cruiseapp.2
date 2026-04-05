@@ -314,9 +314,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
     final botPad = MediaQuery.of(context).padding.bottom;
-    final cardArea = (_pendingOffers.isNotEmpty || _previewingOffer != null)
-        ? 330.0 + botPad
-        : 60.0;
+    final topPad = MediaQuery.of(context).padding.top;
+    final hasCard = _pendingOffers.isNotEmpty || _previewingOffer != null;
+    // Card height (~280) + bottom safe area + 60px breathing room
+    final cardArea = hasCard ? 340.0 + botPad : 60.0;
+    // Top: status bar + earnings bar (~56) + breathing room
+    final topArea = topPad + 80.0;
     // Preserve current tilt/bearing if cinematic is active
     final currentPitch = _offerTiltAnim?.value ?? 0.0;
     final currentBearing = _offerBearingAnim?.value ?? 0.0;
@@ -326,7 +329,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         pitch: currentPitch > 1 ? currentPitch : 0,
         bearing: currentBearing.abs() > 0.5 ? currentBearing : 0,
       ),
-      mapbox.MbxEdgeInsets(top: 100, left: 60, bottom: cardArea, right: 60),
+      mapbox.MbxEdgeInsets(top: topArea, left: 60, bottom: cardArea, right: 60),
       null, null,
     ).then((cam) {
       if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
@@ -349,8 +352,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   // ── Cinematic offer card tap → full animation sequence ──
-  // Everything is pre-loaded: route, pins, place type, bounds.
-  // Zero network calls on tap.
+  // Sequence: fit bounds → pins fade+pop → tilt 55° → draw seg1 (driver→pickup)
+  //   → pickup pin popup → draw seg2 (pickup→dropoff) → dropoff pin popup → refit
+  // Runs once per tap — no loops, no repeats.
   Future<void> _onOfferCardTap(Map<String, dynamic> offer) async {
     if (_isCardAnimating) return;
     final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
@@ -369,8 +373,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _tappedCardIds.add(oid);
     });
 
-    // Clear old annotations (fire-and-forget — don't block tap response)
-    _clearAllAnnotations();
+    // Clear old annotations
+    await _clearAllAnnotations();
 
     // Load from cache (pre-fetched on offer arrival)
     final cached = _routeCache[oid];
@@ -378,7 +382,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _fullSegOne = cached.segOne;
       _fullSegTwo = cached.segTwo;
     } else {
-      // Fallback: fetch now (should be rare)
       final routeFutures = await Future.wait([
         _fetchRoutePoints(_pos!, pickupLL),
         _fetchRoutePoints(pickupLL, dropoffLL),
@@ -388,12 +391,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1: Camera zoom to fit route (flat, no tilt yet) ──
+    // ── PHASE 1: Camera zoom to fit full route (flat, no tilt) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
-    await Future.delayed(const Duration(milliseconds: 420));
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 2: Place pins + start route draw in parallel ──
+    // ── PHASE 2: Create pins at size 0 (invisible) ──
     final dropoffAddr = (offer['dropoff_address'] ?? '') as String;
     final placeType = cached?.dropoffPlaceType ?? _detectPlaceType(dropoffAddr);
     Uint8List? pickupPinImg = cached?.pickupPin;
@@ -420,14 +423,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ));
     }
 
-    // ── PHASE 3: Pin pop + cinematic camera tilt/bearing (parallel) ──
+    // ── PHASE 3: Tilt camera 0° → 55° ──
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    _animatePinPop(); // runs on its own ticker — don't await
-    await Future.delayed(const Duration(milliseconds: 560));
-    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-
-    // Camera tilt 0° → 55° + random bearing 5-15° (like rider Choose a Ride)
     final rng = math.Random();
     final degrees = 5.0 + rng.nextDouble() * 10.0;
     _offerRandomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
@@ -444,22 +442,37 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       CurvedAnimation(parent: _offerBearingCtrl!, curve: Curves.easeInOutCubic),
     );
     _offerTiltAnim!.addListener(_applyOfferCamera);
-    // Start tilt + bearing simultaneously, don't await — let route draw run in parallel
     _offerTiltCtrl!.forward(from: 0);
     _offerBearingCtrl!.forward(from: 0);
-
-    // ── PHASE 4: Gold route draw (parallel with tilt) ──
-    final fullRoute = [..._fullSegOne, ..._fullSegTwo];
-    await Future.delayed(const Duration(milliseconds: 180));
+    await Future.delayed(const Duration(milliseconds: 1100));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-    try {
-      await _drawGoldGlossRoute(fullRoute).timeout(const Duration(seconds: 8));
-    } catch (_) {
-      // Animation timed out — continue with what we have
+
+    // ── PHASE 4: Draw segment 1 (driver → pickup) ──
+    if (_fullSegOne.length >= 2) {
+      try {
+        await _drawGoldGlossRoute(_fullSegOne).timeout(const Duration(seconds: 8));
+      } catch (_) {}
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 5: Refit with preserved tilt ──
+    // ── PHASE 5: Pickup pin popup ──
+    await _animateSinglePinPop(_prevPickupAnnot);
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // ── PHASE 6: Draw segment 2 (pickup → dropoff) ──
+    if (_fullSegTwo.length >= 2) {
+      try {
+        await _drawGoldGlossRouteAppend(_fullSegTwo).timeout(const Duration(seconds: 8));
+      } catch (_) {}
+    }
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // ── PHASE 7: Dropoff pin popup ──
+    await _animateSinglePinPop(_prevDropoffAnnot);
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // ── PHASE 8: Refit with preserved tilt ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
 
     if (mounted && _previewingOffer != null) {
@@ -490,6 +503,50 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
+  /// Spring scale curve: 0→1.2→0.9→1.0
+  double _springScale(double t) {
+    if (t < 0.6) {
+      final p = (t / 0.6).clamp(0.0, 1.0);
+      return Curves.easeOutCubic.transform(p) * 1.2;
+    } else if (t < 0.8) {
+      final p = ((t - 0.6) / 0.2).clamp(0.0, 1.0);
+      return 1.2 - 0.3 * Curves.easeInOut.transform(p);
+    } else {
+      final p = ((t - 0.8) / 0.2).clamp(0.0, 1.0);
+      return 0.9 + 0.1 * Curves.elasticOut.transform(p);
+    }
+  }
+
+  /// Animate a single pin from tiny → overshoot → settle (spring feel)
+  Future<void> _animateSinglePinPop(mapbox.PointAnnotation? annot) async {
+    final pointMgr = _pinAnnotMgr;
+    if (pointMgr == null || annot == null) return;
+    const totalMs = 500;
+    final stopwatch = Stopwatch()..start();
+    final completer = Completer<void>();
+
+    Ticker? ticker;
+    ticker = createTicker((_) async {
+      if (!mounted) {
+        ticker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final scale = _springScale(progress);
+      annot.iconSize = scale;
+      try { await pointMgr.update(annot); } catch (_) {}
+      if (progress >= 1.0) {
+        ticker?.stop();
+        ticker?.dispose();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    ticker.start();
+    return completer.future;
+  }
+
   /// Animate all preview pins from tiny → overshoot → settle (spring feel)
   Future<void> _animatePinPop() async {
     final pointMgr = _pinAnnotMgr;
@@ -497,23 +554,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     const totalMs = 800;
     final stopwatch = Stopwatch()..start();
     final completer = Completer<void>();
-
-    // Spring-like TweenSequence: 0→1.2→0.9→1.0
-    double springScale(double t) {
-      if (t < 0.6) {
-        // 0→1.2 with easeOutCubic
-        final p = (t / 0.6).clamp(0.0, 1.0);
-        return Curves.easeOutCubic.transform(p) * 1.2;
-      } else if (t < 0.8) {
-        // 1.2→0.9
-        final p = ((t - 0.6) / 0.2).clamp(0.0, 1.0);
-        return 1.2 - 0.3 * Curves.easeInOut.transform(p);
-      } else {
-        // 0.9→1.0
-        final p = ((t - 0.8) / 0.2).clamp(0.0, 1.0);
-        return 0.9 + 0.1 * Curves.elasticOut.transform(p);
-      }
-    }
 
     _pinPopTicker?.stop();
     _pinPopTicker?.dispose();
@@ -525,7 +565,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final scale = springScale(progress);
+      final scale = _springScale(progress);
 
       for (final annot in [_prevPickupAnnot, _prevDropoffAnnot]) {
         if (annot != null) {
@@ -621,6 +661,88 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         mainLine!.geometry = mapbox.LineString(coordinates: fullCoords);
         polyMgr.update(mainLine!);
         _previewPickupAnnot = mainLine;
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    _routeDrawTicker!.start();
+    return completer.future;
+  }
+
+  /// Draw a second gold route segment (appended as new polyline annotation).
+  /// Used for the pickup→dropoff leg after the driver→pickup leg is drawn.
+  Future<void> _drawGoldGlossRouteAppend(List<LatLng> points) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || points.length < 2) return;
+
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < points.length; i++) {
+      cumDist.add(cumDist.last + _hav(points[i - 1], points[i]));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist < 1e-9) return;
+
+    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    mapbox.PolylineAnnotation? seg2Line;
+    try {
+      seg2Line = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: initCoords),
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+    if (!mounted || seg2Line == null) return;
+
+    final totalMs = (points.length * 10).clamp(1800, 3500);
+    final completer = Completer<void>();
+    final stopwatch = Stopwatch()..start();
+    bool updating = false;
+
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = createTicker((_) {
+      if (!mounted || _previewingOffer == null) {
+        _routeDrawTicker?.stop();
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      if (updating) return;
+
+      final elapsed = stopwatch.elapsedMilliseconds;
+      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
+      final t = progress;
+      final eased = t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
+      final targetDist = eased * totalDist;
+
+      int segIdx = 0;
+      for (int i = 1; i < cumDist.length; i++) {
+        if (cumDist[i] >= targetDist) { segIdx = i - 1; break; }
+        if (i == cumDist.length - 1) segIdx = i - 1;
+      }
+      final segLen = cumDist[segIdx + 1] - cumDist[segIdx];
+      final frac = segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
+      final tipLat = points[segIdx].latitude + (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
+      final tipLng = points[segIdx].longitude + (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
+
+      final coords = <mapbox.Position>[];
+      for (int i = 0; i <= segIdx; i++) {
+        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
+      }
+      coords.add(mapbox.Position(tipLng, tipLat));
+
+      if (coords.length >= 2) {
+        seg2Line!.geometry = mapbox.LineString(coordinates: coords);
+        updating = true;
+        polyMgr.update(seg2Line!).then((_) => updating = false).catchError((_) => updating = false);
+      }
+
+      if (progress >= 1.0) {
+        _routeDrawTicker?.stop();
+        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        seg2Line!.geometry = mapbox.LineString(coordinates: fullCoords);
+        polyMgr.update(seg2Line!);
+        _previewDropoffAnnot = seg2Line;
         if (!completer.isCompleted) completer.complete();
       }
     });

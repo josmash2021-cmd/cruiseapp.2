@@ -803,7 +803,8 @@ extension _HomeScreenController on _HomeScreenState {
         ? dropoffLabel
         : dropoffDetails.address;
 
-    // Pre-fetch route in parallel while preparing navigation
+    // Pre-fetch route — start immediately, pass to RideRequestScreen
+    // Don't wait here: navigate instantly so the transition feels seamless
     Future<RouteResult?>? routeFuture;
     if (effectivePickup != null) {
       final origin = LatLng(effectivePickup.lat, effectivePickup.lng);
@@ -812,11 +813,11 @@ extension _HomeScreenController on _HomeScreenState {
           .getRoute(origin: origin, destination: dest);
     }
 
-    // Wait briefly for route — if it arrives fast, pass it; otherwise navigate without it
+    // Quick check — if route already completed (cached/fast), use it
     RouteResult? preloadedRoute;
     if (routeFuture != null) {
       preloadedRoute = await routeFuture.timeout(
-        const Duration(milliseconds: 800),
+        const Duration(milliseconds: 200),
         onTimeout: () => null,
       );
     }
@@ -824,7 +825,7 @@ extension _HomeScreenController on _HomeScreenState {
     if (!mounted) return;
 
     await Navigator.of(context).push(
-      scaleExpandRoute(
+      slideUpFadeRoute(
         RideRequestScreen(
           initialPickupDetails: effectivePickup,
           initialDropoffDetails: dropoffDetails,

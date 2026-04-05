@@ -113,13 +113,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final rideName = widget.rideName.toLowerCase();
     String carAsset;
 
-    if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban')) {
+    if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban') || rideName.contains('luxury')) {
       carAsset = 'assets/images/car_suv.png';
     } else if (rideName.contains('sedan') || rideName.contains('premium') || rideName.contains('fusion')) {
       carAsset = 'assets/images/car_sedan.png';
     } else {
       carAsset = 'assets/images/car_economy.png';
     }
+    debugPrint('[CarIcon] rideName="$rideName" → asset=$carAsset');
 
     try {
       final pngBytes = await rootBundle.load(carAsset);
@@ -956,6 +957,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
+              // Reset car image flags so the car is re-added after style reload
+              _carImageAdded = false;
+              _carShadowAdded = false;
+              _arrowImageAdded = false;
+              _cachedCarSource = null;
+              _cachedShadowSource = null;
+              _lastNavArrowModeRendered = !_navArrowMode;
+              _carUpdateInProgress = false;
             },
           ),
         ),

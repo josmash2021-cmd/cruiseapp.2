@@ -216,8 +216,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      // 0.4 mi/min ≈ 24 mph average urban speed
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      // Use real driver velocity when available
+      if (_velocityMps > 3.0) {
+        final remainM = _distanceMiles * 1609.34;
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+      } else {
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      }
       if (dist < 0.05 && _phase == _TrackPhase.arriving) {
         _setState(() {
           _phase = _TrackPhase.arrived;
@@ -244,7 +249,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      // Use real driver velocity for ETA when available (> 3 m/s ≈ walking speed)
+      if (_velocityMps > 3.0) {
+        final remainM = _distanceMiles * 1609.34;
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+      } else {
+        // Fallback: 0.4 mi/min ≈ 24 mph average urban
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      }
       // Transition to nearDestination when ETA <= 2 min
       if (_etaMinutes <= 2 && _phase == _TrackPhase.onTrip) {
         _setState(() => _phase = _TrackPhase.nearDestination);

@@ -591,6 +591,7 @@ async def reject_offer(
         logging.info("[Reject] Driver %d rejected offer %d with reason: %s", driver_id, offer_id, reason)
     
     await db.commit()
+    _pending_cache.pop(driver_id, None)  # Invalidate cache so next poll is fresh
 
     # Cascade: find next available driver (exclude busy and rejected)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))

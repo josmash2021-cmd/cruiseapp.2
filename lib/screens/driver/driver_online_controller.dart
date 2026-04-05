@@ -988,35 +988,36 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
-    if (offers.isNotEmpty && _pendingOffers.isEmpty) {
+    // Filter out locally rejected offers (prevents re-showing before backend processes rejection)
+    final filtered = offers.where((o) {
+      final oid = o['offer_id'] as int?;
+      return oid == null || !_rejectedOfferIds.contains(oid);
+    }).toList();
+
+    if (filtered.isNotEmpty && _pendingOffers.isEmpty) {
       HapticFeedback.heavyImpact();
-      // Play offer sound 3x in-app + show notification for background drivers
       NotificationService.playOfferSound();
-      final firstOffer = offers.first;
+      final firstOffer = filtered.first;
       final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
       final fare = firstOffer['fare'] as num?;
       final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
       NotificationService.showOfferNotification(
-        title: 'New Trip Request$fareStr',
+        title: 'New Ride Offer$fareStr',
         body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
-        offerId: (firstOffer['id'] as num? ?? 0).toInt(),
+        offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
         payload: 'trip_offer',
       );
-      // Show in-app banner
-      if (mounted) {
-        OfferBanner.show(context, pickup: pickup);
-      }
     }
     final hadOffers = _pendingOffers.isNotEmpty;
     _setState(() {
-      _pendingOffers = offers;
-      _currentOfferIndex = _currentOfferIndex.clamp(0, offers.length - 1);
-      if (offers.isNotEmpty && !hadOffers) _hideFindingBar = true;
-      if (offers.isEmpty && hadOffers) _hideFindingBar = false;
+      _pendingOffers = filtered;
+      _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
+      if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
+      if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
-    _preFetchOfferRoutes(offers);
-    if (offers.isNotEmpty && !hadOffers) {
-      _autoTriggerRoutePreview(offers.first);
+    _preFetchOfferRoutes(filtered);
+    if (filtered.isNotEmpty && !hadOffers) {
+      _autoTriggerRoutePreview(filtered.first);
     }
   }
 
@@ -1243,6 +1244,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
     HapticFeedback.lightImpact();
     final offerId = r['offer_id'] as int?;
+    if (offerId != null) _rejectedOfferIds.add(offerId);
 
     // INSTANT dismiss — remove card + clear map in the same frame
     _setState(() {

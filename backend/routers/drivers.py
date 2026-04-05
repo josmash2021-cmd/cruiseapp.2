@@ -878,6 +878,56 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
 #  VEHICLE  ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+@router.get("/drivers/can-go-online", dependencies=[Depends(_verify_api_key)])
+async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Check if driver is eligible to go online. Single source of truth."""
+    reasons = []
+
+    # 1. Account must be approved
+    approved = (user.verification_status or "").lower() == "approved"
+    if not approved:
+        reasons.append("account_not_approved")
+
+    # 2. Check vehicle exists
+    v_result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    vehicle = v_result.scalar_one_or_none()
+    if not vehicle:
+        reasons.append("no_vehicle")
+
+    # 3. Check documents
+    docs_result = await db.execute(select(Document).where(Document.user_id == user.id))
+    docs = docs_result.scalars().all()
+    all_docs_approved = len(docs) >= 1 and all(
+        (d.status or "").lower() == "approved" for d in docs
+    )
+
+    # If account is approved OR all docs approved → can go online
+    can_go = approved or all_docs_approved
+
+    # Check for expired docs (only if they have docs)
+    has_expired = False
+    if docs:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        for d in docs:
+            if d.expiry_date and d.expiry_date < now and (d.status or "").lower() == "approved":
+                has_expired = True
+                break
+
+    if has_expired:
+        reasons.append("expired_documents")
+        can_go = False
+
+    return {
+        "can_go_online": can_go,
+        "approved": approved,
+        "has_vehicle": vehicle is not None,
+        "all_docs_approved": all_docs_approved,
+        "has_expired_docs": has_expired,
+        "reasons": reasons,
+    }
+
+
 @router.get("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
 async def get_vehicle(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))

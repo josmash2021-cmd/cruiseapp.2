@@ -2157,6 +2157,15 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Get the driver's vehicle info.
+  /// Check if driver can go online (backend single source of truth).
+  static Future<Map<String, dynamic>> canGoOnline() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/drivers/can-go-online'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
   static Future<Map<String, dynamic>?> getVehicle() async {
     final h = await _authHeaders();
     final res = await _cachedGet(

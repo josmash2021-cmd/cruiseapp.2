@@ -580,118 +580,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
-      // Check local approval status first
-      final localStatus = await LocalDataService.getDriverApprovalStatus();
-      if (localStatus == 'approved') {
-        setState(() {
-          _vehicleDocsApproved = true;
-          _hasExpiredDocs = false;
-          _docStatusLoaded = true;
-        });
-        _btnColorCtrl.value = 1.0;
-        return;
-      }
-
-      // Fetch profile + vehicle + docs in parallel
-      final results = await Future.wait([
-        ApiService.getVehicle(),
-        ApiService.getDocuments(),
-        ApiService.getMe().catchError((_) => null),
-      ]);
+      final result = await ApiService.canGoOnline();
       if (!mounted) return;
-      final v = results[0] as Map<String, dynamic>?;
-      final docs = results[1] as List<Map<String, dynamic>>? ?? [];
-      final profile = results[2] as Map<String, dynamic>? ?? {};
 
-      // Check backend verification_status (most reliable source)
-      final backendStatus = (profile['verification_status'] ?? '').toString().toLowerCase();
-      if (backendStatus == 'approved') {
+      final canGo = result['can_go_online'] == true;
+      final expired = result['has_expired_docs'] == true;
+
+      // Sync approval status locally
+      if (result['approved'] == true) {
         await LocalDataService.setDriverApprovalStatus('approved');
-        setState(() {
-          _vehicleDocsApproved = true;
-          _hasExpiredDocs = false;
-          _docStatusLoaded = true;
-        });
-        _btnColorCtrl.value = 1.0;
-        return;
-      }
-
-      // Check if ALL documents are approved (regardless of vehicle flags)
-      if (docs.isNotEmpty) {
-        final allApproved = docs.every((d) =>
-          (d['status'] as String? ?? '').toLowerCase() == 'approved');
-        if (allApproved && docs.length >= 3) {
-          // All docs approved — let them go online
-          setState(() {
-            _vehicleDocsApproved = true;
-            _hasExpiredDocs = false;
-            _docStatusLoaded = true;
-          });
-          _btnColorCtrl.value = 1.0;
-          return;
-        }
-      }
-
-      if (v == null) {
-        setState(() => _docStatusLoaded = true);
-        return;
-      }
-
-      // Vehicle-level flags check
-      final insOk = v['insurance_valid'] == true;
-      final regOk = v['registration_valid'] == true;
-      bool vehicleFlagsOk = insOk && regOk;
-
-      // Fallback: check actual document statuses
-      if (!vehicleFlagsOk && docs.isNotEmpty) {
-        bool hasApprovedIns = false;
-        bool hasApprovedReg = false;
-        for (final doc in docs) {
-          final status = (doc['status'] as String? ?? '').toLowerCase();
-          final docType = (doc['doc_type'] ?? doc['type'] ?? '').toString().toLowerCase();
-          if (status == 'approved') {
-            if (docType.contains('insurance')) hasApprovedIns = true;
-            if (docType.contains('registration')) hasApprovedReg = true;
-          }
-        }
-        if (hasApprovedIns && hasApprovedReg) vehicleFlagsOk = true;
-      }
-
-      // Check if any document is expired
-      bool expired = false;
-      final now = DateTime.now();
-      for (final doc in docs) {
-        final status = doc['status'] as String? ?? '';
-        final expiryStr = (doc['expiry_date'] ?? doc['expiry'] ?? '') as String;
-        if (status == 'approved' && expiryStr.isNotEmpty) {
-          final dt = DateTime.tryParse(expiryStr);
-          if (dt != null && dt.isBefore(now)) {
-            expired = true;
-            break;
-          }
-        }
-      }
-      // Also check vehicle-level expiry
-      for (final key in ['insurance_expiry', 'registration_expiry']) {
-        final expiryStr = (v[key] ?? '') as String;
-        if (expiryStr.isNotEmpty) {
-          final dt = DateTime.tryParse(expiryStr);
-          if (dt != null && dt.isBefore(now)) {
-            expired = true;
-            break;
-          }
-        }
       }
 
       setState(() {
-        _vehicleDocsApproved = vehicleFlagsOk && !expired;
+        _vehicleDocsApproved = canGo;
         _hasExpiredDocs = expired;
         _docStatusLoaded = true;
       });
       _btnColorCtrl.value = 1.0;
     } catch (e) {
       debugPrint('[DriverHome] _checkVehicleDocStatus error: $e');
-      // On error (network, timeout, etc.) don't block — let driver try to go online
+      // On error don't block — let driver try to go online
       if (mounted) {
         setState(() {
           _vehicleDocsApproved = true;
@@ -1305,7 +1213,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           final g = _glossCtrl.value;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
 
-          // Always gold — dim when docs not approved
           const goldTop1 = Color(0xFFF0D060);
           const goldTop2 = Color(0xFFF5DC7A);
           const goldBot = Color(0xFFD4A800);

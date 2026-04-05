@@ -606,10 +606,14 @@ workflows:
       - name: Build IPA (App Store)
         script: |
           set -o pipefail
+          # Use build number from pubspec.yaml (not Codemagic counter)
+          # to avoid Apple rejecting lower build numbers
+          PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
+          echo "Build number from pubspec: $PUBSPEC_BUILD"
           flutter build ipa \
             --release \
             --no-tree-shake-icons \
-            --build-number=$BUILD_NUMBER \
+            --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER} \
             --export-options-plist=$HOME/export_options.plist
 
           IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)

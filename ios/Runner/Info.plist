@@ -122,6 +122,14 @@
 				<string>cruiseapp</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.562266680819-p0a7fcer1gtqgfi5h3ucm1vs8ptvq2bu</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSPrivacyPolicyURL</key>
 	<string>https://cruiseride.com/privacy</string>

@@ -94,7 +94,7 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["rider_name"] = f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "Rider"
         data["rider_phone"] = (rider.phone or "") if rider else ""
         data["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-        data["rider_rating"] = float(rider.rating or 4.8) if rider else 4.8
+        data["rider_rating"] = float(getattr(rider, "average_rating", None) or 4.8) if rider else 4.8
         return data
     else:
         result = await db.execute(
@@ -110,7 +110,7 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip() if driver else ""
         data["driver_phone"] = (driver.phone or "") if driver else ""
         data["driver_photo_url"] = (_abs_photo_url(driver.photo_url) or "") if driver else ""
-        data["driver_rating"] = float(driver.rating or 4.9) if driver else 4.9
+        data["driver_rating"] = float(getattr(driver, "average_rating", None) or 4.9) if driver else 4.9
         # Vehicle info for rider tracking screen
         data["vehicle_make"] = getattr(driver, "vehicle_make", "") or "" if driver else ""
         data["vehicle_model"] = getattr(driver, "vehicle_model", "") or "" if driver else ""

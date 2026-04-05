@@ -414,7 +414,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 onPageChanged: (index) {
                   _setState(() => _currentOfferIndex = index);
                   HapticFeedback.selectionClick();
-                  if (index < _pendingOffers.length) {
+                  // Only trigger preview if not already animating
+                  if (index < _pendingOffers.length && !_isCardAnimating) {
                     _autoTriggerRoutePreview(_pendingOffers[index]);
                   }
                 },

@@ -912,8 +912,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _heading += diff * brgFactor;
 
     // Unified camera following (single source of truth for all phases)
+    // Skip camera control when offer animation is running or route is previewing
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
-    if (_phase == _Phase.searching) {
+    final offerActive = _isCardAnimating || _previewingOffer != null;
+    if (_phase == _Phase.searching && !offerActive) {
       _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(

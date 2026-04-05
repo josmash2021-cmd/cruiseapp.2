@@ -31,6 +31,7 @@ import 'driver_inbox_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_vehicle_screen.dart';
+import 'driver_documents_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -113,6 +114,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Vehicle document approval ──
   bool _vehicleDocsApproved = false;
+  bool _hasExpiredDocs = false;
   bool _docStatusLoaded = false;
   late AnimationController _btnColorCtrl;
   late Animation<double> _btnColorAnim;
@@ -580,17 +582,54 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
-      final v = await ApiService.getVehicle();
-      if (!mounted || v == null) return;
+      final results = await Future.wait([
+        ApiService.getVehicle(),
+        ApiService.getDocuments(),
+      ]);
+      if (!mounted) return;
+      final v = results[0] as Map<String, dynamic>?;
+      final docs = results[1] as List<Map<String, dynamic>>? ?? [];
+
+      if (v == null) {
+        setState(() => _docStatusLoaded = true);
+        return;
+      }
+
       final insOk = v['insurance_valid'] == true;
       final regOk = v['registration_valid'] == true;
       final approved = insOk && regOk;
-      final wasApproved = _vehicleDocsApproved;
+
+      // Check if any document is expired
+      bool expired = false;
+      final now = DateTime.now();
+      for (final doc in docs) {
+        final status = doc['status'] as String? ?? '';
+        final expiryStr = (doc['expiry_date'] ?? doc['expiry'] ?? '') as String;
+        if (status == 'approved' && expiryStr.isNotEmpty) {
+          final dt = DateTime.tryParse(expiryStr);
+          if (dt != null && dt.isBefore(now)) {
+            expired = true;
+            break;
+          }
+        }
+      }
+      // Also check vehicle-level expiry
+      for (final key in ['insurance_expiry', 'registration_expiry']) {
+        final expiryStr = (v[key] ?? '') as String;
+        if (expiryStr.isNotEmpty) {
+          final dt = DateTime.tryParse(expiryStr);
+          if (dt != null && dt.isBefore(now)) {
+            expired = true;
+            break;
+          }
+        }
+      }
+
       setState(() {
-        _vehicleDocsApproved = approved;
+        _vehicleDocsApproved = approved && !expired;
+        _hasExpiredDocs = expired;
         _docStatusLoaded = true;
       });
-      // Button is always gold — just rebuild for opacity change
       _btnColorCtrl.value = 1.0;
     } catch (_) {
       if (mounted) setState(() => _docStatusLoaded = true);
@@ -604,13 +643,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
-    // If vehicle docs not approved, navigate to vehicle documents page
+    // If docs expired, navigate to documents page to re-upload
+    if (_hasExpiredDocs) {
+      HapticFeedback.mediumImpact();
+      await Navigator.of(context).push(
+        slideFromRightRoute(const DriverDocumentsScreen()),
+      );
+      if (mounted) await _checkVehicleDocStatus();
+      return;
+    }
+
+    // If vehicle docs not approved, navigate to documents page
     if (!_vehicleDocsApproved) {
       HapticFeedback.mediumImpact();
       await Navigator.of(context).push(
-        slideFromRightRoute(const DriverVehicleScreen()),
+        slideFromRightRoute(const DriverDocumentsScreen()),
       );
-      // Re-check doc status when returning from vehicle screen
       if (mounted) await _checkVehicleDocStatus();
       return;
     }
@@ -1227,7 +1275,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ),
                     child: Icon(
                       !docsOk
-                          ? Icons.upload_file_rounded
+                          ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
                           : (_activeTripData != null || _isStillOnline)
                               ? Icons.play_arrow_rounded
                               : Icons.power_settings_new_rounded,
@@ -1239,7 +1287,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   Text(
                     _isVerified
                         ? (!docsOk
-                            ? 'DOCUMENTS'
+                            ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
                             : (_activeTripData != null || _isStillOnline)
                                 ? S.of(context).resumeOnline
                                 : S.of(context).goOnline)

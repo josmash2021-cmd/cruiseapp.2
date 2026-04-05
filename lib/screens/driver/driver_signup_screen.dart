@@ -24,6 +24,7 @@ import 'license_scanner_screen.dart';
 ///    • Driver's license (FRONT)
 ///    • Driver's license (BACK)
 ///    • Car insurance photo
+///    • Car registration photo
 ///    • SSN (for Checkr background check)
 ///    • Face biometric liveness check
 ///  Step 3 — Review & submit
@@ -283,6 +284,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   String? _licenseFrontPath;
   String? _licenseBackPath;
   String? _insurancePath;
+  String? _registrationPath;
   bool _biometricDone = false;
   String? _selfiePath;
   String? _verificationVideoPath;
@@ -353,6 +355,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         return _licenseFrontPath != null &&
             _licenseBackPath != null &&
             _insurancePath != null &&
+            _registrationPath != null &&
             _biometricDone &&
             _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9;
       case 3:
@@ -843,6 +846,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     await enc('license_front', _licenseFrontPath);
     await enc('license_back', _licenseBackPath);
     await enc('insurance_photo', _insurancePath);
+    await enc('registration_photo', _registrationPath);
     await enc('selfie_photo', _selfiePath);
     await enc('verification_video', _verificationVideoPath);
     await ApiService.submitVerification(body);
@@ -1270,6 +1274,19 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           ),
           const SizedBox(height: 10),
 
+          _docTile(
+            title: 'Car Registration',
+            subtitle: 'Take or upload a photo of your registration',
+            icon: Icons.description_outlined,
+            filePath: _registrationPath,
+            required_: true,
+            onTap: () => _showPickOptions(
+              'Car Registration',
+              (p) => setState(() => _registrationPath = p),
+            ),
+          ),
+          const SizedBox(height: 10),
+
           _buildSsnSection(),
           const SizedBox(height: 10),
 
@@ -1510,6 +1527,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       (S.of(context).licenseFrontLabel, _licenseFrontPath != null),
       (S.of(context).licenseBackLabel, _licenseBackPath != null),
       (S.of(context).insuranceLabel, _insurancePath != null),
+      ('Registration', _registrationPath != null),
       (
         S.of(context).ssnShortLabel,
         _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9,
@@ -1602,6 +1620,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           _reviewItem(
             S.of(context).insuranceLabel,
             _insurancePath != null
+                ? S.of(context).uploadedStatus
+                : S.of(context).missingStatus,
+          ),
+          _reviewItem(
+            'Registration',
+            _registrationPath != null
                 ? S.of(context).uploadedStatus
                 : S.of(context).missingStatus,
           ),

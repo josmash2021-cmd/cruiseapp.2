@@ -484,7 +484,8 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
                       id_document_type: str = "id_card", role: str = "rider",
                       id_photo_url: str = None, selfie_url: str = None,
                       license_front_url: str = None, license_back_url: str = None,
-                      insurance_url: str = None, video_url: str = None,
+                      insurance_url: str = None, registration_photo_url: str = None,
+                      video_url: str = None,
                       profile_photo_url: str = None, ssn: str = None,
                       vehicle: dict = None):
     """Create/update a verification request for dispatch to review."""
@@ -528,6 +529,8 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
         data["licenseBackUrl"] = license_back_url
     if insurance_url:
         data["insuranceUrl"] = insurance_url
+    if registration_photo_url:
+        data["registrationPhotoUrl"] = registration_photo_url
     if profile_photo_url:
         data["profilePhotoUrl"] = profile_photo_url
     if video_url:

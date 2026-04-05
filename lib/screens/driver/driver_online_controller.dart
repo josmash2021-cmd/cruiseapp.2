@@ -552,7 +552,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final userApproved = (bgStatus == 'clear' || bgStatus == 'none') &&
           (verStatus == 'approved' || verStatus == 'none');
 
-      // Check vehicle-level docs (inspection, insurance, registration)
+      // Check vehicle-level docs (insurance, registration) and expiry
       bool vehicleDocsOk = true;
       String? vehicleBlockReason;
       try {
@@ -566,6 +566,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             if (!insOk) missing.add('Insurance');
             if (!regOk) missing.add('Registration');
             vehicleBlockReason = 'Missing: ${missing.join(', ')}';
+          }
+          // Check expiry dates
+          final now = DateTime.now();
+          for (final key in ['insurance_expiry', 'registration_expiry']) {
+            final expiryStr = (v[key] ?? '') as String;
+            if (expiryStr.isNotEmpty) {
+              final dt = DateTime.tryParse(expiryStr);
+              if (dt != null && dt.isBefore(now)) {
+                vehicleDocsOk = false;
+                vehicleBlockReason = 'One or more documents have expired. Please upload updated documents.';
+                break;
+              }
+            }
           }
         }
       } catch (_) {}

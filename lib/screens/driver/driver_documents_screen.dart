@@ -26,10 +26,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   static const _surface = Color(0xFF141414);
 
   bool _loading = true;
+  bool _uploading = false;
   List<Map<String, dynamic>> _documents = [];
+  final _picker = ImagePicker();
 
-  // Required doc types that we always show (driver-level only)
-  // Vehicle docs (insurance, registration, inspection) are on the Vehicle screen
+  // All required doc types for drivers
   static const _requiredDocs = [
     {
       'doc_type': 'drivers_license',
@@ -42,9 +43,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       'icon': Icons.verified_user_rounded,
     },
     {
+      'doc_type': 'insurance',
+      'title': 'Car Insurance',
+      'icon': Icons.shield_rounded,
+    },
+    {
+      'doc_type': 'registration',
+      'title': 'Car Registration',
+      'icon': Icons.description_rounded,
+    },
+    {
       'doc_type': 'profile_photo',
       'title': 'Face Biometrics',
-      'icon': Icons.fingerprint_rounded,
+      'icon': Icons.face_retouching_natural_rounded,
     },
   ];
 
@@ -57,22 +68,32 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   Future<void> _fetchDocuments() async {
     setState(() => _loading = true);
     try {
-      final docs = await ApiService.getDocuments();
-      final me = await ApiService.getMe();
+      final results = await Future.wait([
+        ApiService.getDocuments(),
+        ApiService.getMe(),
+        ApiService.getVehicle(),
+      ]);
       if (!mounted) return;
-      
+
+      final docs = results[0] as List<Map<String, dynamic>>;
+      final me = results[1] as Map<String, dynamic>?;
+      final vehicle = results[2] as Map<String, dynamic>?;
+
       // Check if user is verified
       final verificationStatus = me?['verification_status'] ?? 'none';
       final isVerified = verificationStatus == 'approved';
       final bgCheckStatus = me?['background_check_status'] as String? ?? 'none';
-      
+
+      // Vehicle-level document validity
+      final insuranceValid = vehicle?['insurance_valid'] == true;
+      final registrationValid = vehicle?['registration_valid'] == true;
+
       // Merge with required doc types
       final merged = <Map<String, dynamic>>[];
       for (final req in _requiredDocs) {
         final docType = req['doc_type'] as String;
 
-        // Background check - use status from user profile
-        // If driver is fully verified, background check is implicitly approved
+        // Background check — use status from user profile
         if (docType == 'background_check') {
           String bgStatus;
           if (isVerified || bgCheckStatus == 'clear') {
@@ -92,12 +113,39 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           });
           continue;
         }
-        
+
+        // Insurance/Registration — check vehicle-level validity
+        if (docType == 'insurance' || docType == 'registration') {
+          final vehicleOk = docType == 'insurance' ? insuranceValid : registrationValid;
+          final existing = docs.firstWhere(
+            (d) => d['doc_type'] == docType,
+            orElse: () => <String, dynamic>{},
+          );
+
+          String status;
+          if (vehicleOk || isVerified) {
+            status = 'approved';
+          } else if (existing.isNotEmpty) {
+            status = existing['status'] as String? ?? 'pending';
+          } else {
+            status = isVerified ? 'approved' : 'not_uploaded';
+          }
+
+          merged.add({
+            if (existing.isNotEmpty) ...existing,
+            'doc_type': docType,
+            'title': req['title'],
+            'icon': req['icon'],
+            'status': status,
+          });
+          continue;
+        }
+
         final existing = docs.firstWhere(
           (d) => d['doc_type'] == docType,
           orElse: () => <String, dynamic>{},
         );
-        
+
         if (existing.isNotEmpty) {
           merged.add({
             ...existing,
@@ -106,17 +154,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             'status': existing['status'] ?? 'pending',
           });
         } else {
-          // If user is verified, mark all docs as approved (including registration)
-          // Registration is uploaded during verification flow, so it's auto-approved
-          String status = 'not_uploaded';
-          if (isVerified) {
-            status = 'approved';
-          }
           merged.add({
             'doc_type': docType,
             'title': req['title'],
             'icon': req['icon'],
-            'status': status,
+            'status': isVerified ? 'approved' : 'not_uploaded',
           });
         }
       }
@@ -126,6 +168,93 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Upload a new document photo (for expired or rejected docs)
+  Future<void> _uploadDocument(String docType, String title) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: _card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Upload $title',
+                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.camera_alt_rounded, color: _gold, size: 22),
+                ),
+                title: const Text('Take Photo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                subtitle: Text('Use camera to capture document',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.photo_library_rounded, color: _gold, size: 22),
+                ),
+                title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                subtitle: Text('Select an existing photo',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    try {
+      final xFile = await _picker.pickImage(source: source, maxWidth: 1280, maxHeight: 1280, imageQuality: 75);
+      if (xFile == null || !mounted) return;
+
+      setState(() => _uploading = true);
+      await ApiService.uploadDocument(docType: docType, filePath: xFile.path);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$title uploaded — under review'),
+          backgroundColor: const Color(0xFF4CAF50),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      await _fetchDocuments();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to upload $title'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -139,7 +268,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       case 'background_check':
         return Icons.verified_user_rounded;
       case 'profile_photo':
-        return Icons.fingerprint_rounded;
+        return Icons.face_retouching_natural_rounded;
+      case 'insurance':
+        return Icons.shield_rounded;
+      case 'registration':
+        return Icons.description_rounded;
       default:
         return Icons.insert_drive_file_rounded;
     }
@@ -153,6 +286,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         return s.backgroundCheckTitle;
       case 'profile_photo':
         return 'Face Biometrics';
+      case 'insurance':
+        return 'Car Insurance';
+      case 'registration':
+        return 'Car Registration';
       default:
         return docType ?? 'Document';
     }
@@ -187,7 +324,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
             )
-          : CustomScrollView(
+          : Stack(
+              children: [
+              CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
                 SliverAppBar(
@@ -401,6 +540,23 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 ),
               ],
             ),
+              if (_uploading)
+                Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                        SizedBox(height: 16),
+                        Text('Uploading document...',
+                          style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -439,7 +595,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       statusIcon = Icons.upcoming_rounded;
     } else if (isApproved && expiryStatus == _ExpiryStatus.expired) {
       statusColor = Colors.red.shade400;
-      statusText = s.documentExpired;
+      statusText = 'Expired';
       statusIcon = Icons.error_rounded;
     } else if (isApproved && expiryStatus == _ExpiryStatus.expiringSoon) {
       statusColor = Colors.orange.shade400;
@@ -486,7 +642,14 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ? Colors.red.shade400
         : _gold;
 
-    return Container(
+    // Allow re-upload for expired or rejected uploadable docs
+    final docType = doc['doc_type'] as String?;
+    final canUpload = (isRejected || (isApproved && expiryStatus == _ExpiryStatus.expired)) &&
+        (docType == 'insurance' || docType == 'registration' || docType == 'drivers_license');
+
+    return GestureDetector(
+      onTap: canUpload ? () => _uploadDocument(docType!, title) : null,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: _card,
@@ -495,6 +658,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             ? Border.all(color: Colors.red.withValues(alpha: 0.3))
             : expiryStatus == _ExpiryStatus.expiringSoon
             ? Border.all(color: Colors.orange.withValues(alpha: 0.2))
+            : isRejected
+            ? Border.all(color: Colors.red.withValues(alpha: 0.25))
             : null,
       ),
       child: Opacity(
@@ -602,9 +767,15 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     ],
                   ),
                 ),
+                if (canUpload)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(Icons.upload_rounded, color: statusColor, size: 18),
+                  ),
               ],
           ),
         ),
+      ),
       ),
     );
   }

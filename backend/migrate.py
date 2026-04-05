@@ -25,6 +25,7 @@ MIGRATIONS = [
     ("users", "license_back_url", "TEXT"),
     ("users", "vehicle_registration_url", "TEXT"),
     ("users", "insurance_url", "TEXT"),
+    ("users", "registration_photo_url", "TEXT"),
     ("users", "video_url", "TEXT"),
     ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
     ("users", "deletion_requested_at", "TIMESTAMP WITH TIME ZONE"),

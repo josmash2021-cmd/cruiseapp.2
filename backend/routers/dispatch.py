@@ -155,7 +155,9 @@ async def sync_verifications_to_firestore(db: AsyncSession = Depends(get_db)):
                 id_document_type=u.id_document_type or "id_card", role=u.role,
                 id_photo_url=u.id_photo_url, selfie_url=u.selfie_url,
                 license_front_url=u.license_front_url, license_back_url=u.license_back_url,
-                insurance_url=u.insurance_url, video_url=u.video_url,
+                insurance_url=u.insurance_url,
+                registration_photo_url=getattr(u, 'registration_photo_url', None),
+                video_url=u.video_url,
                 profile_photo_url=u.photo_url, ssn=u.ssn, vehicle=vehicle_data,
             )
             synced.append({"id": u.id, "name": f"{u.first_name} {u.last_name}", "status": u.verification_status})

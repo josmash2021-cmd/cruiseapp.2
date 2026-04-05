@@ -491,6 +491,7 @@ async def admin_list_verifications(
         "license_back_url": u.license_back_url,
         "vehicle_registration_url": u.vehicle_registration_url,
         "insurance_url": u.insurance_url,
+        "registration_photo_url": getattr(u, 'registration_photo_url', None),
         "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,

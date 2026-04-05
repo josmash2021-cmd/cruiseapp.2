@@ -98,6 +98,7 @@ class User(Base):
     license_back_url = Column(Text, nullable=True)
     vehicle_registration_url = Column(Text, nullable=True)
     insurance_url = Column(Text, nullable=True)
+    registration_photo_url = Column(Text, nullable=True)
     video_url = Column(Text, nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
@@ -518,6 +519,7 @@ async def migrate_add_columns(conn):
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
         ("users", "insurance_url", "TEXT"),
+        ("users", "registration_photo_url", "TEXT"),
         ("users", "video_url", "TEXT"),
         ("trips", "scheduled_at", "DATETIME"),
         ("trips", "cancel_reason", "TEXT"),
@@ -606,6 +608,7 @@ async def migrate_postgres(conn):
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
         ("users", "insurance_url", "TEXT"),
+        ("users", "registration_photo_url", "TEXT"),
         ("users", "video_url", "TEXT"),
         ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
         ("users", "deletion_requested_at", "TIMESTAMP WITH TIME ZONE"),

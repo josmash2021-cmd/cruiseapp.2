@@ -329,50 +329,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                         padding: const EdgeInsets.all(20),
                         child: Column(
                           children: [
-                            // ── Top banner: Required/Reviewing ──
-                            if (!_allDocsValid)
-                              _allDocsPending
-                                  ? _buildReviewingBanner()
-                                  : _missingDocsCount > 0
-                                      ? _buildRequiredBanner()
-                                      : _buildReviewingBanner(),
-
                             // ── Car visual card ──
                             _buildCarCard(),
-                            const SizedBox(height: 20),
-
-                            // ── Vehicle document cards ──
-                            _buildDocCard(
-                              isValid: _insuranceValid,
-                              title: s.vehicleInsuranceValid,
-                              invalidTitle: 'Vehicle Insurance',
-                              subtitle: _insuranceValid
-                                  ? s.insuranceUpToDate
-                                  : _insuranceStatus == 'pending'
-                                      ? 'Under review — we\'ll notify you'
-                                      : _insuranceStatus == 'rejected'
-                                          ? 'Rejected — please re-upload'
-                                          : 'Required to go online',
-                              icon: Icons.security_rounded,
-                              docType: 'insurance',
-                              docStatus: _insuranceStatus,
-                            ),
-                            const SizedBox(height: 10),
-                            _buildDocCard(
-                              isValid: _registrationValid,
-                              title: 'Registration Valid',
-                              invalidTitle: 'Vehicle Registration',
-                              subtitle: _registrationValid
-                                  ? 'Vehicle registration up to date'
-                                  : _registrationStatus == 'pending'
-                                      ? 'Under review — we\'ll notify you'
-                                      : _registrationStatus == 'rejected'
-                                          ? 'Rejected — please re-upload'
-                                          : 'Required to go online',
-                              icon: Icons.description_rounded,
-                              docType: 'registration',
-                              docStatus: _registrationStatus,
-                            ),
                             const SizedBox(height: 24),
 
                             // ── Vehicle details ──
@@ -396,29 +354,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   ],
                 ),
 
-                // Uploading overlay
-                if (_uploading)
-                  Container(
-                    color: Colors.black54,
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                              color: _gold, strokeWidth: 2),
-                          SizedBox(height: 16),
-                          Text(
-                            'Uploading document...',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
               ],
             ),
     );

@@ -54,6 +54,9 @@ PHOTO_CHECK_TIMEOUT = 8         # Seconds to wait for photo URL check
 
 # Phase 1: Vehicle document types that get auto-approved
 VEHICLE_DOC_TYPES = ["insurance", "registration"]
+MIN_FILE_SIZE_BYTES = 10_000      # Minimum 10KB — below this is likely invalid
+MAX_FILE_SIZE_BYTES = 20_000_000  # Maximum 20MB
+VALID_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/jpg", "image/webp", "application/pdf"}
 
 # Phase 2 settings (inactive until FULL_VERIFICATION=True)
 MIN_ACCOUNT_AGE_MINUTES = 5     # Anti-bot: account must be 5+ min old
@@ -63,6 +66,7 @@ REQUIRED_DRIVER_DOCS = [
     "license_back_url",
     "vehicle_registration_url",
     "insurance_url",
+    "registration_photo_url",
     "selfie_url",
 ]
 
@@ -217,24 +221,41 @@ class DocumentApprovalAgent:
                         )
                     continue
 
-                # ── Validate: photo URL reachable ─────────────
-                url_ok = await self._check_url_reachable(doc.file_path)
-                if not url_ok:
+                # ── Validate: photo URL reachable + smart content check ──
+                url_check = await self._smart_url_check(doc.file_path)
+
+                if url_check["status"] == "unreachable":
                     doc.status = "rejected"
                     doc.rejection_reason = "El archivo subido no es accesible. Intenta nuevamente."
                     rejected_count += 1
                     self._stats["auto_rejected"] += 1
-
                     logger.warning(
                         "[DocApproval] REJECTED %s for driver #%d — URL unreachable: %s",
                         doc.doc_type, driver.id, doc.file_path[:80],
                     )
-
                     if driver.fcm_token:
                         self._send_rejection_push(
                             driver, doc.doc_type,
                             "Hubo un error con tu archivo. Por favor súbelo nuevamente."
                         )
+                    continue
+
+                if url_check["status"] == "invalid_content":
+                    # Can't confirm this is a real document — flag for dispatch review
+                    logger.warning(
+                        "[DocApproval] FLAGGED %s for driver #%d — %s",
+                        doc.doc_type, driver.id, url_check.get("reason", "unknown"),
+                    )
+                    await self._alert_admin(
+                        driver, "document_needs_review",
+                        f"El agente no pudo verificar automáticamente el documento "
+                        f"'{doc.doc_type}' del conductor #{driver.id} "
+                        f"({driver.first_name} {driver.last_name}). "
+                        f"Razón: {url_check.get('reason', 'Contenido no reconocible')}. "
+                        f"URL: {doc.file_path[:120]}",
+                        severity="high",
+                    )
+                    # Leave as pending — dispatch will review manually
                     continue
 
                 # ── ALL CHECKS PASSED — AUTO-APPROVE ──────────
@@ -447,6 +468,61 @@ class DocumentApprovalAgent:
             return await loop.run_in_executor(None, _head)
         except Exception:
             return True  # Assume valid on error
+
+    async def _smart_url_check(self, url: str) -> Dict[str, str]:
+        """Smart document validation: checks reachability, content-type, and file size.
+        Returns dict with 'status' key: 'ok', 'unreachable', or 'invalid_content'."""
+        try:
+            # Trust internal Firebase Storage URLs
+            if "firebasestorage" in url or "localhost" in url or "railway" in url:
+                return {"status": "ok"}
+
+            import urllib.request
+            req = urllib.request.Request(url, method="HEAD")
+            req.add_header("User-Agent", "CruiseApp-DocVerifier/1.0")
+
+            loop = asyncio.get_event_loop()
+            def _check():
+                try:
+                    with urllib.request.urlopen(req, timeout=PHOTO_CHECK_TIMEOUT) as resp:
+                        if resp.status != 200:
+                            return {"status": "unreachable", "reason": f"HTTP {resp.status}"}
+                        content_type = resp.headers.get("Content-Type", "").lower().split(";")[0].strip()
+                        content_length = resp.headers.get("Content-Length", "0")
+                        try:
+                            file_size = int(content_length)
+                        except (ValueError, TypeError):
+                            file_size = 0
+
+                        # Validate content type
+                        if content_type and content_type not in VALID_IMAGE_CONTENT_TYPES:
+                            return {
+                                "status": "invalid_content",
+                                "reason": f"Tipo de archivo no válido: {content_type}. "
+                                          f"Se esperaba una imagen o PDF."
+                            }
+
+                        # Validate file size
+                        if file_size > 0 and file_size < MIN_FILE_SIZE_BYTES:
+                            return {
+                                "status": "invalid_content",
+                                "reason": f"Archivo demasiado pequeño ({file_size} bytes). "
+                                          f"Probablemente no es un documento válido."
+                            }
+                        if file_size > MAX_FILE_SIZE_BYTES:
+                            return {
+                                "status": "invalid_content",
+                                "reason": f"Archivo demasiado grande ({file_size // 1_000_000}MB). Máximo 20MB."
+                            }
+
+                        return {"status": "ok"}
+                except Exception:
+                    return {"status": "unreachable", "reason": "Connection failed"}
+
+            return await loop.run_in_executor(None, _check)
+        except Exception as e:
+            logger.warning("[DocApproval] Smart URL check error: %s", e)
+            return {"status": "ok"}  # Fail open to not block drivers
 
     # ══════════════════════════════════════════════════════════════════
     #  PUSH NOTIFICATIONS

@@ -1351,6 +1351,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         ("license_back", "license_back"),
         ("vehicle_registration", "vehicle_registration"),
         ("insurance_photo", "insurance"),
+        ("registration_photo", "registration"),
         ("selfie_photo", "selfie"),
         ("id_photo", "id_doc"),
     ]
@@ -1432,6 +1433,8 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             db_user.vehicle_registration_url = saved_urls["vehicle_registration"]
         if saved_urls.get("insurance"):
             db_user.insurance_url = saved_urls["insurance"]
+        if saved_urls.get("registration"):
+            db_user.registration_photo_url = saved_urls["registration"]
         if video_url:
             db_user.video_url = video_url
         await db.commit()
@@ -1439,6 +1442,36 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     except Exception as e:
         logging.error("[Verify] Error saving photo URLs to DB: %s", e)
         # Non-fatal: verification status already saved above
+
+    # Create Document records for uploaded photos (for dispatch review workflow)
+    for doc_label, doc_type in [("insurance", "insurance"), ("registration", "registration")]:
+        url = saved_urls.get(doc_label)
+        if not url:
+            continue
+        try:
+            existing_doc_result = await db.execute(
+                select(Document).where(
+                    Document.user_id == db_user.id,
+                    Document.doc_type == doc_type,
+                )
+            )
+            existing_doc = existing_doc_result.scalar_one_or_none()
+            if existing_doc:
+                existing_doc.status = "pending"
+                existing_doc.file_path = url
+                existing_doc.rejection_reason = None
+                existing_doc.updated_at = datetime.now(timezone.utc)
+            else:
+                new_doc = Document(
+                    user_id=db_user.id,
+                    doc_type=doc_type,
+                    status="pending",
+                    file_path=url,
+                )
+                db.add(new_doc)
+            await db.commit()
+        except Exception as e:
+            logging.error("[Verify] Error creating Document record for %s (user %s): %s", doc_type, db_user.id, e)
 
     # Also detect existing profile photo
     profile_photo_url = db_user.photo_url
@@ -1472,6 +1505,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                 license_front_url=saved_urls.get("license_front"),
                 license_back_url=saved_urls.get("license_back"),
                 insurance_url=saved_urls.get("insurance"),
+                registration_photo_url=saved_urls.get("registration"),
                 video_url=video_url,
                 profile_photo_url=profile_photo_url,
                 ssn=db_user.ssn,

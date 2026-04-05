@@ -156,7 +156,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     ),
                   ),
 
-                  const Spacer(),
+                  const Spacer(flex: 2),
 
                   // ── Headline (centered) ──
                   FadeTransition(
@@ -190,7 +190,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const Spacer(flex: 2),
 
                   // ── Get started button (gold filled) ──
                   SlideTransition(

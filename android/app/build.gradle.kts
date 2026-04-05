@@ -33,13 +33,24 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
-    // Release keystore — reads from Codemagic encrypted env vars:
-    //   CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD
-    // The keystore file is decoded to /tmp/cruise-release.keystore by the CI script.
-    val ksFile = file("/tmp/cruise-release.keystore")
-    val ksPassword = System.getenv("CM_KEYSTORE_PASSWORD") ?: ""
-    val keyAlias   = System.getenv("CM_KEY_ALIAS")         ?: ""
-    val keyPass    = System.getenv("CM_KEY_PASSWORD")      ?: ""
+    // Release keystore — reads from key.properties (local) or CI env vars
+    val keyProps = Properties()
+    val keyPropsFile = rootProject.file("key.properties")
+    if (keyPropsFile.exists()) {
+        keyPropsFile.reader(Charsets.UTF_8).use { keyProps.load(it) }
+    }
+
+    // Local key.properties takes priority, then CI env vars
+    val ksFilePath = keyProps.getProperty("storeFile")
+        ?: System.getenv("CM_KEYSTORE_PATH")
+        ?: "/tmp/cruise-release.keystore"
+    val ksFile = file(ksFilePath)
+    val ksPassword = keyProps.getProperty("storePassword")
+        ?: System.getenv("CM_KEYSTORE_PASSWORD") ?: ""
+    val keyAlias = keyProps.getProperty("keyAlias")
+        ?: System.getenv("CM_KEY_ALIAS") ?: ""
+    val keyPass = keyProps.getProperty("keyPassword")
+        ?: System.getenv("CM_KEY_PASSWORD") ?: ""
     val hasKeystore = ksFile.exists() && ksPassword.isNotEmpty() && keyAlias.isNotEmpty()
 
     signingConfigs {

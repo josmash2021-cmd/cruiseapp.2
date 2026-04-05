@@ -807,7 +807,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     await _createRouteAnnotations(mgr, mapbox.LineString(coordinates: initCoords));
     if (!mounted || _routeAnnot == null) { _routeAnimating = false; return; }
 
-    final totalMs = (_routePts.length * 6).clamp(800, 2200);
+    final totalMs = (_routePts.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     bool updating = false;

@@ -313,15 +313,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final coords = points
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
-    // Bottom padding = card height + handle + "X Rides Available" label
-    // Card is ~275px, handle+label ~50px, plus safe area bottom
     final botPad = MediaQuery.of(context).padding.bottom;
     final cardArea = (_pendingOffers.isNotEmpty || _previewingOffer != null)
         ? 330.0 + botPad
         : 60.0;
+    // Preserve current tilt/bearing if cinematic is active
+    final currentPitch = _offerTiltAnim?.value ?? 0.0;
+    final currentBearing = _offerBearingAnim?.value ?? 0.0;
     _map!.cameraForCoordinatesPadding(
       coords,
-      mapbox.CameraOptions(pitch: 15),
+      mapbox.CameraOptions(
+        pitch: currentPitch > 1 ? currentPitch : 0,
+        bearing: currentBearing.abs() > 0.5 ? currentBearing : 0,
+      ),
       mapbox.MbxEdgeInsets(top: 100, left: 60, bottom: cardArea, right: 60),
       null, null,
     ).then((cam) {
@@ -381,9 +385,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 1: Camera zoom to fit route (smooth) ──
+    // ── PHASE 1: Camera zoom to fit route (flat, no tilt yet) ──
     _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future.delayed(const Duration(milliseconds: 420));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 2: Place pins + start route draw in parallel ──
@@ -413,19 +417,70 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ));
     }
 
-    // ── PHASE 3: Pin pop + route draw run in parallel ──
+    // ── PHASE 3: Pin pop + cinematic camera tilt/bearing (parallel) ──
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-    final fullRoute = [..._fullSegOne, ..._fullSegTwo];
-    // Fire pin pop (non-blocking) and route draw simultaneously
+
     _animatePinPop(); // runs on its own ticker — don't await
+    await Future.delayed(const Duration(milliseconds: 560));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // Camera tilt 0° → 55° + random bearing 5-15° (like rider Choose a Ride)
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    _offerRandomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    _offerTiltAnim?.removeListener(_applyOfferCamera);
+    _offerTiltCtrl?.dispose();
+    _offerTiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
+    _offerTiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+      CurvedAnimation(parent: _offerTiltCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _offerBearingCtrl?.dispose();
+    _offerBearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
+    _offerBearingAnim = Tween<double>(begin: 0.0, end: _offerRandomBearing).animate(
+      CurvedAnimation(parent: _offerBearingCtrl!, curve: Curves.easeInOutCubic),
+    );
+    _offerTiltAnim!.addListener(_applyOfferCamera);
+    // Start tilt + bearing simultaneously, don't await — let route draw run in parallel
+    _offerTiltCtrl!.forward(from: 0);
+    _offerBearingCtrl!.forward(from: 0);
+
+    // ── PHASE 4: Gold route draw (parallel with tilt) ──
+    final fullRoute = [..._fullSegOne, ..._fullSegTwo];
+    await Future.delayed(const Duration(milliseconds: 180));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
     await _drawGoldGlossRoute(fullRoute);
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
-    // ── PHASE 4: Route shown ──
+    // ── PHASE 5: Refit with preserved tilt ──
+    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);
     }
     _isCardAnimating = false;
+  }
+
+  /// Apply cinematic camera tilt + bearing per animation frame.
+  void _applyOfferCamera() {
+    if (_map == null || !mounted) return;
+    _map!.setCamera(mapbox.CameraOptions(
+      pitch: _offerTiltAnim?.value,
+      bearing: _offerBearingAnim?.value,
+    ));
+  }
+
+  /// Reset camera tilt/bearing to flat when dismissing offer preview.
+  Future<void> _resetOfferCamera() async {
+    _offerTiltAnim?.removeListener(_applyOfferCamera);
+    _offerTiltCtrl?.stop();
+    _offerBearingCtrl?.stop();
+    if (_map != null && mounted) {
+      _map!.flyTo(
+        mapbox.CameraOptions(pitch: 0, bearing: 0),
+        mapbox.MapAnimationOptions(duration: 500),
+      );
+    }
   }
 
   /// Animate all preview pins from tiny → overshoot → settle (spring feel)
@@ -507,7 +562,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (_) {}
     if (!mounted || mainLine == null) return;
 
-    final totalMs = (points.length * 6).clamp(800, 2200);
+    final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     bool updating = false;
@@ -650,6 +705,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
     _lastAutoTriggeredOfferId = null;
+    _offerTiltAnim?.removeListener(_applyOfferCamera);
+    _offerTiltCtrl?.stop();
+    _offerBearingCtrl?.stop();
     _setState(() {
       _previewingOffer = null;
       _offerRouteShown = false;

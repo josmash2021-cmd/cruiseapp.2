@@ -439,7 +439,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     )); } catch (_) {}
     if (!mounted || _routeAnnot == null) return;
 
-    final totalMs = (points.length * 6).clamp(800, 2200);
+    final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     int lastCount = 2;

@@ -263,7 +263,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     final totalDist = cumDist.last;
     if (totalDist <= 0) return;
 
-    final totalMs = (_routePoints.length * 6).clamp(1000, 2400);
+    final totalMs = (_routePoints.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     bool updating = false;

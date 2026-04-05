@@ -1774,7 +1774,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final totalDist = cumDist.last;
     if (totalDist <= 0) return;
 
-    final totalMs = duration?.inMilliseconds ?? (points.length * 6).clamp(1000, 2400);
+    final totalMs = duration?.inMilliseconds ?? (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
     bool updating = false;

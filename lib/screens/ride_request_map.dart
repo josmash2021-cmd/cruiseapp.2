@@ -880,7 +880,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Adaptive duration: short routes get enough time to look smooth,
     // long routes draw a bit faster so the user doesn't wait.
     final totalMs = duration?.inMilliseconds ??
-        (points.length * 6).clamp(800, 2200);
+        (points.length * 10).clamp(1800, 3500);
 
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();

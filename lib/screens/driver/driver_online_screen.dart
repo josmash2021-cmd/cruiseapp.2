@@ -188,6 +188,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Ticker? _routeDrawTicker;
   Ticker? _pinPopTicker;
 
+  // ── Cinematic camera tilt/bearing for offer preview ──
+  AnimationController? _offerTiltCtrl;
+  Animation<double>? _offerTiltAnim;
+  AnimationController? _offerBearingCtrl;
+  Animation<double>? _offerBearingAnim;
+  double _offerRandomBearing = 0;
+
   // ── Pre-fetched route cache (offerId → segments) ──
   final Map<String, _CachedOfferRoute> _routeCache = {};
 
@@ -366,7 +373,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _searchPulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 4200),
+      duration: const Duration(milliseconds: 3000),
     )..repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
@@ -438,6 +445,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routeDrawTicker?.dispose();
     _pinPopTicker?.stop();
     _pinPopTicker?.dispose();
+    _offerTiltCtrl?.dispose();
+    _offerBearingCtrl?.dispose();
     _map?.dispose();
     super.dispose();
   }
@@ -1299,8 +1308,8 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
 class _SearchingBorderPainter extends CustomPainter {
   final double progress; // 0.0 → 1.0, loops continuously
   final double expansion; // 0.0 = collapsed, 1.0 = expanded
-  static const Color _gold = Color(0xFFD4AF37);
-  static const Color _goldLight = Color(0xFFF5E6A3);
+  static const Color _gold = Color(0xFFE8C547);
+  static const Color _goldLight = Color(0xFFFBE47A);
 
   _SearchingBorderPainter({required this.progress, this.expansion = 0.0});
 
@@ -1321,72 +1330,68 @@ class _SearchingBorderPainter extends CustomPainter {
       rrect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0
+        ..strokeWidth = 1.2
         ..isAntiAlias = true
-        ..color = _gold.withValues(alpha: 0.08),
+        ..color = _gold.withValues(alpha: 0.12),
     );
 
+    // Build path from RRect — Flutter Bézier curves = mathematically smooth corners
     final borderPath = Path()..addRRect(rrect);
     final metricsList = borderPath.computeMetrics().toList();
     if (metricsList.isEmpty) return;
     final pm = metricsList.first;
     final total = pm.length;
 
-    const glowFraction = 0.30;
+    const glowFraction = 0.18;
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
-    final tailDist = (headDist - glowLen + total) % total;
 
-    // Extract the full glow path as a single continuous segment
-    final Path glowPath;
-    if (tailDist <= headDist) {
-      glowPath = pm.extractPath(tailDist, headDist);
-    } else {
-      glowPath = pm.extractPath(tailDist, total)
-        ..addPath(pm.extractPath(0, headDist), Offset.zero);
-    }
+    // 48 micro-segments with smoothstep fade — identical to rider Where-to panel
+    const steps = 48;
+    final stepLen = glowLen / steps;
 
-    // Sample points along the glow path for gradient stops
-    final glowMetrics = glowPath.computeMetrics().toList();
-    if (glowMetrics.isEmpty) return;
-    final glowPm = glowMetrics.first;
-    final glowTotal = glowMetrics.fold<double>(0, (s, m) => s + m.length);
-    if (glowTotal < 1) return;
+    for (int k = 0; k < steps; k++) {
+      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
+      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
+      if (fadeAlpha < 0.02) continue;
 
-    // Get head and tail positions for sweep gradient
-    final headTangent = glowPm.getTangentForOffset(glowPm.length);
-    final tailTangent = glowPm.getTangentForOffset(0);
-    if (headTangent == null || tailTangent == null) return;
+      final segEnd   = (headDist - k * stepLen + total) % total;
+      final segStart = (segEnd - stepLen + total) % total;
 
-    // Draw single smooth path with layered opacity for gradient effect
-    // Use 3 passes: wide soft glow, medium, sharp head — all continuous paths
-    final passes = <(double width, double alpha, MaskFilter? blur)>[
-      (6.0, 0.08, const MaskFilter.blur(BlurStyle.normal, 4)),
-      (2.5, 0.6, null),
-    ];
+      final Path seg;
+      if (segStart <= segEnd) {
+        seg = pm.extractPath(segStart, segEnd);
+      } else {
+        seg = pm.extractPath(segStart, total)
+          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
+      }
 
-    for (final (width, alpha, blur) in passes) {
-      // Draw 6 sub-segments with decreasing opacity for smooth fade
-      const segs = 6;
-      for (int i = 0; i < segs; i++) {
-        final t0 = i / segs;
-        final t1 = (i + 1) / segs;
-        final segAlpha = alpha * (0.15 + 0.85 * t1); // tail=15% → head=100%
-
-        final start = glowPm.length * t0;
-        final end = glowPm.length * t1;
-        final seg = glowPm.extractPath(start, end);
-
-        final paint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = width
-          ..strokeCap = StrokeCap.round
+      // Bright stroke
+      canvas.drawPath(
+        seg,
+        Paint()
+          ..style      = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..strokeCap  = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..isAntiAlias = true
-          ..color = Color.lerp(_gold, _goldLight, t1 * t1)!
-              .withValues(alpha: segAlpha);
-        if (blur != null) paint.maskFilter = blur;
-        canvas.drawPath(seg, paint);
+          ..color = Color.lerp(_gold, _goldLight, t)!
+              .withValues(alpha: fadeAlpha * 0.95),
+      );
+
+      // Soft outer glow halo (every other step for perf)
+      if (k % 2 == 0) {
+        canvas.drawPath(
+          seg,
+          Paint()
+            ..style      = PaintingStyle.stroke
+            ..strokeWidth = 12
+            ..strokeCap  = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..isAntiAlias = true
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
+            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.30),
+        );
       }
     }
   }

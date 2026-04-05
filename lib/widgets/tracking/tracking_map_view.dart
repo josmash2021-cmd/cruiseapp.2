@@ -1272,8 +1272,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final totalDist = cumDist.last;
     if (totalDist < 0.00001) return;
 
-    // Duration: longer routes draw slightly slower, 1200-2400ms
-    final drawDurationMs = (totalPts * 8).clamp(1200, 2400);
+    // Duration: smooth fluid drawing — not too fast
+    final drawDurationMs = (totalPts * 10).clamp(1800, 3500);
 
     // Pre-create annotation BEFORE starting ticker to avoid race condition
     final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));

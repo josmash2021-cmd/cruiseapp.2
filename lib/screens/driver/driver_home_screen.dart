@@ -211,11 +211,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     UserSession.photoNotifier.addListener(_onPhotoUpdated);
     UserSession.photoUrlNotifier.addListener(_onPhotoUpdated);
 
-    // Resolve driver ID for trip polling
-    _resolveDriverId();
-    // Check for active trip — shows RESUME button if trip exists.
-    // Also checks backend (handles reinstall where Firestore cache is empty).
-    _refreshActiveTripStatus();
+    // Resolve driver ID then check Firestore for active trip.
+    // _checkBackendActiveTrip uses auth token (no driver ID needed) so runs in parallel.
+    _resolveDriverIdThenRefresh();
     _checkBackendActiveTrip();
     _registerFcmToken();
 
@@ -708,14 +706,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  /// Resolve driver ID (used by polling and other callers).
   Future<void> _resolveDriverId() async {
     try {
       final id = await ApiService.getCurrentUserId();
       if (id != null && mounted) {
         _driverId = id;
-        await _refreshActiveTripStatus();
       }
     } catch (_) {}
+  }
+
+  /// Resolve driver ID first, THEN check Firestore for active trip.
+  /// This prevents the race where _refreshActiveTripStatus runs with null _driverId.
+  Future<void> _resolveDriverIdThenRefresh() async {
+    await _resolveDriverId();
+    if (_driverId != null && mounted) {
+      await _refreshActiveTripStatus();
+    }
   }
 
   void _startTripPolling() {

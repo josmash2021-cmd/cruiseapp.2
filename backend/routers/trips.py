@@ -29,7 +29,8 @@ router = APIRouter()
 # Premium: driver 65% / platform 35%
 # VIP:     driver 70% / platform 30%
 _COMMISSION_BY_TYPE = {
-    "comfort":  (0.40, 0.60),  # (platform_rate, driver_rate)
+    "sedan":    (0.40, 0.60),  # (platform_rate, driver_rate)
+    "comfort":  (0.40, 0.60),
     "premium":  (0.35, 0.65),
     "vip":      (0.30, 0.70),
 }

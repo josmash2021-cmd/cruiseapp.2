@@ -1599,10 +1599,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           p.latitude.abs() <= 90 && p.longitude.abs() <= 180
         ).toList();
         if (validPts.length >= 2) {
-          await _animateGoldRoute(points: validPts);
+          await _animateGoldRoute(points: validPts)
+              .timeout(const Duration(seconds: 8));
         }
       } catch (_) {
-        // Fallback: draw full route instantly if animation fails
+        // Fallback: draw full route instantly if animation fails/times out
         if (_polyMgr != null && _routePoints.length >= 2 && mounted) {
           try {
             final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
@@ -1618,9 +1619,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     if (!mounted) return;
 
-    // STEP 4: Camera tilt 0° → 55° (last animation)
+    // STEP 4: Camera tilt 0° → 55° (always fires even if route draw failed)
     await Future.delayed(const Duration(milliseconds: 200));
-    if (mounted) _tiltCtrl.forward();
+    if (mounted) _tiltCtrl.forward(from: 0);
 
     _miniMapAnimDone = true;
     _startCameraCycle();
@@ -2413,12 +2414,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           HapticFeedback.heavyImpact();
           Future.delayed(const Duration(milliseconds: 300), () async {
             if (!mounted) return;
-            if (_routePoints.length >= 2) {
-              if (_routeAnnot != null && _polyMgr != null) {
-                try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
-                _routeAnnot = null;
+            try {
+              if (_routePoints.length >= 2) {
+                if (_routeAnnot != null && _polyMgr != null) {
+                  try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
+                  _routeAnnot = null;
+                }
+                await _animateGoldRoute(points: _routePoints)
+                    .timeout(const Duration(seconds: 8));
               }
-              await _animateGoldRoute(points: _routePoints);
+            } catch (_) {
+              // Animation failed or timed out — continue anyway
             }
             if (!mounted) return;
             setState(() => _tripStarted = true);
@@ -2640,10 +2646,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 ),
               ).timeout(const Duration(seconds: 5));
               final origin = LatLng(driverPos.latitude, driverPos.longitude);
-              final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng);
+              final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng)
+                  .timeout(const Duration(seconds: 12));
               if (mounted && dropoffRoute.length >= 2) {
                 _routePoints = dropoffRoute;
-                await _animateGoldRoute(points: dropoffRoute);
+                await _animateGoldRoute(points: dropoffRoute)
+                    .timeout(const Duration(seconds: 8));
               }
             } catch (_) {}
             if (mounted) _openNativeMaps(widget.dropoffLatLng);

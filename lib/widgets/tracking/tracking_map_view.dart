@@ -654,10 +654,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(
-        top: topPad + 10 + topHeight + 32,
-        bottom: bottomPad + 16 + bottomHeight + 32,
-        left: 40,
-        right: 40,
+        top: topPad + 10 + topHeight + 48,
+        bottom: bottomPad + 16 + bottomHeight + 48,
+        left: 44,
+        right: 44,
       ),
       null, null,
     ).then((cam) {
@@ -1549,8 +1549,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
     );
     final mq = MediaQuery.of(context).padding;
-    final topInset = mq.top + 10 + _topCardHeight + 32;
-    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
+    final topInset = mq.top + 10 + _topCardHeight + 48;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
     try {
       final cam = await _map!.cameraForCoordinatesPadding(
         [point],
@@ -1584,8 +1584,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_map == null) return;
     final bearing = _animBearing;
     final mq = MediaQuery.of(context).padding;
-    final topInset = mq.top + 10 + _topCardHeight + 32;
-    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
+    final topInset = mq.top + 10 + _topCardHeight + 48;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
     _map!.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(

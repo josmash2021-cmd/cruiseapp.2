@@ -338,6 +338,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   void _autoTriggerRoutePreview(Map<String, dynamic> offer) {
     final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
     if (oid == _lastAutoTriggeredOfferId) return; // already triggered for this offer
+    // Don't re-trigger if this offer is already being previewed
+    final currentPreviewId = (_previewingOffer?['offer_id'] ?? _previewingOffer?['id'] ?? '').toString();
+    if (currentPreviewId == oid && _previewingOffer != null) return;
     _lastAutoTriggeredOfferId = oid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _pendingOffers.isEmpty || _isCardAnimating) return;
@@ -449,7 +452,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final fullRoute = [..._fullSegOne, ..._fullSegTwo];
     await Future.delayed(const Duration(milliseconds: 180));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
-    await _drawGoldGlossRoute(fullRoute);
+    try {
+      await _drawGoldGlossRoute(fullRoute).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Animation timed out — continue with what we have
+    }
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 5: Refit with preserved tilt ──
@@ -704,7 +711,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
-    _lastAutoTriggeredOfferId = null;
+    // Keep _lastAutoTriggeredOfferId so the same offer doesn't re-animate
     _offerTiltAnim?.removeListener(_applyOfferCamera);
     _offerTiltCtrl?.stop();
     _offerBearingCtrl?.stop();

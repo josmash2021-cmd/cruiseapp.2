@@ -1114,8 +1114,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _followDriver(LatLng position, double bearing) {
     if (_map == null || !mounted) return;
     final mq = MediaQuery.of(context).padding;
-    final topInset = mq.top + 10 + _topCardHeight + 32;
-    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 32;
+    final topInset = mq.top + 10 + _topCardHeight + 48;
+    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
 
     // Adaptive zoom: 14.5 when far (>2mi) → 16.0 max when very close (<0.1mi)
     double zoom;

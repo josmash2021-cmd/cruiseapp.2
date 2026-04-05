@@ -267,25 +267,19 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         const SizedBox(height: 24),
 
                         // ── Heading ──
-                        ShaderMask(
-                          shaderCallback: (r) => const LinearGradient(
-                            colors: [_goldLight, _gold],
-                          ).createShader(r),
-                          child: Text(
-                            S.of(context).welcomeBackDriver,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              height: 1.2,
-                              letterSpacing: 0.3,
-                            ),
+                        Text(
+                          S.of(context).welcomeBackDriver,
+                          style: GoogleFonts.poppins(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            height: 1.15,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           S.of(context).signInToEarn,
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 15,
                             color: Colors.white.withValues(alpha: 0.5),
                           ),

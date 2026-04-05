@@ -519,25 +519,19 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               const SizedBox(height: 28),
 
               // ── Title ──
-              ShaderMask(
-                shaderCallback: (r) => const LinearGradient(
-                  colors: [Color(0xFFF5D990), Color(0xFFE8C547)],
-                ).createShader(r),
-                child: Text(
-                  S.of(context).welcomeBack,
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 0.3,
-                    height: 1.2,
-                  ),
+              Text(
+                S.of(context).welcomeBack,
+                style: GoogleFonts.poppins(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: c.textPrimary,
+                  height: 1.15,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 S.of(context).signInSubtitle,
-                style: TextStyle(fontSize: 15, color: c.textSecondary),
+                style: GoogleFonts.inter(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
 

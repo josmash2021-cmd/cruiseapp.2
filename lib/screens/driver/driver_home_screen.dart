@@ -594,9 +594,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
 
+      // Primary check: vehicle-level flags (set by approval agent)
       final insOk = v['insurance_valid'] == true;
       final regOk = v['registration_valid'] == true;
-      final approved = insOk && regOk;
+      bool vehicleFlagsOk = insOk && regOk;
+
+      // Fallback: if vehicle flags are not set, check actual document statuses
+      // This handles drivers approved before the flag system was added
+      if (!vehicleFlagsOk && docs.isNotEmpty) {
+        bool hasApprovedIns = false;
+        bool hasApprovedReg = false;
+        for (final doc in docs) {
+          final status = (doc['status'] as String? ?? '').toLowerCase();
+          final docType = (doc['doc_type'] ?? doc['type'] ?? '').toString().toLowerCase();
+          if (status == 'approved') {
+            if (docType.contains('insurance')) hasApprovedIns = true;
+            if (docType.contains('registration')) hasApprovedReg = true;
+          }
+        }
+        if (hasApprovedIns && hasApprovedReg) vehicleFlagsOk = true;
+      }
 
       // Check if any document is expired
       bool expired = false;
@@ -625,7 +642,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
 
       setState(() {
-        _vehicleDocsApproved = approved && !expired;
+        _vehicleDocsApproved = vehicleFlagsOk && !expired;
         _hasExpiredDocs = expired;
         _docStatusLoaded = true;
       });

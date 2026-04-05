@@ -254,10 +254,8 @@ class NotificationService {
       channelDescription: 'New trip offer alerts for drivers',
       importance: Importance.max,
       priority: Priority.max,
-      playSound: soundsEnabled,
-      sound: soundsEnabled
-          ? const RawResourceAndroidNotificationSound('cruise_online')
-          : null,
+      // Sound is played by playOfferSound() — don't duplicate via notification
+      playSound: false,
       enableVibration: vibrateEnabled,
       vibrationPattern: vibrateEnabled
           ? Int64List.fromList([0, 150, 100, 150, 100, 150])
@@ -274,8 +272,8 @@ class NotificationService {
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
-      presentSound: soundsEnabled,
-      sound: soundsEnabled ? 'cruise_online.wav' : null,
+      // Sound is played by playOfferSound() — don't duplicate via notification
+      presentSound: false,
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
@@ -360,17 +358,25 @@ class NotificationService {
   /// Play the "go online" chime inside the app.
   /// Fire-and-forget — never blocks the UI thread.
   /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
+  static bool _onlineSoundPlaying = false;
+  static bool _offerSoundPlaying = false;
+
   static void playOnlineSound() {
-    // Schedule on next microtask so it never blocks the calling frame
+    if (_onlineSoundPlaying) return; // prevent double-play
+    _onlineSoundPlaying = true;
     Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
-        if (!(prefs.getBool('notif_sounds') ?? true)) return;
-        // Use unawaited play to avoid blocking the microtask queue
-        _onlinePlayer.seek(Duration.zero).then((_) {
-          _onlinePlayer.resume();
-        });
+        if (!(prefs.getBool('notif_sounds') ?? true)) {
+          _onlineSoundPlaying = false;
+          return;
+        }
+        await _onlinePlayer.seek(Duration.zero);
+        await _onlinePlayer.resume();
+        // Reset guard after sound finishes (~2s)
+        Future.delayed(const Duration(seconds: 2), () => _onlineSoundPlaying = false);
       } catch (e) {
+        _onlineSoundPlaying = false;
         debugPrint('[NotificationService] playOnlineSound error: $e');
       }
     });
@@ -378,17 +384,24 @@ class NotificationService {
 
   /// Play the trip offer sound inside the app (when app is in foreground).
   /// Plays 3 times with 2-second intervals to grab driver's attention.
-  /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
   static void playOfferSound() {
+    if (_offerSoundPlaying) return; // prevent double-play
+    _offerSoundPlaying = true;
     Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
-        if (!(prefs.getBool('sound_trips') ?? true)) return;
+        if (!(prefs.getBool('sound_trips') ?? true)) {
+          _offerSoundPlaying = false;
+          return;
+        }
         for (int i = 0; i < 3; i++) {
-          _offerPlayer.seek(Duration.zero).then((_) => _offerPlayer.resume());
+          await _offerPlayer.seek(Duration.zero);
+          await _offerPlayer.resume();
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
+        _offerSoundPlaying = false;
       } catch (e) {
+        _offerSoundPlaying = false;
         debugPrint('[NotificationService] playOfferSound error: $e');
       }
     });

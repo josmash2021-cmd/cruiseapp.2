@@ -678,6 +678,7 @@ workflows:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
+          echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
       - *mapbox_auth
@@ -726,6 +727,7 @@ workflows:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
+          echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
       - *mapbox_auth

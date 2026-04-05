@@ -13,6 +13,7 @@ import '../services/apple_auth_service.dart';
 import 'login_password_screen.dart';
 import 'verify_code_screen.dart';
 import 'terms_conditions_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -57,19 +58,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _socialLoading = false;
 
-  /// Extract email from Google and feed it into the signup flow.
+  /// Google Sign-In: check if account exists → login with OTP, else show error.
   Future<void> _signUpWithGoogle() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
       final email = await GoogleAuthService.instance.getEmail();
       if (!mounted) return;
-      setState(() => _socialLoading = false);
-      if (email != null && email.isNotEmpty) {
-        _continueWithEmail(email);
-      } else {
+      if (email == null || email.isEmpty) {
+        setState(() => _socialLoading = false);
         _showSnack('Google Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
+        return;
       }
+      await _socialLoginFlow(email, 'Google');
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
@@ -77,25 +78,102 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Extract email from Apple and feed it into the signup flow.
+  /// Apple Sign-In: check if account exists → login with OTP, else show error.
   Future<void> _signUpWithApple() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
       final email = await AppleAuthService.instance.getEmail();
       if (!mounted) return;
-      setState(() => _socialLoading = false);
-      if (email != null && email.isNotEmpty) {
-        _continueWithEmail(email);
-      } else {
+      if (email == null || email.isEmpty) {
+        setState(() => _socialLoading = false);
         _showSnack('Apple Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
+        return;
       }
+      await _socialLoginFlow(email, 'Apple');
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
       _showSnack('Apple Sign In error: $e', Colors.white.withValues(alpha: 0.6));
     }
   }
+
+  /// Shared social login flow: checks if account exists → social auth login.
+  Future<void> _socialLoginFlow(String email, String provider) async {
+    // Check if a rider account exists with this email
+    final exists = await ApiService.checkExists(email, role: 'rider');
+    if (!mounted) return;
+
+    if (!exists) {
+      setState(() => _socialLoading = false);
+      _showNoAccountDialog(email, provider);
+      return;
+    }
+
+    // Account exists — do full social auth (login only)
+    try {
+      bool ok;
+      if (provider == 'Google') {
+        ok = await GoogleAuthService.instance.signIn(role: 'rider', loginOnly: true);
+      } else {
+        ok = await AppleAuthService.instance.signIn(role: 'rider', loginOnly: true);
+      }
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+
+      if (ok) {
+        // Successful login — go to home
+        Navigator.of(context).pushAndRemoveUntil(
+          smoothFadeRoute(const HomeScreen(), durationMs: 600),
+          (_) => false,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _socialLoading = false);
+      final msg = e.toString();
+      if (msg.contains('401') || msg.contains('Invalid')) {
+        _showSnack('Invalid credentials. Please try again.', Colors.red.shade400);
+      } else {
+        _showSnack('$provider sign-in failed: $e', Colors.red.shade400);
+      }
+    }
+  }
+
+  /// Show dialog when no account is found for a social login.
+  void _showNoAccountDialog(String email, String provider) {
+    final c = AppColors.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.person_off_rounded, color: Colors.red.shade400, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Account Not Found',
+                style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'No account found with this $provider email ($email). Please create an account first or log in with a different method.',
+          style: TextStyle(color: c.textSecondary, fontSize: 15, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('OK', style: TextStyle(color: c.textTertiary, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   bool _isValidEmail(String text) {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text.trim());

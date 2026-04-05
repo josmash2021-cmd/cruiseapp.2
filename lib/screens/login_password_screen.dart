@@ -17,7 +17,8 @@ import 'home_screen.dart';
 
 /// Screen for users who already have an account — enter email/phone + password.
 class LoginPasswordScreen extends StatefulWidget {
-  const LoginPasswordScreen({super.key});
+  final String? prefillEmail;
+  const LoginPasswordScreen({super.key, this.prefillEmail});
 
   @override
   State<LoginPasswordScreen> createState() => _LoginPasswordScreenState();
@@ -40,6 +41,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.prefillEmail != null && widget.prefillEmail!.isNotEmpty) {
+      _emailCtrl.text = widget.prefillEmail!;
+    }
     _emailCtrl.addListener(_validate);
     _passCtrl.addListener(_validate);
   }

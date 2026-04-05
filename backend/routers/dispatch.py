@@ -227,6 +227,19 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     # to stale "ghost" drivers left online after app/network crashes.
     # 15-min window: drivers idle between trips shouldn't be filtered out.
     active_cutoff = utc_now() - timedelta(minutes=15)
+
+    # Exclude drivers who currently have an active trip
+    active_trip_statuses = ['accepted', 'driver_en_route', 'driver_arriving', 'arrived', 'in_trip', 'in_progress']
+    busy_driver_result = await db.execute(
+        select(Trip.driver_id).where(
+            and_(
+                Trip.driver_id.isnot(None),
+                Trip.status.in_(active_trip_statuses),
+            )
+        )
+    )
+    busy_driver_ids = {row[0] for row in busy_driver_result.all()}
+
     result = await db.execute(
         select(User).where(
             and_(
@@ -236,6 +249,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 User.lng.isnot(None),
                 User.last_active_at.isnot(None),
                 User.last_active_at >= active_cutoff,
+                ~User.id.in_(busy_driver_ids) if busy_driver_ids else True,
             )
         )
     )
@@ -578,7 +592,7 @@ async def reject_offer(
     
     await db.commit()
 
-    # Cascade: find next available driver
+    # Cascade: find next available driver (exclude busy and rejected)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
     if trip and trip.status == "requested":
@@ -586,6 +600,17 @@ async def reject_offer(
             select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
         )
         rejected_ids = {r[0] for r in rejected_ids_result.all()}
+
+        # Exclude drivers with active trips
+        active_trip_statuses = ['accepted', 'driver_en_route', 'driver_arriving', 'arrived', 'in_trip', 'in_progress']
+        busy_result = await db.execute(
+            select(Trip.driver_id).where(
+                and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
+            )
+        )
+        busy_ids = {r[0] for r in busy_result.all()}
+        exclude_ids = rejected_ids | busy_ids
+
         active_cutoff = utc_now() - timedelta(minutes=15)
         drivers_result = await db.execute(
             select(User).where(
@@ -596,7 +621,7 @@ async def reject_offer(
                     User.lng.isnot(None),
                     User.last_active_at.isnot(None),
                     User.last_active_at >= active_cutoff,
-                    ~User.id.in_(rejected_ids),
+                    ~User.id.in_(exclude_ids) if exclude_ids else True,
                 )
             )
         )

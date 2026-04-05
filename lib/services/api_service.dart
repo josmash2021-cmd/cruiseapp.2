@@ -310,6 +310,10 @@ class ApiService {
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
 
+  /// Public wrapper for saving auth tokens (used by demo account direct login).
+  static Future<void> saveToken(String token) => _saveToken(token);
+  static Future<void> saveRefreshToken(String token) => _saveRefreshToken(token);
+
   static Future<void> _saveToken(String token) async {
     _cachedToken = token;
     await SecurityService.storeCredential('jwt', token);

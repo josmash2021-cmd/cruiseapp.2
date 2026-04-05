@@ -84,11 +84,22 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         password: _passCtrl.text,
         role: 'driver',
       );
-      final loginToken = loginRes['login_token'] as String;
 
-      // Step 2: Exchange login_token for full JWT (auto-saves token)
-      final result = await ApiService.completeLogin(loginToken: loginToken);
-      final user = result['user'] as Map<String, dynamic>;
+      Map<String, dynamic> user;
+
+      // Demo accounts return access_token directly (skip OTP)
+      if (loginRes.containsKey('access_token')) {
+        await ApiService.saveToken(loginRes['access_token'] as String);
+        if (loginRes.containsKey('refresh_token')) {
+          await ApiService.saveRefreshToken(loginRes['refresh_token'] as String);
+        }
+        user = loginRes['user'] as Map<String, dynamic>;
+      } else {
+        final loginToken = loginRes['login_token'] as String;
+        // Step 2: Exchange login_token for full JWT (auto-saves token)
+        final result = await ApiService.completeLogin(loginToken: loginToken);
+        user = result['user'] as Map<String, dynamic>;
+      }
 
       // Save user data locally
       await UserSession.saveUser(

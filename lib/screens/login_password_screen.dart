@@ -10,6 +10,7 @@ import '../services/sms_service.dart';
 import '../services/analytics_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
+import '../services/user_session.dart';
 import '../l10n/app_localizations.dart';
 import 'login_verify_screen.dart';
 import 'forgot_password_screen.dart';
@@ -369,6 +370,29 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       );
 
       if (!mounted) return;
+
+      // Demo accounts return access_token directly (skip OTP)
+      if (loginResult.containsKey('access_token')) {
+        await ApiService.saveToken(loginResult['access_token'] as String);
+        if (loginResult.containsKey('refresh_token')) {
+          await ApiService.saveRefreshToken(loginResult['refresh_token'] as String);
+        }
+        final user = loginResult['user'] as Map<String, dynamic>?;
+        if (user != null) {
+          await UserSession.saveUser(
+            firstName: user['first_name'] ?? '',
+            lastName: user['last_name'] ?? '',
+            email: user['email'] ?? '',
+            phone: user['phone'] ?? '',
+            photoUrl: user['photo_url'] as String?,
+            userId: user['id'] as int?,
+            role: 'rider',
+          );
+        }
+        setState(() => _loading = false);
+        _goHome();
+        return;
+      }
 
       final loginToken = loginResult['login_token'] as String;
       AnalyticsService.instance.logLogin('password');

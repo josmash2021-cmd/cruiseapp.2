@@ -32,6 +32,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   String _vehicleType = 'comfort';
   bool _insuranceValid = false;
   bool _registrationValid = false;
+  String _insuranceStatus = ''; // pending, approved, rejected, or ''
+  String _registrationStatus = '';
   bool _loading = true;
   bool _uploading = false;
 
@@ -57,8 +59,24 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
   Future<void> _fetchVehicle() async {
     try {
-      final v = await ApiService.getVehicle();
+      final results = await Future.wait([
+        ApiService.getVehicle(),
+        ApiService.getDocuments(),
+      ]);
       if (!mounted) return;
+      final v = results[0] as Map<String, dynamic>?;
+      final docs = results[1] as List<dynamic>? ?? [];
+
+      // Find latest document status for each type
+      String insStatus = '';
+      String regStatus = '';
+      for (final d in docs) {
+        final type = d['doc_type'] as String? ?? '';
+        final status = d['status'] as String? ?? '';
+        if (type == 'insurance' && insStatus.isEmpty) insStatus = status;
+        if (type == 'registration' && regStatus.isEmpty) regStatus = status;
+      }
+
       if (v == null) {
         setState(() => _loading = false);
         return;
@@ -72,6 +90,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         _vehicleType = (v['vehicle_type'] ?? 'comfort') as String;
         _insuranceValid = v['insurance_valid'] == true;
         _registrationValid = v['registration_valid'] == true;
+        _insuranceStatus = insStatus;
+        _registrationStatus = regStatus;
         _loading = false;
       });
     } catch (_) {
@@ -117,9 +137,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
   bool get _allDocsValid => _insuranceValid && _registrationValid;
 
+  bool get _allDocsPending =>
+      !_allDocsValid &&
+      (_insuranceValid || _insuranceStatus == 'pending') &&
+      (_registrationValid || _registrationStatus == 'pending');
+
   int get _missingDocsCount =>
-      (!_insuranceValid ? 1 : 0) +
-      (!_registrationValid ? 1 : 0);
+      (!_insuranceValid && _insuranceStatus != 'pending' ? 1 : 0) +
+      (!_registrationValid && _registrationStatus != 'pending' ? 1 : 0);
 
   /// Upload a document photo via camera or gallery
   Future<void> _uploadDocument(String docType, String title) async {
@@ -304,8 +329,13 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                         padding: const EdgeInsets.all(20),
                         child: Column(
                           children: [
-                            // ── Top banner: Required to go online ──
-                            if (!_allDocsValid) _buildRequiredBanner(),
+                            // ── Top banner: Required/Reviewing ──
+                            if (!_allDocsValid)
+                              _allDocsPending
+                                  ? _buildReviewingBanner()
+                                  : _missingDocsCount > 0
+                                      ? _buildRequiredBanner()
+                                      : _buildReviewingBanner(),
 
                             // ── Car visual card ──
                             _buildCarCard(),
@@ -318,9 +348,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               invalidTitle: 'Vehicle Insurance',
                               subtitle: _insuranceValid
                                   ? s.insuranceUpToDate
-                                  : 'Required to go online',
+                                  : _insuranceStatus == 'pending'
+                                      ? 'Under review — we\'ll notify you'
+                                      : _insuranceStatus == 'rejected'
+                                          ? 'Rejected — please re-upload'
+                                          : 'Required to go online',
                               icon: Icons.security_rounded,
                               docType: 'insurance',
+                              docStatus: _insuranceStatus,
                             ),
                             const SizedBox(height: 10),
                             _buildDocCard(
@@ -329,9 +364,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               invalidTitle: 'Vehicle Registration',
                               subtitle: _registrationValid
                                   ? 'Vehicle registration up to date'
-                                  : 'Required to go online',
+                                  : _registrationStatus == 'pending'
+                                      ? 'Under review — we\'ll notify you'
+                                      : _registrationStatus == 'rejected'
+                                          ? 'Rejected — please re-upload'
+                                          : 'Required to go online',
                               icon: Icons.description_rounded,
                               docType: 'registration',
+                              docStatus: _registrationStatus,
                             ),
                             const SizedBox(height: 24),
 
@@ -387,6 +427,63 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   // ══════════════════════════════════════════════════════════════════
   //  W I D G E T S
   // ══════════════════════════════════════════════════════════════════
+
+  Widget _buildReviewingBanner() {
+    const orange = Color(0xFFFFA726);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            orange.withValues(alpha: 0.15),
+            orange.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: orange.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: orange.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.hourglass_top_rounded,
+                color: orange, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Documents under review',
+                  style: TextStyle(
+                    color: orange,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'We\'re reviewing your documents. You\'ll be notified once approved.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildRequiredBanner() {
     return Container(
@@ -569,14 +666,28 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     required String subtitle,
     required IconData icon,
     required String docType,
+    String docStatus = '',
   }) {
-    final displayTitle = isValid ? title : invalidTitle;
-    final cardColor = isValid ? _green : _gold;
+    final isPending = !isValid && docStatus == 'pending';
+    final isRejected = !isValid && docStatus == 'rejected';
+    final canUpload = !isValid && !isPending;
+    final displayTitle = isValid
+        ? title
+        : isPending
+            ? invalidTitle
+            : invalidTitle;
+    final cardColor = isValid
+        ? _green
+        : isPending
+            ? const Color(0xFFFFA726) // orange for pending
+            : isRejected
+                ? Colors.red
+                : _gold;
 
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
-        if (!isValid) {
+        if (canUpload) {
           _uploadDocument(docType, invalidTitle);
         }
       },
@@ -606,7 +717,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   Text(
                     displayTitle,
                     style: TextStyle(
-                      color: isValid ? cardColor : Colors.white,
+                      color: isValid || isPending ? cardColor : Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -628,23 +739,53 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             if (isValid)
               Icon(Icons.check_circle_rounded,
                   color: cardColor.withValues(alpha: 0.6), size: 20)
+            else if (isPending)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: cardColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12, height: 12,
+                      child: CircularProgressIndicator(
+                        color: cardColor, strokeWidth: 1.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Reviewing',
+                      style: TextStyle(
+                        color: cardColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              )
             else
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.15),
+                  color: (isRejected ? Colors.red : _gold).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.upload_rounded, color: _gold, size: 14),
-                    SizedBox(width: 4),
+                    Icon(Icons.upload_rounded,
+                        color: isRejected ? Colors.red : _gold, size: 14),
+                    const SizedBox(width: 4),
                     Text(
-                      'Upload',
+                      isRejected ? 'Re-upload' : 'Upload',
                       style: TextStyle(
-                        color: _gold,
+                        color: isRejected ? Colors.red : _gold,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),

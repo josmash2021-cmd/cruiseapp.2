@@ -400,7 +400,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   }
 
   // ═══════════════════════════════════════════
-  //  Step 0 — Intro with doc type selector
+  //  Step 0 — Intro (clean checklist + start button)
   // ═══════════════════════════════════════════
   Widget _buildIntro(AppColors c) {
     return Padding(
@@ -453,41 +453,39 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 12),
           Text(
-            S.of(context).chooseDocToScan,
+            'Verify your identity to start requesting rides',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, color: c.textSecondary, height: 1.5),
           ),
-          const SizedBox(height: 36),
-          // Document type options
-          _docTypeOption(
-            c,
-            Icons.credit_card_rounded,
-            S.of(context).driversLicense,
-            S.of(context).frontAndBack,
-            'license',
-          ),
-          const SizedBox(height: 12),
-          _docTypeOption(
-            c,
-            Icons.badge_rounded,
-            S.of(context).governmentId,
-            S.of(context).frontOnly,
-            'government_id',
-          ),
-          const SizedBox(height: 12),
-          _docTypeOption(
-            c,
-            Icons.menu_book_rounded,
-            S.of(context).passport,
-            S.of(context).frontOnly,
-            'passport',
-          ),
-          const SizedBox(height: 24),
-          // Steps preview (selfie + review)
+          const SizedBox(height: 40),
+          // Checklist items — uniform style
+          _stepPreview(c, Icons.credit_card_rounded, 'Photo of your ID document'),
+          const SizedBox(height: 16),
           _stepPreview(c, Icons.face_rounded, 'Selfie — becomes your profile photo'),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _stepPreview(c, Icons.check_circle_outline_rounded, S.of(context).quickDispatchReview),
           const Spacer(flex: 3),
+          // Start verification button
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton(
+              onPressed: _showDocTypePicker,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Start Verification',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
             S.of(context).documentsEncrypted,
             style: TextStyle(fontSize: 12, color: c.textTertiary),
@@ -502,15 +500,84 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     );
   }
 
-  Widget _docTypeOption(
+  /// Bottom sheet to pick document type before opening camera
+  void _showDocTypePicker() {
+    final c = AppColors.of(context);
+    showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: c.cardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                S.of(context).chooseDocToScan,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: c.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _docTypeSheetOption(
+                c, ctx,
+                Icons.credit_card_rounded,
+                S.of(context).driversLicense,
+                S.of(context).frontAndBack,
+                'license',
+              ),
+              const SizedBox(height: 10),
+              _docTypeSheetOption(
+                c, ctx,
+                Icons.badge_rounded,
+                S.of(context).governmentId,
+                S.of(context).frontOnly,
+                'government_id',
+              ),
+              const SizedBox(height: 10),
+              _docTypeSheetOption(
+                c, ctx,
+                Icons.menu_book_rounded,
+                S.of(context).passport,
+                S.of(context).frontOnly,
+                'passport',
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    ).then((type) {
+      if (type != null && mounted) _selectDocType(type);
+    });
+  }
+
+  Widget _docTypeSheetOption(
     AppColors c,
+    BuildContext ctx,
     IconData icon,
     String title,
     String subtitle,
     String type,
   ) {
     return GestureDetector(
-      onTap: () => _selectDocType(type),
+      onTap: () => Navigator.pop(ctx, type),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(

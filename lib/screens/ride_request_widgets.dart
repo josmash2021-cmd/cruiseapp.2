@@ -1709,6 +1709,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
           ),
         );
+      case 'test_mode':
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF3B30).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.bug_report_rounded,
+              color: Color(0xFFFF3B30),
+              size: 20,
+            ),
+          ),
+        );
       default:
         return Container(
           width: size,

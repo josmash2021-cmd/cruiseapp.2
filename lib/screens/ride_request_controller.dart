@@ -803,9 +803,12 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       final nav = Navigator.of(context);
 
+      // Test mode: skip payment entirely
+      final bool isTestMode = _selectedPaymentMethod == 'test_mode';
+
       // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
       // Card / sandbox: payment runs inside the searching screen animation.
-      final bool isNativePay = !AppConfig.sandboxPayments &&
+      final bool isNativePay = !isTestMode && !AppConfig.sandboxPayments &&
           (_selectedPaymentMethod == 'apple_pay' ||
               _selectedPaymentMethod == 'google_pay' ||
               _selectedPaymentMethod == 'paypal');
@@ -1280,7 +1283,8 @@ extension _RideRequestController on _RideRequestScreenState {
             : loc.creditOrDebitCard,
         true,
       ),
-      ('paypal', 'PayPal', false), // Coming Soon
+      ('paypal', 'PayPal', true),
+      ('test_mode', 'Test Mode', true),
     ];
 
     showModalBottomSheet(
@@ -1357,6 +1361,8 @@ extension _RideRequestController on _RideRequestScreenState {
                               const Icon(Icons.apple, color: Colors.white, size: 24)
                             else if (id == 'google_pay')
                               const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
+                            else if (id == 'test_mode')
+                              const Icon(Icons.bug_report_rounded, color: Color(0xFFFF3B30), size: 24)
                             else
                               _paymentLogoWidget(id, 36),
                             const SizedBox(width: 14),
@@ -1488,7 +1494,8 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Payment helpers ──
 
-  bool get _hasAnyPaymentMethod => _linkedPaymentMethods.isNotEmpty;
+  bool get _hasAnyPaymentMethod =>
+      _linkedPaymentMethods.isNotEmpty || _selectedPaymentMethod == 'test_mode';
 
   String _paymentLabel(String id) {
     if (!_hasAnyPaymentMethod) return S.of(context).selectPaymentMethod;
@@ -1505,6 +1512,8 @@ extension _RideRequestController on _RideRequestScreenState {
         return loc.creditOrDebitCard;
       case 'paypal':
         return 'PayPal';
+      case 'test_mode':
+        return 'Test Mode';
       default:
         return Platform.isIOS ? 'Apple Pay' : 'Google Pay';
     }

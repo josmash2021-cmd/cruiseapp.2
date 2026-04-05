@@ -2412,20 +2412,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         onPressed: _slid ? null : () {
           setState(() => _slid = true);
           HapticFeedback.heavyImpact();
-          Future.delayed(const Duration(milliseconds: 300), () async {
-            if (!mounted) return;
-            try {
-              if (_routePoints.length >= 2) {
-                if (_routeAnnot != null && _polyMgr != null) {
-                  try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
-                  _routeAnnot = null;
-                }
-                await _animateGoldRoute(points: _routePoints)
-                    .timeout(const Duration(seconds: 8));
-              }
-            } catch (_) {
-              // Animation failed or timed out — continue anyway
-            }
+          // Navigate immediately — don't wait for route animation
+          Future.delayed(const Duration(milliseconds: 400), () {
             if (!mounted) return;
             setState(() => _tripStarted = true);
             _openNativeMaps(widget.pickupLatLng);
@@ -2629,32 +2617,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         onPressed: _startRideSlidDone ? null : () {
           setState(() => _startRideSlidDone = true);
           HapticFeedback.heavyImpact();
-          Future.delayed(const Duration(milliseconds: 300), () async {
+          Future.delayed(const Duration(milliseconds: 300), () {
             if (!mounted) return;
             setState(() => _rideStarted = true);
             _startDropoffProximityDetection();
             _updateTripInTrip();
-            try {
-              if (_routeAnnot != null && _polyMgr != null) {
-                try { await _polyMgr!.delete(_routeAnnot!); } catch (_) {}
-                _routeAnnot = null;
-              }
-              final driverPos = await Geolocator.getCurrentPosition(
-                locationSettings: const LocationSettings(
-                  accuracy: LocationAccuracy.high,
-                  timeLimit: Duration(seconds: 5),
-                ),
-              ).timeout(const Duration(seconds: 5));
-              final origin = LatLng(driverPos.latitude, driverPos.longitude);
-              final dropoffRoute = await _fetchRoutePoints(origin, widget.dropoffLatLng)
-                  .timeout(const Duration(seconds: 12));
-              if (mounted && dropoffRoute.length >= 2) {
-                _routePoints = dropoffRoute;
-                await _animateGoldRoute(points: dropoffRoute)
-                    .timeout(const Duration(seconds: 8));
-              }
-            } catch (_) {}
-            if (mounted) _openNativeMaps(widget.dropoffLatLng);
+            // Navigate immediately — route fetch runs in background
+            _openNativeMaps(widget.dropoffLatLng);
           });
         },
         style: ElevatedButton.styleFrom(

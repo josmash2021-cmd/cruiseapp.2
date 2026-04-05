@@ -2247,7 +2247,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         destLng: _pickupLL.longitude,
                       ),
                       icon: const Icon(Icons.navigation_rounded, size: 18),
-                      label: const Text('NAVIGATE'),
+                      label: Text(S.of(context).navigateLabel),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: isDark ? Colors.white : Colors.black,
                         side: BorderSide(
@@ -2661,7 +2661,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         destLng: _dropoffLL.longitude,
                       ),
                       icon: const Icon(Icons.navigation_rounded, size: 18),
-                      label: const Text('NAVIGATE'),
+                      label: Text(S.of(context).navigateLabel),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: isDark ? Colors.white : Colors.black,
                         side: BorderSide(

@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/driver_report_service.dart';
 import '../services/user_session.dart';
 
@@ -43,7 +44,7 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
   Future<void> _submit() async {
     if (_messageController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor describe el problema')),
+        SnackBar(content: Text(S.of(context).pleaseDescribeProblem)),
       );
       return;
     }
@@ -186,7 +187,7 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
             maxLength: 500,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
-              hintText: 'Describe el problema que estás experimentando...',
+              hintText: S.of(context).describeIssue,
               hintStyle: const TextStyle(color: Color(0xFF8A8FA0)),
               filled: true,
               fillColor: const Color(0xFF2A2F42),

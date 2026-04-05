@@ -109,10 +109,10 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       }
       if (anyExpired && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Offer expired'),
+          SnackBar(
+            content: Text(S.of(context).offerExpired),
             backgroundColor: _red,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -345,7 +345,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
                   width: double.infinity,
                   child: TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                    child: Text(S.of(context).cancelBtn, style: const TextStyle(color: Colors.grey)),
                   ),
                 ),
               ],

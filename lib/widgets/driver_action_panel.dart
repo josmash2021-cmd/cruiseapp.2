@@ -222,7 +222,7 @@ class DriverActionPanel extends StatelessWidget {
                           child: _buildInfoItem(
                             icon: Icons.schedule_rounded,
                             value: '${etaMinutes ?? 0} min',
-                            label: 'Tiempo',
+                            label: S.of(context).timeLabel,
                           ),
                         ),
                         Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.3)),
@@ -230,7 +230,7 @@ class DriverActionPanel extends StatelessWidget {
                           child: _buildInfoItem(
                             icon: Icons.route_rounded,
                             value: '${distanceToDestination?.toStringAsFixed(1) ?? '0.0'} mi',
-                            label: 'Distancia',
+                            label: S.of(context).distanceLabel,
                           ),
                         ),
                       ],

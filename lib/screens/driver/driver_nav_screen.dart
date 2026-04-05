@@ -1569,7 +1569,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               // Action buttons
               _tripOptionTile(
                 icon: Icons.phone_rounded,
-                label: 'Call Rider',
+                label: S.of(context).callRider,
                 onTap: () {
                   Navigator.pop(ctx);
                   _callRider();
@@ -1577,7 +1577,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
               _tripOptionTile(
                 icon: Icons.message_rounded,
-                label: 'Message Rider',
+                label: S.of(context).messageRider,
                 onTap: () {
                   Navigator.pop(ctx);
                   _messageRider();
@@ -1585,7 +1585,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
               _tripOptionTile(
                 icon: Icons.wrong_location_rounded,
-                label: 'Report Wrong Address',
+                label: S.of(context).reportWrongAddress,
                 color: Colors.orange,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1594,7 +1594,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
               _tripOptionTile(
                 icon: Icons.person_off_rounded,
-                label: 'Rider No-Show',
+                label: S.of(context).riderNoShow,
                 color: Colors.orange,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1604,7 +1604,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
               ),
               _tripOptionTile(
                 icon: Icons.cancel_rounded,
-                label: 'End Trip Early',
+                label: S.of(context).endTripEarly,
                 color: _speedRed,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -2112,13 +2112,13 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             ),
           ],
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.my_location_rounded, color: _gold, size: 18),
-            SizedBox(width: 8),
-            Text('Resume',
-              style: TextStyle(
+            const Icon(Icons.my_location_rounded, color: _gold, size: 18),
+            const SizedBox(width: 8),
+            Text(S.of(context).resumeLabel,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -2299,8 +2299,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   color: const Color(0xFF1A1E2E),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Text('Exit',
-                  style: TextStyle(
+                child: Text(S.of(context).exitLabel,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w700)),
@@ -2337,9 +2337,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
             ),
           ],
         ),
-        child: const Center(
-          child: Text('Arrived',
-            style: TextStyle(
+        child: Center(
+          child: Text(S.of(context).arrived,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -2390,8 +2390,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   children: [
                     const Icon(Icons.alt_route_rounded, color: _gold, size: 20),
                     const SizedBox(width: 8),
-                    const Text('Directions',
-                      style: TextStyle(
+                    Text(S.of(context).directions,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 17,
                         fontWeight: FontWeight.w800)),
@@ -2477,8 +2477,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   top: false,
                   child: TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Close',
-                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                    child: Text(S.of(context).closeLabel,
+                      style: const TextStyle(color: Colors.white, fontSize: 16)),
                   ),
                 ),
               ),
@@ -2546,8 +2546,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('MAX',
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900,
+              Text(S.of(context).maxLabel,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900,
                     color: Colors.black, height: 1.0)),
               Text('$limit',
                 style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900,

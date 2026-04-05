@@ -1013,7 +1013,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             const SizedBox(height: 20),
             _navOption(
               icon: Icons.map_rounded,
-              label: 'Open in Apple Maps',
+              label: S.of(context).openAppleMaps,
               onTap: () {
                 Navigator.pop(context);
                 _openAppleMaps(coords);
@@ -1022,7 +1022,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             const SizedBox(height: 8),
             _navOption(
               icon: Icons.map_outlined,
-              label: 'Open in Google Maps',
+              label: S.of(context).openGoogleMaps,
               onTap: () {
                 Navigator.pop(context);
                 _openGoogleMaps(coords);
@@ -1087,7 +1087,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _showSafetyMenu() {
     HapticFeedback.mediumImpact();
     _showSheet(
-      title: 'Safety Center',
+      title: S.of(context).safetyCenter,
       icon: Icons.shield_rounded,
       iconColor: const Color(0xFF4CAF50),
       items: [
@@ -1107,7 +1107,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _showHelpMenu() {
     HapticFeedback.mediumImpact();
     _showSheet(
-      title: 'Help',
+      title: S.of(context).helpTitle,
       icon: Icons.help_rounded,
       iconColor: _gold,
       items: [
@@ -1130,7 +1130,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Help button 1 — Pickup address problem ─────────────────────────────
   void _showPickupProblem() {
     _showReportSheet(
-      title: 'Problema con dirección de recogida',
+      title: S.of(context).pickupAddressProblem,
       type: 'pickup_address_problem',
       reasons: [
         'La dirección es incorrecta',
@@ -1144,7 +1144,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Help button 2 — Dropoff address problem ────────────────────────────
   void _showDropoffProblem() {
     _showReportSheet(
-      title: 'Problema con dirección de destino',
+      title: S.of(context).dropoffAddressProblem,
       type: 'dropoff_address_problem',
       reasons: [
         'La dirección es incorrecta',
@@ -1158,7 +1158,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Help button 3 — Trip problem ───────────────────────────────────────
   void _showTripProblem() {
     _showReportSheet(
-      title: 'Problema con el viaje',
+      title: S.of(context).tripProblem,
       type: 'trip_problem',
       reasons: [
         'El rider no aparece',
@@ -1219,7 +1219,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               onTap: () => Navigator.pop(ctx),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text('Cancelar',
+                child: Text(S.of(context).cancelBtn,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.42),
                     fontSize: 14, fontWeight: FontWeight.w600)),
               ),
@@ -1273,7 +1273,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               Navigator.pop(ctx);
               _submitReport(type: type, reason: reason, urgent: true);
             },
-            child: Text('No, solo reportar',
+            child: Text(S.of(context).noJustReport,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           ElevatedButton(
@@ -1286,7 +1286,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               _submitReport(type: type, reason: reason, urgent: true);
               launchUrl(Uri.parse('tel:911'));
             },
-            child: const Text('Sí, llamar al 911',
+            child: Text(S.of(context).yesCall911,
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
           ),
         ],
@@ -1315,14 +1315,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (urgent) 'urgent': true,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Reporte enviado. El equipo lo revisará.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(S.of(context).reportSent),
         // Uses global snackBarTheme
       ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error al enviar reporte: $e'),
+        content: Text('${S.of(context).reportError}: $e'),
         backgroundColor: Colors.red,
       ));
     }
@@ -2344,7 +2344,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                     const SizedBox(height: 32),
                     // ── Title ──
-                    const Text('Viaje Finalizado',
+                    Text(S.of(context).tripCompleted,
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 32,
@@ -2511,8 +2511,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
               elevation: 0,
             ),
-            child: const Text('Continue',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            child: Text(S.of(context).continueBtn,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ),
         ),
         const SizedBox(height: 12),
@@ -2529,7 +2529,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Directions',
+            child: Text(S.of(context).directions,
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ),
         ),
@@ -2586,8 +2586,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   child: AnimatedOpacity(
                     opacity: 1.0 - _arrivedSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Arrived',
-                      style: TextStyle(
+                    child: Text(S.of(context).arrived,
+                      style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
@@ -2646,10 +2646,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return Column(
       key: const ValueKey('slide_arrived_locked'),
       mainAxisSize: MainAxisSize.min,
-      children: const [
-        _LockedSlideButton(label: 'Arrived'),
-        SizedBox(height: 10),
-        Text(
+      children: [
+        _LockedSlideButton(label: S.of(context).arrived),
+        const SizedBox(height: 10),
+        const Text(
           'El boton se activa cuando ya estes en la direccion de pickup',
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -2747,8 +2747,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   child: AnimatedOpacity(
                     opacity: 1.0 - _finishSlideVal,
                     duration: const Duration(milliseconds: 100),
-                    child: const Text('Finalizar Ride',
-                      style: TextStyle(
+                    child: Text(S.of(context).finishRide,
+                      style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
@@ -2806,10 +2806,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return Column(
       key: const ValueKey('slide_finish_trip_locked'),
       mainAxisSize: MainAxisSize.min,
-      children: const [
-        _LockedSlideButton(label: 'Finalizar Ride'),
-        SizedBox(height: 10),
-        Text(
+      children: [
+        _LockedSlideButton(label: S.of(context).finishRide),
+        const SizedBox(height: 10),
+        const Text(
           'El boton se activa cuando ya estes en la direccion de destino',
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -2841,8 +2841,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
               elevation: 0,
             ),
-            child: const Text('Continue',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            child: Text(S.of(context).continueBtn,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ),
         ),
         const SizedBox(height: 12),
@@ -2858,7 +2858,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Directions',
+            child: Text(S.of(context).directions,
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ),
         ),

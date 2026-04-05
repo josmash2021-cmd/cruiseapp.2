@@ -1004,7 +1004,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final fare = firstOffer['fare'] as num?;
       final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
       NotificationService.showOfferNotification(
-        title: 'New Ride Offer$fareStr',
+        title: '${S.of(context).newRideOffer}$fareStr',
         body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
         offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
         payload: 'trip_offer',
@@ -1400,9 +1400,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       } catch (_) {}
     }
     if (!riderConfirmed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('El rider no ha confirmado, comenzando viaje...'),
-        duration: Duration(seconds: 2),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(S.of(context).riderNotConfirmedStarting),
+        duration: const Duration(seconds: 2),
       ));
       await Future.delayed(const Duration(seconds: 2));
       if (!mounted) return;
@@ -1651,7 +1651,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 Navigator.pop(ctx);
                 _resumeFromPause();
               },
-              child: const Text('Resume Now'),
+              child: Text(S.of(context).resumeNow),
             ),
             TextButton(
               onPressed: () {
@@ -1659,7 +1659,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 _scheduleResume(minutes: 15);
                 _snack('⏸️ Paused for 15 minutes');
               },
-              child: const Text('15 min'),
+              child: Text(S.of(context).fifteenMin),
             ),
             TextButton(
               onPressed: () {
@@ -1667,7 +1667,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 _scheduleResume(minutes: 30);
                 _snack('⏸️ Paused for 30 minutes');
               },
-              child: const Text('30 min'),
+              child: Text(S.of(context).thirtyMin),
             ),
           ],
         );

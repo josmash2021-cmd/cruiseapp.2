@@ -2911,6 +2911,131 @@ class S {
   String get shareAppText => _es
       ? '¡Mira Cruise — la mejor experiencia de viaje! 🚗\nhttps://cruiseride.com/download'
       : 'Check out Cruise - the best ride experience! 🚗\nhttps://cruiseride.com/download';
+
+  // ── Driver Trip Accept Screen ──
+  String get tripCompleted => _es ? 'Viaje Finalizado' : 'Trip Completed';
+  String get continueBtn => _es ? 'Continuar' : 'Continue';
+  String get directions => _es ? 'Direcciones' : 'Directions';
+  String get cancelBtn => _es ? 'Cancelar' : 'Cancel';
+  String get noJustReport => _es ? 'No, solo reportar' : 'No, just report';
+  String get yesCall911 => _es ? 'Sí, llamar al 911' : 'Yes, call 911';
+  String get reportSent => _es ? 'Reporte enviado. El equipo lo revisará.' : 'Report sent. The team will review it.';
+  String get reportError => _es ? 'Error al enviar reporte' : 'Error sending report';
+  String get pickupAddressProblem => _es ? 'Problema con dirección de recogida' : 'Pickup address problem';
+  String get dropoffAddressProblem => _es ? 'Problema con dirección de destino' : 'Dropoff address problem';
+  String get tripProblem => _es ? 'Problema con el viaje' : 'Trip problem';
+  String get safetyCenter => _es ? 'Centro de seguridad' : 'Safety Center';
+  String get openAppleMaps => _es ? 'Abrir en Apple Maps' : 'Open in Apple Maps';
+  String get openGoogleMaps => _es ? 'Abrir en Google Maps' : 'Open in Google Maps';
+
+  // ── Driver Online / Offers ──
+  String get newRideOffer => _es ? 'Nueva oferta de viaje' : 'New Ride Offer';
+  String get riderNotConfirmedStarting => _es ? 'El rider no ha confirmado, comenzando viaje...' : 'Rider has not confirmed, starting trip...';
+  String get resumeNow => _es ? 'Reanudar ahora' : 'Resume Now';
+  String get fifteenMin => _es ? '15 min' : '15 min';
+  String get thirtyMin => _es ? '30 min' : '30 min';
+  String get offerExpired => _es ? 'Oferta expirada' : 'Offer expired';
+  String get navigateLabel => _es ? 'NAVEGAR' : 'NAVIGATE';
+
+  // ── Driver Navigation ──
+  String get callRider => _es ? 'Llamar al rider' : 'Call Rider';
+  String get messageRider => _es ? 'Mensaje al rider' : 'Message Rider';
+  String get reportWrongAddress => _es ? 'Reportar dirección incorrecta' : 'Report Wrong Address';
+  String get riderNoShow => _es ? 'Rider no apareció' : 'Rider No-Show';
+  String get endTripEarly => _es ? 'Terminar viaje temprano' : 'End Trip Early';
+  String get resumeLabel => _es ? 'Reanudar' : 'Resume';
+  String get exitLabel => _es ? 'Salir' : 'Exit';
+  String get mphLabel => _es ? 'mph' : 'mph';
+  String get maxLabel => _es ? 'MÁX' : 'MAX';
+
+  // ── Driver Report Dialog ──
+  String get pleaseDescribeProblem => _es ? 'Por favor describe el problema' : 'Please describe the problem';
+
+  // ── Driver Action Panel ──
+  String get timeLabel => _es ? 'Tiempo' : 'Time';
+
+  // ── Driver Info Card (tracking) ──
+  String get phoneNotAvailable => _es ? 'Número no disponible' : 'Phone number not available';
+
+  // ── Home Screen ──
+  String get editHomeAddress => _es ? 'Editar dirección de casa' : 'Edit Home address';
+  String get editWorkAddress => _es ? 'Editar dirección de trabajo' : 'Edit Work address';
+  String get savePlaceN => _es ? 'Guardar lugar' : 'Save Place';
+  String get editPlaceN => _es ? 'Editar lugar' : 'Edit Place';
+
+  // ── Help Screen ──
+  String get updateEmailOrPhone => _es ? 'Actualizar email o teléfono' : 'Update my email or phone';
+  String get safetySection => _es ? 'Seguridad' : 'Safety';
+  String get wasInAccident => _es ? 'Tuve un accidente' : 'I was in an accident';
+  String get driverMadeUnsafe => _es ? 'Mi conductor me hizo sentir inseguro' : 'My driver made me feel unsafe';
+  String get gpsLocationIssues => _es ? 'Problemas de GPS / ubicación' : 'GPS / location issues';
+  String get notReceivingNotifs => _es ? 'No recibo notificaciones' : 'Not receiving notifications';
+
+  // ── Safety Screen ──
+  String get quickActions => _es ? 'Acciones rápidas' : 'Quick Actions';
+  String get shareTripStatus => _es ? 'Compartir estado del viaje' : 'Share Trip Status';
+  String get shareTripSubtitle => _es ? 'Envía tu ubicación en tiempo real a un contacto' : 'Send your real-time location to a contact';
+  String get reportUnsafeRider => _es ? 'Reportar rider inseguro' : 'Report Unsafe Rider';
+  String get reportUnsafeSubtitle => _es ? 'Reportar comportamiento inseguro' : 'Flag unsafe behavior for review';
+  String get recordAudio => _es ? 'Grabar audio' : 'Record Audio';
+  String get recordAudioSubtitle => _es ? 'Comienza a grabar por tu seguridad' : 'Start recording for your safety';
+  String get currentTrip => _es ? 'Viaje actual' : 'Current Trip';
+  String get emergency => _es ? 'Emergencia' : 'Emergency';
+  String get call911Help => _es ? 'Llama al 911 para ayuda inmediata' : 'Call 911 for immediate help';
+  String get reportIssue => _es ? 'Reportar problema' : 'Report Issue';
+  String get call911Emergency => _es ? 'Llamar al 911' : 'Call 911 emergency';
+  String get noPhoneContacts => _es ? 'No hay números de teléfono en contactos' : 'No phone numbers in contacts';
+  String get emergencyAlertSent => _es ? 'Alerta de emergencia enviada' : 'Emergency alert sent';
+  String get failedSendAlert => _es ? 'Error al enviar alerta' : 'Failed to send alert';
+  String get nameHint => _es ? 'Nombre' : 'Name';
+  String get phoneNumberHint => _es ? 'Número de teléfono' : 'Phone number';
+
+  // ── Wallet Screen ──
+  String get retryBtn => _es ? 'Reintentar' : 'Retry';
+  String get manageLabel => _es ? 'Administrar' : 'Manage';
+  String get noPaymentMethods => _es ? 'No hay métodos de pago configurados' : 'No payment methods configured';
+  String get addMethodDescription => _es ? 'Agrega al menos un método para pagar viajes' : 'Add at least one method to pay for rides';
+
+  // ── Saved Addresses ──
+  String get searchAddressHint => _es ? 'Buscar dirección...' : 'Search address...';
+  String get nameThisPlace => _es ? 'Nombrar este lugar' : 'Name this place';
+  String get namePlaceHint => _es ? 'Ej. Gimnasio, Casa de mamá' : 'e.g. Gym, Mom\'s house';
+  String get saveBtn => _es ? 'Guardar' : 'Save';
+  String get deleteAddress => _es ? '¿Eliminar dirección?' : 'Delete address?';
+  String get deleteBtn => _es ? 'Eliminar' : 'Delete';
+
+  // ── Referral Screen ──
+  String get codeCopied => _es ? '¡Código copiado!' : 'Code copied to clipboard!';
+  String get shareWithFriends => _es ? 'Compartir con amigos' : 'Share with Friends';
+  String get applyBtn => _es ? 'Aplicar' : 'Apply';
+  String get howItWorks => _es ? 'Cómo funciona' : 'How it works';
+
+  // ── Trip Receipt ──
+  String get pickupLabel2 => _es ? 'RECOGIDA' : 'PICKUP';
+  String get dropoffLabel2 => _es ? 'DESTINO' : 'DROP-OFF';
+
+  // ── Schedule Picker ──
+  String get hourLabel => _es ? 'Hora' : 'Hour';
+
+  // ── Bottom Nav (Driver) ──
+  String get homeNav => _es ? 'Inicio' : 'Home';
+  String get earningsNav => _es ? 'Ganancias' : 'Earnings';
+  String get tripsNav => _es ? 'Viajes' : 'Trips';
+  String get accountNav => _es ? 'Cuenta' : 'Account';
+
+  // ── Misc ──
+  String get lowLabel => _es ? 'Bajo' : 'Low';
+  String get highLabel => _es ? 'Alto' : 'High';
+  String get setDefault => _es ? 'Establecer como predeterminado' : 'Set Default';
+  String get sendVerificationCode => _es ? 'Enviar código de verificación' : 'Send Verification Code';
+  String get emailVerified => _es ? '¡Email verificado exitosamente!' : 'Email verified successfully!';
+  String get verifyBtn => _es ? 'Verificar' : 'Verify';
+  String get codeResent => _es ? '¡Código reenviado!' : 'Code resent!';
+  String get textMessageSMS => _es ? 'Mensaje de texto (SMS)' : 'Text message (SMS)';
+  String get emailOption => _es ? 'Email' : 'Email';
+  String get takePhotoSubtitle => _es ? 'Usa la cámara para capturar el documento' : 'Use camera to capture document';
+  String get chooseFromGallerySubtitle => _es ? 'Selecciona una foto existente' : 'Select an existing photo';
+  String get couldNotShareTrip => _es ? 'No se pudo compartir el viaje' : 'Could not share trip';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

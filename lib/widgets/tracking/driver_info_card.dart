@@ -272,7 +272,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Phone number not available for $name'),
+          content: Text('${S.of(context).phoneNotAvailable} - $name'),
           // Uses global snackBarTheme
         ),
       );
@@ -363,7 +363,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             children: [
               _buildMenuItem(
                 icon: Icons.headset_mic_outlined,
-                label: 'Contactar soporte',
+                label: S.of(context).contactSupport,
                 color: AppColors.kGold,
                 onTap: () {
                   _setState(() => _showMoreMenu = false);
@@ -461,7 +461,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     Navigator.pop(ctx);
                     _startCancelFlow();
                   },
-                  child: const Text('Sí, cancelar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  child: Text(S.of(context).yesCancelTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(height: 10),

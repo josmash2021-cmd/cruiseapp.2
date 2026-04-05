@@ -308,6 +308,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
     _staleDriverTimer?.cancel();
+    _labelAnimTimer?.cancel();
+    _dropoffPopTimer?.cancel();
+    _pickupPopOutTimer?.cancel();
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     super.dispose();
@@ -375,6 +378,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;
+  Timer? _labelAnimTimer;
+  Timer? _dropoffPopTimer;
+  Timer? _pickupPopOutTimer;
   bool _completionCheckInFlight = false;
 
   @override

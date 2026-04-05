@@ -219,7 +219,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    return byteData!.buffer.asUint8List();
+    if (byteData == null) return Uint8List(0);
+    return byteData.buffer.asUint8List();
   }
 
 
@@ -285,7 +286,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final picture = recorder.endRecording();
     final img = picture.toImageSync(size.toInt(), size.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    return byteData!.buffer.asUint8List();
+    if (byteData == null) return Uint8List(0);
+    return byteData.buffer.asUint8List();
   }
 
   /// Detect location type from address label for contextual icon
@@ -493,7 +495,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (mgr == null) return;
     const duration = 600;
     final start = DateTime.now();
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _labelAnimTimer?.cancel();
+    _labelAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);
@@ -1186,7 +1189,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_dropoffAnnot == null || _pointAnnotMgr == null) return;
     const duration = 500;
     final start = DateTime.now();
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _dropoffPopTimer?.cancel();
+    _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);
@@ -1219,7 +1223,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _pickupPopping = true;
     const duration = 600;
     final start = DateTime.now();
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _pickupPopOutTimer?.cancel();
+    _pickupPopOutTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);
@@ -1491,27 +1496,26 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const fadeDuration = 600;
     final startTime = DateTime.now();
     _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+      if (!mounted) { timer.cancel(); _routeFadeTimer = null; return; }
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
-      _routeOpacity = 1.0 - t; // fade from 1.0 to 0.0
-      
-      // Update route polyline opacity if it exists
+      _routeOpacity = 1.0 - t;
+
       if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
         try {
-          final newOpacity = _routeOpacity;
           _polylineAnnotMgr!.update(
-            _remainingRouteAnnot!..lineOpacity = newOpacity,
+            _remainingRouteAnnot!..lineOpacity = _routeOpacity,
           );
         } catch (_) {}
       }
-      
+
       if (t >= 1.0) {
         timer.cancel();
         _routeFadeTimer = null;
-        // Remove route annotation entirely after fade completes
+        if (!mounted) return;
         if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
-          try { 
-            await _polylineAnnotMgr!.delete(_remainingRouteAnnot!); 
+          try {
+            await _polylineAnnotMgr!.delete(_remainingRouteAnnot!);
           } catch (_) {}
           _remainingRouteAnnot = null;
         }
@@ -1612,6 +1616,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const fadeDuration = 600;
     final startTime = DateTime.now();
     _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+      if (!mounted) { timer.cancel(); _routeFadeTimer = null; return; }
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
       final opacity = 1.0 - t;
@@ -1625,13 +1630,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (t >= 1.0) {
         timer.cancel();
         _routeFadeTimer = null;
+        if (!mounted) return;
         if (_remainingRouteAnnot != null) {
           try {
             await polyMgr.delete(_remainingRouteAnnot!);
           } catch (_) {}
           _remainingRouteAnnot = null;
         }
-        _routeDrawDone = false; // allow next redraw
+        _routeDrawDone = false;
       }
     });
   }

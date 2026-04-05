@@ -297,7 +297,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       const fadeDuration = 400;
       final completer = Completer<void>();
       Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (!mounted) { timer.cancel(); completer.complete(); return; }
+        if (!mounted) { timer.cancel(); if (!completer.isCompleted) completer.complete(); return; }
         final elapsed = DateTime.now().difference(startTime).inMilliseconds;
         final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
         try {
@@ -307,7 +307,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           timer.cancel();
           try { polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
           _remainingRouteAnnot = null;
-          completer.complete();
+          if (!completer.isCompleted) completer.complete();
         }
       });
       await completer.future;

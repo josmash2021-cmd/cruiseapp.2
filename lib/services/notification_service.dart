@@ -241,6 +241,7 @@ class NotificationService {
     required String body,
     int offerId = 0,
     String? payload,
+    bool appInForeground = true,
   }) async {
     if (!_initialized) await init();
 
@@ -248,32 +249,36 @@ class NotificationService {
     final soundsEnabled = prefs.getBool('sound_trips') ?? true;
     final vibrateEnabled = prefs.getBool('notif_vibrate') ?? true;
 
+    // When app is in foreground: playOfferSound() handles audio (richer, 3x repeat)
+    // When app is in background: notification channel plays the sound
+    final notifSound = !appInForeground && soundsEnabled;
+
     final androidDetails = AndroidNotificationDetails(
       'cruise_offers',
       'Trip Offers',
       channelDescription: 'New trip offer alerts for drivers',
       importance: Importance.max,
       priority: Priority.max,
-      // Sound is played by playOfferSound() — don't duplicate via notification
-      playSound: false,
+      playSound: notifSound,
+      sound: notifSound
+          ? const RawResourceAndroidNotificationSound('cruise_online')
+          : null,
       enableVibration: vibrateEnabled,
       vibrationPattern: vibrateEnabled
           ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
-      // Full-screen intent pops the notification over other apps on Android
       fullScreenIntent: true,
       category: AndroidNotificationCategory.call,
-      // Show as heads-up (peek) notification
       styleInformation: const DefaultStyleInformation(true, true),
     );
 
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
-      // Sound is played by playOfferSound() — don't duplicate via notification
-      presentSound: false,
+      presentSound: notifSound,
+      sound: notifSound ? 'cruise_online.wav' : null,
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 

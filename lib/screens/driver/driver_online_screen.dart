@@ -401,9 +401,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   @override
+  bool _appInForeground = true;
+
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
     if (state == AppLifecycleState.paused) {
+      _appInForeground = false;
       _pollT?.cancel();
       _offerSseSub?.cancel();
       _sseActive = false;
@@ -411,6 +414,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _earningsRefreshTimer?.cancel();
       _goldDot.dispose();
     } else if (state == AppLifecycleState.resumed) {
+      _appInForeground = true;
       _startPolling();
       _startClock();
       _startEarningsRefresh();

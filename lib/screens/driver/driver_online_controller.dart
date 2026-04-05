@@ -998,16 +998,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     if (filtered.isNotEmpty && _pendingOffers.isEmpty) {
       HapticFeedback.heavyImpact();
-      NotificationService.playOfferSound();
       final firstOffer = filtered.first;
       final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
       final fare = firstOffer['fare'] as num?;
       final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
+      // Foreground: play rich in-app sound (3x repeat). Background: notification handles sound.
+      if (_appInForeground) {
+        NotificationService.playOfferSound();
+      }
       NotificationService.showOfferNotification(
         title: '${S.of(context).newRideOffer}$fareStr',
         body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
         offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
         payload: 'trip_offer',
+        appInForeground: _appInForeground,
       );
     }
     final hadOffers = _pendingOffers.isNotEmpty;

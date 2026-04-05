@@ -20,14 +20,27 @@ class GoogleAuthService {
       // Disconnect previous session to always show account picker
       try { await _googleSignIn.signOut(); } catch (_) {}
 
-      final account = await _googleSignIn.signIn();
+      final GoogleSignInAccount? account;
+      try {
+        account = await _googleSignIn.signIn();
+      } on PlatformException catch (e) {
+        debugPrint('[GoogleAuth] signIn PlatformException: ${e.code} - ${e.message} - ${e.details}');
+        if (e.code == 'sign_in_failed') {
+          throw Exception(
+            'Google Sign-In is not configured. '
+            'Please add your SHA-1 fingerprint in Firebase Console '
+            'and download the updated google-services.json.',
+          );
+        }
+        rethrow;
+      }
       if (account == null) return false; // user cancelled
 
       final auth = await account.authentication;
       final idToken = auth.idToken;
       if (idToken == null) {
         debugPrint('[GoogleAuth] No ID token received');
-        return false;
+        throw Exception('Google Sign-In failed: no ID token received.');
       }
 
       final result = await ApiService.socialAuth(
@@ -58,11 +71,9 @@ class GoogleAuthService {
       return true;
     } on PlatformException catch (e) {
       debugPrint('[GoogleAuth] PlatformException: ${e.code} - ${e.message}');
-      // Re-throw so UI can show error (don't silently swallow)
-      rethrow;
+      throw Exception('Google Sign-In failed: ${e.message}');
     } catch (e) {
       debugPrint('[GoogleAuth] Error: $e');
-      // Re-throw API errors (401 etc.) so login screen shows message
       rethrow;
     }
   }
@@ -72,12 +83,24 @@ class GoogleAuthService {
   Future<String?> getEmail() async {
     try {
       try { await _googleSignIn.signOut(); } catch (_) {}
-      final account = await _googleSignIn.signIn();
+      final GoogleSignInAccount? account;
+      try {
+        account = await _googleSignIn.signIn();
+      } on PlatformException catch (e) {
+        debugPrint('[GoogleAuth] getEmail PlatformException: ${e.code} - ${e.message} - ${e.details}');
+        if (e.code == 'sign_in_failed') {
+          throw Exception(
+            'Google Sign-In is not configured. '
+            'Please add your SHA-1 fingerprint in Firebase Console.',
+          );
+        }
+        rethrow;
+      }
       if (account == null) return null; // user cancelled
       return account.email;
     } catch (e) {
       debugPrint('[GoogleAuth] getEmail error: $e');
-      return null;
+      rethrow;
     }
   }
 

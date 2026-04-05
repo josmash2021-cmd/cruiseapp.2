@@ -896,15 +896,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _lastTickElapsed = elapsed;
     final dt = dtMs / 16.667; // normalize to 60fps frame
 
-    // Position: exponential decay — 18% of gap per frame at 60fps
-    const posDecay = 0.18;
+    // Position: exponential decay — 22% of gap per frame at 60fps (snappier)
+    const posDecay = 0.22;
     final posFactor = 1.0 - _pow(1.0 - posDecay, dt);
     final newLat = _pos!.latitude + (_targetPos.latitude - _pos!.latitude) * posFactor;
     final newLng = _pos!.longitude + (_targetPos.longitude - _pos!.longitude) * posFactor;
     _pos = LatLng(newLat, newLng);
 
-    // Bearing: exponential decay — 12% per frame, shortest-arc
-    const brgDecay = 0.12;
+    // Bearing: exponential decay — 16% per frame, shortest-arc (faster nose rotation)
+    const brgDecay = 0.16;
     final brgFactor = 1.0 - _pow(1.0 - brgDecay, dt);
     double diff = _targetHeading - _heading;
     while (diff > 180) { diff -= 360; }

@@ -16,8 +16,9 @@ import 'package:flutter/material.dart';
 /// like water — no jumps, no steps.
 class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
-  // 75 frames × 40 ms = 3 000 ms (3 s) per cycle — smooth 25 fps animation
-  static const int _frameCount = 75;
+  // 90 frames × 33 ms ≈ 3 000 ms (3 s) per cycle — smooth 30 fps animation
+  // Position lerp runs at 60fps (16ms) for buttery movement
+  static const int _frameCount = 90;
   static const double _canvasSize = 160.0;
 
   // Core dot radius — all other layers are relative to this
@@ -25,7 +26,8 @@ class GoldLocationDot {
 
   List<Uint8List> _frames = [];
   int _frame = 0;
-  Timer? _timer;
+  Timer? _timer;       // 16ms position lerp (60fps)
+  int _tickCount = 0;  // counts 16ms ticks to advance animation frame every 2nd tick
 
   // ── Position interpolation ──
   double? _currentLat;
@@ -63,21 +65,21 @@ class GoldLocationDot {
   /// Advance interpolated position toward target with velocity smoothing.
   void _lerpPosition() {
     if (_currentLat == null || _targetLat == null) return;
-    // Higher factor (0.25) at 40ms tick = much more responsive glide
-    const f = 0.25;
+    // 0.14 at 16ms tick ≈ same responsiveness as 0.25 at 40ms, but 2.5× smoother
+    const f = 0.14;
     final dLat = _targetLat! - _currentLat!;
     final dLng = _targetLng! - _currentLng!;
 
-    // Add subtle velocity prediction for even smoother movement
-    final predLat = _targetLat! + _velLat * 0.15;
-    final predLng = _targetLng! + _velLng * 0.15;
+    // Velocity prediction — look 20% ahead for buttery-smooth anticipation
+    final predLat = _targetLat! + _velLat * 0.20;
+    final predLng = _targetLng! + _velLng * 0.20;
 
     _currentLat = _currentLat! + (predLat - _currentLat!) * f;
     _currentLng = _currentLng! + (predLng - _currentLng!) * f;
 
-    // Decay velocity so prediction fades when stationary
-    _velLat *= 0.92;
-    _velLng *= 0.92;
+    // Slower decay at 60fps so prediction sustains between GPS updates
+    _velLat *= 0.96;
+    _velLng *= 0.96;
 
     // Snap when close enough to avoid perpetual micro-lerping
     if (dLat.abs() < 0.0000003 && dLng.abs() < 0.0000003) {
@@ -150,10 +152,14 @@ class GoldLocationDot {
     if (frames.length != _frameCount) return;
     _frames = frames;
 
-    // 40 ms per frame — 25fps animation + fast position lerp every tick
-    _timer = Timer.periodic(const Duration(milliseconds: 40), (_) {
-      _frame = (_frame + 1) % _frames.length;
+    // 16ms tick — 60fps position lerp, animation frame advances every 2nd tick (~33ms ≈ 30fps visual)
+    _tickCount = 0;
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       _lerpPosition();
+      _tickCount++;
+      if (_tickCount % 2 == 0) {
+        _frame = (_frame + 1) % _frames.length;
+      }
       onTick();
     });
   }

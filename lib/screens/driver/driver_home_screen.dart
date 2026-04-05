@@ -581,6 +581,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
+      // If driver account is approved, they should always be able to go online
+      final vStatus = await LocalDataService.getDriverApprovalStatus();
+      if (vStatus == 'approved') {
+        setState(() {
+          _vehicleDocsApproved = true;
+          _hasExpiredDocs = false;
+          _docStatusLoaded = true;
+        });
+        _btnColorCtrl.value = 1.0;
+        return;
+      }
+
       final results = await Future.wait([
         ApiService.getVehicle(),
         ApiService.getDocuments(),
@@ -600,7 +612,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       bool vehicleFlagsOk = insOk && regOk;
 
       // Fallback: if vehicle flags are not set, check actual document statuses
-      // This handles drivers approved before the flag system was added
       if (!vehicleFlagsOk && docs.isNotEmpty) {
         bool hasApprovedIns = false;
         bool hasApprovedReg = false;

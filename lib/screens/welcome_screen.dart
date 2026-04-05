@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import 'login_screen.dart';
+import 'login_password_screen.dart';
 import 'driver/driver_login_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -246,7 +247,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                           ),
                           onPressed: () {
                             Navigator.of(context)
-                                .push(slideUpFadeRoute(const LoginScreen()));
+                                .push(slideUpFadeRoute(const LoginPasswordScreen()));
                           },
                           child: Text(
                             S.of(context).alreadyHaveAccount,

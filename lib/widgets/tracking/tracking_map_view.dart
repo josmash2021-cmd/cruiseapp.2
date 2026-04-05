@@ -112,7 +112,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Future<void> _loadCarIcon() async {
     final rideName = widget.rideName.toLowerCase();
     String carAsset;
-    
+
     if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban')) {
       carAsset = 'assets/images/car_suv.png';
     } else if (rideName.contains('sedan') || rideName.contains('premium') || rideName.contains('fusion')) {
@@ -120,24 +120,44 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     } else {
       carAsset = 'assets/images/car_economy.png';
     }
-    
+
     try {
-      final bytes = await rootBundle.load(carAsset);
-      _carIconBytes = bytes.buffer.asUint8List();
+      final pngBytes = await rootBundle.load(carAsset);
+      final decoded = await _decodePngToRgba(pngBytes.buffer.asUint8List());
+      if (decoded != null) {
+        _carIconBytes = decoded.$1;
+        _carIconWidth = decoded.$2;
+        _carIconHeight = decoded.$3;
+      }
       _currentCarType = carAsset;
     } catch (e) {
       // Fallback to economy if specific car not found
       try {
-        final bytes = await rootBundle.load('assets/images/car_economy.png');
-        _carIconBytes = bytes.buffer.asUint8List();
+        final pngBytes = await rootBundle.load('assets/images/car_economy.png');
+        final decoded = await _decodePngToRgba(pngBytes.buffer.asUint8List());
+        if (decoded != null) {
+          _carIconBytes = decoded.$1;
+          _carIconWidth = decoded.$2;
+          _carIconHeight = decoded.$3;
+        }
         _currentCarType = 'assets/images/car_economy.png';
       } catch (_) {}
     }
-    
+
     // Also load navigation arrow icon
     await _loadArrowIcon();
-    
+
     if (mounted) _setState(() {});
+  }
+
+  /// Decode PNG bytes to raw RGBA pixel data for MbxImage.
+  Future<(Uint8List, int, int)?> _decodePngToRgba(Uint8List pngBytes) async {
+    final codec = await ui.instantiateImageCodec(pngBytes);
+    final frame = await codec.getNextFrame();
+    final img = frame.image;
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return null;
+    return (byteData.buffer.asUint8List(), img.width, img.height);
   }
   
   /// Load navigation arrow icon for centering mode
@@ -198,7 +218,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
     return byteData!.buffer.asUint8List();
   }
 
@@ -264,7 +284,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     
     final picture = recorder.endRecording();
     final img = picture.toImageSync(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
     return byteData!.buffer.asUint8List();
   }
 
@@ -319,7 +339,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       case _PinIcon.house:    circIcon = CircularPinIcon.home; break;
       case _PinIcon.store:    circIcon = CircularPinIcon.store; break;
       case _PinIcon.airplane: circIcon = CircularPinIcon.airplane; break;
-      case _PinIcon.person:   circIcon = CircularPinIcon.person; break;
+      case _PinIcon.person:
+        // Default: pickup → person icon, dropoff → flag icon
+        circIcon = isPickup ? CircularPinIcon.person : CircularPinIcon.flag;
+        break;
     }
     return renderCircularPinBytes(icon: circIcon, isPickup: isPickup, radius: 44);
   }
@@ -1000,7 +1023,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _arrowImageAdded = true;
       } else if (!isArrow && !_carImageAdded && _carIconBytes != null) {
         await style.addStyleImage(_carImageId, 1.0,
-          mapbox.MbxImage(width: 64, height: 64, data: _carIconBytes!),
+          mapbox.MbxImage(width: _carIconWidth, height: _carIconHeight, data: _carIconBytes!),
           false, [], [], null);
         _carImageAdded = true;
         _carShadowBytes ??= await _generateShadowImage();

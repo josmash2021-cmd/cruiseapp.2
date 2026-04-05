@@ -168,6 +168,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
       final lateralM = _hav(ll, snappedPos) * 1609.34;
       if (lateralM < 150) {
+        _offRouteCount = 0; // back on route
         final clampedM = projectedM.clamp(0.0, _segDist.last);
         if (clampedM >= _traveledM - 5) {
           final newTarget = math.max(clampedM, _traveledM);
@@ -191,6 +192,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // Too far from route — use raw GPS lerp as fallback
         _directTargetPos = ll;
         _directTargetBearing = bearing;
+        // Reroute after 3 consecutive off-route GPS updates (~3-5s)
+        // Only during active trip phases (not arriving/arrived)
+        _offRouteCount++;
+        final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+        if (_offRouteCount >= 3 && !_rerouteInProgress && isOnTrip) {
+          _rerouteFromCurrentPos(ll);
+        }
       }
     } else {
       // No route available — use raw GPS lerp
@@ -253,6 +261,87 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_shouldFollowDriver) {
       _followDriver(ll, bearing ?? _animBearing);
     }
+  }
+
+  /// Fetch a new route from the driver's current position to the dropoff
+  /// and redraw with animated transition.
+  Future<void> _rerouteFromCurrentPos(LatLng driverPos) async {
+    _rerouteInProgress = true;
+    debugPrint('[RiderTracking] Rerouting from driver pos (${driverPos.latitude}, ${driverPos.longitude})');
+    try {
+      final ds = DirectionsService(ApiKeys.webServices);
+      final result = await ds.getRoute(
+        origin: driverPos,
+        destination: widget.dropoffLatLng,
+      );
+      if (result == null || result.points.length < 2 || !mounted) return;
+
+      // Fade out old route, then draw new one
+      await _fadeAndRedrawRoute(result.points, driverPos);
+    } catch (e) {
+      debugPrint('[RiderTracking] Reroute error: $e');
+    } finally {
+      _rerouteInProgress = false;
+      _offRouteCount = 0;
+    }
+  }
+
+  /// Fade old route and animate new route drawing.
+  Future<void> _fadeAndRedrawRoute(List<LatLng> newPoints, LatLng driverPos) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null) return;
+
+    // 1) Fade out existing route over 400ms
+    if (_remainingRouteAnnot != null) {
+      final startTime = DateTime.now();
+      const fadeDuration = 400;
+      final completer = Completer<void>();
+      Timer.periodic(const Duration(milliseconds: 16), (timer) {
+        if (!mounted) { timer.cancel(); completer.complete(); return; }
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+        final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
+        try {
+          polyMgr.update(_remainingRouteAnnot!..lineOpacity = 1.0 - t);
+        } catch (_) {}
+        if (t >= 1.0) {
+          timer.cancel();
+          try { polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
+          _remainingRouteAnnot = null;
+          completer.complete();
+        }
+      });
+      await completer.future;
+    }
+
+    // Also remove dimmed route
+    if (_dimmedRouteAnnot != null) {
+      try { polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+      _dimmedRouteAnnot = null;
+    }
+
+    // 2) Update route data
+    _routePts = newPoints;
+    _buildSegDist();
+    _traveledM = 0;
+    _tgtTraveledM = 0;
+    _velocityMps = 0;
+    _directTargetPos = null;
+    _directTargetBearing = null;
+
+    // 3) Draw dimmed background route for the new path
+    final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    try {
+      _dimmedRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: allCoords),
+        lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+
+    // 4) Animate new route drawing on top
+    _routeDrawDone = false;
+    _startAnimatedRouteDraw();
   }
 
   /// FIX 4: Smooth animate driver marker from current position to new position

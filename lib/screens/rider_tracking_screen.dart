@@ -154,6 +154,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // ── Car marker using GeoJSON source (correct approach for v10 SDK) ──
   Uint8List? _carIconBytes;
+  int _carIconWidth = 64;
+  int _carIconHeight = 64;
   Uint8List? _carShadowBytes; // Sombra difuminada
   String _currentCarType = '';
   bool _carImageAdded = false;
@@ -232,6 +234,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Velocity tracking for smooth prediction between GPS updates
   double _velocityMps = 0; // meters per second along route
   DateTime _lastGpsTime = DateTime.now();
+
+  // ── Rerouting when driver deviates ──
+  int _offRouteCount = 0; // consecutive off-route GPS updates
+  bool _rerouteInProgress = false; // guard: prevents concurrent reroute fetches
 
   // ── Real-time tracking via Firestore ──
   StreamSubscription<LatLng>? _driverLocSub;

@@ -880,6 +880,7 @@ extension _RideRequestController on _RideRequestScreenState {
       _ctrl.requestRide();
     } finally {
       _rideFlowLocked = false;
+      if (mounted) _setState(() => _isProcessingPayment = false);
     }
   }
 
@@ -1029,15 +1030,20 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// PayPal: open PayPal checkout screen.
   Future<bool> _confirmPayPal(int amountCents) async {
-    final result = await Navigator.of(context).push<bool>(
-      slideFromRightRoute(
-        PayPalCheckoutScreen(
-          amount: (amountCents / 100).toStringAsFixed(2),
-          currency: 'USD',
+    try {
+      final result = await Navigator.of(context).push<bool>(
+        slideFromRightRoute(
+          PayPalCheckoutScreen(
+            amount: (amountCents / 100).toStringAsFixed(2),
+            currency: 'USD',
+          ),
         ),
-      ),
-    );
-    return result == true;
+      );
+      return result == true;
+    } catch (e) {
+      debugPrint('[PayPal] checkout error: $e');
+      return false;
+    }
   }
 
   /// Credit/debit card: authorize (hold) saved card via Stripe PaymentIntent.

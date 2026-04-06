@@ -311,6 +311,12 @@ async def lifespan(app: FastAPI):
                     pass
         asyncio.create_task(_cache_sweep_loop())
 
+        # Start scheduled ride smart dispatcher + reminder loop
+        asyncio.create_task(_scheduled_ride_dispatcher())
+        logging.info("Scheduled Ride Dispatcher ACTIVE -- smart timing dispatch every 60s")
+        asyncio.create_task(_scheduled_ride_reminder_loop())
+        logging.info("Scheduled Ride Reminder Loop ACTIVE -- driver/rider reminders every 60s")
+
     asyncio.create_task(_bg_init())
     # Start SSE heartbeat + stale connection cleanup
     from services.event_bus import event_bus as _eb
@@ -632,28 +638,111 @@ async def run_migrations(x_api_key: str = Header(default="")):
 # -------------------------------------------------------
 
 async def _scheduled_ride_dispatcher():
-    """Background task that checks for upcoming scheduled rides and dispatches them."""
+    """Smart dispatcher for scheduled rides -- sends offers at the right time.
+
+    Dispatch timing based on how far ahead the booking is:
+      * <= 30 min until ride   -> dispatch immediately (urgent)
+      * 30 min - 3 hours       -> dispatch when <= 60 min remain
+      * 3+ hours               -> dispatch when <= 120 min remain
+
+    Rides that pass their scheduled time by >5 min with no driver are
+    auto-cancelled and the rider is notified.
+    """
     while True:
+        await asyncio.sleep(60)  # Check every minute
         try:
-            await asyncio.sleep(60)  # Check every minute
             async with SessionLocal() as db:
                 now = datetime.now(timezone.utc)
-                # Find scheduled rides due in the next 10 minutes
-                window = now + timedelta(minutes=10)
+
+                # Find all scheduled rides that need dispatching
+                # (status = "scheduled", no driver assigned yet)
                 result = await db.execute(
                     select(Trip).where(
                         and_(
                             Trip.status == "scheduled",
                             Trip.scheduled_at.isnot(None),
-                            Trip.scheduled_at <= window,
-                            Trip.scheduled_at >= now - timedelta(minutes=5),
                             Trip.driver_id.is_(None),
                         )
                     )
                 )
                 trips = result.scalars().all()
+
                 for trip in trips:
+                    minutes_until = (trip.scheduled_at - now).total_seconds() / 60
+
+                    # --------------------------------------------------
+                    # Expired: ride is more than 5 min past scheduled time
+                    # --------------------------------------------------
+                    if minutes_until < -5:
+                        trip.status = "canceled"
+                        trip.cancel_reason = "No se encontro conductor disponible para tu viaje reservado"
+                        await db.commit()
+                        logging.info(
+                            "[Scheduler] Auto-cancelled expired scheduled trip %d (%.0f min past)",
+                            trip.id, abs(minutes_until),
+                        )
+                        # Notify rider
+                        try:
+                            rider_r = await db.execute(
+                                select(User).where(User.id == trip.rider_id)
+                            )
+                            rider = rider_r.scalar_one_or_none()
+                            if rider and rider.fcm_token:
+                                _send_fcm_push(
+                                    token=rider.fcm_token,
+                                    title="Viaje reservado cancelado",
+                                    body="Lamentamos informarte que no pudimos encontrar un conductor para tu viaje reservado. Por favor intenta solicitar un nuevo viaje.",
+                                    data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
+                                )
+                        except Exception as _fcm_err:
+                            logging.warning("[Scheduler] FCM notify rider failed for trip %d: %s", trip.id, _fcm_err)
+                        # Update Firestore
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_trip_status(trip.id, "canceled")
+                                firestore_sync.sync_scheduled_ride(
+                                    trip_id=trip.id, rider_id=trip.rider_id,
+                                    status="cancelled",
+                                )
+                            except Exception:
+                                pass
+                        continue
+
+                    # --------------------------------------------------
+                    # Determine if it is time to dispatch this offer
+                    #
+                    # The original scheduled_at determines the "booking
+                    # lead time" but the loop fires every 60 s, so we
+                    # only care about how many minutes remain RIGHT NOW.
+                    #
+                    #   <= 30 min remain  -> dispatch (urgent)
+                    #   <= 60 min remain  -> dispatch (normal)
+                    #   <= 120 min remain -> dispatch (early, for long bookings)
+                    #
+                    # We always dispatch once <= 60 min remain.  For
+                    # bookings originally >3 h out we start at 120 min.
+                    # --------------------------------------------------
+                    should_dispatch = False
+                    if minutes_until <= 30:
+                        # <= 30 min away -> dispatch NOW (urgent)
+                        should_dispatch = True
+                    elif minutes_until <= 60:
+                        # 30-60 min away -> dispatch (standard window)
+                        should_dispatch = True
+                    elif minutes_until <= 120:
+                        # 60-120 min away -> dispatch only for rides that
+                        # were originally booked 3+ hours in advance
+                        # (i.e. created_at is well before scheduled_at)
+                        original_lead = (trip.scheduled_at - trip.created_at).total_seconds() / 60 if trip.created_at else 0
+                        if original_lead >= 180:
+                            should_dispatch = True
+
+                    if not should_dispatch:
+                        continue
+
+                    # --------------------------------------------------
                     # Find nearest online driver
+                    # --------------------------------------------------
                     drivers_r = await db.execute(
                         select(User).where(
                             User.role == "driver",
@@ -665,34 +754,248 @@ async def _scheduled_ride_dispatcher():
                     if not drivers:
                         continue
 
-                    import math
-                    def _haversine(lat1, lng1, lat2, lng2):
-                        R = 6371
-                        dlat = math.radians(lat2 - lat1)
-                        dlng = math.radians(lng2 - lng1)
-                        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
-                        return R * 2 * math.asin(math.sqrt(a))
-
                     best = None
                     best_dist = float("inf")
                     for d in drivers:
                         if d.lat and d.lng:
-                            dist = _haversine(trip.pickup_lat, trip.pickup_lng, d.lat, d.lng)
+                            dist = _haversine(
+                                trip.pickup_lat, trip.pickup_lng,
+                                d.lat, d.lng,
+                            )
                             if dist < best_dist:
                                 best_dist = dist
                                 best = d
 
                     if best and best_dist < 50:  # Within 50 km
                         # Create dispatch offer
-                        offer = DispatchOffer(trip_id=trip.id, driver_id=best.id, status="pending")
+                        offer = DispatchOffer(
+                            trip_id=trip.id, driver_id=best.id, status="pending",
+                        )
                         db.add(offer)
                         trip.status = "requested"
                         trip.driver_id = best.id
                         await db.commit()
-                        logging.info("[Scheduler] Dispatched scheduled trip %d to driver %d (%.1f km away)",
-                                     trip.id, best.id, best_dist)
+
+                        is_urgent = minutes_until <= 30
+                        logging.info(
+                            "[Scheduler] Dispatched scheduled trip %d to driver %d "
+                            "(%.1f km away, %.0f min until ride%s)",
+                            trip.id, best.id, best_dist, minutes_until,
+                            ", URGENT" if is_urgent else "",
+                        )
+
+                        # Notify driver via FCM
+                        if best.fcm_token:
+                            try:
+                                driver_name = (best.first_name or "").strip() or "Conductor"
+                                pickup = trip.pickup_address or "punto de recogida"
+                                urgency_text = (
+                                    "URGENTE: " if is_urgent else ""
+                                )
+                                _send_fcm_push(
+                                    token=best.fcm_token,
+                                    title=f"{urgency_text}Viaje reservado asignado",
+                                    body=f"{driver_name}, tienes un viaje programado hacia {pickup} en {int(minutes_until)} minutos.",
+                                    data={
+                                        "type": "scheduled_offer",
+                                        "trip_id": str(trip.id),
+                                        "urgent": "true" if is_urgent else "false",
+                                    },
+                                    is_offer=True,
+                                )
+                            except Exception as _fcm_err:
+                                logging.warning(
+                                    "[Scheduler] FCM notify driver failed for trip %d: %s",
+                                    trip.id, _fcm_err,
+                                )
+
+                        # Sync to Firestore scheduled_rides collection
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_scheduled_ride(
+                                    trip_id=trip.id,
+                                    rider_id=trip.rider_id,
+                                    status="assigned",
+                                    driver_id=best.id,
+                                    driver_name=f"{best.first_name or ''} {best.last_name or ''}".strip(),
+                                    driver_phone=best.phone or "",
+                                    scheduled_at=trip.scheduled_at,
+                                    pickup_address=trip.pickup_address or "",
+                                    dropoff_address=trip.dropoff_address or "",
+                                    pickup_lat=trip.pickup_lat or 0,
+                                    pickup_lng=trip.pickup_lng or 0,
+                                    dropoff_lat=trip.dropoff_lat or 0,
+                                    dropoff_lng=trip.dropoff_lng or 0,
+                                    fare=trip.fare or 0,
+                                )
+                            except Exception:
+                                pass
+
         except Exception as e:
             logging.error("[Scheduler] Error in scheduled ride dispatcher: %s", e)
+
+
+# -------------------------------------------------------
+#  SCHEDULED RIDE REMINDER LOOP (background task)
+# -------------------------------------------------------
+
+async def _scheduled_ride_reminder_loop():
+    """Send timed reminders to drivers and riders who have scheduled rides.
+
+    Reminder schedule (after a driver has accepted):
+      * 1 hour before   -> driver reminder
+      * 30 minutes before -> driver reminder + rider reminder
+      * 15 minutes before -> driver urgent reminder
+
+    Also cancels rides that are >5 min past scheduled time with no pickup.
+    Uses an in-memory set per trip to avoid duplicate notifications.
+    """
+    # Track which reminders have been sent: trip_id -> set of reminder keys
+    sent_reminders: dict[int, set[str]] = {}
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            async with SessionLocal() as db:
+                now = datetime.now(timezone.utc)
+
+                # Find trips: scheduled, driver assigned, not yet in progress
+                result = await db.execute(
+                    select(Trip).where(
+                        and_(
+                            Trip.scheduled_at.isnot(None),
+                            Trip.driver_id.isnot(None),
+                            Trip.status.in_(["scheduled", "requested", "driver_en_route"]),
+                        )
+                    )
+                )
+                trips = result.scalars().all()
+
+                for trip in trips:
+                    minutes_until = (trip.scheduled_at - now).total_seconds() / 60
+                    trip_reminders = sent_reminders.setdefault(trip.id, set())
+
+                    # --------------------------------------------------
+                    # No-show / expired: >5 min past with no pickup
+                    # --------------------------------------------------
+                    if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
+                        trip.status = "canceled"
+                        trip.cancel_reason = "No se encontro conductor disponible para tu viaje reservado"
+                        await db.commit()
+                        logging.info(
+                            "[Reminder] Auto-cancelled past-due trip %d (%.0f min past)",
+                            trip.id, abs(minutes_until),
+                        )
+                        # Notify rider
+                        try:
+                            rider_r = await db.execute(
+                                select(User).where(User.id == trip.rider_id)
+                            )
+                            rider = rider_r.scalar_one_or_none()
+                            if rider and rider.fcm_token:
+                                _send_fcm_push(
+                                    token=rider.fcm_token,
+                                    title="Viaje reservado cancelado",
+                                    body="Lamentamos informarte que no pudimos encontrar un conductor para tu viaje reservado. Por favor intenta solicitar un nuevo viaje.",
+                                    data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
+                                )
+                        except Exception as _fcm_err:
+                            logging.warning("[Reminder] FCM rider cancel notify failed for trip %d: %s", trip.id, _fcm_err)
+                        # Update Firestore
+                        if _HAS_FIRESTORE:
+                            try:
+                                firestore_sync.sync_trip_status(trip.id, "canceled")
+                                firestore_sync.sync_scheduled_ride(
+                                    trip_id=trip.id, rider_id=trip.rider_id,
+                                    status="cancelled",
+                                )
+                            except Exception:
+                                pass
+                        trip_reminders.add("no_driver_cancel")
+                        continue
+
+                    # --------------------------------------------------
+                    # Fetch driver for push notifications
+                    # --------------------------------------------------
+                    driver_r = await db.execute(
+                        select(User).where(User.id == trip.driver_id)
+                    )
+                    driver = driver_r.scalar_one_or_none()
+                    if not driver or not driver.fcm_token:
+                        continue
+
+                    driver_name = (driver.first_name or "").strip() or "Conductor"
+                    pickup = trip.pickup_address or "punto de recogida"
+
+                    # --------------------------------------------------
+                    # 1-hour reminder (driver only)
+                    # --------------------------------------------------
+                    if 55 <= minutes_until <= 65 and "1h" not in trip_reminders:
+                        _send_fcm_push(
+                            token=driver.fcm_token,
+                            title="Viaje reservado en 1 hora",
+                            body=f"{driver_name}, tienes un viaje programado hacia {pickup} en aproximadamente 1 hora. Preparate para salir a tiempo.",
+                            data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "1h"},
+                        )
+                        trip_reminders.add("1h")
+                        logging.info("[Reminder] 1h reminder sent to driver %d for trip %d", driver.id, trip.id)
+
+                    # --------------------------------------------------
+                    # 30-minute reminder (driver + rider)
+                    # --------------------------------------------------
+                    if 25 <= minutes_until <= 35 and "30m" not in trip_reminders:
+                        _send_fcm_push(
+                            token=driver.fcm_token,
+                            title="Tu viaje comienza en 30 minutos",
+                            body=f"{driver_name}, tu viaje reservado comienza en 30 minutos. Recomendamos estar en {pickup} 10-15 minutos antes.",
+                            data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "30m"},
+                        )
+                        trip_reminders.add("30m")
+                        logging.info("[Reminder] 30m reminder sent to driver %d for trip %d", driver.id, trip.id)
+
+                    # Rider 30-minute reminder
+                    if 25 <= minutes_until <= 35 and "rider_30m" not in trip_reminders:
+                        try:
+                            rider_r = await db.execute(
+                                select(User).where(User.id == trip.rider_id)
+                            )
+                            rider = rider_r.scalar_one_or_none()
+                            if rider and rider.fcm_token:
+                                rider_name = (rider.first_name or "").strip() or "Cliente"
+                                _send_fcm_push(
+                                    token=rider.fcm_token,
+                                    title="Tu viaje reservado comienza pronto",
+                                    body=f"{rider_name}, tu viaje comienza en 30 minutos. Tu conductor esta en camino.",
+                                    data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "rider_30m"},
+                                )
+                                trip_reminders.add("rider_30m")
+                                logging.info("[Reminder] 30m rider reminder sent to rider %d for trip %d", rider.id, trip.id)
+                        except Exception as _fcm_err:
+                            logging.warning("[Reminder] FCM rider 30m notify failed for trip %d: %s", trip.id, _fcm_err)
+
+                    # --------------------------------------------------
+                    # 15-minute reminder (driver only, urgent)
+                    # --------------------------------------------------
+                    if 10 <= minutes_until <= 18 and "15m" not in trip_reminders:
+                        _send_fcm_push(
+                            token=driver.fcm_token,
+                            title="Dirigete al punto de recogida ahora",
+                            body=f"{driver_name}, tu viaje reservado comienza en 15 minutos. Dirigete a {pickup} ahora para llegar a tiempo.",
+                            data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "15m"},
+                        )
+                        trip_reminders.add("15m")
+                        logging.info("[Reminder] 15m urgent reminder sent to driver %d for trip %d", driver.id, trip.id)
+
+                # ---- Memory cleanup ----
+                # Remove entries for trips no longer in the active batch
+                active_ids = {t.id for t in trips}
+                for tid in list(sent_reminders.keys()):
+                    if tid not in active_ids:
+                        sent_reminders.pop(tid, None)
+
+        except Exception as e:
+            logging.error("[Reminder] Scheduled ride reminder loop error: %s", e)
+
 async def _connection_watchdog():
     """Monitors DB + Firebase every 30 s and auto-reconnects on failure."""
     global _HAS_FIRESTORE

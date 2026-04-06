@@ -204,8 +204,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Emergency',
+                    Text(
+                      S.of(context).emergency,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -214,7 +214,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Call 911 for immediate assistance',
+                      S.of(context).call911Assistance,
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.white.withValues(alpha: 0.8),
@@ -230,7 +230,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   if (await canLaunchUrl(uri)) await launchUrl(uri);
                 },
                 child: Semantics(
-                  label: 'Call 911 emergency',
+                  label: S.of(context).call911Emergency,
                   button: true,
                   child: Container(
                     width: 44,
@@ -423,7 +423,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
       if (phones.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No phone numbers in contacts')),
+            SnackBar(content: Text(S.of(context).noPhoneContacts)),
           );
         }
         setState(() => _isSendingSos = false);
@@ -440,7 +440,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Emergency alert sent to ${phones.length} contact${phones.length > 1 ? 's' : ''}'),
+            content: Text(S.of(context).emergencyAlertSentTo(phones.length)),
             backgroundColor: const Color(0xFFDC2626),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -629,7 +629,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                             TextButton(
                               onPressed: () => Navigator.pop(dCtx),
                               child: Text(
-                                'Cancel',
+                                S.of(context).cancel,
                                 style: TextStyle(color: c.textSecondary),
                               ),
                             ),

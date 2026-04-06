@@ -1091,8 +1091,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       icon: Icons.shield_rounded,
       iconColor: const Color(0xFF4CAF50),
       items: [
-        _SheetItem(Icons.emergency_rounded, 'Emergency',
-            'Call 911 or emergency services', () {
+        _SheetItem(Icons.emergency_rounded, S.of(context).emergency,
+            S.of(context).call911OrEmergency, () {
           Navigator.pop(context);
           launchUrl(Uri.parse('tel:911'));
         }),
@@ -2029,7 +2029,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   ),
                   SizedBox(height: Responsive.h(16)),
                   // Title
-                  Text('Ride for ${nh.displayName(widget.riderName, widget.vehicleType)}',
+                  Text(S.of(context).rideForName(nh.displayName(widget.riderName, widget.vehicleType)),
                     style: TextStyle(
                       color: Colors.white, fontSize: Responsive.sp(24),
                       fontWeight: FontWeight.w800, height: 1.15)),

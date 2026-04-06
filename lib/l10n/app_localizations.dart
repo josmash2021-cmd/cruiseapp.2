@@ -3051,6 +3051,44 @@ class S {
   String get locationPermissionDenied => _es
       ? 'Permiso de ubicación denegado'
       : 'Location permission denied';
+
+  // ── Remaining hardcoded strings ───────────────────────────────────────────
+  String get call911Assistance => _es ? 'Llama al 911 para asistencia inmediata' : 'Call 911 for immediate assistance';
+  String get call911OrEmergency => _es ? 'Llama al 911 o servicios de emergencia' : 'Call 911 or emergency services';
+  String get noPhoneNumberAvailable => _es ? 'No hay numero de telefono disponible' : 'No phone number available';
+  String get thenDirection => _es ? 'Luego' : 'Then';
+  String get backgroundCheckInitiated => _es ? 'Verificacion de antecedentes iniciada! Revisa tu email.' : 'Background check initiated! Check your email.';
+  String failedToUpload(String title, String error) => _es ? 'Error al subir $title: $error' : 'Failed to upload $title: $error';
+  String get failedToSendCode => _es ? 'Error al enviar codigo. Intenta de nuevo.' : 'Failed to send code. Try again.';
+  String get pleaseEnterFullCode => _es ? 'Por favor ingresa el codigo completo.' : 'Please enter the full code.';
+  String get failedToResendCode => _es ? 'Error al reenviar. Intenta de nuevo.' : 'Failed to resend. Try again.';
+  String get serverUrlSaved => _es ? 'URL del servidor guardada' : 'Server URL saved';
+  String get failedToSendCodeLogin => _es ? 'Error al enviar codigo. Intenta de nuevo.' : 'Failed to send code. Please try again.';
+  String codeResentTo(String email) => _es ? 'Codigo reenviado a $email' : 'Code resent to $email';
+  String get noNotificationsYet => _es ? 'Aun no hay notificaciones.' : 'No notifications yet.';
+  String get typeToSearchForAddress => _es ? 'Escribe para buscar una direccion' : 'Type to search for an address';
+  String get noMessagesInConversation => _es ? 'No hay mensajes en esta conversacion' : 'No messages in this conversation';
+  String get failedToExportData => _es ? 'Error al exportar datos. Intenta de nuevo.' : 'Failed to export data. Please try again.';
+  String get tripDidntHappenAnswer => _es
+      ? 'Si te cobraron por un viaje que nunca se realizo, nos disculpamos por la inconveniencia.\n\n'
+        'Esto puede pasar por:\n'
+        '- Un conductor inicio el viaje accidentalmente\n'
+        '- Errores de GPS\n'
+        '- Fallas de la app\n\n'
+        'Contacta a soporte e investigaremos y emitiremos un reembolso completo si se confirma.'
+      : 'If you were charged for a ride that never took place, we apologize for the inconvenience.\n\n'
+        'This can happen due to:\n'
+        '\u2022 A driver starting the trip accidentally\n'
+        '\u2022 GPS errors\n'
+        '\u2022 App glitches\n\n'
+        'Please contact support and we\'ll investigate and issue a full refund if confirmed.';
+  String get payoutsConnected => _es ? 'Pagos conectados' : 'Payouts Connected';
+  String rideForName(String name) => _es ? 'Viaje para $name' : 'Ride for $name';
+  String get consentRequired => _es ? 'Acepta el consentimiento para continuar' : 'Please accept the consent to proceed';
+  String errorWithMessage(String error) => _es ? 'Error: $error' : 'Error: $error';
+  String emergencyAlertSentTo(int count) => _es
+      ? 'Alerta de emergencia enviada a $count contacto${count > 1 ? 's' : ''}'
+      : 'Emergency alert sent to $count contact${count > 1 ? 's' : ''}';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

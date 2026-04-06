@@ -73,7 +73,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+            child: Text(S.of(context).cancel, style: TextStyle(color: c.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -115,7 +115,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+            child: Text(S.of(context).cancel, style: TextStyle(color: c.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -139,7 +139,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       _showExportedData(data);
     } catch (e) {
       if (!mounted) return;
-      _showSnack('Failed to export data. Please try again.');
+      _showSnack(S.of(context).failedToExportData);
     }
   }
   

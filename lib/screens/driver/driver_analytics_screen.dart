@@ -502,7 +502,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
                     ),
                   ),
                   const SizedBox(width: 3),
-                  Text('Low', style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 9)),
+                  Text(S.of(context).lowLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 9)),
                   const SizedBox(width: 6),
                   Container(
                     width: 8,
@@ -513,7 +513,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
                     ),
                   ),
                   const SizedBox(width: 3),
-                  Text('High', style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 9)),
+                  Text(S.of(context).highLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 9)),
                 ],
               ),
             ],

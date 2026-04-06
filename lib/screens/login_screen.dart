@@ -250,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else {
       _showSnack(
-        'Failed to send code. Please try again.',
+        S.of(context).failedToSendCodeLogin,
         Colors.white.withValues(alpha: 0.6),
       );
     }
@@ -381,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
-              'Cancel',
+              S.of(context).cancel,
               style: TextStyle(
                 color: c.textTertiary,
                 fontWeight: FontWeight.w600,

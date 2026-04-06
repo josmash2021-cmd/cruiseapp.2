@@ -136,16 +136,16 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
       final result = await SmsService.sendVerificationCode(toPhone: widget.email);
       if (!mounted) return;
       if (result.ok) {
-        _showSnack('Code resent!', const Color(0xFFE8C547));
+        _showSnack(S.of(context).codeResent, const Color(0xFFE8C547));
       } else {
-        _showSnack('Failed to resend. Try again.', Colors.white.withValues(alpha: 0.6));
+        _showSnack(S.of(context).failedToResendCode, Colors.white.withValues(alpha: 0.6));
       }
     } else {
       // Email — resend via backend (generates new code + sends email)
       final otpResult = await ApiService.sendOtp(email: widget.email);
       if (!mounted) return;
       if (otpResult['ok'] == true) {
-        _showSnack('Code resent to ${widget.email}', const Color(0xFFE8C547));
+        _showSnack(S.of(context).codeResentTo(widget.email), const Color(0xFFE8C547));
       } else {
         _showSnack('Failed to resend email. Try again.', Colors.white.withValues(alpha: 0.6));
       }

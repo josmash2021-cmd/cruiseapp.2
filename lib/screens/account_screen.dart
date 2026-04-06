@@ -177,7 +177,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                       setSheetState(() { codeSent = true; sending = false; });
                                     }
                                   } catch (e) {
-                                    setSheetState(() { errorMsg = 'Failed to send code. Try again.'; sending = false; });
+                                    setSheetState(() { errorMsg = S.of(context).failedToSendCode; sending = false; });
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
@@ -223,7 +223,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               ? null
                               : () async {
                                   if (codeCtrl.text.trim().length < 4) {
-                                    setSheetState(() { errorMsg = 'Please enter the full code.'; });
+                                    setSheetState(() { errorMsg = S.of(context).pleaseEnterFullCode; });
                                     return;
                                   }
                                   setSheetState(() { verifying = true; errorMsg = null; });
@@ -275,12 +275,12 @@ class _AccountScreenState extends State<AccountScreen> {
                                       setSheetState(() { errorMsg = null; sending = false; });
                                       if (ctx.mounted) {
                                         ScaffoldMessenger.of(ctx).showSnackBar(
-                                          const SnackBar(content: Text('Code resent!')),
+                                          SnackBar(content: Text(S.of(context).codeResent)),
                                         );
                                       }
                                     }
                                   } catch (e) {
-                                    setSheetState(() { errorMsg = 'Failed to resend. Try again.'; sending = false; });
+                                    setSheetState(() { errorMsg = S.of(context).failedToResendCode; sending = false; });
                                   }
                                 },
                           child: Text(
@@ -1173,8 +1173,8 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                         const SizedBox(height: 12),
                         Text(
                           _controller.text.isEmpty
-                              ? 'Type to search for an address'
-                              : 'No results found',
+                              ? S.of(context).typeToSearchForAddress
+                              : S.of(context).noResultsFound,
                           style: TextStyle(color: c.textTertiary, fontSize: 14),
                         ),
                       ],
@@ -1263,9 +1263,9 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
     await ApiService.setServerUrl(url);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Server URL saved'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(S.of(context).serverUrlSaved),
+        duration: const Duration(seconds: 2),
       ),
     );
     Navigator.of(context).pop();

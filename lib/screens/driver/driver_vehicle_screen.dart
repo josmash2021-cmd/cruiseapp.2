@@ -189,10 +189,10 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   child: const Icon(Icons.camera_alt_rounded,
                       color: _gold, size: 22),
                 ),
-                title: const Text('Take Photo',
+                title: Text(S.of(context).takePhoto,
                     style: TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text('Use camera to capture document',
+                subtitle: Text(S.of(context).takePhotoSubtitle,
                     style:
                         TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, ImageSource.camera),
@@ -208,10 +208,10 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   child: const Icon(Icons.photo_library_rounded,
                       color: _gold, size: 22),
                 ),
-                title: const Text('Choose from Gallery',
+                title: Text(S.of(context).chooseFromGallery,
                     style: TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text('Select an existing photo',
+                subtitle: Text(S.of(context).chooseFromGallerySubtitle,
                     style:
                         TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
@@ -272,7 +272,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to upload $title: ${e.toString().length > 80 ? e.toString().substring(0, 80) : e}'),
+          content: Text(S.of(context).failedToUpload(title, e.toString().length > 80 ? e.toString().substring(0, 80) : e.toString())),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape:

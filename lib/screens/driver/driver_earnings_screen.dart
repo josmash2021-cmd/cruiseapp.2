@@ -1024,12 +1024,12 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.4)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
-            SizedBox(width: 10),
-            Text('Payouts Connected',
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
+            const SizedBox(width: 10),
+            Text(S.of(context).payoutsConnected,
                 style: TextStyle(
                     color: Color(0xFF34A853),
                     fontWeight: FontWeight.w700,

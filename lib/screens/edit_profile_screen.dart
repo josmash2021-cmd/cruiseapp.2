@@ -99,14 +99,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               _photoOption(
                 c,
                 Icons.camera_alt_rounded,
-                'Take Photo',
+                S.of(context).takePhoto,
                 () => Navigator.pop(ctx, ImageSource.camera),
               ),
               const SizedBox(height: 10),
               _photoOption(
                 c,
                 Icons.photo_library_rounded,
-                'Choose from Gallery',
+                S.of(context).chooseFromGallery,
                 () => Navigator.pop(ctx, ImageSource.gallery),
               ),
             ],

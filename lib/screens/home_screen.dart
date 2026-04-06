@@ -1532,7 +1532,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Text(
-                      'No notifications yet.',
+                      S.of(context).noNotificationsYet,
                       style: TextStyle(color: c.textSecondary),
                     ),
                   )
@@ -2016,8 +2016,8 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
                           const SizedBox(height: 12),
                           Text(
                             _controller.text.isEmpty
-                                ? 'Type to search for an address'
-                                : 'No results found',
+                                ? S.of(context).typeToSearchForAddress
+                                : S.of(context).noResultsFound,
                             style: TextStyle(
                               color: c.textTertiary,
                               fontSize: 14,

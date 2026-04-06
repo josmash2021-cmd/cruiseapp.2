@@ -2034,7 +2034,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             SnackBar(
               backgroundColor: const Color(0xFFFF5252),
               content: Text(
-                'Failed to schedule ride: $e',
+                S.of(context).failedToScheduleRide(e.toString()),
                 style: const TextStyle(color: Colors.white),
               ),
               behavior: SnackBarBehavior.floating,

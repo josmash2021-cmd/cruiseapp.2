@@ -707,7 +707,7 @@ class _ConversationDetailScreen extends StatelessWidget {
       body: sorted.isEmpty
           ? Center(
               child: Text(
-                'No messages in this conversation',
+                S.of(context).noMessagesInConversation,
                 style: TextStyle(color: c.textSecondary),
               ),
             )

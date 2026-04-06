@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -58,8 +59,8 @@ class DriverSafetyScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
-                    child: Text('Safety',
+                  Expanded(
+                    child: Text(S.of(context).safetySection,
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -82,7 +83,7 @@ class DriverSafetyScreen extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     // ── Quick actions ──
-                    Text('Quick Actions',
+                    Text(S.of(context).quickActions,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.6),
                         fontSize: 13,
@@ -136,7 +137,7 @@ class DriverSafetyScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // ── Trip info ──
-                    Text('Current Trip',
+                    Text(S.of(context).currentTrip,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.6),
                         fontSize: 13,
@@ -188,13 +189,13 @@ class DriverSafetyScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Emergency',
+                Text(S.of(context).emergency,
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
-                Text('Call 911 for immediate help',
+                Text(S.of(context).call911Help,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 13)),
@@ -348,7 +349,7 @@ class DriverSafetyScreen extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.24),
                   borderRadius: BorderRadius.circular(2)),
               ),
-              const Text('Report Issue',
+              Text(S.of(context).reportIssue,
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,

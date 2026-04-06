@@ -28,7 +28,7 @@ class _HelpScreenState extends State<HelpScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
-  final List<_HelpCategory> _categories = const [
+  List<_HelpCategory> _categories() => [
     _HelpCategory(
       title: 'Trips & Fare',
       icon: Icons.directions_car_rounded,
@@ -68,13 +68,7 @@ class _HelpScreenState extends State<HelpScreen> {
         _HelpTopic(
           icon: Icons.access_time_rounded,
           title: 'My trip didn\'t happen',
-          answer:
-              'If you were charged for a ride that never took place, we apologize for the inconvenience.\n\n'
-              'This can happen due to:\n'
-              '• A driver starting the trip accidentally\n'
-              '• GPS errors\n'
-              '• App glitches\n\n'
-              'Please contact support and we\'ll investigate and issue a full refund if confirmed.',
+          answer: S.of(context).tripDidntHappenAnswer,
         ),
       ],
     ),
@@ -170,7 +164,7 @@ class _HelpScreenState extends State<HelpScreen> {
       items: [
         _HelpTopic(
           icon: Icons.gps_fixed_rounded,
-          title: 'GPS / location issues',
+          title: S.of(context).gpsLocationIssues,
           answer:
               'If the app isn\'t detecting your location correctly:\n\n'
               '1. Make sure location services are enabled for Cruise\n'
@@ -209,7 +203,7 @@ class _HelpScreenState extends State<HelpScreen> {
     if (_query.isEmpty) return [];
     final q = _query.toLowerCase();
     final results = <_HelpTopic>[];
-    for (final cat in _categories) {
+    for (final cat in _categories()) {
       for (final item in cat.items) {
         if (item.title.toLowerCase().contains(q) ||
             item.answer.toLowerCase().contains(q)) {
@@ -393,7 +387,7 @@ class _HelpScreenState extends State<HelpScreen> {
       children: [
         _quickFaqSection(c),
         const SizedBox(height: 24),
-        ..._categories.map(
+        ..._categories().map(
           (cat) => Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: _categorySection(c, cat),

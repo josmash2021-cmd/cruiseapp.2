@@ -1492,7 +1492,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _callRider() async {
     if (widget.riderPhone.isEmpty) {
-      _showToast('No phone number available');
+      _showToast(S.of(context).noPhoneNumberAvailable);
       return;
     }
     final uri = Uri.parse('tel:${widget.riderPhone}');
@@ -1501,7 +1501,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _messageRider() async {
     if (widget.riderPhone.isEmpty) {
-      _showToast('No phone number available');
+      _showToast(S.of(context).noPhoneNumberAvailable);
       return;
     }
     final uri = Uri.parse('sms:${widget.riderPhone}');
@@ -1928,7 +1928,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                               fontFeatures: [FontFeature.tabularFigures()],
                             )),
                         const SizedBox(height: 2),
-                        Text(isOffRoute ? 'Rerouting…' : instruction,
+                        Text(isOffRoute ? S.of(context).rerouting : instruction,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.88),
                             fontSize: 14,
@@ -1952,7 +1952,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                 child: Row(
                   children: [
-                    Text('Then',
+                    Text(S.of(context).thenDirection,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
                         fontSize: 11,

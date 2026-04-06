@@ -543,14 +543,14 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               if (_uploading)
                 Container(
                   color: Colors.black54,
-                  child: const Center(
+                  child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: _gold, strokeWidth: 2),
-                        SizedBox(height: 16),
-                        Text('Uploading document...',
-                          style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                        const CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                        const SizedBox(height: 16),
+                        Text(S.of(context).uploadingDocument,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -1103,7 +1103,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: const Text('Background check initiated! Check your email.'),
+                                content: Text(S.of(context).backgroundCheckInitiated),
                                 backgroundColor: _gold,
                                 behavior: SnackBarBehavior.floating,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1301,7 +1301,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Upload failed: $e'),
+          content: Text(S.of(context).uploadFailed(e.toString())),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),

@@ -72,7 +72,7 @@ class _BackgroundCheckConsentScreenState
     if (!_consentChecked) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Please accept the consent to proceed'),
+          content: Text(S.of(context).consentRequired),
           backgroundColor: Colors.red.shade400,
           behavior: SnackBarBehavior.floating,
         ),
@@ -98,7 +98,7 @@ class _BackgroundCheckConsentScreenState
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text(S.of(context).errorWithMessage(e.toString())),
           backgroundColor: Colors.red.shade400,
           behavior: SnackBarBehavior.floating,
         ),

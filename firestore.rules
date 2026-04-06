@@ -39,18 +39,11 @@ service cloud.firestore {
     }
 
     match /trips/{docId} {
-      // Only trip participants (rider or driver) can read the trip
-      allow read: if isAuthenticated() && (
-        request.auth.uid == resource.data.rider_uid ||
-        request.auth.uid == resource.data.driver_uid ||
-        isAdmin()
-      );
+      // Authenticated users can read/write trips (app uses anonymous auth
+      // with Supabase IDs, not Firebase UIDs for ownership)
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        request.auth.uid == resource.data.rider_uid ||
-        request.auth.uid == resource.data.driver_uid ||
-        isAdmin()
-      );
+      allow update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 

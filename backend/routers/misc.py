@@ -14,6 +14,7 @@ from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
 from utils.helpers import utc_now, _haversine
+from routers.admin import _pricing_config
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
 from config import (
@@ -181,6 +182,9 @@ async def routing_preview(
     dropoff_lat: float = Query(..., description="Dropoff latitude"),
     dropoff_lng: float = Query(..., description="Dropoff longitude"),
     vehicle_type: str = Query("comfort"),  # comfort, premium, vip
+    is_scheduled: bool = Query(False),
+    is_airport: bool = Query(False),
+    meet_inside: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -268,11 +272,27 @@ async def routing_preview(
     subtotal = round(base_fare + mileage_charge + time_charge, 2)
     surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
     total = max(round(subtotal + surge_extra, 2), r["min_fare"])
-    
-    # Calculate range (Â±15%)
+
+    # Apply surcharges
+    scheduled_surcharge = 0.0
+    airport_fee = 0.0
+    meet_greet_fee = 0.0
+    if is_scheduled:
+        pct = _pricing_config.get("scheduled_surcharge_pct", 0.0)
+        scheduled_surcharge = round(total * pct, 2)
+        total += scheduled_surcharge
+    if is_airport:
+        airport_fee = _pricing_config.get("airport_fee", 0.0)
+        total += airport_fee
+        if meet_inside:
+            meet_greet_fee = _pricing_config.get("airport_meet_greet_fee", 0.0)
+            total += meet_greet_fee
+    total = round(total, 2)
+
+    # Calculate range (+/-15%)
     low = round(total * 0.85, 2)
     high = round(total * 1.15, 2)
-    
+
     return {
         "routing_source": routing_source,
         "distance_miles": dist_mi,
@@ -286,6 +306,9 @@ async def routing_preview(
             "subtotal": subtotal,
             "surge_multiplier": surge_mult,
             "surge_extra": surge_extra,
+            "scheduled_surcharge": scheduled_surcharge,
+            "airport_fee": airport_fee,
+            "meet_greet_fee": meet_greet_fee,
             "total": total,
             "low": low,
             "high": high,
@@ -301,16 +324,19 @@ async def estimate_fare(
     dropoff_lat: float = Query(...),
     dropoff_lng: float = Query(...),
     vehicle_type: str = Query("comfort"),  # comfort, premium, vip
+    is_scheduled: bool = Query(False),
+    is_airport: bool = Query(False),
+    meet_inside: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """Estimate fare for a ride. Returns base, surge, and total estimates."""
     # Calculate distance
     dist_km = _haversine(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
     dist_mi = round(dist_km * 0.621371, 2)
-    
+
     # Estimated duration (rough: 2 min per mile in city traffic)
     duration_min = max(3, int(dist_mi * 2.5))
-    
+
     # Base rates by vehicle type
     rates = {
         "comfort": {"base": 2.50, "per_mile": 1.50, "per_minute": 0.25, "min_fare": 8.00},
@@ -318,14 +344,14 @@ async def estimate_fare(
         "vip":     {"base": 5.00, "per_mile": 3.00, "per_minute": 0.50, "min_fare": 20.00},
     }
     r = rates.get(vehicle_type.lower(), rates["comfort"])
-    
+
     # Get surge at pickup location
     surge_mult = 1.0
     result = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True))
     for zone in result.scalars().all():
         if _haversine(pickup_lat, pickup_lng, zone.center_lat, zone.center_lng) <= zone.radius_km:
             surge_mult = max(surge_mult, zone.surge_multiplier)
-    
+
     # Calculate fare components
     base_fare = r["base"]
     mileage_charge = round(dist_mi * r["per_mile"], 2)
@@ -333,11 +359,27 @@ async def estimate_fare(
     subtotal = round(base_fare + mileage_charge + time_charge, 2)
     surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
     total = max(round(subtotal + surge_extra, 2), r["min_fare"])
-    
-    # Calculate range (Â±15%)
+
+    # Apply surcharges
+    scheduled_surcharge = 0.0
+    airport_fee = 0.0
+    meet_greet_fee = 0.0
+    if is_scheduled:
+        pct = _pricing_config.get("scheduled_surcharge_pct", 0.0)
+        scheduled_surcharge = round(total * pct, 2)
+        total += scheduled_surcharge
+    if is_airport:
+        airport_fee = _pricing_config.get("airport_fee", 0.0)
+        total += airport_fee
+        if meet_inside:
+            meet_greet_fee = _pricing_config.get("airport_meet_greet_fee", 0.0)
+            total += meet_greet_fee
+    total = round(total, 2)
+
+    # Calculate range (+/-15%)
     low = round(total * 0.85, 2)
     high = round(total * 1.15, 2)
-    
+
     return {
         "vehicle_type": vehicle_type,
         "distance_miles": dist_mi,
@@ -348,6 +390,9 @@ async def estimate_fare(
         "subtotal": subtotal,
         "surge_multiplier": surge_mult,
         "surge_extra": surge_extra,
+        "scheduled_surcharge": scheduled_surcharge,
+        "airport_fee": airport_fee,
+        "meet_greet_fee": meet_greet_fee,
         "total_estimate": total,
         "fare_range": {"low": low, "high": high},
         "display": f"${low:.2f} - ${high:.2f}",

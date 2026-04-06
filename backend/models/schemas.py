@@ -227,6 +227,7 @@ class DispatchRequestIn(BaseModel):
     pickup_zone: Optional[str] = None
     notes: Optional[str] = None
     scheduled_at: Optional[str] = None
+    meet_inside: bool = False
     stripe_payment_intent_id: Optional[str] = None
 
 

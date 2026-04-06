@@ -27,6 +27,7 @@ from config import (
     _HAS_STRIPE, _stripe_mod,
 )
 from services.event_bus import event_bus
+from routers.admin import _pricing_config
 
 router = APIRouter()
 
@@ -320,6 +321,33 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             data["status"] = "scheduled"
         except ValueError:
             data["scheduled_at"] = None
+
+    # ── Apply fare surcharges ──────────────────────────────────
+    fare = float(data.get("fare") or 0)
+    scheduled_surcharge = 0.0
+    airport_fee_applied = 0.0
+    meet_greet_fee = 0.0
+    if fare > 0:
+        # Scheduled ride surcharge (percentage)
+        if data.get("scheduled_at"):
+            pct = _pricing_config.get("scheduled_surcharge_pct", 0.0)
+            scheduled_surcharge = round(fare * pct, 2)
+            fare += scheduled_surcharge
+        # Airport flat fee
+        if data.get("is_airport"):
+            af = _pricing_config.get("airport_fee", 0.0)
+            airport_fee_applied = af
+            fare += af
+            # Meet & greet inside terminal
+            if data.get("meet_inside"):
+                mgf = _pricing_config.get("airport_meet_greet_fee", 0.0)
+                meet_greet_fee = mgf
+                fare += mgf
+        data["fare"] = round(fare, 2)
+    data["scheduled_surcharge"] = scheduled_surcharge
+    data["airport_fee_applied"] = airport_fee_applied
+    data["meet_greet_fee"] = meet_greet_fee
+
     trip = Trip(**data)
     db.add(trip)
     await db.commit()
@@ -355,6 +383,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                     fare=trip.fare or 0, notes=trip.notes or "",
                     is_airport=bool(trip.is_airport), airport_code=trip.airport_code or "",
                     terminal=trip.terminal or "",
+                    meet_inside=bool(trip.meet_inside),
                 )
         except Exception as e:
             logging.error("Firestore sync on dispatch_request failed: %s", e)

@@ -39,6 +39,8 @@ _pricing_config: dict = {
     "cancellation_fee": 5.0,
     "airport_fee": 10.0,
     "booking_fee": 2.0,
+    "scheduled_surcharge_pct": 0.12,
+    "airport_meet_greet_fee": 5.00,
     "vehicle_multipliers": {"sedan": 1.0, "suv": 1.5, "luxury": 2.0},
     "surge": {"night": 1.25, "holiday": 1.35},
     "driver_commission": 0.80,

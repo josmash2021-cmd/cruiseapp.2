@@ -483,7 +483,11 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
     wait_charge = trip.wait_time_charge or 0.0
     cancel_fee = trip.cancellation_fee or 0.0
     tip = trip.tip_amount or 0.0
-    total = round(subtotal + surge_extra + wait_charge + cancel_fee + tip, 2)
+    scheduled_surcharge = trip.scheduled_surcharge or 0.0
+    airport_fee_applied = trip.airport_fee_applied or 0.0
+    meet_greet_fee = trip.meet_greet_fee or 0.0
+    total = round(subtotal + surge_extra + wait_charge + cancel_fee + tip
+                  + scheduled_surcharge + airport_fee_applied + meet_greet_fee, 2)
     # Get payment method info for receipts
     payment_method_display = None
     if trip.rider_id:
@@ -512,6 +516,9 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         "wait_time_minutes": trip.wait_time_minutes or 0,
         "wait_time_charge": wait_charge,
         "cancellation_fee": cancel_fee,
+        "scheduled_surcharge": scheduled_surcharge,
+        "airport_fee": airport_fee_applied,
+        "meet_greet_fee": meet_greet_fee,
         "tip_amount": tip,
         "total": trip.fare or total,
         "platform_fee": trip.platform_fee,

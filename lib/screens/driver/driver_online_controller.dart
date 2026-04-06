@@ -984,6 +984,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _sseReconnectTimer?.cancel();
     if (_driverId == null || !mounted) return;
 
+    void scheduleReconnect(String reason) {
+      debugPrint('SSE $reason — reconnecting in 5s');
+      _sseActive = false;
+      if (mounted && _phase == _Phase.searching) {
+        _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
+      }
+    }
+
     _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
       (offers) {
         _sseActive = true;
@@ -991,20 +999,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (!mounted || _phase != _Phase.searching) return;
         _applyOffers(offers);
       },
-      onError: (e) {
-        debugPrint('SSE offers error: $e — reconnecting in 5s');
-        _sseActive = false;
-        if (mounted && _phase == _Phase.searching) {
-          _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
-        }
-      },
-      onDone: () {
-        debugPrint('SSE offers stream ended — reconnecting in 5s');
-        _sseActive = false;
-        if (mounted && _phase == _Phase.searching) {
-          _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
-        }
-      },
+      onError: (e) => scheduleReconnect('error: $e'),
+      onDone: () => scheduleReconnect('stream ended'),
     );
   }
 
@@ -1018,50 +1014,44 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     final hadOffers = _pendingOffers.isNotEmpty;
 
-    // Detect whether the leading offer is brand new (different offer_id than before).
-    // This covers the case where a new offer arrives while old offers are still showing,
-    // so the sound and preview fire correctly for the new offer rather than being skipped.
+    // Detect whether the leading offer has changed — covers both the 0→N transition
+    // and the case where a new offer replaces an existing one while cards are visible.
     final prevFirstId = _pendingOffers.isNotEmpty
         ? (_pendingOffers.first['offer_id'] ?? _pendingOffers.first['id'])?.toString()
         : null;
     final nextFirstId = filtered.isNotEmpty
         ? (filtered.first['offer_id'] ?? filtered.first['id'])?.toString()
         : null;
-    final isNewFirstOffer = filtered.isNotEmpty &&
-        (nextFirstId != null && nextFirstId != prevFirstId);
+    final isNewFirstOffer = nextFirstId != null && nextFirstId != prevFirstId;
 
     if (isNewFirstOffer) {
-      // Reset auto-trigger guard so the new offer gets its own preview.
-      if (nextFirstId != _lastAutoTriggeredOfferId) {
-        HapticFeedback.heavyImpact();
-        final firstOffer = filtered.first;
-        final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
-        final fare = firstOffer['fare'] as num?;
-        final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
-        // Foreground: play rich in-app sound (3x repeat). Background: notification handles sound.
-        // The _offerSoundPlaying guard inside NotificationService prevents double-play.
-        if (_appInForeground) {
-          NotificationService.playOfferSound();
-        }
-        NotificationService.showOfferNotification(
-          title: '${S.of(context).newRideOffer}$fareStr',
-          body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
-          offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
-          payload: 'trip_offer',
-          appInForeground: _appInForeground,
-        );
+      HapticFeedback.heavyImpact();
+      final firstOffer = filtered.first;
+      final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
+      final fare = firstOffer['fare'] as num?;
+      final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
+      if (_appInForeground) {
+        NotificationService.playOfferSound();
       }
+      NotificationService.showOfferNotification(
+        title: '${S.of(context).newRideOffer}$fareStr',
+        body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
+        offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
+        payload: 'trip_offer',
+        appInForeground: _appInForeground,
+      );
     }
 
     _setState(() {
       _pendingOffers = filtered;
-      _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
+      if (filtered.isNotEmpty) {
+        _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
+      }
       if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
       if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
     _preFetchOfferRoutes(filtered);
-    // Trigger route preview whenever the leading offer changes or offers go from empty → non-empty.
-    if (filtered.isNotEmpty && isNewFirstOffer) {
+    if (isNewFirstOffer) {
       _autoTriggerRoutePreview(filtered.first);
     }
   }

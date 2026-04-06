@@ -517,6 +517,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       });
       _arrivedDotPulse.stop();
       _popOutPickupPin();
+      // Reset guard so animation always runs fresh on arriving→onTrip transition
+      _startRideAnimationDone = false;
       _startStartRideAnimation();
     } else if (isInTripStatus &&
         _phase == _TrackPhase.nearDestination) {
@@ -524,6 +526,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _arrivedDotPulse.stop(); // Stop pulsing dot animation
       _popOutPickupPin();
       // FIX 3 & 4: Start the route animation and camera phases when starting ride
+      _startRideAnimationDone = false;
       _startStartRideAnimation();
     } else if (isCompletedStatus && _phase != _TrackPhase.completed) {
       LocalDataService.clearActiveRide();
@@ -1001,6 +1004,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _animBearing = (_animBearing + d * 0.30) % 360;
           _driverBearing = _animBearing;
           if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
+            _interpIdle = true;
+            _interpTicker?.stop();
+            return;
+          }
+        } else {
+          // No bearing from RTDB — still idle-detect on position convergence alone
+          // so the ticker is parked when car has fully settled at its target.
+          if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005) {
             _interpIdle = true;
             _interpTicker?.stop();
             return;

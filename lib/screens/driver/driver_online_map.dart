@@ -366,6 +366,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
+    final driverPos = _pos ?? pickupLL; // fallback when GPS hasn't resolved yet
 
     _setState(() {
       _previewingOffer = offer;
@@ -383,7 +384,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _fullSegTwo = cached.segTwo;
     } else {
       final routeFutures = await Future.wait([
-        _fetchRoutePoints(_pos!, pickupLL),
+        _fetchRoutePoints(driverPos, pickupLL),
         _fetchRoutePoints(pickupLL, dropoffLL),
       ]);
       _fullSegOne = routeFutures[0];
@@ -392,7 +393,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 1: Camera zoom to fit full route (flat, no tilt) ──
-    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+    _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
@@ -473,7 +474,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 8: Refit with preserved tilt ──
-    _fitBoundsMulti([_pos!, pickupLL, dropoffLL]);
+    _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
 
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);

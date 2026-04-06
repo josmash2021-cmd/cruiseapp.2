@@ -908,7 +908,9 @@ extension _RideRequestController on _RideRequestScreenState {
       case 'credit_card':
         return _confirmCard(amountCents);
       default:
-        return true;
+        // Unrecognised payment method — never allow payment to proceed silently.
+        debugPrint('[Payment] _confirmNativePayment: unknown method "$_selectedPaymentMethod"');
+        return false;
     }
   }
 
@@ -1029,9 +1031,12 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   /// PayPal: open PayPal checkout screen.
+  /// Returns true on success, false when the user explicitly cancels.
+  /// Rethrows on unexpected errors so the caller shows the declined banner.
   Future<bool> _confirmPayPal(int amountCents) async {
+    late final bool? result;
     try {
-      final result = await Navigator.of(context).push<bool>(
+      result = await Navigator.of(context).push<bool>(
         slideFromRightRoute(
           PayPalCheckoutScreen(
             amount: (amountCents / 100).toStringAsFixed(2),
@@ -1039,11 +1044,20 @@ extension _RideRequestController on _RideRequestScreenState {
           ),
         ),
       );
-      return result == true;
     } catch (e) {
+      // Navigator or PayPalCheckoutScreen threw — surface this so the caller
+      // can show the payment-declined banner rather than silently returning false.
       debugPrint('[PayPal] checkout error: $e');
-      return false;
+      rethrow;
     }
+    // result == null  → user pressed back (cancel, no error)
+    // result == false → PayPal screen reported a failure we should surface
+    // result == true  → authorised
+    if (result == false) {
+      debugPrint('[PayPal] checkout returned false — treating as declined');
+      throw Exception('PayPal payment was declined or failed on the PayPal screen.');
+    }
+    return result == true;
   }
 
   /// Credit/debit card: authorize (hold) saved card via Stripe PaymentIntent.
@@ -1500,11 +1514,14 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Payment helpers ──
 
+  // apple_pay and google_pay are intentionally excluded here.
+  // Device support for those methods is verified at payment time via
+  // Stripe.isPlatformPaySupported() inside _confirmApplePay/_confirmGooglePay.
+  // Counting them as "available" before that check would enable the
+  // ride-request button on devices where neither is set up.
   bool get _hasAnyPaymentMethod =>
       _linkedPaymentMethods.isNotEmpty ||
       _selectedPaymentMethod == 'test_mode' ||
-      _selectedPaymentMethod == 'apple_pay' ||
-      _selectedPaymentMethod == 'google_pay' ||
       _selectedPaymentMethod == 'paypal';
 
   String _paymentLabel(String id) {

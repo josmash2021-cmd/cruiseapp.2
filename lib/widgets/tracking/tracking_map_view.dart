@@ -875,6 +875,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _carAnnot!.geometry = mapbox.Point(
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
+        // car_*.png assets all face UP (north) by default — no bearing offset needed.
         _carAnnot!.iconRotate = _animBearing;
         mgr.update(_carAnnot!);
       } catch (e) {
@@ -907,6 +908,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _carPngBytes!,
         iconSize: _kCarAnnotScale,
         iconAnchor: mapbox.IconAnchor.CENTER,
+        // car_*.png assets all face UP (north) by default — no bearing offset needed.
         iconRotate: _animBearing,
         iconOffset: [0, 0],
       ));

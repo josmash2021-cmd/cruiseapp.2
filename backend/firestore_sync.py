@@ -705,6 +705,59 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
         log.error("❌ Trip sync failed for %d: %s", trip_id, e)
 
 
+def sync_scheduled_ride(trip_id: int, rider_id: int, rider_name: str = "",
+                        rider_phone: str = "", scheduled_at=None, status: str = "scheduled",
+                        ride_type: str = "scheduled", vehicle_type: str = "",
+                        pickup_address: str = "", dropoff_address: str = "",
+                        pickup_lat: float = 0, pickup_lng: float = 0,
+                        dropoff_lat: float = 0, dropoff_lng: float = 0,
+                        fare: float = 0, notes: str = "",
+                        is_airport: bool = False, airport_code: str = "",
+                        terminal: str = "", airline: str = "", flight_number: str = "",
+                        meet_inside: bool = False,
+                        driver_id: int = None, driver_name: str = None,
+                        driver_phone: str = None):
+    """Sync a scheduled ride to Firestore scheduled_rides collection for dispatch app."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{trip_id}"
+    data = {
+        "id": trip_id,
+        "rider_id": rider_id,
+        "riderName": rider_name,
+        "riderPhone": rider_phone,
+        "scheduledAt": _ts(scheduled_at) if scheduled_at else None,
+        "status": status,
+        "type": "airport" if is_airport else "scheduled",
+        "vehicle_type": vehicle_type or "",
+        "pickup_address": pickup_address or "",
+        "dropoff_address": dropoff_address or "",
+        "pickup_lat": pickup_lat,
+        "pickup_lng": pickup_lng,
+        "dropoff_lat": dropoff_lat,
+        "dropoff_lng": dropoff_lng,
+        "fare": fare or 0,
+        "notes": notes or "",
+        "airline": airline or "",
+        "flight_number": flight_number or "",
+        "airport_code": airport_code or "",
+        "terminal": terminal or "",
+        "meet_inside": meet_inside,
+        "createdAt": _server_ts(),
+    }
+    if driver_id:
+        data["driverId"] = driver_id
+        data["driverName"] = driver_name or ""
+        data["driverPhone"] = driver_phone or ""
+        data["assignedAt"] = _server_ts()
+    try:
+        _db.collection("scheduled_rides").document(doc_id).set(data, merge=True)
+        log.info("Synced scheduled ride sql_%d to Firestore", trip_id)
+    except Exception as e:
+        log.error("Scheduled ride sync failed for %d: %s", trip_id, e)
+
+
 def sync_trip_status(trip_id: int, status: str,
                      driver_id: int = None, driver_name: str = None, driver_phone: str = None,
                      driver_photo_url: str = None,

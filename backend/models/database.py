@@ -129,6 +129,7 @@ class User(Base):
     checkr_report_id = Column(String(100), nullable=True)
     background_check_status = Column(String(20), default="none")
     background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
+    active_session_id = Column(String(64), nullable=True)
 
 
 class ConsentLog(Base):
@@ -637,6 +638,7 @@ async def migrate_postgres(conn):
         ("users", "checkr_report_id", "VARCHAR(100)"),
         ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),
         ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "active_session_id", "VARCHAR(64)"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),

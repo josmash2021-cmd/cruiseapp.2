@@ -375,7 +375,7 @@ def _check_ssrf(url: str) -> bool:
 #  JWT token creation
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str = "active") -> str:
+def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str = "active", session_id: str = "") -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
     payload = {
         "sub": str(user_id),
@@ -390,6 +390,8 @@ def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str
         payload["role"] = role
     if status:
         payload["st"] = status
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -466,6 +468,14 @@ async def _get_current_user(
         raise HTTPException(401, "User not found")
     if (user.status or "active") in ("deleted", "blocked"):
         raise HTTPException(403, f"Account {user.status}")
+
+    # Driver single-device enforcement: check session_id matches
+    jwt_sid = payload.get("sid")
+    if jwt_sid and (user.role or "") == "driver":
+        db_sid = getattr(user, "active_session_id", None)
+        if db_sid and db_sid != jwt_sid:
+            raise HTTPException(401, "session_expired_new_device")
+
     _user_cache[user_id] = (user, now)
     if len(_user_cache) > _MAX_USER_CACHE:
         _oldest = min(_user_cache, key=lambda k: _user_cache[k][1])

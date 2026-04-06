@@ -341,6 +341,21 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 airport_code=trip.airport_code, terminal=trip.terminal,
                 pickup_zone=trip.pickup_zone, notes=trip.notes,
             )
+            # Also sync to scheduled_rides collection for dispatch app
+            if trip.scheduled_at is not None:
+                firestore_sync.sync_scheduled_ride(
+                    trip_id=trip.id, rider_id=trip.rider_id,
+                    rider_name=f"{user.first_name} {user.last_name}",
+                    rider_phone=user.phone or "",
+                    scheduled_at=trip.scheduled_at, status=trip.status,
+                    vehicle_type=trip.vehicle_type or "",
+                    pickup_address=trip.pickup_address or "", dropoff_address=trip.dropoff_address or "",
+                    pickup_lat=trip.pickup_lat or 0, pickup_lng=trip.pickup_lng or 0,
+                    dropoff_lat=trip.dropoff_lat or 0, dropoff_lng=trip.dropoff_lng or 0,
+                    fare=trip.fare or 0, notes=trip.notes or "",
+                    is_airport=bool(trip.is_airport), airport_code=trip.airport_code or "",
+                    terminal=trip.terminal or "",
+                )
         except Exception as e:
             logging.error("Firestore sync on dispatch_request failed: %s", e)
 

@@ -36,6 +36,18 @@ from config import (
 
 router = APIRouter()
 
+
+async def _create_driver_aware_token(user, db) -> str:
+    """Create JWT token. For drivers, generate + store a session_id for single-device enforcement."""
+    session_id = ""
+    if (user.role or "") == "driver":
+        import secrets as _s
+        session_id = _s.token_hex(16)
+        user.active_session_id = session_id
+        await db.flush()
+    return _create_token(user.id, role=user.role, status=user.status or "active", session_id=session_id)
+
+
 # -- FCM Token (save device push token) ----------------
 @router.post("/auth/fcm-token", dependencies=[Depends(_verify_api_key)])
 async def save_fcm_token(
@@ -92,7 +104,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
-                token = _create_token(existing.id, role=existing.role, status=existing.status or "active")
+                token = await _create_driver_aware_token(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Email already registered")
@@ -109,7 +121,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
-                token = _create_token(existing.id, role=existing.role, status=existing.status or "active")
+                token = await _create_driver_aware_token(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Phone already registered")
@@ -185,7 +197,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logging.error("n8n trigger on register failed: %s", e)
 
-    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
@@ -269,7 +281,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
             user.is_verified = True
             await db.commit()
             await db.refresh(user)
-        token = _create_token(user.id, role=user.role, status=user.status or "active")
+        token = await _create_driver_aware_token(user, db)
         refresh = _create_refresh_token(user.id)
         logging.info("[DEMO] Direct login for Apple review account: %s (%s)", identifier_clean, role)
         return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
@@ -675,7 +687,7 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("Firestore photo recovery failed for user %s: %s", user.id, e)
 
-    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
@@ -788,7 +800,7 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         await db.commit()
         await db.refresh(user)
 
-    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)
     return {
         "access_token": token,
@@ -819,8 +831,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     st = user.status or "active"
     if st in ("deleted", "blocked", "deactivated"):
         raise HTTPException(403, f"Account {st}")
-    device_fp = request.headers.get("x-device-fp", "")
-    new_access = _create_token(user.id, device_fp, role=user.role, status=user.status or "active")
+    new_access = await _create_driver_aware_token(user, db)
     new_refresh = _create_refresh_token(user.id)
     _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}

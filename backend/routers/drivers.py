@@ -33,8 +33,8 @@ from services.event_bus import event_bus
 
 router = APIRouter()
 
-PLATFORM_COMMISSION_RATE = 0.60
-DRIVER_SHARE_RATE = 0.40
+PLATFORM_COMMISSION_RATE = 0.40
+DRIVER_SHARE_RATE = 0.60
 
 
 def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
@@ -347,7 +347,10 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     completed_trips = completed_r.scalars().all()
     total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
     cashouts_r = await db.execute(
-        select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(Cashout.user_id == user.id)
+        select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(
+            Cashout.user_id == user.id,
+            Cashout.status != "failed",
+        )
     )
     total_cashouts = float(cashouts_r.scalar() or 0)
     available_balance = total_earnings - total_cashouts
@@ -387,6 +390,9 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         except Exception as _se:
             stripe_error = str(_se)[:200]
             logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
+            # Mark as failed so it doesn't block future cashout attempts
+            cashout.status = "failed"
+            await db.commit()
 
     return {
         "id": cashout.id,

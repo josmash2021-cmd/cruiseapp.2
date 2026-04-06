@@ -29,7 +29,7 @@ from services.event_bus import event_bus
 
 router = APIRouter()
 
-DRIVER_SHARE_RATE = 0.40
+DRIVER_SHARE_RATE = 0.60
 
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
@@ -355,7 +355,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
 
-@router.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
+@router.get(“/dispatch/driver/pending”, dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # L3: return cached result if same driver called within _PENDING_CACHE_TTL seconds
     _now = time.monotonic()
@@ -363,29 +363,156 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     if _cached and (_now - _cached[0]) < _PENDING_CACHE_TTL:
         return _cached[1]
 
-    # Single JOIN query â€” fetch offers + trips + riders in ONE roundtrip (fixes N+1)
+    # -- Stale offer cleanup: expire offers older than 5 minutes --
+    # This catches offers that were never explicitly rejected (e.g. app crash, no response).
+    _OFFER_MAX_AGE_SECONDS = 300  # 5 minutes
+    stale_cutoff = utc_now() - timedelta(seconds=_OFFER_MAX_AGE_SECONDS)
+    try:
+        stale_result = await db.execute(
+            select(DispatchOffer, Trip)
+            .join(Trip, DispatchOffer.trip_id == Trip.id)
+            .where(
+                and_(
+                    DispatchOffer.driver_id == driver_id,
+                    DispatchOffer.status == “pending”,
+                    DispatchOffer.created_at <= stale_cutoff,
+                )
+            )
+        )
+        stale_rows = stale_result.all()
+        for stale_offer, stale_trip in stale_rows:
+            stale_offer.status = “expired”
+            logging.warning(
+                “[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min — marking expired and cascading”,
+                stale_offer.id, stale_offer.trip_id, driver_id,
+            )
+            # Notify the timed-out driver via FCM
+            timed_out_driver_result = await db.execute(select(User).where(User.id == driver_id))
+            timed_out_driver = timed_out_driver_result.scalar_one_or_none()
+            if timed_out_driver and timed_out_driver.fcm_token:
+                _send_fcm_push(
+                    timed_out_driver.fcm_token,
+                    title=”Offer Expired”,
+                    body=”The ride offer was not accepted in time and has been reassigned.”,
+                    data={“type”: “offer_expired”, “offer_id”: str(stale_offer.id), “trip_id”: str(stale_offer.trip_id)},
+                )
+        if stale_rows:
+            await db.commit()
+            # Cascade reassignment for each expired offer whose trip is still unassigned
+            for stale_offer, stale_trip in stale_rows:
+                if stale_trip.status != “requested”:
+                    continue
+                try:
+                    rejected_ids_result = await db.execute(
+                        select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == stale_trip.id)
+                    )
+                    rejected_ids = {r[0] for r in rejected_ids_result.all()}
+                    active_trip_statuses = [“accepted”, “driver_en_route”, “driver_arriving”, “arrived”, “in_trip”, “in_progress”]
+                    busy_result = await db.execute(
+                        select(Trip.driver_id).where(
+                            and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
+                        )
+                    )
+                    busy_ids = {r[0] for r in busy_result.all()}
+                    exclude_ids = rejected_ids | busy_ids
+                    active_cutoff = utc_now() - timedelta(minutes=15)
+                    next_drivers_result = await db.execute(
+                        select(User).where(
+                            and_(
+                                User.role == “driver”,
+                                User.is_online == True,
+                                User.lat.isnot(None),
+                                User.lng.isnot(None),
+                                User.last_active_at.isnot(None),
+                                User.last_active_at >= active_cutoff,
+                                ~User.id.in_(exclude_ids) if exclude_ids else True,
+                            )
+                        )
+                    )
+                    next_drivers = next_drivers_result.scalars().all()
+                    next_drivers_sorted = sorted(
+                        next_drivers,
+                        key=lambda d: _haversine(stale_trip.pickup_lat, stale_trip.pickup_lng, d.lat or 0, d.lng or 0),
+                    )
+                    req_type = (stale_trip.vehicle_type or “comfort”).lower()
+                    if req_type in (“vip”, “premium”) and next_drivers_sorted:
+                        all_ids = [d.id for d in next_drivers_sorted]
+                        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, req_type)
+                        tier_matched = [d for d in next_drivers_sorted if d.id in eligible_ids]
+                        if tier_matched:
+                            next_drivers_sorted = tier_matched
+                    if next_drivers_sorted:
+                        next_driver = next_drivers_sorted[0]
+                        new_offer = DispatchOffer(trip_id=stale_trip.id, driver_id=next_driver.id)
+                        db.add(new_offer)
+                        await db.commit()
+                        await db.refresh(new_offer)
+                        _pending_cache.pop(next_driver.id, None)
+                        estimated_driver_fare = round(float(stale_trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+                        rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
+                        rider = rider_result.scalar_one_or_none()
+                        rider_name = f”{rider.first_name} {rider.last_name}” if rider else “Rider”
+                        rider_phone = (rider.phone or “”) if rider else “”
+                        rider_photo = (_abs_photo_url(rider.photo_url) or “”) if rider else “”
+                        asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
+                            “offer_id”: new_offer.id,
+                            “rider_name”: rider_name,
+                            “rider_phone”: rider_phone,
+                            “rider_photo_url”: rider_photo,
+                            “created_at”: new_offer.created_at.isoformat() if new_offer.created_at else None,
+                            “offer_timeout_seconds”: OFFER_TIMEOUT_SECONDS,
+                            **_trip_dict(stale_trip),
+                            “fare”: estimated_driver_fare,
+                            “driver_earnings”: estimated_driver_fare,
+                        }]))
+                        if next_driver.fcm_token:
+                            _send_fcm_push(
+                                next_driver.fcm_token,
+                                title=”New Ride Offer”,
+                                body=f”{rider_name} — {(stale_trip.pickup_address or '')[:50]}”,
+                                data={“type”: “new_offer”, “trip_id”: str(stale_trip.id), “offer_id”: str(new_offer.id)},
+                                is_offer=True,
+                            )
+                        logging.info(
+                            “[Dispatch] Expired offer %d (trip %d) reassigned to driver %d”,
+                            stale_offer.id, stale_trip.id, next_driver.id,
+                        )
+                    else:
+                        logging.warning(
+                            “[Dispatch] Expired offer %d (trip %d): no next driver available for reassignment”,
+                            stale_offer.id, stale_trip.id,
+                        )
+                except Exception as e:
+                    logging.error(
+                        “[Dispatch] Cascade reassignment after offer %d expiry failed: %s”,
+                        stale_offer.id, e,
+                    )
+    except Exception as e:
+        logging.error(“[get_driver_pending] Stale offer cleanup failed for driver %d: %s”, driver_id, e)
+
+    # Single JOIN query — fetch offers + trips + riders in ONE roundtrip (fixes N+1)
     result = await db.execute(
         select(DispatchOffer, Trip, User)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
         .outerjoin(User, Trip.rider_id == User.id)
-        .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "pending"))
+        .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == “pending”))
     )
     offers = []
     for offer, trip, rider in result.all():
-        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-        rider_phone = (rider.phone or "") if rider else ""
-        rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+        rider_name = f”{rider.first_name} {rider.last_name}” if rider else “Rider”
+        rider_phone = (rider.phone or “”) if rider else “”
+        rider_photo_url = (_abs_photo_url(rider.photo_url) or “”) if rider else “”
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         offers.append({
-            "offer_id": offer.id,
-            "rider_name": rider_name,
-            "rider_phone": rider_phone,
-            "rider_photo_url": rider_photo_url,
-            "created_at": offer.created_at.isoformat() if offer.created_at else None,
-            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+            “offer_id”: offer.id,
+            “rider_name”: rider_name,
+            “rider_phone”: rider_phone,
+            “rider_photo_url”: rider_photo_url,
+            “created_at”: offer.created_at.isoformat() if offer.created_at else None,
+            “offer_timeout_seconds”: OFFER_TIMEOUT_SECONDS,
             **_trip_dict(trip),
-            "fare": estimated_driver_fare,
-            "driver_earnings": estimated_driver_fare,
+            “fare”: estimated_driver_fare,
+            “driver_earnings”: estimated_driver_fare,
         })
     _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL
     return offers
@@ -963,8 +1090,8 @@ async def approve_action_request(
         if _HAS_FIRESTORE:
             try:
                 firestore_sync.sync_support_message(ar.chat_id, bot_msg.id, 0, agent, "bot", user_msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error("[approve_action_request] Firestore sync_support_message failed: %s", e)
 
     # Cancel reminder task
     task = _action_reminder_tasks.pop(request_id, None)
@@ -976,8 +1103,8 @@ async def approve_action_request(
     if _HAS_FIRESTORE:
         try:
             firestore_sync.sync_action_request(ar.id, {"status": "approved", "reviewed_by": reviewed_by})
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("[approve_action_request] Firestore sync_action_request failed: %s", e)
 
     _security_audit_log("ACTION_APPROVED", reviewed_by, f"request_id={request_id} type={ar.action_type}")
 
@@ -992,8 +1119,8 @@ async def approve_action_request(
                 body=action_result_msg[:200],
                 data={"type": "action_approved", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error("[approve_action_request] FCM push to user %d failed: %s", ar.user_id, e)
 
     return {"status": "approved", "action_result": action_result_msg}
 
@@ -1041,8 +1168,8 @@ async def reject_action_request(
                     bot_phase="dispatch_takeover",
                     needs_escalation=True,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error("[reject_action_request] Firestore sync failed: %s", e)
 
     # Cancel reminder task
     task = _action_reminder_tasks.pop(request_id, None)
@@ -1054,8 +1181,8 @@ async def reject_action_request(
     if _HAS_FIRESTORE:
         try:
             firestore_sync.sync_action_request(ar.id, {"status": "rejected", "reviewed_by": reviewed_by})
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("[reject_action_request] Firestore sync_action_request failed: %s", e)
 
     _security_audit_log("ACTION_REJECTED", reviewed_by, f"request_id={request_id} type={ar.action_type} note={admin_note}")
 
@@ -1067,12 +1194,12 @@ async def reject_action_request(
             _lang = getattr(chat, "locale", "en") or "en" if chat else "en"
             _send_fcm_push(
                 _push_user.fcm_token,
-                title="ðŸ‘¤ Supervisor conectado" if _lang.startswith("es") else "ðŸ‘¤ Supervisor Connected",
+                title="ðŸ’¤ Supervisor conectado" if _lang.startswith("es") else "ðŸ’¤ Supervisor Connected",
                 body="Un supervisor revisarÃ¡ su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
                 data={"type": "action_rejected", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error("[reject_action_request] FCM push to user %d failed: %s", ar.user_id, e)
 
     return {"status": "rejected", "takeover": True}
 

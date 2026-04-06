@@ -628,19 +628,35 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (!mounted) return;
       if (url.isNotEmpty) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        // Wait for driver to complete Stripe onboarding, then refresh
+        // Poll Stripe Connect status until onboarding completes (up to 5 min)
         if (mounted) {
-          await Future.delayed(const Duration(seconds: 3));
-          // Check if Stripe Connect is now active
-          try {
-            final status = await ApiService.getStripeConnectStatus();
-            if (status['connected'] == true && mounted) {
-              final acctId = (status['stripe_account_id'] ?? '').toString();
-              final display = 'Stripe Connect ····${acctId.length > 4 ? acctId.substring(acctId.length - 4) : acctId}';
-              await _addMethod('bank_account', display);
-            }
-          } catch (_) {}
-          await _loadMethods();
+          bool connected = false;
+          for (int attempt = 0; attempt < 30 && mounted; attempt++) {
+            // Backoff: 3s for first 10 attempts, then 6s, then 10s
+            final delay = attempt < 10 ? 3 : (attempt < 20 ? 6 : 10);
+            await Future.delayed(Duration(seconds: delay));
+            if (!mounted) break;
+            try {
+              final status = await ApiService.getStripeConnectStatus();
+              if (status['connected'] == true) {
+                connected = true;
+                if (!mounted) break;
+                final acctId = (status['stripe_account_id'] ?? '').toString();
+                final display = 'Stripe Connect ····${acctId.length > 4 ? acctId.substring(acctId.length - 4) : acctId}';
+                await _addMethod('bank_account', display);
+                break;
+              }
+            } catch (_) {}
+          }
+          if (!connected && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Complete Stripe onboarding to activate your bank account.'),
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          if (mounted) await _loadMethods();
         }
       } else {
         // Fallback to manual bank entry form

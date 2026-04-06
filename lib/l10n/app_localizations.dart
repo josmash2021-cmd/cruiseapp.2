@@ -1602,6 +1602,10 @@ class S {
 
   // ── Ride Request Screen ────────────────────────────────────────────────────
   String get tripCancelled => _es ? 'Viaje cancelado' : 'Trip cancelled';
+  String get noDriversAvailableTitle => _es ? 'Sin conductores disponibles' : 'No drivers available';
+  String get noDriversAvailableMsg => _es
+      ? 'No hay conductores disponibles cerca de tu zona en estos momentos. Por favor intenta de nuevo en unos minutos.'
+      : 'There are no drivers available near your area right now. Please try again in a few minutes.';
   String get okBtn => _es ? 'Aceptar' : 'OK';
   String get fastRideLabel => _es ? 'Viaje rápido' : 'Fast Ride';
   String requestRideWithPrice(String price) =>

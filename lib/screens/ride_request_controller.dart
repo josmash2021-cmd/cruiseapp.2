@@ -342,62 +342,83 @@ extension _RideRequestController on _RideRequestScreenState {
         _searchMapTimer = null;
         _splashTimer?.cancel();
         _splashTimer = null;
-        // Clean up route/pins immediately on cancellation
         _cleanupMapAnnotations();
-        // Rider already confirmed cancellation — just go home, no extra dialog
+        // Rider already confirmed cancellation — just go home
         if (_riderInitiatedCancel) {
           _riderInitiatedCancel = false;
           _cancelDialogShown = false;
           _ctrl.reset();
-          if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+          if (mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              smoothFadeRoute(const HomeScreen()),
+              (_) => false,
+            );
+          }
           break;
         }
-        // Guard: only show one cancel dialog per cancellation event
         if (_cancelDialogShown) break;
         _cancelDialogShown = true;
-        // Filter out location validation errors — those are not meaningful cancel reasons
         final rawReason = s.cancelReason;
         final isValidationError = rawReason != null &&
-            (rawReason.toLowerCase().contains('ubicación') ||
+            (rawReason.toLowerCase().contains('ubicacion') ||
              rawReason.toLowerCase().contains('recogida') ||
              rawReason.toLowerCase().contains('destino') ||
              rawReason.toLowerCase().contains('location'));
+        final noDrivers = rawReason != null &&
+            (rawReason.toLowerCase().contains('no hay driver') ||
+             rawReason.toLowerCase().contains('no driver'));
         final reason = (rawReason != null && rawReason.isNotEmpty && !isValidationError)
             ? rawReason
             : null;
+        // Navigate home first, then show dialog on top
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final displayReason = reason ?? S.of(context).tripCancelled;
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogCtx) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 28),
-                  const SizedBox(width: 10),
-                  Text(S.of(context).tripCancelled),
+          _ctrl.reset();
+          Navigator.of(context).pushAndRemoveUntil(
+            smoothFadeRoute(const HomeScreen()),
+            (_) => false,
+          );
+          // Show dialog after navigating home
+          Future.delayed(const Duration(milliseconds: 500), () {
+            final navCtx = Navigator.of(context, rootNavigator: true).context;
+            if (!mounted) return;
+            final displayReason = noDrivers
+                ? (S.of(context).noDriversAvailableMsg)
+                : (reason ?? S.of(context).tripCancelled);
+            final title = noDrivers
+                ? S.of(context).noDriversAvailableTitle
+                : S.of(context).tripCancelled;
+            showDialog(
+              context: context,
+              barrierDismissible: true,
+              builder: (dialogCtx) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(
+                      noDrivers ? Icons.search_off_rounded : Icons.info_outline,
+                      color: noDrivers ? const Color(0xFFE8C547) : Colors.orange,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(title, style: const TextStyle(fontSize: 17))),
+                  ],
+                ),
+                content: Text(displayReason, style: const TextStyle(fontSize: 15)),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      _cancelDialogShown = false;
+                      Navigator.of(dialogCtx).pop();
+                    },
+                    child: Text(S.of(context).okBtn),
+                  ),
                 ],
               ),
-              content: Text(displayReason, style: const TextStyle(fontSize: 15)),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    _cancelDialogShown = false;
-                    Navigator.of(dialogCtx).pop();
-                    _ctrl.reset();
-                    if (mounted) {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    }
-                  },
-                  child: Text(S.of(context).okBtn),
-                ),
-              ],
-            ),
-          );
+            );
+          });
         });
         break;
       default:

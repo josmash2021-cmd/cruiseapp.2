@@ -649,17 +649,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       coords.add(mapbox.Position(tipLng, tipLat));
 
-      if (coords.length >= 2) {
-        mainLine!.geometry = mapbox.LineString(coordinates: coords);
+      final ml = mainLine;
+      if (coords.length >= 2 && ml != null) {
+        ml.geometry = mapbox.LineString(coordinates: coords);
         updating = true;
-        polyMgr.update(mainLine!).then((_) => updating = false).catchError((_) => updating = false);
+        polyMgr.update(ml).then((_) => updating = false).catchError((_) => updating = false);
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        mainLine!.geometry = mapbox.LineString(coordinates: fullCoords);
-        polyMgr.update(mainLine!);
+        if (ml != null) {
+          ml.geometry = mapbox.LineString(coordinates: fullCoords);
+          polyMgr.update(ml);
+        }
         _previewPickupAnnot = mainLine;
         if (!completer.isCompleted) completer.complete();
       }
@@ -731,17 +734,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       coords.add(mapbox.Position(tipLng, tipLat));
 
-      if (coords.length >= 2) {
-        seg2Line!.geometry = mapbox.LineString(coordinates: coords);
+      final sl = seg2Line;
+      if (coords.length >= 2 && sl != null) {
+        sl.geometry = mapbox.LineString(coordinates: coords);
         updating = true;
-        polyMgr.update(seg2Line!).then((_) => updating = false).catchError((_) => updating = false);
+        polyMgr.update(sl).then((_) => updating = false).catchError((_) => updating = false);
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
         final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        seg2Line!.geometry = mapbox.LineString(coordinates: fullCoords);
-        polyMgr.update(seg2Line!);
+        if (sl != null) {
+          sl.geometry = mapbox.LineString(coordinates: fullCoords);
+          polyMgr.update(sl);
+        }
         _previewDropoffAnnot = seg2Line;
         if (!completer.isCompleted) completer.complete();
       }

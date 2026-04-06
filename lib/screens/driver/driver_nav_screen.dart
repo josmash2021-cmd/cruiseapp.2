@@ -407,7 +407,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     if (_phase == TripPhase.toPickup && !_notified5MinAway && _etaMinutes <= 5 && _etaMinutes > 0) {
       _notified5MinAway = true;
       ApiService.updateTripStatus(tripId: widget.tripId, status: 'driver_arriving')
-          .catchError((_) {});
+          .catchError((_) => <String, dynamic>{});
     }
 
     // Show slide "Arrived" when ≤ 1 min ETA or within ~100 m of pickup

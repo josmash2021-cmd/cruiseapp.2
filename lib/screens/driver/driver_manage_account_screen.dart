@@ -96,6 +96,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
       final uid = UserSession.currentUid;
       if (uid.isNotEmpty) UserProfilePhoto.evictCachedPhoto(uid);
       await UserProfilePhoto.clearCache();
+      if (!mounted) return;
       // Add cache-bust param so CachedNetworkImage doesn't serve stale version
       final cacheBust = DateTime.now().millisecondsSinceEpoch;
       final freshUrl = url.contains('?') ? '$url&cb=$cacheBust' : '$url?cb=$cacheBust';

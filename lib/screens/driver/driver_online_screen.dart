@@ -400,9 +400,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _boot();
   }
 
-  @override
   bool _appInForeground = true;
 
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
     if (state == AppLifecycleState.paused) {

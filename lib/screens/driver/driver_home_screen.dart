@@ -1700,8 +1700,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (active != null) {
           _activeTripData = active;
           _isStillOnline = true;
-        } else if (_activeTripData == null) {
-          _activeTripData = null; // both sources found nothing
         }
       });
     } catch (_) {

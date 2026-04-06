@@ -69,6 +69,17 @@ _CANCEL_INTENT = [
 ]
 
 
+def _realistic_typing_delay(message: str, is_first: bool = False) -> float:
+    """Simulate realistic human typing: ~40 chars/sec with variance + thinking time.
+    Agent 4: Tone Calibration — makes bot timing feel human, not mechanical.
+    """
+    char_count = len(message)
+    typing_time = char_count / 40.0
+    think_time = _rng.uniform(2.5, 5.0) if is_first else _rng.uniform(1.0, 3.0)
+    total = typing_time + think_time
+    return max(3.0, min(18.0, total))
+
+
 def _detect_frustration(text: str) -> bool:
     """Detect if user is frustrated/angry based on keywords and typing patterns."""
     t = text.lower()
@@ -160,6 +171,34 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
     else:
         ctx["trip_summary"] = ("No encontre viajes recientes en tu cuenta." if lang.startswith("es")
                                else "I couldn't find any recent trips on your account.")
+
+    # Past support issues (last 3 resolved chats) — Agent 1: Memory Agent
+    try:
+        past_chats_r = await db.execute(
+            select(SupportChat).where(
+                SupportChat.user_id == user_id,
+                SupportChat.status == "closed",
+            ).order_by(SupportChat.updated_at.desc()).limit(3)
+        )
+        past_chats = past_chats_r.scalars().all()
+        ctx["past_issues"] = []
+        for pc in past_chats:
+            last_msg_r = await db.execute(
+                select(SupportMessage).where(
+                    SupportMessage.chat_id == pc.id,
+                    SupportMessage.sender_role.in_(["rider", "driver", "user"]),
+                ).order_by(SupportMessage.created_at.desc()).limit(1)
+            )
+            last_msg = last_msg_r.scalar_one_or_none()
+            if last_msg:
+                ctx["past_issues"].append({
+                    "date": pc.updated_at.strftime("%m/%d/%Y") if pc.updated_at else "N/A",
+                    "subject": pc.subject or "General support",
+                    "summary": (last_msg.message or "")[:120],
+                })
+    except Exception as _mem_err:
+        logging.warning("Memory agent failed to load past issues for user %d: %s", user_id, _mem_err)
+        ctx["past_issues"] = []
 
     return ctx
 
@@ -611,6 +650,18 @@ WHAT YOU CANNOT DO (must go through admin):
 """
 
     knowledge = driver_knowledge if user_type == "driver" else rider_knowledge
+
+    # Agent 1 (Memory): build past issues block before serialising ctx
+    past_issues_block = ""
+    if ctx.get("past_issues"):
+        pi_list = ctx["past_issues"]
+        if lang.startswith("es"):
+            lines = [f" {pi['date']} — {pi['subject']}: \"{pi['summary']}\"" for pi in pi_list]
+            past_issues_block = "Interacciones de soporte anteriores:\n" + "\n".join(lines)
+        else:
+            lines = [f" {pi['date']} — {pi['subject']}: \"{pi['summary']}\"" for pi in pi_list]
+            past_issues_block = "Past support interactions:\n" + "\n".join(lines)
+
     ctx_json = json.dumps(ctx, default=str, ensure_ascii=False)
 
     action_rules = """
@@ -674,6 +725,7 @@ ESCALATION (only after 3+ exchanges where user is still unsatisfied):
 
 EMERGENCY (if user mentions danger, accident, or emergency):
 {"Si se encuentra en peligro inmediato, por favor llame al 911 primero." if is_es else "If you are in immediate danger, please call 911 first."}
+{f"{chr(10)}{past_issues_block}" if past_issues_block else ""}
 """
 
 
@@ -1108,8 +1160,8 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     replies = []
 
     if phase == "welcome":
-        # Brief typing delay
-        await asyncio.sleep(_rng.randint(5, 12))
+        # Realistic typing delay based on response length (Agent 4)
+        await asyncio.sleep(_realistic_typing_delay("", is_first=True))
         if lang.startswith("es"):
             reply = _rng.choice([
                 f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, podras darme mas detalles sobre tu problema o situacion?",
@@ -1126,8 +1178,8 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         chat.bot_phase = "awaiting_details"
 
     elif phase == "awaiting_details":
-        # Brief typing delay
-        await asyncio.sleep(_rng.randint(8, 15))
+        # Realistic typing delay (Agent 4)
+        await asyncio.sleep(_realistic_typing_delay("", is_first=True))
         agent = _rng.choice(_AGENT_NAMES)
         chat.agent_name = agent
 
@@ -1291,9 +1343,12 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             close = _rng.choice(closing).format(name=user_name)
             replies.append({"role": "bot", "message": close, "sender_name": agent})
 
-        # 5) AI-powered response (4-layer fallback: Claude â†’ Cache â†’ Keywords â†’ Handoff)
+        # 5) AI-powered response (4-layer fallback: Claude -> Cache -> Keywords -> Handoff)
         else:
             resp, actions = await _generate_ai_response(chat, user_msg, user_name, agent, db)
+
+            # Agent 4 (Tone Calibration): realistic typing delay before AI reply
+            await asyncio.sleep(_realistic_typing_delay(resp or ""))
 
             # Process any action requests from Claude
             for act in actions:
@@ -1384,6 +1439,48 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _inactivity_tasks: dict[int, "asyncio.Task"] = {}
+
+
+async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
+    """Agent 2 (Follow-up): send a satisfaction check push 24h after chat closes.
+    Skips silently if user has opened a new chat or has no FCM token.
+    """
+    try:
+        await asyncio.sleep(86400)  # 24 hours
+        async with SessionLocal() as db:
+            # Skip if user already opened a new support chat in the last 24h
+            recent_r = await db.execute(
+                select(SupportChat).where(
+                    SupportChat.user_id == user_id,
+                    SupportChat.status == "open",
+                ).limit(1)
+            )
+            if recent_r.scalar_one_or_none():
+                return
+
+            user_r = await db.execute(select(User).where(User.id == user_id))
+            user = user_r.scalar_one_or_none()
+            if not user or not user.fcm_token:
+                return
+
+            name = (user.first_name or "").strip() or "Cliente"
+            if lang.startswith("es"):
+                title = "Quedaste satisfecho/a?"
+                body = f"Hola {name}, se resolvio tu problema? Estamos aqui si necesitas algo mas."
+            else:
+                title = "How did we do?"
+                body = f"Hi {name}, was your issue resolved? We're here if you need anything else."
+
+            await _send_fcm_push(
+                token=user.fcm_token,
+                title=title,
+                body=body,
+                data={"type": "support_followup", "chat_id": str(chat_id)},
+            )
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logging.warning("Follow-up task failed for chat %d: %s", chat_id, e)
 
 
 async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot_phase: str):
@@ -2010,6 +2107,10 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
                                               chat.subject, "closed")
         except Exception as e:
             logging.error("Firestore close chat sync failed: %s", e)
+
+    # Agent 2 (Follow-up): schedule satisfaction check 24h from now
+    _chat_lang = getattr(chat, "locale", "en") or "en"
+    asyncio.create_task(_followup_task(chat_id, user.id, _chat_lang))
 
     return {"status": "closed"}
 

@@ -38,6 +38,7 @@ from safety_monitor_agent import safety_monitor_agent
 from document_expiry_agent import document_expiry_agent
 from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
+from proactive_support_agent import run_proactive_agent_loop
 
 # Automatic PostgreSQL backup system
 from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
@@ -295,6 +296,10 @@ async def lifespan(app: FastAPI):
         # Start Rating Moderator Agent
         rating_moderator_agent.set_db_session_maker(SessionLocal)
         await rating_moderator_agent.start()
+
+        # Start Proactive Support Agent (Agent 3) — detects bad trips, reaches out proactively
+        asyncio.create_task(run_proactive_agent_loop())
+        logging.info("Proactive Support Agent ACTIVE — checking for bad trips every 10 minutes")
 
         # Periodic cache sweep (memory safety for 1500+ users)
         async def _cache_sweep_loop():

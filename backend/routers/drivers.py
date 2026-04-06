@@ -772,7 +772,7 @@ _VIP_MODELS = {
     "grand cherokee", "grand cherokee l", "wagoneer", "grand wagoneer",
 }
 
-# Premium-eligible sedans (year 2019+, rating 4.7+)
+# Premium-eligible sedans (year 2020+, rating 4.7+)
 _PREMIUM_MODELS = {
     "camry", "avalon", "crown",
     "accord",
@@ -799,15 +799,15 @@ _PREMIUM_MODELS = {
 
 def _classify_vehicle_tier(make: str, model: str, year: int) -> str:
     """Classify vehicle into vip/premium/comfort based on make, model, year.
-    VIP: SUV/luxury models, year 2021+
-    Premium: Good sedans, year 2019+ (requires rating 4.7+ checked separately)
-    Comfort: Everything else
+    VIP:     SUV/luxury models, year 2021+
+    Premium: Good sedans, year 2020+ (requires rating 4.7+ checked separately)
+    Comfort: Year 2016-2019 cars (or any unrecognised vehicle)
     """
     model_lower = (model or "").strip().lower()
     year = year or 0
     if year >= 2021 and model_lower in _VIP_MODELS:
         return "vip"
-    if year >= 2019 and model_lower in _PREMIUM_MODELS:
+    if year >= 2020 and model_lower in _PREMIUM_MODELS:
         return "premium"
     return "comfort"
 
@@ -823,9 +823,12 @@ async def _get_driver_avg_rating(db: AsyncSession, driver_id: int) -> float:
 
 async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
     """Re-evaluate driver's vehicle tier based on vehicle + rating.
-    VIP: fixed by vehicle (SUV 2021+) — never downgraded by rating.
-    Premium: requires rating >= 4.7 AND premium-eligible vehicle.
-    If rating drops below 4.5 → Comfort. Rises to 4.7+ → Premium.
+    VIP:     fixed by vehicle (SUV/luxury 2021+) — never downgraded by rating.
+    Premium: year 2020+ eligible sedan, requires rating >= 4.7.
+    Comfort: year 2016-2019 cars — stays comfort (can receive premium offers
+             via dispatch if driver level >= Silver AND rating >= 4.7).
+    If premium vehicle driver rating drops below 4.5 → Comfort.
+    Rises to 4.7+ → Premium restored.
     """
     result = await db.execute(
         select(Vehicle).where(Vehicle.user_id == driver_id)

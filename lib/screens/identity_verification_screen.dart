@@ -215,13 +215,18 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   // ════════════════════════════════════════════════════
 
   void _attachFirestoreListener() async {
-    try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+    // Retry Firebase Auth up to 3 times before giving up
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (FirebaseAuth.instance.currentUser == null) {
+          await FirebaseAuth.instance.signInAnonymously();
+        }
+        break; // success
+      } catch (e) {
+        debugPrint('[IdentityVerification] Firebase Auth attempt ${attempt + 1} failed: $e');
+        if (attempt < 2) await Future<void>.delayed(const Duration(seconds: 2));
+        // On final failure continue without Firestore — polling fallback covers it
       }
-    } catch (e) {
-      debugPrint('[IdentityVerification] Firebase Auth failed: $e');
-      return;
     }
 
     final user = await UserSession.getUser();
@@ -230,6 +235,24 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     final userIdInt = int.tryParse(userId) ?? 0;
     if (userIdInt <= 0) return;
 
+    final docId = 'sql_$userIdInt';
+
+    // One-shot immediate check before the stream fires
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('verifications')
+          .doc(docId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      if (snap.exists && mounted) _processVerificationData(snap.data() ?? {});
+    } catch (e) {
+      debugPrint('[IdentityVerification] Immediate Firestore GET failed: $e');
+    }
+
+    if (!mounted || _verified) return;
+
+    // Real-time listener by doc ID (most reliable)
+    _firestoreSubscription?.cancel();
     _firestoreSubscription = FirebaseFirestore.instance
         .collection('verifications')
         .where('userId', isEqualTo: userIdInt)
@@ -237,45 +260,50 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
         .listen((snapshot) {
       if (!mounted) return;
       for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final status = data['status'] as String? ??
-            data['verificationStatus'] as String? ??
-            '';
-        final isApproved = status == 'approved' ||
-            data['isVerified'] == true ||
-            data['isApproved'] == true;
-        if (isApproved && !_verified) {
-          _pollTimer?.cancel();
-          LocalDataService.setIdentityVerified(_docType.isNotEmpty ? _docType : 'license');
-          UserSession.updateField('isVerified', 'true');
-          UserSession.updateField('verificationStatus', 'approved');
-          final photoUrl = data['profilePhotoUrl'] as String? ??
-              data['selfieUrl'] as String?;
-          if (photoUrl != null && photoUrl.isNotEmpty) {
-            UserSession.updateField('photo', photoUrl);
-          }
-          _checkCtrl.forward();
-          setState(() {
-            _verified = true;
-            _step = 5;
-          });
-          return;
-        } else if (status == 'rejected' && _step != 6) {
-          _pollTimer?.cancel();
-          final reason = data['reason'] as String? ??
-              data['verificationReason'] as String? ??
-              'Verification was not approved';
-          UserSession.updateField('verificationStatus', 'rejected');
-          setState(() {
-            _rejectionReason = reason;
-            _step = 6;
-          });
-          return;
-        }
+        _processVerificationData(doc.data());
+        if (_verified) return;
       }
     }, onError: (e) {
       debugPrint('[IdentityVerification] Firestore listener error: $e');
     });
+  }
+
+  /// Central approval logic so both the one-shot GET and the stream use the same check.
+  void _processVerificationData(Map<String, dynamic> data) {
+    if (!mounted || _verified) return;
+    final status = data['status'] as String? ??
+        data['verificationStatus'] as String? ??
+        data['approvalStatus'] as String? ??
+        '';
+    final isApproved = status == 'approved' ||
+        data['isVerified'] == true ||
+        data['isApproved'] == true;
+    if (isApproved) {
+      _pollTimer?.cancel();
+      LocalDataService.setIdentityVerified(_docType.isNotEmpty ? _docType : 'license');
+      UserSession.updateField('isVerified', 'true');
+      UserSession.updateField('verificationStatus', 'approved');
+      final photoUrl = data['profilePhotoUrl'] as String? ??
+          data['selfieUrl'] as String?;
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        UserSession.updateField('photo', photoUrl);
+      }
+      _checkCtrl.forward();
+      setState(() {
+        _verified = true;
+        _step = 5;
+      });
+    } else if (status == 'rejected' && _step != 6) {
+      _pollTimer?.cancel();
+      final reason = data['reason'] as String? ??
+          data['verificationReason'] as String? ??
+          'Verification was not approved';
+      UserSession.updateField('verificationStatus', 'rejected');
+      setState(() {
+        _rejectionReason = reason;
+        _step = 6;
+      });
+    }
   }
 
   void _startPolling() {

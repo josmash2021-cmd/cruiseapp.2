@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
@@ -118,6 +119,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _hasExpiredDocs = false;
   bool _docStatusLoaded = false;
   late AnimationController _btnColorCtrl;
+  StreamSubscription<DocumentSnapshot>? _docApprovalSub;
   late Animation<double> _btnColorAnim;
 
   @override
@@ -200,6 +202,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _initLocation();
     _loadDriverData();
     _checkVerification().then((_) => _checkVehicleDocStatus());
+    _startDocApprovalListener();
     // Start account status polling immediately
     _checkAccountStatus();
     _accountStatusTimer = Timer.periodic(
@@ -278,6 +281,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     _statsRefreshTimer?.cancel();
+    _docApprovalSub?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     UserSession.photoUrlNotifier.removeListener(_onPhotoUpdated);
     WidgetsBinding.instance.removeObserver(this);
@@ -607,6 +611,52 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
       }
     }
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  REAL-TIME DOC APPROVAL LISTENER
+  //  Fires immediately when admin approves docs in Firestore,
+  //  so the driver doesn't need to restart the app.
+  // ═══════════════════════════════════════════════════
+  Future<void> _startDocApprovalListener() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('[DriverHome] Firebase Auth for doc listener failed: $e');
+      return;
+    }
+
+    final user = await UserSession.getUser();
+    final userIdStr = user?['userId'] ?? '';
+    final userIdInt = int.tryParse(userIdStr) ?? 0;
+    if (userIdInt <= 0) return;
+
+    final docId = 'sql_$userIdInt';
+    _docApprovalSub?.cancel();
+    _docApprovalSub = FirebaseFirestore.instance
+        .collection('verifications')
+        .doc(docId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted || !snap.exists) return;
+      final data = snap.data() ?? {};
+      final status = data['status'] as String? ??
+          data['verificationStatus'] as String? ??
+          data['approvalStatus'] as String? ??
+          '';
+      final isApproved = status == 'approved' ||
+          status == 'active' ||
+          data['isVerified'] == true ||
+          data['isApproved'] == true;
+      if (isApproved && !_vehicleDocsApproved) {
+        debugPrint('[DriverHome] Firestore doc-approval listener fired — refreshing doc status');
+        _checkVehicleDocStatus();
+      }
+    }, onError: (e) {
+      debugPrint('[DriverHome] Doc approval listener error: $e');
+    });
   }
 
   // ═══════════════════════════════════════════════════

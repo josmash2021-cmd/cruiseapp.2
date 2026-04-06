@@ -5,7 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import 'dart:math' as math;
 
-/// Cruise Level (formerly Cruise Pro) – Green → Gold → Platinum → Diamond
+/// Cruise Level – Bronze → Silver → Gold → Platinum → Diamond
 class CruiseLevelScreen extends StatefulWidget {
   const CruiseLevelScreen({super.key});
 
@@ -33,51 +33,43 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   double _satisfactionRate = 0;
   double _onTimeRate = 0;
   int _totalTrips = 0;
-  int _points = 0;
 
   // Current tier
-  int _currentTierIndex = 0; // 0=Green, 1=Gold, 2=Platinum, 3=Diamond
+  // 0=Bronze, 1=Silver, 2=Gold, 3=Platinum, 4=Diamond
+  int _currentTierIndex = 0;
+  double _avgRating = 0;
 
   List<_Tier> _buildTiers() {
     final s = S.of(context);
     return <_Tier>[
       _Tier(
-        name: 'Green',
-        color: const Color(0xFF4CAF50),
-        icon: Icons.eco_rounded,
-        minAcceptance: 0,
-        maxCancellation: 100,
-        minSatisfaction: 0,
-        minOnTime: 0,
-        pointsRequired: 0,
+        name: 'Bronze',
+        color: const Color(0xFFCD7F32),
+        icon: Icons.emoji_events_rounded,
+        minTrips: 0,
+        minRating: 0.0,
         rewards: [
           s.rewardBasicSupport,
           s.rewardStandardAccess,
         ],
       ),
       _Tier(
-        name: 'Gold',
-        color: const Color(0xFFE8C547),
+        name: 'Silver',
+        color: const Color(0xFFB0BEC5),
         icon: Icons.workspace_premium_rounded,
-        minAcceptance: 30,
-        maxCancellation: 8,
-        minSatisfaction: 85,
-        minOnTime: 70,
-        pointsRequired: 500,
+        minTrips: 50,
+        minRating: 4.5,
         rewards: [
           s.rewardPriorityAccess,
           s.rewardPremiumSupport,
         ],
       ),
       _Tier(
-        name: 'Platinum',
-        color: const Color(0xFFB0BEC5),
-        icon: Icons.diamond_rounded,
-        minAcceptance: 50,
-        maxCancellation: 5,
-        minSatisfaction: 90,
-        minOnTime: 80,
-        pointsRequired: 2000,
+        name: 'Gold',
+        color: const Color(0xFFE8C547),
+        icon: Icons.star_rounded,
+        minTrips: 150,
+        minRating: 4.7,
         rewards: [
           s.rewardAllGold,
           s.rewardAirportQueue,
@@ -85,14 +77,23 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         ],
       ),
       _Tier(
+        name: 'Platinum',
+        color: const Color(0xFF90CAF9),
+        icon: Icons.diamond_rounded,
+        minTrips: 300,
+        minRating: 4.8,
+        rewards: [
+          s.rewardAllPlatinum,
+          s.rewardConcierge,
+          s.rewardEarningsMultiplier,
+        ],
+      ),
+      _Tier(
         name: 'Diamond',
-        color: const Color(0xFF90A4AE),
+        color: const Color(0xFF80DEEA),
         icon: Icons.auto_awesome_rounded,
-        minAcceptance: 85,
-        maxCancellation: 2,
-        minSatisfaction: 95,
-        minOnTime: 90,
-        pointsRequired: 5000,
+        minTrips: 500,
+        minRating: 4.9,
         rewards: [
           s.rewardAllPlatinum,
           s.rewardConcierge,
@@ -161,35 +162,30 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
         final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
+        final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
 
         _totalTrips = total;
+        _avgRating = avgRating;
         _satisfactionRate = total > 0 ? (completed / total * 100) : 0;
         _cancellationRate = total > 0 ? (canceled / total * 100) : 0;
         _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
         _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
-        _points = completed * 10;
-
-        // Determine tier
-        if (_satisfactionRate >= 95 &&
-            _acceptanceRate >= 85 &&
-            _cancellationRate <= 2 &&
-            _onTimeRate >= 90 &&
-            _points >= 5000) {
-          _currentTierIndex = 3;
-        } else if (_satisfactionRate >= 90 &&
-            _acceptanceRate >= 50 &&
-            _cancellationRate <= 5 &&
-            _onTimeRate >= 80 &&
-            _points >= 2000) {
-          _currentTierIndex = 2;
-        } else if (_satisfactionRate >= 85 &&
-            _acceptanceRate >= 30 &&
-            _cancellationRate <= 8 &&
-            _onTimeRate >= 70 &&
-            _points >= 500) {
-          _currentTierIndex = 1;
+        // Determine driver level by completed trips + average rating
+        // Diamond:  500+ trips AND rating >= 4.9
+        // Platinum: 300-499 trips AND rating >= 4.8
+        // Gold:     150-299 trips AND rating >= 4.7
+        // Silver:   50-149 trips AND rating >= 4.5
+        // Bronze:   0-49 trips (no rating requirement)
+        if (completed >= 500 && avgRating >= 4.9) {
+          _currentTierIndex = 4; // Diamond
+        } else if (completed >= 300 && avgRating >= 4.8) {
+          _currentTierIndex = 3; // Platinum
+        } else if (completed >= 150 && avgRating >= 4.7) {
+          _currentTierIndex = 2; // Gold
+        } else if (completed >= 50 && avgRating >= 4.5) {
+          _currentTierIndex = 1; // Silver
         } else {
-          _currentTierIndex = 0;
+          _currentTierIndex = 0; // Bronze
         }
         // Persist new tier index
         prefs.setInt('cruise_tier_index', _currentTierIndex);
@@ -425,11 +421,11 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
 
   Widget _buildCurrentTierCard() {
     final tier = _buildTiers()[_currentTierIndex];
-    final nextTier = _currentTierIndex < 3
+    final nextTier = _currentTierIndex < 4
         ? _buildTiers()[_currentTierIndex + 1]
         : null;
-    final progress = nextTier != null && nextTier.pointsRequired > 0
-        ? (_points / nextTier.pointsRequired).clamp(0.0, 1.0)
+    final progress = nextTier != null && nextTier.minTrips > 0
+        ? (_totalTrips / nextTier.minTrips).clamp(0.0, 1.0)
         : 1.0;
 
     return Container(
@@ -478,14 +474,25 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
           ),
           const SizedBox(height: 16),
 
-          // Points
+          // Stats summary
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const Icon(Icons.directions_car_rounded, color: _gold, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                '$_totalTrips trips',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 16),
               const Icon(Icons.star_rounded, color: _gold, size: 18),
               const SizedBox(width: 6),
               Text(
-                S.of(context).pointsCount(_points),
+                _avgRating.toStringAsFixed(2),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -533,12 +540,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  S
-                      .of(context)
-                      .pointsToNextLevel(
-                        nextTier.pointsRequired - _points,
-                        nextTier.name,
-                      ),
+                  _totalTrips >= nextTier.minTrips
+                      ? 'Trips requirement met — keep your rating up!'
+                      : '${nextTier.minTrips - _totalTrips} more trips to ${nextTier.name}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.4),
                     fontSize: 12,
@@ -553,9 +557,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   }
 
   Widget _buildProgressSection() {
-    final nextTier = _currentTierIndex < 3
+    final nextTier = _currentTierIndex < 4
         ? _buildTiers()[_currentTierIndex + 1]
-        : _buildTiers()[3];
+        : _buildTiers()[4];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,29 +574,18 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         ),
         const SizedBox(height: 14),
         _requirementRow(
-          S.of(context).acceptanceRate,
-          '${_acceptanceRate.toStringAsFixed(0)}%',
-          '≥ ${nextTier.minAcceptance}%',
-          _acceptanceRate >= nextTier.minAcceptance,
+          'Completed Trips',
+          '$_totalTrips',
+          '≥ ${nextTier.minTrips}',
+          _totalTrips >= nextTier.minTrips,
         ),
-        _requirementRow(
-          S.of(context).cancellationRate,
-          '${_cancellationRate.toStringAsFixed(0)}%',
-          '≤ ${nextTier.maxCancellation}%',
-          _cancellationRate <= nextTier.maxCancellation,
-        ),
-        _requirementRow(
-          S.of(context).satisfactionRate,
-          '${_satisfactionRate.toStringAsFixed(0)}%',
-          '≥ ${nextTier.minSatisfaction}%',
-          _satisfactionRate >= nextTier.minSatisfaction,
-        ),
-        _requirementRow(
-          S.of(context).onTimeRate,
-          '${_onTimeRate.toStringAsFixed(0)}%',
-          '≥ ${nextTier.minOnTime}%',
-          _onTimeRate >= nextTier.minOnTime,
-        ),
+        if (nextTier.minRating > 0)
+          _requirementRow(
+            'Average Rating',
+            _avgRating.toStringAsFixed(2),
+            '≥ ${nextTier.minRating.toStringAsFixed(1)}',
+            _avgRating >= nextTier.minRating,
+          ),
       ],
     );
   }
@@ -744,12 +737,11 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    S
-                        .of(context)
-                        .pointsAndRewards(
-                          tier.pointsRequired,
-                          tier.rewards.length,
-                        ),
+                    tier.minTrips == 0
+                        ? '${tier.rewards.length} rewards'
+                        : tier.minRating > 0
+                            ? '${tier.minTrips}+ trips · ★ ${tier.minRating.toStringAsFixed(1)}+'
+                            : '${tier.minTrips}+ trips',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.35),
                       fontSize: 12,
@@ -846,15 +838,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _reqLine(S.of(context).reqAcceptance(tier.minAcceptance)),
-                    _reqLine(
-                      S.of(context).reqCancellation(tier.maxCancellation),
-                    ),
-                    _reqLine(
-                      S.of(context).reqSatisfaction(tier.minSatisfaction),
-                    ),
-                    _reqLine(S.of(context).reqOnTime(tier.minOnTime)),
-                    _reqLine(S.of(context).pointsCount(tier.pointsRequired)),
+                    _reqLine('${tier.minTrips}+ completed trips'),
+                    if (tier.minRating > 0)
+                      _reqLine('Average rating ≥ ${tier.minRating.toStringAsFixed(1)}'),
                   ],
                 ),
               ),
@@ -976,22 +962,16 @@ class _Tier {
   final String name;
   final Color color;
   final IconData icon;
-  final int minAcceptance;
-  final int maxCancellation;
-  final int minSatisfaction;
-  final int minOnTime;
-  final int pointsRequired;
+  final int minTrips;
+  final double minRating;
   final List<String> rewards;
 
   const _Tier({
     required this.name,
     required this.color,
     required this.icon,
-    required this.minAcceptance,
-    required this.maxCancellation,
-    required this.minSatisfaction,
-    required this.minOnTime,
-    required this.pointsRequired,
+    required this.minTrips,
+    required this.minRating,
     required this.rewards,
   });
 }

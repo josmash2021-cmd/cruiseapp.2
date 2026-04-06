@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, DispatchOffer, Vehicle,
-    SupportChat, SupportMessage, ActionRequest,
+    SupportChat, SupportMessage, ActionRequest, Rating,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
 from jose import jwt, JWTError
@@ -187,12 +187,33 @@ async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
     return {"ok": True, "fixed": len(fixed), "details": fixed}
 
 
+def _compute_driver_level(completed_trips: int, avg_rating: float) -> str:
+    """Compute driver level from completed trips and average rating.
+    Diamond:  500+ trips AND rating >= 4.9
+    Platinum: 300-499 trips AND rating >= 4.8
+    Gold:     150-299 trips AND rating >= 4.7
+    Silver:   50-149 trips AND rating >= 4.5
+    Bronze:   0-49 trips (no rating requirement)
+    """
+    if completed_trips >= 500 and avg_rating >= 4.9:
+        return "diamond"
+    if completed_trips >= 300 and avg_rating >= 4.8:
+        return "platinum"
+    if completed_trips >= 150 and avg_rating >= 4.7:
+        return "gold"
+    if completed_trips >= 50 and avg_rating >= 4.5:
+        return "silver"
+    return "bronze"
+
+
 async def _filter_drivers_by_vehicle_tier(
     db: AsyncSession, driver_ids: list[int], requested_type: str
 ) -> set[int]:
     """Return driver IDs whose vehicle matches the requested tier.
-    VIP requests → only VIP vehicles
-    Premium requests → premium or VIP vehicles
+
+    VIP requests     → VIP vehicles AND Premium vehicles (VIP drivers also serve premium rides)
+    Premium requests → Premium or VIP vehicles; ALSO Comfort vehicles if driver
+                       rating >= 4.7 AND driver level >= Silver (50+ trips)
     Comfort requests → any vehicle (no filter)
     """
     requested = (requested_type or "comfort").lower().strip()
@@ -201,21 +222,65 @@ async def _filter_drivers_by_vehicle_tier(
     if not driver_ids:
         return set()
 
-    result = await db.execute(
+    # Fetch vehicle tiers
+    veh_result = await db.execute(
         select(Vehicle.user_id, Vehicle.vehicle_type).where(
             Vehicle.user_id.in_(driver_ids)
         )
     )
-    rows = result.all()
+    veh_rows = veh_result.all()
+    veh_map = {uid: (vtype or "comfort").lower() for uid, vtype in veh_rows}
 
     eligible = set()
-    for uid, vtype in rows:
-        vt = (vtype or "comfort").lower()
-        if requested == "vip" and vt == "vip":
-            eligible.add(uid)
-        elif requested == "premium" and vt in ("premium", "vip"):
-            eligible.add(uid)
-    return eligible
+
+    if requested == "vip":
+        # VIP rides go to VIP and Premium drivers
+        for uid, vt in veh_map.items():
+            if vt in ("vip", "premium"):
+                eligible.add(uid)
+        return eligible
+
+    if requested == "premium":
+        # Native premium/vip vehicles are always eligible
+        comfort_candidates = []
+        for uid, vt in veh_map.items():
+            if vt in ("premium", "vip"):
+                eligible.add(uid)
+            elif vt == "comfort":
+                comfort_candidates.append(uid)
+
+        # Comfort cars (2016-2019) can receive premium offers if rating >= 4.7 AND Silver+
+        if comfort_candidates:
+            # Get average ratings for comfort candidates
+            rating_result = await db.execute(
+                select(Rating.to_user_id, func.avg(Rating.stars))
+                .where(Rating.to_user_id.in_(comfort_candidates))
+                .group_by(Rating.to_user_id)
+            )
+            avg_ratings = {uid: float(avg) for uid, avg in rating_result.all()}
+
+            # Get completed trip counts for comfort candidates
+            trips_result = await db.execute(
+                select(Trip.driver_id, func.count(Trip.id))
+                .where(
+                    Trip.driver_id.in_(comfort_candidates),
+                    Trip.status == "completed",
+                )
+                .group_by(Trip.driver_id)
+            )
+            trip_counts = {uid: count for uid, count in trips_result.all()}
+
+            for uid in comfort_candidates:
+                avg = avg_ratings.get(uid, 5.0)
+                trips = trip_counts.get(uid, 0)
+                level = _compute_driver_level(trips, avg)
+                # Silver+ means silver, gold, platinum, or diamond
+                if avg >= 4.7 and level in ("silver", "gold", "platinum", "diamond"):
+                    eligible.add(uid)
+
+        return eligible
+
+    return set(driver_ids)
 
 
 @router.post("/dispatch/request", dependencies=[Depends(_verify_api_key)])

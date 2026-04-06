@@ -641,7 +641,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('_goOnlineBackend: approval gate not passed, skipping');
       return;
     }
-    if (_pos == null) return;
+    if (_pos == null) {
+      debugPrint('⚠️ _goOnlineBackend: GPS not ready yet, retrying in 3s');
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && _phase == _Phase.searching) _goOnlineBackend();
+      });
+      return;
+    }
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);
@@ -954,27 +960,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _startPolling() {
     _pollT?.cancel();
     _offerSseSub?.cancel();
+    _sseReconnectTimer?.cancel();
     _sseActive = false;
 
-    // SSE real-time stream (instant offer push from backend)
-    if (_driverId != null) {
-      _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
-        (offers) {
-          _sseActive = true;
-          debugPrint('SSE offers: ${offers.length}');
-          if (!mounted || _phase != _Phase.searching) return;
-          _applyOffers(offers);
-        },
-        onError: (e) {
-          debugPrint('SSE offers error: $e');
-          _sseActive = false;
-        },
-        onDone: () {
-          debugPrint('SSE offers stream ended, polling continues');
-          _sseActive = false;
-        },
-      );
-    }
+    _connectSse();
 
     // Polling fallback (slower when SSE is active, never fully skipped)
     _poll();
@@ -988,6 +977,37 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
+  /// Connect (or reconnect) the SSE offer stream.
+  /// Automatically retries after 5 seconds on error or stream close.
+  void _connectSse() {
+    _offerSseSub?.cancel();
+    _sseReconnectTimer?.cancel();
+    if (_driverId == null || !mounted) return;
+
+    _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
+      (offers) {
+        _sseActive = true;
+        debugPrint('SSE offers: ${offers.length}');
+        if (!mounted || _phase != _Phase.searching) return;
+        _applyOffers(offers);
+      },
+      onError: (e) {
+        debugPrint('SSE offers error: $e — reconnecting in 5s');
+        _sseActive = false;
+        if (mounted && _phase == _Phase.searching) {
+          _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
+        }
+      },
+      onDone: () {
+        debugPrint('SSE offers stream ended — reconnecting in 5s');
+        _sseActive = false;
+        if (mounted && _phase == _Phase.searching) {
+          _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
+        }
+      },
+    );
+  }
+
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
     // Filter out locally rejected offers (prevents re-showing before backend processes rejection)
@@ -996,25 +1016,43 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return oid == null || !_rejectedOfferIds.contains(oid);
     }).toList();
 
-    if (filtered.isNotEmpty && _pendingOffers.isEmpty) {
-      HapticFeedback.heavyImpact();
-      final firstOffer = filtered.first;
-      final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
-      final fare = firstOffer['fare'] as num?;
-      final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
-      // Foreground: play rich in-app sound (3x repeat). Background: notification handles sound.
-      if (_appInForeground) {
-        NotificationService.playOfferSound();
-      }
-      NotificationService.showOfferNotification(
-        title: '${S.of(context).newRideOffer}$fareStr',
-        body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
-        offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
-        payload: 'trip_offer',
-        appInForeground: _appInForeground,
-      );
-    }
     final hadOffers = _pendingOffers.isNotEmpty;
+
+    // Detect whether the leading offer is brand new (different offer_id than before).
+    // This covers the case where a new offer arrives while old offers are still showing,
+    // so the sound and preview fire correctly for the new offer rather than being skipped.
+    final prevFirstId = _pendingOffers.isNotEmpty
+        ? (_pendingOffers.first['offer_id'] ?? _pendingOffers.first['id'])?.toString()
+        : null;
+    final nextFirstId = filtered.isNotEmpty
+        ? (filtered.first['offer_id'] ?? filtered.first['id'])?.toString()
+        : null;
+    final isNewFirstOffer = filtered.isNotEmpty &&
+        (nextFirstId != null && nextFirstId != prevFirstId);
+
+    if (isNewFirstOffer) {
+      // Reset auto-trigger guard so the new offer gets its own preview.
+      if (nextFirstId != _lastAutoTriggeredOfferId) {
+        HapticFeedback.heavyImpact();
+        final firstOffer = filtered.first;
+        final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
+        final fare = firstOffer['fare'] as num?;
+        final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
+        // Foreground: play rich in-app sound (3x repeat). Background: notification handles sound.
+        // The _offerSoundPlaying guard inside NotificationService prevents double-play.
+        if (_appInForeground) {
+          NotificationService.playOfferSound();
+        }
+        NotificationService.showOfferNotification(
+          title: '${S.of(context).newRideOffer}$fareStr',
+          body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
+          offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
+          payload: 'trip_offer',
+          appInForeground: _appInForeground,
+        );
+      }
+    }
+
     _setState(() {
       _pendingOffers = filtered;
       _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
@@ -1022,7 +1060,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
     _preFetchOfferRoutes(filtered);
-    if (filtered.isNotEmpty && !hadOffers) {
+    // Trigger route preview whenever the leading offer changes or offers go from empty → non-empty.
+    if (filtered.isNotEmpty && isNewFirstOffer) {
       _autoTriggerRoutePreview(filtered.first);
     }
   }
@@ -1139,7 +1178,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
     _fare = (r['fare'] as num?)?.toDouble() ?? 0;
     _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
-    _distToPickup = _hav(_pos!, _pickupLL);
+    _distToPickup = _pos != null ? _hav(_pos!, _pickupLL) : 0.0;
     _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
     _tripDist = _hav(_pickupLL, _dropoffLL);
     _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
@@ -1210,7 +1249,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           dropoffAddress: _dropoffAddr,
           fare:           _fare,
           vehicleType:    _vehicleType,
-          driverPos:      _pos!,
+          driverPos:      _pos ?? _pickupLL,
           distToPickupKm: _distToPickup,
           etaMinutes:     _etaToPickup,
           riderPhone:     _riderPhone,

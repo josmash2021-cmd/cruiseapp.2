@@ -204,6 +204,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
   StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
+  Timer? _sseReconnectTimer; // retries SSE after drop
   bool _sseActive = false;
   String _riderName = '';
   String _riderInit = '';
@@ -409,12 +410,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _appInForeground = false;
       _pollT?.cancel();
       _offerSseSub?.cancel();
+      _sseReconnectTimer?.cancel();
       _sseActive = false;
       _clock?.cancel();
       _earningsRefreshTimer?.cancel();
       _goldDot.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
+      // Reset sound guards so offer sounds play correctly after app resumes
+      NotificationService.resetSoundGuards();
       _startPolling();
       _startClock();
       _startEarningsRefresh();
@@ -432,6 +436,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();
+    _sseReconnectTimer?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
     _goldDot.dispose();

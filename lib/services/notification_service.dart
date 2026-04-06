@@ -366,6 +366,13 @@ class NotificationService {
   static bool _onlineSoundPlaying = false;
   static bool _offerSoundPlaying = false;
 
+  /// Reset sound guards when app resumes from background.
+  /// Prevents stuck flags from blocking sounds on next offer.
+  static void resetSoundGuards() {
+    _onlineSoundPlaying = false;
+    _offerSoundPlaying = false;
+  }
+
   static void playOnlineSound() {
     if (_onlineSoundPlaying) return; // prevent double-play
     _onlineSoundPlaying = true;

@@ -870,11 +870,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (mgr == null) return;
 
     if (_carAnnot != null) {
-      // Fast path: just update position of existing annotation
+      // Fast path: update position AND rotation every frame
       try {
         _carAnnot!.geometry = mapbox.Point(
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
+        _carAnnot!.iconRotate = _animBearing;
         mgr.update(_carAnnot!);
       } catch (e) {
         debugPrint('[CarIcon] update failed: $e — will recreate');
@@ -906,6 +907,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _carPngBytes!,
         iconSize: _kCarAnnotScale,
         iconAnchor: mapbox.IconAnchor.CENTER,
+        iconRotate: _animBearing,
         iconOffset: [0, 0],
       ));
       debugPrint('[CarIcon] PointAnnotation created at ${_animPos.latitude},${_animPos.longitude}');

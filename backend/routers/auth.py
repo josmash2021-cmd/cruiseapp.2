@@ -1954,46 +1954,104 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/auth/reset-page")
 async def reset_page(token: str = Query(...)):
     """Serve a simple HTML page where the user can enter a new password."""
+    _logo = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reset Password ï¿½ Cruise</title>
+<title>Reset Password — Cruise</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
-.card{{max-width:420px;width:100%;padding:40px 32px;background:#111;border-radius:20px;border:1px solid rgba(255,255,255,.06)}}
-.logo{{text-align:center;font-size:28px;font-weight:900;color:#E8C547;letter-spacing:2px;margin-bottom:28px}}
-h2{{font-size:22px;font-weight:800;margin-bottom:8px}}
-.sub{{color:#888;font-size:14px;line-height:1.5;margin-bottom:24px}}
-label{{display:block;color:#aaa;font-size:13px;font-weight:600;margin-bottom:6px}}
-input{{width:100%;padding:14px 16px;background:#1c1c1e;border:1px solid rgba(255,255,255,.08);border-radius:12px;color:#fff;font-size:16px;outline:none;margin-bottom:16px}}
-input:focus{{border-color:#E8C547}}
-.btn{{width:100%;padding:16px;background:linear-gradient(135deg,#E8C547,#D4A800);color:#1a1400;font-size:17px;font-weight:800;border:none;border-radius:28px;cursor:pointer;margin-top:8px}}
-.btn:disabled{{opacity:.5;cursor:not-allowed}}
-.msg{{text-align:center;padding:12px;border-radius:10px;font-size:14px;font-weight:600;margin-top:16px;display:none}}
-.msg.ok{{background:rgba(46,125,50,.2);color:#66bb6a;display:block}}
-.msg.err{{background:rgba(204,51,51,.15);color:#ef5350;display:block}}
-.req{{color:#666;font-size:12px;line-height:1.6;margin-bottom:16px}}
-.req span{{color:#E8C547}}
+body{{background:#050505;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
+.wrap{{max-width:440px;width:100%;background:#0a0a0a;border-radius:20px;border:1px solid #1a1a1a;overflow:hidden}}
+.gold-line{{height:2px;background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent)}}
+.inner{{padding:44px 36px 36px}}
+.logo-area{{text-align:center;margin-bottom:36px}}
+.logo-area img{{width:56px;height:56px;border-radius:14px;margin-bottom:12px}}
+.logo-area h2{{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px}}
+.diamond{{margin-top:10px}}
+.diamond span.line{{display:inline-block;width:45px;height:1px;background:#D4AF37;vertical-align:middle}}
+.diamond span.dot{{display:inline-block;width:6px;height:6px;background:#D4AF37;transform:rotate(45deg);margin:0 8px;vertical-align:middle}}
+h1{{font-size:22px;font-weight:700;margin-bottom:6px}}
+.sub{{color:#666;font-size:14px;line-height:1.5;margin-bottom:28px}}
+label{{display:block;color:#888;font-size:12px;font-weight:600;margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase}}
+input{{width:100%;padding:14px 16px;background:#111;border:1px solid #1a1a1a;border-radius:12px;color:#fff;font-size:16px;outline:none;margin-bottom:6px;transition:border-color .3s}}
+input:focus{{border-color:#D4AF37}}
+.reqs{{margin-bottom:20px;padding:0}}
+.req-item{{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:#444;transition:color .3s}}
+.req-item.pass{{color:#4CAF50}}
+.req-item .icon{{width:16px;height:16px;border-radius:50%;border:1.5px solid #333;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .3s}}
+.req-item.pass .icon{{border-color:#4CAF50;background:#4CAF50;color:#000}}
+.btn{{width:100%;padding:16px;background:#D4AF37;color:#000;font-size:16px;font-weight:700;border:none;border-radius:28px;cursor:pointer;letter-spacing:0.5px;transition:all .3s;margin-top:8px}}
+.btn:hover{{background:#E8C547;box-shadow:0 4px 20px rgba(212,175,55,.3)}}
+.btn:disabled{{opacity:.4;cursor:not-allowed;box-shadow:none}}
+.msg{{text-align:center;padding:14px;border-radius:12px;font-size:14px;font-weight:600;margin-top:16px;display:none}}
+.msg.ok{{background:rgba(46,125,50,.15);color:#66bb6a;display:block;border:1px solid rgba(46,125,50,.2)}}
+.msg.err{{background:rgba(204,51,51,.1);color:#ef5350;display:block;border:1px solid rgba(204,51,51,.15)}}
+.footer{{border-top:1px solid #111;padding:20px 36px;text-align:center}}
+.footer p{{color:#2a2a2a;font-size:10px;margin:0}}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="logo">CRUISE</div>
-  <h2>Create new password</h2>
-  <p class="sub">Enter your new password below.</p>
-  <form id="f" onsubmit="return doReset(event)">
-    <label>New password</label>
-    <input type="password" id="pw" placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special" required>
-    <label>Confirm password</label>
-    <input type="password" id="pw2" placeholder="Confirm new password" required>
-    <div class="req">Requirements: <span>8+ characters</span>, <span>1 uppercase</span>, <span>1 number</span>, <span>1 special character</span></div>
-    <button type="submit" class="btn" id="btn">Reset Password</button>
-  </form>
-  <div id="msg" class="msg"></div>
+<div class="wrap">
+  <div class="gold-line"></div>
+  <div class="inner">
+    <div class="logo-area">
+      <img src="{_logo}" alt="Cruise">
+      <h2>CRUISE</h2>
+      <div class="diamond">
+        <span class="line"></span><span class="dot"></span><span class="line"></span>
+      </div>
+    </div>
+    <h1>Create new password</h1>
+    <p class="sub">Enter your new password below.</p>
+    <form id="f" onsubmit="return doReset(event)">
+      <label>New password</label>
+      <input type="password" id="pw" placeholder="Enter new password" oninput="checkReqs()" required>
+      <div class="reqs" id="reqs">
+        <div class="req-item" id="r-len"><span class="icon"></span> 8+ characters</div>
+        <div class="req-item" id="r-upper"><span class="icon"></span> 1 uppercase letter</div>
+        <div class="req-item" id="r-num"><span class="icon"></span> 1 number</div>
+        <div class="req-item" id="r-spec"><span class="icon"></span> 1 special character</div>
+      </div>
+      <label>Confirm password</label>
+      <input type="password" id="pw2" placeholder="Confirm new password" oninput="checkMatch()" required>
+      <div class="req-item" id="r-match" style="margin-bottom:16px"><span class="icon"></span> Passwords match</div>
+      <button type="submit" class="btn" id="btn" disabled>Reset Password</button>
+    </form>
+    <div id="msg" class="msg"></div>
+  </div>
+  <div class="footer">
+    <p>Cruise — Premium Rides</p>
+  </div>
 </div>
 <script>
+function checkReqs(){{
+  var pw=document.getElementById('pw').value;
+  toggle('r-len',pw.length>=8);
+  toggle('r-upper',/[A-Z]/.test(pw));
+  toggle('r-num',/[0-9]/.test(pw));
+  toggle('r-spec',/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw));
+  checkMatch();
+  updateBtn();
+}}
+function checkMatch(){{
+  var pw=document.getElementById('pw').value;
+  var pw2=document.getElementById('pw2').value;
+  toggle('r-match',pw2.length>0&&pw===pw2);
+  updateBtn();
+}}
+function toggle(id,ok){{
+  var el=document.getElementById(id);
+  if(ok){{el.classList.add('pass');el.querySelector('.icon').innerHTML='&#10003;';}}
+  else{{el.classList.remove('pass');el.querySelector('.icon').innerHTML='';}}
+}}
+function updateBtn(){{
+  var pw=document.getElementById('pw').value;
+  var pw2=document.getElementById('pw2').value;
+  var ok=pw.length>=8&&/[A-Z]/.test(pw)&&/[0-9]/.test(pw)&&/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw)&&pw===pw2&&pw2.length>0;
+  document.getElementById('btn').disabled=!ok;
+}}
 async function doReset(e){{
   e.preventDefault();
   var pw=document.getElementById('pw').value;
@@ -2002,9 +2060,6 @@ async function doReset(e){{
   var btn=document.getElementById('btn');
   msg.className='msg';msg.style.display='none';
   if(pw!==pw2){{msg.textContent='Passwords do not match';msg.className='msg err';return false}}
-  if(pw.length<8||!/[A-Z]/.test(pw)||!/[0-9]/.test(pw)||!/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw)){{
-    msg.textContent='Password does not meet requirements';msg.className='msg err';return false
-  }}
   btn.disabled=true;btn.textContent='Resetting...';
   try{{
     var r=await fetch('/auth/reset-password-web',{{
@@ -2022,10 +2077,10 @@ async function doReset(e){{
       btn.disabled=false;btn.textContent='Reset Password';
     }}
   }}catch(ex){{
-    msg.textContent='Network error ï¿½ please try again';msg.className='msg err';
+    msg.textContent='Network error — please try again';msg.className='msg err';
     btn.disabled=false;btn.textContent='Reset Password';
   }}
-  return false
+  return false;
 }}
 </script>
 </body></html>"""

@@ -131,13 +131,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     try {
       final raw = await rootBundle.load(carAsset);
-      _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 160);
+      _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
       debugPrint('[CarIcon] loaded ${_carPngBytes!.length} PNG bytes');
     } catch (e) {
       debugPrint('[CarIcon] FAILED to load $carAsset: $e');
       try {
         final raw = await rootBundle.load('assets/images/car_economy.png');
-        _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 160);
+        _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
       } catch (_) {}
     }
     if (mounted) _setState(() {});

@@ -105,7 +105,7 @@ class RiderTrackingScreen extends StatefulWidget {
 enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
-const double _kCarAnnotScale = 0.55;  // PointAnnotation icon scale
+const double _kCarAnnotScale = 0.85;  // PointAnnotation icon scale
 const int _maxPollFailsBeforeBanner = 3;
 
 String? _normalizeRemotePhotoUrl(String? rawUrl) {

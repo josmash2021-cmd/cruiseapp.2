@@ -45,13 +45,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _loadAllEarnings();
     _startEarningsRefresh();
 
-    // Run GPS + icon loading + approval gate all in parallel
+    // Run GPS + approval gate immediately; defer heavy icon rendering
+    // until after the screen transition completes to avoid jank.
     await Future.wait([
       _locate(),
-      _buildVehicleIcons(),
       _verifyDriverApproval(),
     ]);
     _goOnlineBackend();
+
+    // Build vehicle icons after transition (avoids competing with the
+    // 500ms fade+scale animation which causes a 1-second freeze).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _buildVehicleIcons();
+    });
 
     // Pre-cache map tiles in background (fire-and-forget)
     if (_pos != null) {

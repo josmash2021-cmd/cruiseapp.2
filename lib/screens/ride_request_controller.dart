@@ -347,78 +347,58 @@ extension _RideRequestController on _RideRequestScreenState {
         // Rider already confirmed cancellation — just go home, no extra dialog
         if (_riderInitiatedCancel) {
           _riderInitiatedCancel = false;
+          _cancelDialogShown = false;
           _ctrl.reset();
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
           break;
         }
-        // Only show cancel dialog if there's a specific cancel reason from dispatch
-        // (not just "no drivers available" which is automatic)
-        if (s.cancelReason != null && s.cancelReason!.isNotEmpty) {
-          final reason = s.cancelReason!;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                title: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange, size: 28),
-                    SizedBox(width: 10),
-                    Text(S.of(context).tripCancelled),
-                  ],
-                ),
-                content: Text(reason, style: const TextStyle(fontSize: 15)),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      _ctrl.reset();
-                      // Pop dialog + ride request screen → back to homescreen
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    },
-                    child: Text(S.of(context).okBtn),
-                  ),
+        // Guard: only show one cancel dialog per cancellation event
+        if (_cancelDialogShown) break;
+        _cancelDialogShown = true;
+        // Filter out location validation errors — those are not meaningful cancel reasons
+        final rawReason = s.cancelReason;
+        final isValidationError = rawReason != null &&
+            (rawReason.toLowerCase().contains('ubicación') ||
+             rawReason.toLowerCase().contains('recogida') ||
+             rawReason.toLowerCase().contains('destino') ||
+             rawReason.toLowerCase().contains('location'));
+        final reason = (rawReason != null && rawReason.isNotEmpty && !isValidationError)
+            ? rawReason
+            : null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final displayReason = reason ?? S.of(context).tripCancelled;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogCtx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange, size: 28),
+                  const SizedBox(width: 10),
+                  Text(S.of(context).tripCancelled),
                 ],
               ),
-            );
-          });
-        } else {
-          // Fallback: show a generic cancellation message instead of silently resetting
-          final fallbackReason = S.of(context).tripCancelled;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                title: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange, size: 28),
-                    SizedBox(width: 10),
-                    Text(S.of(context).tripCancelled),
-                  ],
-                ),
-                content: Text(fallbackReason, style: const TextStyle(fontSize: 15)),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      _ctrl.reset();
-                      // Pop dialog + ride request screen → back to homescreen
+              content: Text(displayReason, style: const TextStyle(fontSize: 15)),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _cancelDialogShown = false;
+                    Navigator.of(dialogCtx).pop();
+                    _ctrl.reset();
+                    if (mounted) {
                       Navigator.of(context).popUntil((route) => route.isFirst);
-                    },
-                    child: Text(S.of(context).okBtn),
-                  ),
-                ],
-              ),
-            );
-          });
-        }
+                    }
+                  },
+                  child: Text(S.of(context).okBtn),
+                ),
+              ],
+            ),
+          );
+        });
         break;
       default:
         _fetchingRoute = false;
@@ -1567,6 +1547,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
   void _cancelSearching() {
     _riderInitiatedCancel = true;
+    _cancelDialogShown = false;
     _searchMapTimer?.cancel();
     _searchMapTimer = null;
     _splashTimer?.cancel();
@@ -1590,6 +1571,12 @@ extension _RideRequestController on _RideRequestScreenState {
     _searchingShowMap = false;
     _searchingSplash = false;
     _driverFoundVisible = false;
+    // Release payment hold if one was created
+    final intentId = _heldPaymentIntentId;
+    if (intentId != null) {
+      _heldPaymentIntentId = null;
+      unawaited(ApiService.cancelPaymentIntent(intentId));
+    }
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     _ctrl.cancelRide();

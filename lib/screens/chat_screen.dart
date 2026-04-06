@@ -69,6 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
   int? _supportChatId;
   String _agentName = 'Support';
   final int _lastSupportMsgId = 0; // tracks highest msg id seen for polling
+  bool _agentTyping = false;
 
   // ── REST fallback messages (used when RTDB fails) ──
   final List<ChatMessage> _restMessages = [];
@@ -189,10 +190,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final newCount = parsed.length;
       if (newCount != _supportMessages.length) {
+        final hasNewBotMsg = parsed.any((m) => !m.isMe);
         setState(() {
           _supportMessages
             ..clear()
             ..addAll(parsed);
+          if (hasNewBotMsg) _agentTyping = false;
         });
         _scrollToBottom();
       }
@@ -227,6 +230,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     _restPollTimer?.cancel();
     _rtdbConnectionSub?.cancel();
+    _agentTyping = false;
     // Stop typing indicator when leaving
     if (_useRtdb && !_rtdbFailed) {
       _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: false);
@@ -320,6 +324,14 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'Connecting...';
   }
 
+  List<String> get _quickReplies => [
+    'Problema con mi viaje',
+    'Me cobraron mal',
+    'Quiero un reembolso',
+    'Problema con mi cuenta',
+    'Problema de seguridad',
+  ];
+
   // ── Send ────────────────────────────────────────────────────────────────
 
   void _sendMessage() async {
@@ -399,6 +411,7 @@ class _ChatScreenState extends State<ChatScreen> {
             role: 'rider',
           ),
         );
+        _agentTyping = true;
       });
       _scrollToBottom();
       try {
@@ -732,6 +745,36 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
+        if (_supportMessages.length <= 1 && _supportChatId != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _quickReplies.map((label) => GestureDetector(
+                onTap: () {
+                  _controller.text = label;
+                  _sendMessage();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFE8C547),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
         Expanded(
           child: _supportMessages.isEmpty
               ? _buildEmptyState(s)
@@ -741,16 +784,85 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: _supportMessages.length,
                   itemBuilder: (context, index) {
                     final msg = _supportMessages[index];
-                    return _buildBubble(
-                      text: msg.text,
-                      isMe: msg.isMe,
-                      time: msg.time,
-                      isRead: true,
+                    return Column(
+                      crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      children: [
+                        if (!msg.isMe && msg.senderName.isNotEmpty && (index == 0 || _supportMessages[index - 1].isMe))
+                          Padding(
+                            padding: const EdgeInsets.only(left: 36, bottom: 2),
+                            child: Text(
+                              msg.senderName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFE8C547).withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ),
+                        _buildBubble(
+                          text: msg.text,
+                          isMe: msg.isMe,
+                          time: msg.time,
+                          isRead: true,
+                        ),
+                      ],
                     );
                   },
                 ),
         ),
+        if (_agentTyping)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 8, top: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 26, height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.support_agent_rounded, size: 13, color: Color(0xFFE8C547)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
+                      bottomLeft: Radius.circular(4),
+                      bottomRight: Radius.circular(18),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTypingDot(0),
+                      const SizedBox(width: 4),
+                      _buildTypingDot(1),
+                      const SizedBox(width: 4),
+                      _buildTypingDot(2),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
+    );
+  }
+
+  Widget _buildTypingDot(int index) {
+    return Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.4),
+        shape: BoxShape.circle,
+      ),
     );
   }
 

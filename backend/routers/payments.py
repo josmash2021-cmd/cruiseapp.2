@@ -127,6 +127,26 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
+@router.post("/payments/cancel/{intent_id}", dependencies=[Depends(_verify_api_key)])
+async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
+    """Cancel a held PaymentIntent when a rider cancels before trip starts.
+    Releasing the hold immediately so the rider's funds are freed."""
+    if not _HAS_STRIPE:
+        return {"payment_intent_id": intent_id, "status": "canceled", "cancelled": True}
+    try:
+        intent = _stripe_mod.PaymentIntent.cancel(intent_id)
+        logging.info("[Payment] Cancelled hold %s for user %s", intent_id, user.id)
+        return {
+            "payment_intent_id": intent.id,
+            "status": intent.status,
+            "cancelled": intent.status == "canceled",
+        }
+    except _stripe_mod.error.StripeError as e:
+        # If already captured/succeeded, log but don't crash — trip was completed
+        logging.warning("[Payment] Could not cancel %s: %s", intent_id, e)
+        return {"payment_intent_id": intent_id, "status": "error", "cancelled": False}
+
+
 @router.post("/payments/capture/{intent_id}", dependencies=[Depends(_verify_api_key)])
 async def capture_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
     """Capture a previously authorized (held) PaymentIntent.

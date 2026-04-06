@@ -539,20 +539,12 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final dropoff = _state.dropoff;
     if (pickup == null || dropoff == null) {
       _isRequesting = false;
-      _state = _state.copyWith(
-        phase: RiderPhase.cancelled,
-        cancelReason: 'Selecciona una ubicación válida de recogida y destino.',
-      );
       notifyListeners();
       return;
     }
     if ((pickup.lat == 0.0 && pickup.lng == 0.0) ||
         (dropoff.lat == 0.0 && dropoff.lng == 0.0)) {
       _isRequesting = false;
-      _state = _state.copyWith(
-        phase: RiderPhase.cancelled,
-        cancelReason: 'GPS no disponible. Verifica tu ubicación e intenta de nuevo.',
-      );
       notifyListeners();
       return;
     }

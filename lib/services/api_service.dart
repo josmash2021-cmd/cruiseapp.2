@@ -2621,6 +2621,21 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Cancel a held PaymentIntent when rider cancels before trip starts.
+  static Future<void> cancelPaymentIntent(String paymentIntentId) async {
+    try {
+      final h = await _authHeaders();
+      await _client
+          .post(
+            Uri.parse('$_baseUrl/payments/cancel/$paymentIntentId'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[ApiService] cancelPaymentIntent failed: $e');
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   //  REFUNDS
   // ═══════════════════════════════════════════════════════

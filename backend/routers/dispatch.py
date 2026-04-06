@@ -213,6 +213,36 @@ async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
     return {"ok": True, "fixed": len(fixed), "details": fixed}
 
 
+@router.post("/admin/resync-all-drivers", dependencies=[Depends(_verify_api_key)])
+async def resync_all_drivers(db: AsyncSession = Depends(get_db)):
+    """Re-sync ALL drivers to Firestore with sqliteId field. One-time fix."""
+    if not _HAS_FIRESTORE:
+        return {"ok": False, "message": "Firestore not available"}
+    result = await db.execute(select(User).where(User.role == "driver"))
+    drivers = result.scalars().all()
+    synced = 0
+    for d in drivers:
+        try:
+            firestore_sync.sync_driver(
+                user_id=d.id,
+                first_name=d.first_name or "",
+                last_name=d.last_name or "",
+                phone=d.phone or "",
+                email=d.email,
+                photo_url=d.photo_url,
+                is_online=d.is_online or False,
+                lat=d.lat, lng=d.lng,
+                is_verified=d.verification_status == "approved",
+                verification_status=d.verification_status or "none",
+                created_at=d.created_at,
+                status=d.status or "active",
+            )
+            synced += 1
+        except Exception as e:
+            logging.error("Resync driver %d failed: %s", d.id, e)
+    return {"ok": True, "synced": synced, "total": len(drivers)}
+
+
 def _compute_driver_level(completed_trips: int, avg_rating: float) -> str:
     """Compute driver level from completed trips and average rating.
     Diamond:  500+ trips AND rating >= 4.9

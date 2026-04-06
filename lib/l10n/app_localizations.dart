@@ -1374,14 +1374,14 @@ class S {
       : 'Link your bank or debit card via Plaid for instant payouts. Cash out anytime.';
   String get linkedAccounts => _es ? 'Cuentas vinculadas' : 'Linked accounts';
   String get plaidSecurityNote => _es
-      ? 'Protegido por Plaid — cifrado bancario. Cruise nunca ve tus credenciales.'
-      : 'Secured by Plaid — bank-level encryption. Cruise never sees your login credentials.';
+      ? 'Protegido por Stripe — cifrado bancario. Tus datos están seguros.'
+      : 'Secured by Stripe — bank-level encryption. Your data is safe.';
   String get noPayoutMethods =>
       _es ? 'Sin métodos de pago' : 'No payout methods';
   String get connectBankPrompt => _es
-      ? 'Conecta tu cuenta bancaria con Plaid\npara retiros instantáneos'
-      : 'Connect your bank account with Plaid\nfor instant cashouts';
-  String get poweredByPlaid => _es ? 'Powered by Plaid' : 'Powered by Plaid';
+      ? 'Conecta tu cuenta bancaria con Stripe\npara retiros instantáneos'
+      : 'Connect your bank account with Stripe\nfor instant cashouts';
+  String get poweredByPlaid => _es ? 'Powered by Stripe' : 'Powered by Stripe';
   String get defaultLabel => _es ? 'Predeterminado' : 'Default';
   String get bankTransfer => _es ? 'Transferencia bancaria' : 'Bank transfer';
   String get connecting => _es ? 'Conectando...' : 'Connecting...';
@@ -2365,8 +2365,8 @@ class S {
 
   // ── Payout Methods ──
   String get plaidLinkDescription => _es
-      ? 'Vincula tu banco o tarjeta de débito con Plaid para pagos instantáneos. Retira cuando quieras.'
-      : 'Link your bank or debit card via Plaid for instant payouts. Cash out anytime.';
+      ? 'Vincula tu banco o tarjeta de débito con Stripe para pagos instantáneos. Retira cuando quieras.'
+      : 'Link your bank or debit card via Stripe for instant payouts. Cash out anytime.';
   String get connectingLabel => _es ? 'Conectando...' : 'Connecting...';
   String get connectBankForCashouts => _es
       ? 'Conecta tu cuenta bancaria con Plaid\npara retiros instantáneos'

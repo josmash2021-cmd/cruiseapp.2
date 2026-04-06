@@ -62,12 +62,11 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
         hasSpecial &&
         confirm.isNotEmpty &&
         pass == confirm;
-    if (ok != _canContinue || _errorText != null) {
-      setState(() {
-        _canContinue = ok;
-        _errorText = null;
-      });
-    }
+    // Always rebuild so strength indicators update on every keystroke
+    setState(() {
+      _canContinue = ok;
+      if (ok) _errorText = null;
+    });
   }
 
   void _submit() async {

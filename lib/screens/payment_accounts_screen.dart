@@ -538,9 +538,15 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300, width: 0.5),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(7),
-        child: Image.asset('assets/images/google_g.png', fit: BoxFit.contain, cacheWidth: 80),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/images/google_logo.png', width: 16, height: 16, fit: BoxFit.contain),
+            const SizedBox(width: 1),
+            const Text('Pay', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF5F6368))),
+          ],
+        ),
       ),
     );
   }

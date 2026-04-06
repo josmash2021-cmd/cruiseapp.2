@@ -507,7 +507,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 Text(
                   _stripeConnected
                       ? dateLabel
-                      : 'Connect Stripe to enable',
+                      : 'Configura tus pagos para recibir depositos',
                   style: TextStyle(
                     color: _stripeConnected ? Colors.white : Colors.white54,
                     fontSize: 15,
@@ -1002,7 +1002,7 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: const Text('No se pudo configurar los pagos. Intenta de nuevo mas tarde.'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -1049,7 +1049,7 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.account_balance_wallet_rounded, size: 20),
-        label: Text(_loading ? 'Opening...' : 'Setup Payouts (Stripe)',
+        label: Text(_loading ? 'Abriendo...' : 'Configurar Pagos',
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,

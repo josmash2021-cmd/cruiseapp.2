@@ -112,7 +112,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
         slideFromRightRoute(
           CreatePasswordScreen(
             email: widget.email,
-            registeredWithEmail: !widget.useVerifyApi,
+            registeredWithEmail: widget.email.contains('@'),
           ),
         ),
       );

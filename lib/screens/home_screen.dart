@@ -505,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
-          setState(() => _locationError = 'Location services disabled');
+          setState(() => _locationError = S.of(context).locationServicesDisabled);
         }
         return;
       }
@@ -516,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         perm = await Geolocator.requestPermission();
         if (perm == LocationPermission.denied) {
           if (mounted) {
-            setState(() => _locationError = 'Location permission denied');
+            setState(() => _locationError = S.of(context).locationPermissionDenied);
           }
           return;
         }

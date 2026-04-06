@@ -168,7 +168,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
               _buildPasswordField(
                 c,
                 controller: _passCtrl,
-                hint: 'Password',
+                hint: S.of(context).password,
                 obscure: _obscurePass,
                 onToggle: () => setState(() => _obscurePass = !_obscurePass),
               ),
@@ -178,7 +178,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
               _buildPasswordField(
                 c,
                 controller: _confirmCtrl,
-                hint: 'Confirm password',
+                hint: S.of(context).confirmPassword,
                 obscure: _obscureConfirm,
                 onToggle: () =>
                     setState(() => _obscureConfirm = !_obscureConfirm),
@@ -285,9 +285,9 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                         ),
                       ),
                       onPressed: _canContinue ? _submit : null,
-                      child: const Text(
-                        'Continue',
-                        style: TextStyle(
+                      child: Text(
+                        S.of(context).continueButton,
+                        style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),

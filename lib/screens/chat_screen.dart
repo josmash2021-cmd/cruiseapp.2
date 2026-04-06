@@ -320,8 +320,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_useRtdb) return s.online;
     if (_rtdbFailed) return s.online; // REST fallback active
     if (_rtdbConnected == true) return s.activeNow;
-    if (_hadFirstConnect) return 'Reconnecting...';
-    return 'Connecting...';
+    if (_hadFirstConnect) return s.reconnecting;
+    return s.connecting;
   }
 
   List<String> get _quickReplies => [
@@ -365,7 +365,7 @@ class _ChatScreenState extends State<ChatScreen> {
           } catch (e) {
             debugPrint('[Chat] REST send failed: $e');
             if (mounted) {
-              ErrorService.show(context, 'Message failed to send. Check your connection.');
+              ErrorService.show(context, S.of(context).messageFailedToSend);
             }
           }
         }
@@ -382,7 +382,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         debugPrint('[Chat] RTDB send failed: $e');
         if (mounted) {
-          ErrorService.show(context, 'Message failed to send. Check your connection.');
+          ErrorService.show(context, S.of(context).messageFailedToSend);
         }
       }
       // Also persist via REST API (triggers FCM push notification to recipient)
@@ -419,7 +419,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // Poll immediately to get bot response faster
         await _pollSupportMessages();
       } catch (_) {
-        if (mounted) ErrorService.show(context, 'Message failed to send. Check your connection.');
+        if (mounted) ErrorService.show(context, S.of(context).messageFailedToSend);
       }
     }
   }

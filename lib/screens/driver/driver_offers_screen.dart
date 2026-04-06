@@ -224,7 +224,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       setState(() => _accepting = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Waiting for GPS location...')),
+          SnackBar(content: Text(S.of(context).waitingForGps)),
         );
       }
       return;

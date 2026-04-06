@@ -3036,6 +3036,21 @@ class S {
   String get takePhotoSubtitle => _es ? 'Usa la cámara para capturar el documento' : 'Use camera to capture document';
   String get chooseFromGallerySubtitle => _es ? 'Selecciona una foto existente' : 'Select an existing photo';
   String get couldNotShareTrip => _es ? 'No se pudo compartir el viaje' : 'Could not share trip';
+
+  // ── Additional Hardcoded Strings ──────────────────────────────────────────
+  String get reconnecting => _es ? 'Reconectando...' : 'Reconnecting...';
+  String get messageFailedToSend => _es
+      ? 'No se pudo enviar el mensaje. Revisa tu conexión.'
+      : 'Message failed to send. Check your connection.';
+  String get waitingForGps => _es
+      ? 'Esperando ubicación GPS...'
+      : 'Waiting for GPS location...';
+  String get locationServicesDisabled => _es
+      ? 'Servicios de ubicación desactivados'
+      : 'Location services disabled';
+  String get locationPermissionDenied => _es
+      ? 'Permiso de ubicación denegado'
+      : 'Location permission denied';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

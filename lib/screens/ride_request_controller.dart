@@ -1495,10 +1495,14 @@ extension _RideRequestController on _RideRequestScreenState {
   // ── Payment helpers ──
 
   bool get _hasAnyPaymentMethod =>
-      _linkedPaymentMethods.isNotEmpty || _selectedPaymentMethod == 'test_mode';
+      _linkedPaymentMethods.isNotEmpty ||
+      _selectedPaymentMethod == 'test_mode' ||
+      _selectedPaymentMethod == 'apple_pay' ||
+      _selectedPaymentMethod == 'google_pay' ||
+      _selectedPaymentMethod == 'paypal';
 
   String _paymentLabel(String id) {
-    if (!_hasAnyPaymentMethod) return S.of(context).selectPaymentMethod;
+    if (id.isEmpty || id == 'none') return S.of(context).selectPaymentMethod;
     final loc = S.of(context);
     switch (id) {
       case 'apple_pay':

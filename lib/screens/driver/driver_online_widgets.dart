@@ -1072,11 +1072,74 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const goldAccent = Color(0xFFE8C547);
     const rejectRed = Color(0xFFE53935);
 
+    // ── Scheduled ride detection ──
+    final scheduledAtRaw = offer['scheduled_at'];
+    final DateTime? scheduledAt = scheduledAtRaw != null
+        ? DateTime.tryParse(scheduledAtRaw.toString())
+        : null;
+    final bool isScheduled = scheduledAt != null;
+    final bool isAirportTrip = offer['is_airport'] == true;
+
     return Column(
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // ── Scheduled ride badge ──
+        if (isScheduled) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isAirportTrip
+                  ? const Color(0xFF3B82F6).withValues(alpha: 0.15)
+                  : const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isAirportTrip
+                    ? const Color(0xFF3B82F6).withValues(alpha: 0.4)
+                    : const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isAirportTrip ? Icons.flight_takeoff_rounded : Icons.schedule_rounded,
+                  size: 16,
+                  color: isAirportTrip ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isAirportTrip ? 'RESERVA AEROPUERTO' : 'VIAJE RESERVADO',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: isAirportTrip ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // ── Scheduled time display ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFE8C547)),
+              const SizedBox(width: 4),
+              Text(
+                _formatScheduledTime(scheduledAt),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE8C547),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+        ],
         // ── ROW 1: Service badge (centered) ──
         _ShimmerBadge(label: vehicleType),
 
@@ -1303,7 +1366,31 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   double _offerCardHeight(BuildContext context) {
     // Tight fit — no wasted space below the Accept button
     final botPad = MediaQuery.of(context).padding.bottom;
-    return 275 + (botPad > 20 ? botPad - 10 : 0);
+    // Check if current offer is scheduled — needs extra height for badge + time
+    double extra = 0;
+    if (_pendingOffers.isNotEmpty) {
+      final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+      final offer = _pendingOffers[safeIdx];
+      if (offer['scheduled_at'] != null) extra = 62;
+    }
+    return 275 + extra + (botPad > 20 ? botPad - 10 : 0);
+  }
+
+  /// Format a scheduled ride time relative to now.
+  String _formatScheduledTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = dt.difference(now);
+    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    if (diff.isNegative) {
+      return 'Hoy a las $timeStr (ahora)';
+    } else if (diff.inMinutes <= 60) {
+      return 'Hoy a las $timeStr (en ${diff.inMinutes} min)';
+    } else if (diff.inHours <= 24) {
+      return 'Hoy a las $timeStr (en ${diff.inHours}h ${diff.inMinutes % 60}m)';
+    } else {
+      const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      return '${dt.day} ${months[dt.month - 1]} a las $timeStr';
+    }
   }
 
   /// Chip widget for time/distance display on offer card (compact).

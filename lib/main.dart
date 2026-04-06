@@ -436,6 +436,16 @@ Future<void> heavyInit() async {
             if (type == 'trip_offer' || type == 'new_offer') {
               NotificationService.playOfferSound();
             }
+
+            // Scheduled ride reminder — use the reminders channel
+            if (type == 'scheduled_reminder') {
+              NotificationService.show(
+                id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                title: title,
+                body: body,
+                type: 'ride',
+              );
+            }
           });
           // Handle notification tap when app is backgrounded
           FirebaseMessaging.onMessageOpenedApp.listen(_handleDriverRideOffer);

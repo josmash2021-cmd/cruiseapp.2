@@ -753,6 +753,67 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // ── Scheduled ride badge ──
+                if (offer.isScheduled) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: offer.isAirport
+                          ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                          : const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: offer.isAirport
+                              ? const Color(0xFF3B82F6).withValues(alpha: 0.3)
+                              : const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              offer.isAirport ? Icons.flight_takeoff_rounded : Icons.schedule_rounded,
+                              size: 16,
+                              color: offer.isAirport ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              offer.isAirport ? 'RESERVA AEROPUERTO' : 'VIAJE RESERVADO',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: offer.isAirport ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (offer.scheduledAt != null) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.access_time_rounded, size: 14, color: _gold),
+                              const SizedBox(width: 4),
+                              Text(
+                                _formatScheduledTime(offer.scheduledAt!),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _gold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
                 // Header with fare - UberX style
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -1153,6 +1214,22 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         ],
       ),
     );
+  }
+
+  String _formatScheduledTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = dt.difference(now);
+    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    if (diff.isNegative) {
+      return 'Hoy a las $timeStr (ahora)';
+    } else if (diff.inMinutes <= 60) {
+      return 'Hoy a las $timeStr (en ${diff.inMinutes} min)';
+    } else if (diff.inHours <= 24) {
+      return 'Hoy a las $timeStr (en ${diff.inHours}h ${diff.inMinutes % 60}m)';
+    } else {
+      const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      return '${dt.day} ${months[dt.month - 1]} a las $timeStr';
+    }
   }
 
   Widget _buildCountdownTimer(RideOffer offer) {

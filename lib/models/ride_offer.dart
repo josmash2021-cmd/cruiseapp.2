@@ -18,6 +18,10 @@ class RideOffer {
   final int offerTimeoutSeconds;
   final int? riderId;
   final int? tripId;
+  final DateTime? scheduledAt;
+  final bool isScheduled;
+  final bool isAirport;
+  final String? airportCode;
 
   const RideOffer({
     required this.offerId,
@@ -36,6 +40,10 @@ class RideOffer {
     this.offerTimeoutSeconds = 20,
     this.riderId,
     this.tripId,
+    this.scheduledAt,
+    this.isScheduled = false,
+    this.isAirport = false,
+    this.airportCode,
   });
 
   /// Seconds remaining before this offer expires (0 if already expired).
@@ -87,6 +95,12 @@ class RideOffer {
                (json['riderId'] as num?)?.toInt(),
       tripId: (json['trip_id'] as num?)?.toInt() ??
               (json['tripId'] as num?)?.toInt(),
+      scheduledAt: json['scheduled_at'] != null
+          ? DateTime.tryParse(json['scheduled_at'].toString())
+          : null,
+      isScheduled: json['scheduled_at'] != null,
+      isAirport: json['is_airport'] == true,
+      airportCode: json['airport_code'] as String?,
     );
   }
 }

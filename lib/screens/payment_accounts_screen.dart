@@ -382,45 +382,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 Divider(color: c.divider, height: 1),
               ],
 
-              // ── PayPal (Coming Soon) ──
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Stack(
-                  children: [
-                    Opacity(
-                      opacity: 0.45,
-                      child: _accountTile(
-                        c: c,
-                        logoWidget: _paypalLogo(),
-                        label: 'PayPal',
-                        linked: false,
-                        onTap: () {},
-                      ),
-                    ),
-                    Positioned(
-                      top: 10,
-                      right: -18,
-                      child: Transform.rotate(
-                        angle: 0.45,
-                        child: Container(
-                          width: 100,
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          color: const Color(0xFFD4A843),
-                          child: const Text(
-                            'Coming Soon',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              // ── PayPal ──
+              _accountTile(
+                c: c,
+                logoWidget: _paypalLogo(),
+                label: 'PayPal',
+                linked: _paypalLinked,
+                onTap: _linkPayPal,
               ),
               Divider(color: c.divider, height: 1),
 

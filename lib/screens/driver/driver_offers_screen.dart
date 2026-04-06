@@ -218,6 +218,18 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     setState(() => _accepting = true);
     HapticFeedback.heavyImpact();
 
+    // Guard against null GPS position — cannot navigate without it
+    final driverPos = _driverPos;
+    if (driverPos == null) {
+      setState(() => _accepting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Waiting for GPS location...')),
+        );
+      }
+      return;
+    }
+
     final accepted = await _ctrl.acceptOffer(offer.offerId);
     if (accepted == null || !mounted) {
       setState(() => _accepting = false);
@@ -228,7 +240,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     List<LatLng>? routePts;
     try {
       final route = await RouteService.fetchNavRoute(
-        origin: _driverPos!,
+        origin: driverPos,
         destination: accepted.pickupLatLng,
       );
       routePts = route?.overviewPolyline;
@@ -254,7 +266,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     Navigator.of(context).pushReplacement(
       slideUpFadeRoute(
         DriverTripAcceptScreen(
-          tripId: int.tryParse(accepted.offerId) ?? 0,
+          tripId: accepted.tripId,
           riderName: accepted.riderName,
           riderPhotoUrl: accepted.riderPhotoUrl,
           riderRating: accepted.riderRating,
@@ -269,7 +281,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
               : offer.dropoffAddress,
           fare: offer.fareUsd,
           vehicleType: offer.vehicleType,
-          driverPos: _driverPos!,
+          driverPos: driverPos,
           distToPickupKm: distKm,
           etaMinutes: eta,
           routePoints: routePts,

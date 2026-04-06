@@ -17,6 +17,7 @@ class RideOffer {
   final DateTime? createdAt;
   final int offerTimeoutSeconds;
   final int? riderId;
+  final int? tripId;
 
   const RideOffer({
     required this.offerId,
@@ -34,6 +35,7 @@ class RideOffer {
     this.createdAt,
     this.offerTimeoutSeconds = 20,
     this.riderId,
+    this.tripId,
   });
 
   /// Seconds remaining before this offer expires (0 if already expired).
@@ -83,6 +85,8 @@ class RideOffer {
       offerTimeoutSeconds: (json['offer_timeout_seconds'] as num?)?.toInt() ?? 20,
       riderId: (json['rider_id'] as num?)?.toInt() ??
                (json['riderId'] as num?)?.toInt(),
+      tripId: (json['trip_id'] as num?)?.toInt() ??
+              (json['tripId'] as num?)?.toInt(),
     );
   }
 }
@@ -90,6 +94,7 @@ class RideOffer {
 /// Represents an accepted offer with the trip details needed for navigation.
 class AcceptedOffer {
   final String offerId;
+  final int tripId;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
   final String riderName;
@@ -100,6 +105,7 @@ class AcceptedOffer {
 
   const AcceptedOffer({
     required this.offerId,
+    required this.tripId,
     required this.pickupLatLng,
     required this.dropoffLatLng,
     required this.riderName,

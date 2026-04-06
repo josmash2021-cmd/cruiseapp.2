@@ -79,6 +79,8 @@ class OffersController {
           vehicleType: offer.vehicleType,
           riderPhotoUrl: offer.riderPhotoUrl,
           riderRating: offer.riderRating,
+          riderId: offer.riderId,
+          tripId: offer.tripId,
         );
       }
       return offer;
@@ -109,11 +111,18 @@ class OffersController {
       final id = _driverId ?? await _resolveDriverId();
       if (id == null) return null;
 
-      await ApiService.acceptRideOffer(
+      final response = await ApiService.acceptRideOffer(
         offerId: int.parse(offerId),
         driverId: id,
       );
       AnalyticsService.instance.logRideAccepted();
+
+      // Extract trip ID from the accept response — the backend returns
+      // {"status": "accepted", "trip": {"id": <trip_id>, ...}}
+      final tripData = response['trip'];
+      final int tripId = (tripData is Map && tripData['id'] != null)
+          ? (tripData['id'] as num).toInt()
+          : 0;
 
       // Find the offer in our local list to get its details
       final offer = offersNotifier.value.firstWhere(
@@ -127,6 +136,7 @@ class OffersController {
 
       return AcceptedOffer(
         offerId: offerId,
+        tripId: tripId > 0 ? tripId : (offer.tripId ?? 0),
         pickupLatLng: offer.pickupLatLng,
         dropoffLatLng: offer.dropoffLatLng,
         riderName: offer.riderName,

@@ -45,13 +45,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _loadAllEarnings();
     _startEarningsRefresh();
 
-    // Run GPS + approval gate immediately; defer heavy icon rendering
-    // until after the screen transition completes to avoid jank.
-    await Future.wait([
-      _locate(),
-      _verifyDriverApproval(),
-    ]);
+    // Run approval gate (fast DB check) synchronously; GPS runs in background
+    // to avoid blocking the screen transition with Geolocator.getCurrentPosition.
+    await _verifyDriverApproval();
     _goOnlineBackend();
+    // Get precise GPS in background — don't await, splash preload already set _pos
+    unawaited(_locate());
 
     // Build vehicle icons after transition (avoids competing with the
     // 500ms fade+scale animation which causes a 1-second freeze).

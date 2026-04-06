@@ -310,6 +310,10 @@ class ApiService {
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
 
+  /// Called when the backend returns 401 with detail "session_expired_new_device",
+  /// meaning the driver logged in on another device and this session is invalid.
+  static void Function()? onSessionExpiredNewDevice;
+
   /// Public wrapper for saving auth tokens (used by demo account direct login).
   static Future<void> saveToken(String token) => _saveToken(token);
   static Future<void> saveRefreshToken(String token) => _saveRefreshToken(token);
@@ -521,6 +525,12 @@ class ApiService {
     }
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return body is Map<String, dynamic> ? body : {'data': body};
+    }
+    // Session replaced by login on another device — force logout with dialog
+    if (res.statusCode == 401 && body is Map && body['detail'] == 'session_expired_new_device') {
+      clearToken().ignore();
+      onSessionExpiredNewDevice?.call();
+      throw ApiException(401, 'session_expired_new_device');
     }
     // M2: on 401, attempt token refresh in background; signal logout if refresh fails
     if (res.statusCode == 401) {

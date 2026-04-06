@@ -547,6 +547,42 @@ class _UberCloneAppState extends State<UberCloneApp>
         );
       }
     };
+
+    // Driver session replaced on another device — show dialog then force logout
+    ApiService.onSessionExpiredNewDevice = () {
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      showDialog(
+        context: nav.overlay!.context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Sesion cerrada'),
+          content: const Text(
+            'Tu cuenta se abrio en otro dispositivo. Solo puedes tener una sesion activa.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(nav.overlay!.context).pop();
+                nav.pushAndRemoveUntil(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const SplashScreen(),
+                    transitionDuration: const Duration(milliseconds: 280),
+                    reverseTransitionDuration: const Duration(milliseconds: 220),
+                    transitionsBuilder: (_, anim, __, child) => FadeTransition(
+                      opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+                      child: child,
+                    ),
+                  ),
+                  (_) => false,
+                );
+              },
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
+      );
+    };
   }
 
   @override

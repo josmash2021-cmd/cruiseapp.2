@@ -1657,68 +1657,50 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     try:
         if db_user.email:
             driver_name = db_user.first_name or "Driver"
+            _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
             await _send_email(
                 db_user.email,
                 "You're Approved — Welcome to Cruise",
                 f"""
-                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #000000;">
-                    <!-- Header with gold gradient bar -->
-                    <div style="background: linear-gradient(90deg, #B8860B, #E8C547, #D4AF37); height: 4px;"></div>
-
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #050505; border-radius: 16px; overflow: hidden; border: 1px solid #1a1a1a;">
+                    <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                     <div style="padding: 48px 40px 40px;">
-                        <!-- Logo -->
                         <div style="text-align: center; margin-bottom: 40px;">
-                            <p style="font-size: 14px; letter-spacing: 10px; color: #D4AF37; margin: 0; font-weight: 600;">CRUISE</p>
+                            <img src="{_logo_url}" alt="Cruise" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
+                            <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; color: #E8C547; letter-spacing: 8px; margin: 0; text-indent: 8px;">CRUISE</h2>
+                            <div style="margin-top: 12px;">
+                                <span style="display: inline-block; width: 60px; height: 1px; background: #D4AF37; vertical-align: middle;"></span>
+                                <span style="display: inline-block; width: 7px; height: 7px; background: #D4AF37; transform: rotate(45deg); margin: 0 10px; vertical-align: middle;"></span>
+                                <span style="display: inline-block; width: 60px; height: 1px; background: #D4AF37; vertical-align: middle;"></span>
+                            </div>
                         </div>
-
-                        <!-- Checkmark badge -->
                         <div style="text-align: center; margin-bottom: 32px;">
-                            <div style="width: 72px; height: 72px; background: linear-gradient(145deg, #D4AF37, #E8C547); border-radius: 50%; margin: 0 auto; line-height: 72px; font-size: 32px;">&#10003;</div>
+                            <div style="width: 80px; height: 80px; border-radius: 50%; margin: 0 auto; background: linear-gradient(145deg, #C5A028, #E8C547); text-align: center; line-height: 80px; font-size: 36px; color: #000;">&#10003;</div>
                         </div>
-
-                        <!-- Main heading -->
-                        <h1 style="text-align: center; color: #FFFFFF; font-size: 26px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.3px;">You're Approved, {driver_name}.</h1>
-                        <p style="text-align: center; color: #888888; font-size: 15px; margin: 0 0 36px; line-height: 1.5;">Your application has been reviewed and accepted.<br>You're officially part of the Cruise driver team.</p>
-
-                        <!-- What's next section -->
-                        <div style="background: #111111; border-radius: 12px; padding: 28px; margin-bottom: 32px; border: 1px solid #1A1A1A;">
-                            <p style="color: #D4AF37; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; margin: 0 0 20px; text-transform: uppercase;">What's Next</p>
-
-                            <div style="display: flex; margin-bottom: 16px;">
-                                <div style="min-width: 28px; height: 28px; background: #1A1A1A; border-radius: 50%; text-align: center; line-height: 28px; color: #D4AF37; font-size: 13px; font-weight: 700; margin-right: 14px;">1</div>
-                                <div>
-                                    <p style="color: #FFFFFF; font-size: 14px; font-weight: 600; margin: 3px 0 4px;">Open the Cruise App</p>
-                                    <p style="color: #777; font-size: 13px; margin: 0;">Sign in with your approved account</p>
-                                </div>
-                            </div>
-
-                            <div style="display: flex; margin-bottom: 16px;">
-                                <div style="min-width: 28px; height: 28px; background: #1A1A1A; border-radius: 50%; text-align: center; line-height: 28px; color: #D4AF37; font-size: 13px; font-weight: 700; margin-right: 14px;">2</div>
-                                <div>
-                                    <p style="color: #FFFFFF; font-size: 14px; font-weight: 600; margin: 3px 0 4px;">Set Up Payouts</p>
-                                    <p style="color: #777; font-size: 13px; margin: 0;">Link your bank to receive earnings</p>
-                                </div>
-                            </div>
-
-                            <div style="display: flex;">
-                                <div style="min-width: 28px; height: 28px; background: #1A1A1A; border-radius: 50%; text-align: center; line-height: 28px; color: #D4AF37; font-size: 13px; font-weight: 700; margin-right: 14px;">3</div>
-                                <div>
-                                    <p style="color: #FFFFFF; font-size: 14px; font-weight: 600; margin: 3px 0 4px;">Go Online & Earn</p>
-                                    <p style="color: #777; font-size: 13px; margin: 0;">Start accepting rides immediately</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- CTA Button -->
-                        <div style="text-align: center; margin-bottom: 36px;">
-                            <a href="https://cruiseinride.com" style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #E8C547); color: #000000; text-decoration: none; padding: 14px 48px; border-radius: 30px; font-size: 15px; font-weight: 700; letter-spacing: 0.5px;">Open Cruise App</a>
+                        <h1 style="text-align: center; color: #FFFFFF; font-size: 26px; font-weight: 300; margin: 0 0 6px; letter-spacing: -0.3px;">You're <strong>Approved</strong>, {driver_name}.</h1>
+                        <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 0; line-height: 1.6;">Your application has been reviewed and accepted.<br>Welcome to the Cruise driver team.</p>
+                        <div style="width: 36px; height: 1px; background: #D4AF37; margin: 32px auto;"></div>
+                        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 36px;">
+                            <tr>
+                                <td style="padding: 16px 0; border-bottom: 1px solid #111; width: 36px; vertical-align: top;"><span style="color: #D4AF37; font-size: 12px; font-weight: 600; letter-spacing: 1px;">01</span></td>
+                                <td style="padding: 16px 0; border-bottom: 1px solid #111;"><p style="color: #e0e0e0; font-size: 14px; font-weight: 500; margin: 0 0 2px;">Open the app</p><p style="color: #555; font-size: 12px; margin: 0;">Sign in with your approved account</p></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 16px 0; border-bottom: 1px solid #111; width: 36px; vertical-align: top;"><span style="color: #D4AF37; font-size: 12px; font-weight: 600; letter-spacing: 1px;">02</span></td>
+                                <td style="padding: 16px 0; border-bottom: 1px solid #111;"><p style="color: #e0e0e0; font-size: 14px; font-weight: 500; margin: 0 0 2px;">Set up payouts</p><p style="color: #555; font-size: 12px; margin: 0;">Link your bank account to receive earnings</p></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 16px 0; width: 36px; vertical-align: top;"><span style="color: #D4AF37; font-size: 12px; font-weight: 600; letter-spacing: 1px;">03</span></td>
+                                <td style="padding: 16px 0;"><p style="color: #e0e0e0; font-size: 14px; font-weight: 500; margin: 0 0 2px;">Start earning</p><p style="color: #555; font-size: 12px; margin: 0;">Go online and accept your first ride</p></td>
+                            </tr>
+                        </table>
+                        <div style="text-align: center;">
+                            <a href="https://cruiseinride.com" style="display: inline-block; background: #D4AF37; color: #000; text-decoration: none; padding: 14px 48px; border-radius: 28px; font-size: 14px; font-weight: 700; letter-spacing: 1px;">GET STARTED</a>
                         </div>
                     </div>
-
-                    <!-- Footer -->
-                    <div style="border-top: 1px solid #1A1A1A; padding: 24px 40px; text-align: center;">
-                        <p style="color: #444; font-size: 12px; margin: 0 0 4px;">Cruise — Premium Rides</p>
-                        <p style="color: #333; font-size: 11px; margin: 0;">Questions? Reply to this email or contact support in the app.</p>
+                    <div style="border-top: 1px solid #111; padding: 24px 40px; text-align: center;">
+                        <p style="color: #333; font-size: 11px; letter-spacing: 3px; margin: 0 0 4px;">CRUISE</p>
+                        <p style="color: #252525; font-size: 10px; margin: 0;">Premium Rides &mdash; cruiseinride.com</p>
                     </div>
                 </div>
                 """,

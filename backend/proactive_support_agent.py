@@ -7,7 +7,7 @@ Agent 3 of the CruiseApp autonomous support agent suite.
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from models.database import SessionLocal, User, Trip, SupportChat, SupportMessage
 from services.fcm_service import _send_fcm_push
 
@@ -204,6 +204,156 @@ async def check_bad_trips(db) -> int:
 
     except Exception as e:
         log.error("Proactive agent slow-trip check failed: %s", e)
+
+    # Rule 3: Driver canceled after accepting (rider stranded)
+    try:
+        stranded_r = await db.execute(
+            select(Trip).where(
+                and_(
+                    Trip.status == "canceled",
+                    Trip.driver_id != None,
+                    Trip.cancel_reason != None,
+                    Trip.updated_at >= cutoff_start,
+                    Trip.updated_at <= cutoff_end,
+                )
+            ).filter(
+                Trip.cancel_reason.ilike("%driver%")
+            ).limit(10)
+        )
+        stranded_trips = stranded_r.scalars().all()
+        for trip in stranded_trips:
+            if not trip.rider_id:
+                continue
+            if await _user_has_recent_support(trip.rider_id, db, hours=24):
+                continue
+            user_r = await db.execute(select(User).where(User.id == trip.rider_id))
+            user = user_r.scalar_one_or_none()
+            if not user:
+                continue
+            lang = "es"
+            name = (user.first_name or "").strip() or "Cliente"
+            if lang.startswith("es"):
+                subject = f"Viaje #{trip.id} -- conductor cancelo"
+                msg = (
+                    f"Hola {name}, lamentamos que tu conductor haya cancelado tu viaje. "
+                    f"Entendemos que eso puede ser muy inconveniente. "
+                    f"Te cobraron alguna tarifa de cancelacion? Puedo revisarlo y procesarla si aplica."
+                )
+                push_title = "Lamentamos la cancelacion de tu conductor"
+                push_body = f"Hola {name}, puedo ayudarte con tu viaje cancelado?"
+            else:
+                subject = f"Trip #{trip.id} -- driver canceled"
+                msg = (
+                    f"Hi {name}, we're sorry your driver canceled your trip. "
+                    f"We understand that can be very inconvenient. "
+                    f"Were you charged any cancellation fee? I can review and waive it if applicable."
+                )
+                push_title = "Sorry about your driver's cancellation"
+                push_body = f"Hi {name}, can I help with your canceled trip?"
+            chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
+            if chat_id and user.fcm_token:
+                await _send_fcm_push(
+                    token=user.fcm_token, title=push_title, body=push_body,
+                    data={"type": "proactive_support", "chat_id": str(chat_id)},
+                )
+                contacted += 1
+    except Exception as e:
+        log.error("Proactive agent stranded-rider check failed: %s", e)
+
+    # Rule 4: New driver first trip completed -- onboarding check-in
+    try:
+        new_driver_r = await db.execute(
+            select(User).where(
+                and_(
+                    User.role == "driver",
+                    User.created_at >= datetime.now(timezone.utc) - timedelta(days=7),
+                )
+            ).limit(20)
+        )
+        new_drivers = new_driver_r.scalars().all()
+        for driver in new_drivers:
+            # Check if they completed exactly 1 trip total
+            trip_count_r = await db.execute(
+                select(func.count(Trip.id)).where(
+                    and_(Trip.driver_id == driver.id, Trip.status == "completed")
+                )
+            )
+            trip_count = trip_count_r.scalar() or 0
+            if trip_count != 1:
+                continue
+            if await _user_has_recent_support(driver.id, db, hours=72):
+                continue
+            name = (driver.first_name or "").strip() or "Conductor"
+            subject = "Bienvenido a Cruise! Primer viaje completado"
+            msg = (
+                f"Felicitaciones {name}! Completaste tu primer viaje en Cruise. "
+                f"Todo salio bien? Si tienes alguna pregunta sobre tus ganancias, documentos o la app, "
+                f"estoy aqui para ayudarte."
+            )
+            push_title = "Felicitaciones por tu primer viaje!"
+            push_body = f"Hola {name}, como te fue? Estamos aqui si necesitas ayuda."
+            chat_id = await _create_proactive_chat(driver.id, subject, msg, "es", db)
+            if chat_id and driver.fcm_token:
+                await _send_fcm_push(
+                    token=driver.fcm_token, title=push_title, body=push_body,
+                    data={"type": "proactive_support", "chat_id": str(chat_id)},
+                )
+                contacted += 1
+                log.info("Onboarding check-in sent to new driver %d", driver.id)
+    except Exception as e:
+        log.error("Proactive agent new-driver check failed: %s", e)
+
+    # Rule 5: Payment failure after completed trip
+    try:
+        failed_pay_r = await db.execute(
+            select(Trip).where(
+                and_(
+                    Trip.status == "completed",
+                    Trip.payment_status == "failed",
+                    Trip.completed_at >= cutoff_start,
+                    Trip.completed_at <= cutoff_end,
+                )
+            ).limit(10)
+        )
+        failed_pay_trips = failed_pay_r.scalars().all()
+        for trip in failed_pay_trips:
+            if not trip.rider_id:
+                continue
+            if await _user_has_recent_support(trip.rider_id, db, hours=_PROACTIVE_COOLDOWN_HOURS):
+                continue
+            user_r = await db.execute(select(User).where(User.id == trip.rider_id))
+            user = user_r.scalar_one_or_none()
+            if not user:
+                continue
+            name = (user.first_name or "").strip() or "Cliente"
+            lang = "es"
+            if lang.startswith("es"):
+                subject = f"Viaje #{trip.id} -- problema de pago"
+                msg = (
+                    f"Hola {name}, notamos que hubo un inconveniente con el pago de tu viaje reciente. "
+                    f"No te preocupes, tu viaje esta registrado. "
+                    f"Podemos revisar juntos tu metodo de pago para resolverlo?"
+                )
+                push_title = "Problema con tu pago -- podemos ayudar"
+                push_body = f"Hola {name}, hay un detalle con el pago de tu ultimo viaje."
+            else:
+                subject = f"Trip #{trip.id} -- payment issue"
+                msg = (
+                    f"Hi {name}, we noticed there was an issue with the payment for your recent trip. "
+                    f"Don't worry, your trip is on record. "
+                    f"Can we review your payment method together to resolve it?"
+                )
+                push_title = "Payment issue -- we can help"
+                push_body = f"Hi {name}, there's a detail with your last trip payment."
+            chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
+            if chat_id and user.fcm_token:
+                await _send_fcm_push(
+                    token=user.fcm_token, title=push_title, body=push_body,
+                    data={"type": "proactive_support", "chat_id": str(chat_id)},
+                )
+                contacted += 1
+    except Exception as e:
+        log.error("Proactive agent payment-failure check failed: %s", e)
 
     return contacted
 

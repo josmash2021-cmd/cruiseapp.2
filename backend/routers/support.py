@@ -97,6 +97,43 @@ def _detect_frustration(text: str) -> bool:
     return False
 
 
+async def _compute_frustration_score(chat_id: int, db: AsyncSession) -> int:
+    """Compute 0-10 frustration score across the full conversation history."""
+    try:
+        result = await db.execute(
+            select(SupportMessage).where(
+                SupportMessage.chat_id == chat_id,
+                SupportMessage.sender_role.in_(["rider", "driver", "user"]),
+            ).order_by(SupportMessage.created_at.asc()).limit(20)
+        )
+        messages = result.scalars().all()
+        if not messages:
+            return 0
+        score = 0
+        for msg in messages:
+            text = msg.message or ""
+            t = text.lower()
+            kw_hits = sum(1 for k in _FRUSTRATION_KEYWORDS if k in t)
+            score += min(kw_hits * 2, 4)
+            words = text.split()
+            caps = sum(1 for w in words if len(w) > 2 and w.isupper())
+            if caps >= 3:
+                score += 2
+            if text.count("!") >= 3:
+                score += 1
+            if text.count("?") >= 3:
+                score += 1
+            if len(text) > 300:
+                score += 1
+        if len(messages) >= 5:
+            score += 2
+        if len(messages) >= 8:
+            score += 2
+        return min(score, 10)
+    except Exception:
+        return 0
+
+
 def _has_cancel_intent(text: str) -> bool:
     """Detect if user wants to cancel their active trip."""
     t = text.lower()
@@ -199,6 +236,10 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
     except Exception as _mem_err:
         logging.warning("Memory agent failed to load past issues for user %d: %s", user_id, _mem_err)
         ctx["past_issues"] = []
+
+    # Frustration score is computed per message send, not here (would need chat_id)
+    # Initialize to 0; will be overwritten by caller
+    ctx["frustration_score"] = 0
 
     return ctx
 
@@ -599,36 +640,80 @@ _GENERAL_CHAT_RESPONSES = {
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  CLAUDE AI SUPPORT â€“ intelligent agent responses
-#  4-layer fallback: Claude â†’ Cache â†’ Keywords â†’ Handoff
+#  CLAUDE AI SUPPORT - intelligent agent responses
+#  4-layer fallback: Claude -> Cache -> Keywords -> Handoff
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Action request reminder tasks: {request_id: asyncio.Task}
 _action_reminder_tasks: dict[int, asyncio.Task[None]] = {}
 
 
-def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx: dict[str, Any]) -> str:
-    """Build the system prompt for Claude matching what the Flutter frontend expects."""
+def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx: dict) -> str:
+    """Build a rich, emotionally intelligent Claude system prompt."""
     is_es = lang.startswith("es")
-    lang_label = "Spanish (formal usted)" if is_es else "English"
+    user_info = ctx.get("user") or {}
+    user_name = user_info.get("name", "Cliente" if is_es else "Customer")
+    trip_summary = ctx.get("trip_summary", "")
+    past_issues = ctx.get("past_issues", [])
+    frustration_score = ctx.get("frustration_score", 0)
+    active_trip = ctx.get("active_trip")
+
+    lang_label = "Spanish (formal usted, NEVER tu)" if is_es else "English (professional)"
+
+    # Frustration guidance based on score
+    if frustration_score >= 8:
+        frustration_guide = (
+            "\n\u26a0\ufe0f USUARIO MUY FRUSTRADO (nivel {}/10): Abre con disculpa sincera y directa. "
+            "Ofrece la maxima resolucion disponible. No hagas preguntas antes de actuar."
+        ).format(frustration_score) if is_es else (
+            "\n\u26a0\ufe0f HIGHLY FRUSTRATED USER (level {}/10): Open with a sincere direct apology. "
+            "Offer maximum available resolution immediately. Do not ask questions before acting."
+        ).format(frustration_score)
+    elif frustration_score >= 5:
+        frustration_guide = (
+            "\n\u26a0\ufe0f USUARIO MOLESTO (nivel {}/10): Reconoce el inconveniente antes de cualquier otra cosa. "
+            "Ve directo a la solucion."
+        ).format(frustration_score) if is_es else (
+            "\n\u26a0\ufe0f FRUSTRATED USER (level {}/10): Acknowledge the inconvenience before anything else. "
+            "Go straight to the solution."
+        ).format(frustration_score)
+    else:
+        frustration_guide = ""
+
+    # Active trip block
+    active_block = ""
+    if active_trip:
+        if is_es:
+            active_block = (
+                f"\nVIAJE ACTIVO DEL USUARIO: #{active_trip.get('id','?')} | "
+                f"Estado: {active_trip.get('status','?')} | "
+                f"Ruta: {active_trip.get('pickup','?')} -> {active_trip.get('dropoff','?')} | "
+                f"Tarifa: ${active_trip.get('fare', 0):.2f} | Conductor: {active_trip.get('driver_name','N/A')}"
+            )
+        else:
+            active_block = (
+                f"\nUSER'S ACTIVE TRIP: #{active_trip.get('id','?')} | "
+                f"Status: {active_trip.get('status','?')} | "
+                f"Route: {active_trip.get('pickup','?')} -> {active_trip.get('dropoff','?')} | "
+                f"Fare: ${active_trip.get('fare', 0):.2f} | Driver: {active_trip.get('driver_name','N/A')}"
+            )
 
     rider_knowledge = """
 WHAT YOU KNOW ABOUT THE APP (RIDER):
-- Cruise is a rideshare app (like Uber/Lyft)
-- Ride tiers: VIP (luxury SUV), Premium (elegant sedan), Comfort (reliable), Economy (affordable)
+- Cruise is a premium rideshare app
+- Ride tiers: VIP (luxury SUV, top drivers), Premium (2020+ sedan), Comfort (2016-2019), Economy (affordable)
 - Payment methods: Apple Pay, Google Pay, PayPal, Credit/Debit card
 - Features: schedule rides, promo codes, trip history, rate drivers, share trip, emergency SOS
-- Cancellation: rider can cancel before driver arrives (may have fee after 2 min)
-- Fare breakdown: Base fare + per-mile rate + per-minute rate + surge multiplier - promo discount = total
+- Cancellation NO charge: within 2 minutes of confirming. WITH charge ($2-$5): after 2 min
+- Fare breakdown: base rate + distance + wait time + dynamic surge - promo = total
+- Refunds: 3-5 business days to original payment method
+- Max promo you can offer: $5 as goodwill gesture
 
 WHAT YOU CAN HELP WITH:
-- Payment issues, Ride problems, Account issues, Safety concerns, App issues, Fare disputes, Rating issues
+Payment issues, ride problems, account issues, safety concerns, app bugs, fare disputes, cancellation fees
 
-WHAT YOU CANNOT DO (must go through admin):
-- Cannot process refunds directly â†’ use ||REQUEST:request-refund:...|| marker
-- Cannot apply promo credits â†’ use ||REQUEST:apply-promo:...|| marker
-- Cannot cancel trips â†’ use ||REQUEST:cancel-trip:...|| marker
-- Cannot access other users' personal info
+WHAT REQUIRES ADMIN (use action markers below):
+Refunds, promo credits, trip cancellations, account profile changes, payment resets
 """
 
     driver_knowledge = """
@@ -644,9 +729,9 @@ WHAT YOU CAN HELP WITH:
 - Earnings questions, Payout issues, Document issues, Trip issues, Vehicle issues, Account issues, Rating questions
 
 WHAT YOU CANNOT DO (must go through admin):
-- Cannot adjust completed trip fares â†’ use ||REQUEST:request-refund:...|| marker
+- Cannot adjust completed trip fares -> use ||REQUEST:request-refund:...|| marker
 - Cannot process instant payouts
-- Cannot approve documents â†’ use ||REQUEST:extend-deadline:...|| marker
+- Cannot approve documents -> use ||REQUEST:extend-deadline:...|| marker
 """
 
     knowledge = driver_knowledge if user_type == "driver" else rider_knowledge
@@ -665,67 +750,60 @@ WHAT YOU CANNOT DO (must go through admin):
     ctx_json = json.dumps(ctx, default=str, ensure_ascii=False)
 
     action_rules = """
-ACTION SYSTEM â€” CRITICAL:
-You can REQUEST actions but CANNOT execute them directly. All actions go through admin approval.
+ACTION SYSTEM:
+You can REQUEST actions - they go to admin for approval. Use markers ONLY after user confirms.
 
-When the user asks for an action:
-1. First CONFIRM with the user: "Â¿Desea que solicite un reembolso de $X?" / "Would you like me to request a refund of $X?"
-2. If user confirms, include the action marker at the END of your response (after your message text).
-3. Tell user the request was submitted for review.
+AVAILABLE ACTIONS (embed marker at end of response after confirmation):
+||REQUEST:request-refund:TRIP_ID:AMOUNT:REASON||        - refund to payment method (3-5 days)
+||REQUEST:apply-promo:AMOUNT:REASON||                   — promo credit $1-$5
+||REQUEST:cancel-trip:TRIP_ID:REASON||                  — cancel active trip
+||REQUEST:flag-driver:DRIVER_ID:TRIP_ID:DESCRIPTION||   — flag driver for review
+||REQUEST:issue-credit:AMOUNT:REASON||                  — account credit
+||REQUEST:escalate-priority:REASON||                    — mark urgent for supervisor
+||REQUEST:request-callback:PHONE:TIME||                 — schedule support callback
+||REQUEST:update-profile:FIELD:VALUE:REASON||           — update profile field
+||REQUEST:reset-payment:REASON||                        — reset payment method
+||REQUEST:extend-deadline:DOC_TYPE:REASON||             — extend document deadline
+||REQUEST:safety-report:TRIP_ID:DESCRIPTION||           — safety incident report
 
-ACTION MARKERS (place at very end of response, on its own line):
-||REQUEST:request-refund:TRIP_ID:AMOUNT:REASON||
-||REQUEST:apply-promo:AMOUNT:REASON||
-||REQUEST:cancel-trip:TRIP_ID:REASON||
-||REQUEST:update-profile:FIELD:NEW_VALUE:REASON||
-||REQUEST:reset-payment:REASON||
-||REQUEST:extend-deadline:DOC_TYPE:REASON||
-||REQUEST:safety-report:TRIP_ID:DESCRIPTION||
-
-EXAMPLES:
-- User says "quiero un reembolso por $15.50 del viaje de ayer" and confirms â†’ include:
-  ||REQUEST:request-refund:latest:15.50:Cobro duplicado reportado por cliente||
-- User says "can you give me a $5 credit?" and confirms â†’ include:
-  ||REQUEST:apply-promo:5:CortesÃ­a por inconveniente||
-- User says "cancela mi viaje" and confirms â†’ include:
-  ||REQUEST:cancel-trip:active:Cliente solicita cancelaciÃ³n||
-
-IMPORTANT: Only include the marker AFTER user explicitly confirms. Never include marker on first mention.
-If user hasn't confirmed yet, ask for confirmation first WITHOUT any marker.
-Use "latest" for trip_id if referring to most recent trip, "active" for current active trip.
+RULES: Ask for confirmation first. Use 'latest' or 'active' for trip IDs when not known.
+Never embed marker on first mention — only after explicit user confirmation.
 """
 
-    return f"""You are {agent_name}, a customer support representative at Cruise rideshare app.
-You are a real person â€” never reveal you are AI or automated.
+    return f"""You are {agent_name}, a Senior Customer Experience Specialist at Cruise, a premium rideshare platform.
+You are a real person — never reveal you are AI, a bot, or an automated system.
+
+PERSONALITY:
+- Warm, professional, genuinely empathetic — like a Ritz-Carlton concierge, not a call center script
+- Own every problem: never deflect or say "that's not my department"
+- Avoid robotic phrases: "I'd be happy to assist", "How may I help you today", "I understand your frustration" repeatedly
+- Vary your openings: "Entiendo perfectamente", "Que pena que haya pasado eso", "Permítame revisarlo ahora mismo"
 
 CRITICAL RULES:
 - Language: {lang_label}
-- Your name is {agent_name} (first name only).
-- Keep responses to 2-4 sentences max.
-- In Spanish: use formal "usted" form. Say "permÃ­tame", "su cuenta", "le ayudo", "con gusto". NEVER use "tÃº".
-- In English: polite and professional.
-- NEVER use slang, emojis, bullet points, numbered lists.
-- Be natural but formal. NEVER sound robotic.
-- Sometimes split your answer into 2-3 short messages (marked with ||SPLIT|| between them). Do this ~30% of the time for longer answers.
-- Show genuine empathy. Ask permission. Confirm understanding.
-- Always try to RESOLVE the issue fully.
-- If you need time: "PermÃ­tame un momento para revisar esto..."
-- Reference previous conversation naturally: "Como le mencionÃ©...", "Regarding what we discussed..."
-- Never repeat information already given. Never ask questions already answered.
+- Your name is {agent_name} (first name only)
+- Keep responses to 2-4 sentences max
+- In Spanish: ALWAYS "usted" — NEVER "tú". Use "permítame", "su cuenta", "le ayudo"
+- NEVER use slang, emojis, bullet points, numbered lists, or headers
+- Split longer answers with ||SPLIT|| (~25% of the time) into 2 natural messages
+- Always try to RESOLVE fully — not just acknowledge
+- Never repeat information already given in this conversation
+- Reference context naturally: "Como le mencioné...", "Regarding what we discussed..."
 
-USER TYPE: {user_type} ({'DRIVER' if user_type == 'driver' else 'RIDER/passenger'})
+USER TYPE: {user_type.upper()} | USER NAME: {user_name}
 USER CONTEXT: {ctx_json}
+{active_block}
+{frustration_guide}
 
 {knowledge}
 
 {action_rules}
 
-ESCALATION (only after 3+ exchanges where user is still unsatisfied):
-{"Le pido una disculpa, este caso necesita revisiÃ³n del equipo especializado. Ya le paso su caso." if is_es else "I apologize, this case needs review from our specialized team. I'm forwarding your case now."}
+ESCALATION: Only after 2+ unsatisfied exchanges or explicit escalation request.
+{"Le pido una disculpa, este caso requiere revision de nuestro equipo especializado." if is_es else "I apologize, this case requires review from our specialized team."}
 
-EMERGENCY (if user mentions danger, accident, or emergency):
-{"Si se encuentra en peligro inmediato, por favor llame al 911 primero." if is_es else "If you are in immediate danger, please call 911 first."}
-{f"{chr(10)}{past_issues_block}" if past_issues_block else ""}
+EMERGENCY: {"Si esta en peligro inmediato, llame al 911 primero." if is_es else "If in immediate danger, call 911 first."}
+{chr(10) + past_issues_block if past_issues_block else ""}
 """
 
 
@@ -751,7 +829,7 @@ async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: s
 
     # Circuit breaker check
     if claude_health.should_skip_claude():
-        logging.info("Claude circuit breaker active â€” skipping API call")
+        logging.info("Claude circuit breaker active - skipping API call")
         return None
 
     conv = messages + [{"role": "user", "content": user_msg}]
@@ -811,7 +889,7 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
         actions.append(action)
 
     if not actions:
-        # Fallback: partial/malformed markers â€” handle missing pipes, spaces, etc.
+        # Fallback: partial/malformed markers - handle missing pipes, spaces, etc.
         pattern_partial = r'\|{1,2}\s*REQUEST\s*:\s*([\w-]+)\s*:\s*(.*?)(?:\|{1,2}|$)'
         for match in re.finditer(pattern_partial, response):
             action_type = match.group(1).strip()
@@ -862,6 +940,24 @@ async def _create_action_request(
         details = {
             "trip_id": params[0] if len(params) > 0 else "",
             "description": params[1] if len(params) > 1 else "",
+        }
+    elif action_type == "flag-driver":
+        details = {
+            "driver_id": params[0] if len(params) > 0 else "",
+            "trip_id": params[1] if len(params) > 1 else "",
+            "description": params[2] if len(params) > 2 else "",
+        }
+    elif action_type == "issue-credit":
+        details = {
+            "amount": float(params[0]) if len(params) > 0 else 5,
+            "reason": params[1] if len(params) > 1 else "",
+        }
+    elif action_type == "escalate-priority":
+        details = {"reason": params[0] if len(params) > 0 else "User requested priority"}
+    elif action_type == "request-callback":
+        details = {
+            "phone": params[0] if len(params) > 0 else "",
+            "preferred_time": params[1] if len(params) > 1 else "ASAP",
         }
 
     user_type = "rider"
@@ -943,7 +1039,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat_id, user_name, "action_reminder",
-                        f"â° Recordatorio: solicitud #{request_id} de {user_name} pendiente de revisiÃ³n (15 min)"
+                        f"â° Recordatorio: solicitud #{request_id} de {user_name} pendiente de revision (15 min)"
                     )
                 except Exception:
                     pass
@@ -954,7 +1050,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 lang = getattr(chat, "locale", "en") or "en"
                 agent = chat.agent_name or "Agente"
                 if lang.startswith("es"):
-                    msg = "Su solicitud estÃ¡ siendo revisada por un supervisor. Le notificaremos por correo electrÃ³nico cuando sea procesada. Normalmente toma menos de 1 hora."
+                    msg = "Su solicitud est siendo revisada por un supervisor. Le notificaremos por correo electronico cuando sea procesada. Normalmente toma menos de 1 hora."
                 else:
                     msg = "Your request is being reviewed by a supervisor. We'll notify you by email when it's processed. It typically takes less than 1 hour."
                 bot_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=msg)
@@ -978,7 +1074,7 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat_id, user_name, "action_expired",
-                        f"ðŸš¨ Solicitud #{request_id} de {user_name} sin respuesta por 1 hora â€” escalada"
+                        f"ðŸš¨ Solicitud #{request_id} de {user_name} sin respuesta por 1 hora - escalada"
                     )
                 except Exception:
                     pass
@@ -1020,15 +1116,16 @@ async def _rehydrate_pending_reminders():
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """4-layer AI response: Claude (+ retry) â†’ Cache â†’ Keywords â†’ Handoff.
+    """4-layer AI response: Claude (+ retry) -> Cache -> Keywords -> Handoff.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
     lang = getattr(chat, "locale", "en") or "en"
     actions: list[dict] = []
 
-    # â”€â”€ Layer 1: Claude API (primary) + 1 retry â”€â”€
+    # â"€â"€ Layer 1: Claude API (primary) + 1 retry â"€â"€
     if _HAS_CLAUDE and not claude_health.should_skip_claude():
         ctx = await _get_user_context(chat.user_id, db, lang)
+        ctx["frustration_score"] = await _compute_frustration_score(chat.id, db)
         user_type = "rider"
         if ctx.get("user") and ctx["user"].get("role"):
             user_type = ctx["user"]["role"]
@@ -1040,7 +1137,7 @@ async def _generate_ai_response(
             # Auto-learn: cache good Claude responses for future use
             maybe_cache_response(user_msg, clean_msg, "general", lang)
             return clean_msg, actions
-        # â”€â”€ Retry once with shorter timeout before falling to cache â”€â”€
+        # â"€â"€ Retry once with shorter timeout before falling to cache â"€â"€
         await asyncio.sleep(1.0)
         claude_resp = await _call_claude_api(system_prompt, history, user_msg)
         if claude_resp:
@@ -1048,25 +1145,25 @@ async def _generate_ai_response(
             maybe_cache_response(user_msg, clean_msg, "general", lang)
             return clean_msg, actions
 
-    # â”€â”€ Layer 2: Cached responses (instant) â”€â”€
+    # â"€â"€ Layer 2: Cached responses (instant) â"€â"€
     cached = find_cached_response(user_msg, lang)
     if cached:
         varied = add_natural_variation(cached, agent_name, user_name, lang)
         return varied, []
 
-    # â”€â”€ Layer 3: Smart keyword responses (existing system) â”€â”€
+    # â"€â"€ Layer 3: Smart keyword responses (existing system) â"€â"€
     fallback = _generate_human_chat(user_msg, user_name, agent_name, lang)
     if fallback:
         return fallback, []
 
-    # â”€â”€ Layer 4: Graceful handoff â”€â”€
+    # â"€â"€ Layer 4: Graceful handoff â"€â"€
     if _HAS_CLAUDE:
         # One retry after 10 seconds
         if lang.startswith("es"):
-            stall = "PermÃ­tame un momento, estoy verificando la informaciÃ³n con mi equipo..."
+            stall = "Permtame un momento, estoy verificando la informacion con mi equipo..."
         else:
             stall = "Give me a moment, I'm checking the information with my team..."
-        # Don't retry here â€” just return stall message.
+        # Don't retry here - just return stall message.
         # The next user message will trigger another Claude attempt.
         return stall, []
 
@@ -1257,7 +1354,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     elif phase == "agent_active":
         agent = chat.agent_name or "Agente"
 
-        # Variable reading pause â€” feels like agent is reading the message
+        # Variable reading pause - feels like agent is reading the message
         msg_len = len(user_msg)
         if msg_len < 30:
             read_delay = _rng.uniform(2.0, 4.0)    # short message
@@ -1283,10 +1380,24 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
             replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
+                # Build case summary for dispatch
+                try:
+                    recent_msgs_r = await db.execute(
+                        select(SupportMessage).where(SupportMessage.chat_id == chat.id)
+                        .order_by(SupportMessage.created_at.desc()).limit(6)
+                    )
+                    recent_msgs = list(reversed(recent_msgs_r.scalars().all()))
+                    summary_lines = []
+                    for m in recent_msgs:
+                        role_label = "Usuario" if m.sender_role in ("rider", "driver", "user") else "Agente"
+                        summary_lines.append(f"{role_label}: {(m.message or '')[:80]}")
+                    case_summary = "\n".join(summary_lines)
+                except Exception:
+                    case_summary = ""
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"Chat de {user_name} escalado automaticamente - usuario frustrado"
+                        f"Chat de {user_name} escalado automaticamente - usuario frustrado\n\nResumen:\n{case_summary}"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -1316,10 +1427,24 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
             replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
+                # Build case summary for dispatch
+                try:
+                    recent_msgs_r = await db.execute(
+                        select(SupportMessage).where(SupportMessage.chat_id == chat.id)
+                        .order_by(SupportMessage.created_at.desc()).limit(6)
+                    )
+                    recent_msgs = list(reversed(recent_msgs_r.scalars().all()))
+                    summary_lines = []
+                    for m in recent_msgs:
+                        role_label = "Usuario" if m.sender_role in ("rider", "driver", "user") else "Agente"
+                        summary_lines.append(f"{role_label}: {(m.message or '')[:80]}")
+                    case_summary = "\n".join(summary_lines)
+                except Exception:
+                    case_summary = ""
                 try:
                     firestore_sync.sync_dispatch_notification(
                         chat.id, user_name, "escalation",
-                        f"Chat de {user_name} escalado a supervisor"
+                        f"Chat de {user_name} escalado a supervisor\n\nResumen:\n{case_summary}"
                     )
                     firestore_sync.sync_support_chat(
                         chat.id, chat.user_id, user_name, "",
@@ -1328,7 +1453,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 except Exception:
                     pass
 
-        # 3) Cancel trip intent â€” ask for confirmation first
+        # 3) Cancel trip intent - ask for confirmation first
         elif _has_cancel_intent(user_msg):
             chat.bot_phase = "awaiting_cancel_confirm"
             if lang.startswith("es"):
@@ -1370,7 +1495,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "safety_report",
-                            f"ðŸš¨ SEGURIDAD: {user_name} reportÃ³ un problema de seguridad"
+                            f"ðŸš¨ SEGURIDAD: {user_name} reporto un problema de seguridad"
                         )
                         firestore_sync.sync_support_chat(
                             chat.id, chat.user_id, user_name, "",
@@ -1391,7 +1516,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "refund_request",
-                            f"ðŸ’° {user_name} solicitÃ³ reembolso via chat de soporte"
+                            f"ðŸ'° {user_name} solicito reembolso via chat de soporte"
                         )
                     except Exception:
                         pass
@@ -1408,7 +1533,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                     try:
                         firestore_sync.sync_dispatch_notification(
                             chat.id, user_name, "driver_report",
-                            f"âš ï¸ {user_name} reportÃ³ un conductor via chat"
+                            f"âš ï¸ {user_name} reporto un conductor via chat"
                         )
                     except Exception:
                         pass
@@ -1548,11 +1673,11 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
 
 async def _check_chat_inactivity(chat_id: int):
     """Background task: proactive follow-up sequence.
-    2 min â†’ first follow-up, 4 min â†’ second follow-up, 5 min â†’ closing warning, 5:30 â†’ close chat.
+    2 min -> first follow-up, 4 min -> second follow-up, 5 min -> closing warning, 5:30 -> close chat.
     Respects user typing state from Firestore to avoid interrupting.
     """
     try:
-        # â”€â”€ First follow-up at 2 minutes â”€â”€
+        # â"€â"€ First follow-up at 2 minutes â"€â"€
         await asyncio.sleep(120)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1562,7 +1687,7 @@ async def _check_chat_inactivity(chat_id: int):
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
-                    return  # User was active recently â€” reset
+                    return  # User was active recently - reset
             # Check Firestore typing status
             if _HAS_FIRESTORE:
                 try:
@@ -1582,9 +1707,9 @@ async def _check_chat_inactivity(chat_id: int):
             except Exception:
                 pass
             proactive_msgs_es = [
-                f"Â¿Hay algo mÃ¡s en que pueda ayudarle, {_u_name}?",
-                f"Â¿Necesita ayuda con algo mÃ¡s?",
-                f"Quedo a su disposiciÃ³n si necesita algo adicional.",
+                f"Â¿Hay algo ms en que pueda ayudarle, {_u_name}?",
+                f"Â¿Necesita ayuda con algo ms?",
+                f"Quedo a su disposicion si necesita algo adicional.",
             ]
             proactive_msgs_en = [
                 f"Is there anything else I can help you with, {_u_name if _u_name != 'estimado usuario' else 'there'}?",
@@ -1603,7 +1728,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # â”€â”€ Second follow-up at 4 minutes (2 min after first) â”€â”€
+        # â"€â"€ Second follow-up at 4 minutes (2 min after first) â"€â"€
         await asyncio.sleep(120)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1624,7 +1749,7 @@ async def _check_chat_inactivity(chat_id: int):
                     pass
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
-            still_text = "Â¿AÃºn sigue en lÃ­nea conmigo?" if lang.startswith("es") else "Are you still there with me?"
+            still_text = "Â¿An sigue en lnea conmigo?" if lang.startswith("es") else "Are you still there with me?"
             still_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=still_text)
             db.add(still_msg)
             chat.updated_at = datetime.now(timezone.utc)
@@ -1636,7 +1761,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # â”€â”€ Closing warning at 5 minutes (1 min after second) â”€â”€
+        # â"€â"€ Closing warning at 5 minutes (1 min after second) â"€â"€
         await asyncio.sleep(60)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
@@ -1649,7 +1774,7 @@ async def _check_chat_inactivity(chat_id: int):
                     return  # User responded
             agent = chat.agent_name or "Agente"
             lang = getattr(chat, "locale", "en") or "en"
-            close_warn_es = "Por motivos de inactividad, cerrarÃ© este chat en 30 segundos. Si necesita mÃ¡s ayuda, envÃ­e un mensaje."
+            close_warn_es = "Por motivos de inactividad, cerrare este chat en 30 segundos. Si necesita ms ayuda, enve un mensaje."
             close_warn_en = "Due to inactivity, I'll be closing this chat in 30 seconds. If you still need help, please send a message."
             close_text = close_warn_es if lang.startswith("es") else close_warn_en
             close_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=close_text)
@@ -1663,7 +1788,7 @@ async def _check_chat_inactivity(chat_id: int):
                 except Exception:
                     pass
 
-        # â”€â”€ Close chat at 5:30 (30 seconds after warning) â”€â”€
+        # â"€â"€ Close chat at 5:30 (30 seconds after warning) â"€â"€
         await asyncio.sleep(30)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))

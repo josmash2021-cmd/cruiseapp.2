@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, DispatchOffer, Vehicle,
-    SupportChat, SupportMessage, ActionRequest, Rating,
+    SupportChat, SupportMessage, ActionRequest, Rating, Notification,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
 from jose import jwt, JWTError
@@ -19,17 +19,42 @@ from utils.security import (
 from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url
 from services.fcm_service import _send_fcm_push
 from config import (
-    OWNER_EMAIL, OWNER_PASSWORD_HASH, OWNER_PASSWORD,
+    OWNER_EMAIL, OWNER_PASSWORD_HASH,
     DISPATCH_ALLOWED_IPS, PUBLIC_URL,
     _pending_cache, _PENDING_CACHE_TTL, OFFER_TIMEOUT_SECONDS,
     firestore_sync, _HAS_FIRESTORE,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
+    _HAS_STRIPE, _stripe_mod,
 )
 from services.event_bus import event_bus
 
 router = APIRouter()
 
 DRIVER_SHARE_RATE = 0.60
+
+# Local dict to track action-request reminder tasks (avoids cross-router import)
+_action_reminder_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _lookup_user_trips(user_id: int, db: AsyncSession, limit: int = 5) -> list:
+    """Look up recent trips for a user (local copy to avoid cross-router import)."""
+    result = await db.execute(
+        select(Trip).where(Trip.rider_id == user_id).order_by(Trip.created_at.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def _create_refund_request(user_id: int, trip_id: int, reason: str, db: AsyncSession) -> int:
+    """Log a refund request as a notification so dispatch can see and process it."""
+    notif = Notification(
+        user_id=user_id,
+        title="Refund Request",
+        body=f"Trip #{trip_id}: {reason}",
+        notif_type="refund_request",
+    )
+    db.add(notif)
+    await db.flush()
+    return notif.id
 
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
@@ -211,10 +236,10 @@ async def _filter_drivers_by_vehicle_tier(
 ) -> set[int]:
     """Return driver IDs whose vehicle matches the requested tier.
 
-    VIP requests     → VIP vehicles AND Premium vehicles (VIP drivers also serve premium rides)
-    Premium requests → Premium or VIP vehicles; ALSO Comfort vehicles if driver
+    VIP requests     -> VIP vehicles AND Premium vehicles (VIP drivers also serve premium rides)
+    Premium requests -> Premium or VIP vehicles; ALSO Comfort vehicles if driver
                        rating >= 4.7 AND driver level >= Silver (50+ trips)
-    Comfort requests → any vehicle (no filter)
+    Comfort requests -> any vehicle (no filter)
     """
     requested = (requested_type or "comfort").lower().strip()
     if requested == "comfort":
@@ -288,7 +313,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user
     data["rider_id"] = user.id
-    # Parse scheduled_at string â†’ datetime
+    # Parse scheduled_at string ->datetime
     if data.get("scheduled_at") and isinstance(data["scheduled_at"], str):
         try:
             data["scheduled_at"] = datetime.fromisoformat(data["scheduled_at"].replace("Z", "+00:00"))
@@ -364,7 +389,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         else:
             logging.warning("[Dispatch] Trip %d: no %s-tier drivers available, using closest driver", trip.id, requested_type)
 
-    # â”€â”€ Debug logging: always log dispatch result for Railway visibility â”€â”€
+    # -- Debug logging: always log dispatch result for Railway visibility --
     if drivers_sorted:
         logging.info(
             "[Dispatch] Trip %d: found %d eligible drivers. Assigning to driver %d (%.2f km away). cutoff=%s",
@@ -392,12 +417,12 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
-        # â”€â”€ SSE instant push to driver (sub-second delivery) â”€â”€
+        # -- SSE instant push to driver (sub-second delivery) --
         _pending_cache.pop(assigned.id, None)  # Invalidate cache so SSE and poll both get fresh data
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         asyncio.create_task(event_bus.push_driver_offer(assigned.id, [{
             "offer_id": offer.id,
-            "rider_name": f"{user.first_name} {user.last_name}",
+            "rider_name": user.first_name + " " + user.last_name,
             "rider_phone": user.phone or "",
             "rider_photo_url": _abs_photo_url(user.photo_url) or "",
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
@@ -406,21 +431,21 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         }]))
-        # â”€â”€ FCM push to assigned driver â”€â”€
+        # -- FCM push to assigned driver --
         if assigned.fcm_token:
-            rider_name = f”{user.first_name} {user.last_name}”
+            _rn = user.first_name + " " + user.last_name
             _send_fcm_push(
                 assigned.fcm_token,
-                title=”🚗 New Ride Offer”,
-                body=f”{rider_name} — {(trip.pickup_address or '')[:50]}”,
-                data={“type”: “new_offer”, “trip_id”: str(trip.id), “offer_id”: str(offer.id)},
+                title="New Ride Offer",
+                body=_rn + " - " + (trip.pickup_address or "")[:50],
+                data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                 is_offer=True,
             )
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
 
-@router.get(“/dispatch/driver/pending”, dependencies=[Depends(_verify_api_key)])
+@router.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # L3: return cached result if same driver called within _PENDING_CACHE_TTL seconds
     _now = time.monotonic()
@@ -439,16 +464,16 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             .where(
                 and_(
                     DispatchOffer.driver_id == driver_id,
-                    DispatchOffer.status == “pending”,
+                    DispatchOffer.status == "pending",
                     DispatchOffer.created_at <= stale_cutoff,
                 )
             )
         )
         stale_rows = stale_result.all()
         for stale_offer, stale_trip in stale_rows:
-            stale_offer.status = “expired”
+            stale_offer.status = "expired"
             logging.warning(
-                “[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min — marking expired and cascading”,
+                "[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min -- marking expired and cascading",
                 stale_offer.id, stale_offer.trip_id, driver_id,
             )
             # Notify the timed-out driver via FCM
@@ -457,22 +482,22 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             if timed_out_driver and timed_out_driver.fcm_token:
                 _send_fcm_push(
                     timed_out_driver.fcm_token,
-                    title=”Offer Expired”,
-                    body=”The ride offer was not accepted in time and has been reassigned.”,
-                    data={“type”: “offer_expired”, “offer_id”: str(stale_offer.id), “trip_id”: str(stale_offer.trip_id)},
+                    title="Offer Expired",
+                    body="The ride offer was not accepted in time and has been reassigned.",
+                    data={"type": "offer_expired", "offer_id": str(stale_offer.id), "trip_id": str(stale_offer.trip_id)},
                 )
         if stale_rows:
             await db.commit()
             # Cascade reassignment for each expired offer whose trip is still unassigned
             for stale_offer, stale_trip in stale_rows:
-                if stale_trip.status != “requested”:
+                if stale_trip.status != "requested":
                     continue
                 try:
                     rejected_ids_result = await db.execute(
                         select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == stale_trip.id)
                     )
                     rejected_ids = {r[0] for r in rejected_ids_result.all()}
-                    active_trip_statuses = [“accepted”, “driver_en_route”, “driver_arriving”, “arrived”, “in_trip”, “in_progress”]
+                    active_trip_statuses = ["accepted", "driver_en_route", "driver_arriving", "arrived", "in_trip", "in_progress"]
                     busy_result = await db.execute(
                         select(Trip.driver_id).where(
                             and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
@@ -484,7 +509,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                     next_drivers_result = await db.execute(
                         select(User).where(
                             and_(
-                                User.role == “driver”,
+                                User.role == "driver",
                                 User.is_online == True,
                                 User.lat.isnot(None),
                                 User.lng.isnot(None),
@@ -499,8 +524,8 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                         next_drivers,
                         key=lambda d: _haversine(stale_trip.pickup_lat, stale_trip.pickup_lng, d.lat or 0, d.lng or 0),
                     )
-                    req_type = (stale_trip.vehicle_type or “comfort”).lower()
-                    if req_type in (“vip”, “premium”) and next_drivers_sorted:
+                    req_type = (stale_trip.vehicle_type or "comfort").lower()
+                    if req_type in ("vip", "premium") and next_drivers_sorted:
                         all_ids = [d.id for d in next_drivers_sorted]
                         eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, req_type)
                         tier_matched = [d for d in next_drivers_sorted if d.id in eligible_ids]
@@ -516,74 +541,74 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                         estimated_driver_fare = round(float(stale_trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
                         rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
                         rider = rider_result.scalar_one_or_none()
-                        rider_name = f”{rider.first_name} {rider.last_name}” if rider else “Rider”
-                        rider_phone = (rider.phone or “”) if rider else “”
-                        rider_photo = (_abs_photo_url(rider.photo_url) or “”) if rider else “”
+                        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+                        rider_phone = (rider.phone or "") if rider else ""
+                        rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
                         asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
-                            “offer_id”: new_offer.id,
-                            “rider_name”: rider_name,
-                            “rider_phone”: rider_phone,
-                            “rider_photo_url”: rider_photo,
-                            “created_at”: new_offer.created_at.isoformat() if new_offer.created_at else None,
-                            “offer_timeout_seconds”: OFFER_TIMEOUT_SECONDS,
+                            "offer_id": new_offer.id,
+                            "rider_name": rider_name,
+                            "rider_phone": rider_phone,
+                            "rider_photo_url": rider_photo,
+                            "created_at": new_offer.created_at.isoformat() if new_offer.created_at else None,
+                            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
                             **_trip_dict(stale_trip),
-                            “fare”: estimated_driver_fare,
-                            “driver_earnings”: estimated_driver_fare,
+                            "fare": estimated_driver_fare,
+                            "driver_earnings": estimated_driver_fare,
                         }]))
                         if next_driver.fcm_token:
                             _send_fcm_push(
                                 next_driver.fcm_token,
-                                title=”New Ride Offer”,
-                                body=f”{rider_name} — {(stale_trip.pickup_address or '')[:50]}”,
-                                data={“type”: “new_offer”, “trip_id”: str(stale_trip.id), “offer_id”: str(new_offer.id)},
+                                title="New Ride Offer",
+                                body=f"{rider_name} -- {(stale_trip.pickup_address or '')[:50]}",
+                                data={"type": "new_offer", "trip_id": str(stale_trip.id), "offer_id": str(new_offer.id)},
                                 is_offer=True,
                             )
                         logging.info(
-                            “[Dispatch] Expired offer %d (trip %d) reassigned to driver %d”,
+                            "[Dispatch] Expired offer %d (trip %d) reassigned to driver %d",
                             stale_offer.id, stale_trip.id, next_driver.id,
                         )
                     else:
                         logging.warning(
-                            “[Dispatch] Expired offer %d (trip %d): no next driver available for reassignment”,
+                            "[Dispatch] Expired offer %d (trip %d): no next driver available for reassignment",
                             stale_offer.id, stale_trip.id,
                         )
                 except Exception as e:
                     logging.error(
-                        “[Dispatch] Cascade reassignment after offer %d expiry failed: %s”,
+                        "[Dispatch] Cascade reassignment after offer %d expiry failed: %s",
                         stale_offer.id, e,
                     )
     except Exception as e:
-        logging.error(“[get_driver_pending] Stale offer cleanup failed for driver %d: %s”, driver_id, e)
+        logging.error("[get_driver_pending] Stale offer cleanup failed for driver %d: %s", driver_id, e)
 
-    # Single JOIN query — fetch offers + trips + riders in ONE roundtrip (fixes N+1)
+    # Single JOIN query -- fetch offers + trips + riders in ONE roundtrip (fixes N+1)
     result = await db.execute(
         select(DispatchOffer, Trip, User)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
         .outerjoin(User, Trip.rider_id == User.id)
-        .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == “pending”))
+        .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "pending"))
     )
     offers = []
     for offer, trip, rider in result.all():
-        rider_name = f”{rider.first_name} {rider.last_name}” if rider else “Rider”
-        rider_phone = (rider.phone or “”) if rider else “”
-        rider_photo_url = (_abs_photo_url(rider.photo_url) or “”) if rider else “”
+        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+        rider_phone = (rider.phone or "") if rider else ""
+        rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         offers.append({
-            “offer_id”: offer.id,
-            “rider_name”: rider_name,
-            “rider_phone”: rider_phone,
-            “rider_photo_url”: rider_photo_url,
-            “created_at”: offer.created_at.isoformat() if offer.created_at else None,
-            “offer_timeout_seconds”: OFFER_TIMEOUT_SECONDS,
+            "offer_id": offer.id,
+            "rider_name": rider_name,
+            "rider_phone": rider_phone,
+            "rider_photo_url": rider_photo_url,
+            "created_at": offer.created_at.isoformat() if offer.created_at else None,
+            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             **_trip_dict(trip),
-            “fare”: estimated_driver_fare,
-            “driver_earnings”: estimated_driver_fare,
+            "fare": estimated_driver_fare,
+            "driver_earnings": estimated_driver_fare,
         })
     _pending_cache[driver_id] = (time.monotonic(), offers)  # L3: cache for TTL
     return offers
 
 
-# â”€â”€ SSE stream: real-time driver offers (sub-second delivery) â”€â”€
+# -- SSE stream: real-time driver offers (sub-second delivery) --
 
 @router.get("/dispatch/driver/pending/stream")
 async def driver_pending_sse(
@@ -593,7 +618,7 @@ async def driver_pending_sse(
 ):
     """SSE stream for driver pending offers.
     Delivers new offers in <200ms instead of 5s polling.
-    Falls back gracefully â€” clients can use this OR polling."""
+    Falls back gracefully -- clients can use this OR polling."""
     # Security: only allow drivers to subscribe to their own stream
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to access this driver's offer stream")
@@ -629,7 +654,7 @@ async def driver_pending_sse(
     )
 
 
-# â”€â”€ SSE stream: real-time trip updates (for riders) â”€â”€
+# -- SSE stream: real-time trip updates (for riders) --
 
 @router.get("/dispatch/trip/{trip_id}/stream")
 async def trip_status_sse(
@@ -728,7 +753,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 logging.error("Firestore sync on accept_offer failed: %s", e)
         asyncio.create_task(_sync_firestore_accept())
 
-    # â”€â”€ SSE instant push to rider watching this trip (with FULL driver info) â”€â”€
+    # -- SSE instant push to rider watching this trip (with FULL driver info) --
     if trip:
         async def _push_sse_with_driver():
             try:
@@ -737,6 +762,16 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     drv = drv_r.scalar_one_or_none()
                     veh_r = await _db2.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
                     veh = veh_r.scalar_one_or_none()
+                    # Fetch actual driver stats from ratings
+                    _stats_r = await _db2.execute(
+                        select(
+                            func.count(Rating.id).label("trip_count"),
+                            func.avg(Rating.stars).label("avg_rating"),
+                        ).where(Rating.to_user_id == driver_id)
+                    )
+                    _stats_row = _stats_r.first()
+                    _driver_trips = _stats_row.trip_count if _stats_row else 0
+                    _driver_rating = round(float(_stats_row.avg_rating or 5.0), 1) if _stats_row else 5.0
                 await event_bus.push_trip_update(trip.id, {
                     "status": "driver_en_route",
                     "trip_id": trip.id,
@@ -744,8 +779,8 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
                     "driver_phone": (drv.phone or "") if drv else "",
                     "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
-                    "driver_rating": 4.9,
-                    "driver_trips": 0,
+                    "driver_rating": _driver_rating,
+                    "driver_trips": _driver_trips,
                     "vehicle_make": veh.make if veh else "",
                     "vehicle_model": veh.model if veh else "",
                     "vehicle_color": veh.color if veh else "",
@@ -756,7 +791,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 logging.error("SSE push with driver info failed: %s", e)
         asyncio.create_task(_push_sse_with_driver())
 
-    # â”€â”€ Push + SMS notification to rider when driver accepts â”€â”€
+    # -- Push + SMS notification to rider when driver accepts --
     if trip:
         try:
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
@@ -769,12 +804,12 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             if rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
-                    title="Driver Found! ðŸš—",
+                    title="Driver Found!",
                     body=f"{driver_display} is on the way to pick you up.",
                     data={"type": "driver_assigned", "trip_id": str(trip.id), "driver_id": str(driver_id)},
                 )
 
-            # SMS via Twilio (non-blocking â€” don't slow down accept response)
+            # SMS via Twilio (non-blocking -- don't slow down accept response)
             if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
                 def _send_sms():
                     try:
@@ -878,7 +913,7 @@ async def reject_offer(
             db.add(new_offer)
             await db.commit()
             await db.refresh(new_offer)
-            # â”€â”€ SSE instant push to next driver â”€â”€
+            # -- SSE instant push to next driver --
             _pending_cache.pop(next_driver.id, None)
             estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
             # Fetch rider info for the push payload
@@ -898,21 +933,21 @@ async def reject_offer(
                 "fare": estimated_driver_fare,
                 "driver_earnings": estimated_driver_fare,
             }]))
-            # â”€â”€ FCM push to next driver â”€â”€
+            # -- FCM push to next driver --
             if next_driver.fcm_token:
                 _send_fcm_push(
                     next_driver.fcm_token,
-                    title=”🚗 New Ride Offer”,
-                    body=f”{rider_name} — {(trip.pickup_address or '')[:50]}”,
-                    data={“type”: “new_offer”, “trip_id”: str(trip.id), “offer_id”: str(new_offer.id)},
+                    title="🚗 New Ride Offer",
+                    body=f"{rider_name} -- {(trip.pickup_address or '')[:50]}",
+                    data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
                     is_offer=True,
                 )
 
     return {"status": "rejected", "reason_stored": reason is not None}
 
-# â”€â”€ In-memory cache for accepted dispatch status â”€â”€
+# -- In-memory cache for accepted dispatch status --
 _dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
-_DISPATCH_STATUS_CACHE_TTL = 1.0  # seconds — fast response to driver accepting
+_DISPATCH_STATUS_CACHE_TTL = 1.0  # seconds -- fast response to driver accepting
 
 @router.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -970,13 +1005,23 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
             }
 
     if accepted and driver:
+        # Fetch actual driver stats from ratings
+        _drv_stats_r = await db.execute(
+            select(
+                func.count(Rating.id).label("trip_count"),
+                func.avg(Rating.stars).label("avg_rating"),
+            ).where(Rating.to_user_id == driver.id)
+        )
+        _drv_stats = _drv_stats_r.first()
+        _drv_trips = _drv_stats.trip_count if _drv_stats else 0
+        _drv_rating = round(float(_drv_stats.avg_rating or 5.0), 1) if _drv_stats else 5.0
         flat_driver = {
             "driver_id": driver.id,
             "driver_name": f"{driver.first_name} {driver.last_name}",
             "driver_phone": driver.phone,
             "driver_photo_url": _abs_photo_url(driver.photo_url) or "",
-            "driver_rating": 4.9,
-            "driver_trips": 0,
+            "driver_rating": _drv_rating,
+            "driver_trips": _drv_trips,
             "vehicle_make": veh.make if veh else "",
             "vehicle_model": veh.model if veh else "",
             "vehicle_color": veh.color if veh else "",
@@ -997,7 +1042,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     return response
 
 
-# ── Public photo lookup (for displaying other user's photo in trip UI) ──
+# == Public photo lookup (for displaying other user's photo in trip UI) ==
 _photo_cache: dict = {}  # user_id -> (photo_url, timestamp)
 _PHOTO_CACHE_TTL = 60  # seconds
 
@@ -1022,7 +1067,7 @@ async def get_user_photo(user_id: int, user: User = Depends(_get_current_user), 
 #  ADMIN / DISPATCH ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# â”€â”€ Action Request Management â”€â”€
+# -- Action Request Management --
 
 @router.get("/api/dispatch/action-requests", dependencies=[Depends(_require_dispatch_auth)])
 async def list_action_requests(
@@ -1057,7 +1102,7 @@ async def approve_action_request(
     reviewed_by: str = Body("admin", embed=True),
     db: AsyncSession = Depends(get_db),
 ):
-    """Approve an action request â€” execute the action and notify user."""
+    """Approve an action request -- execute the action and notify user."""
     result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
     ar = result.scalar_one_or_none()
     if not ar:
@@ -1127,16 +1172,16 @@ async def approve_action_request(
 
     elif ar.action_type == "apply-promo":
         amount = details.get("amount", 5)
-        action_result_msg = f"CrÃ©dito promocional de ${amount:.2f} aprobado."
+        action_result_msg = f"Credito promocional de ${amount:.2f} aprobado."
 
     elif ar.action_type == "cancel-trip":
-        action_result_msg = "CancelaciÃ³n de viaje aprobada."
+        action_result_msg = "Cancelacion de viaje aprobada."
 
     elif ar.action_type == "safety-report":
         action_result_msg = "Reporte de seguridad registrado y escalado."
 
     else:
-        action_result_msg = f"AcciÃ³n '{ar.action_type}' aprobada."
+        action_result_msg = f"Accion '{ar.action_type}' aprobada."
 
     # Send confirmation to user in chat
     chat_r = await db.execute(select(SupportChat).where(SupportChat.id == ar.chat_id))
@@ -1145,7 +1190,7 @@ async def approve_action_request(
         lang = getattr(chat, "locale", "en") or "en"
         agent = chat.agent_name or "Agente"
         if lang.startswith("es"):
-            user_msg = f"Su solicitud ha sido aprobada y procesada. {action_result_msg} Â¿Hay algo mÃ¡s en que pueda ayudarle?"
+            user_msg = f"Su solicitud ha sido aprobada y procesada. {action_result_msg} Hay algo mas en que pueda ayudarle?"
         else:
             user_msg = f"Your request has been approved and processed. {action_result_msg} Is there anything else I can help you with?"
         bot_msg = SupportMessage(chat_id=ar.chat_id, sender_id=0, sender_role="bot", message=user_msg)
@@ -1180,7 +1225,7 @@ async def approve_action_request(
         if _push_user and getattr(_push_user, "fcm_token", None):
             _send_fcm_push(
                 _push_user.fcm_token,
-                title="âœ… Solicitud aprobada" if (getattr(chat, "locale", "en") or "en").startswith("es") else "âœ… Request Approved",
+                title="Solicitud aprobada" if (getattr(chat, "locale", "en") or "en").startswith("es") else "Request Approved",
                 body=action_result_msg[:200],
                 data={"type": "action_approved", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
@@ -1197,7 +1242,7 @@ async def reject_action_request(
     reviewed_by: str = Body("admin", embed=True),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reject an action request â€” admin takes over the chat."""
+    """Reject an action request -- admin takes over the chat."""
     result = await db.execute(select(ActionRequest).where(ActionRequest.id == request_id))
     ar = result.scalar_one_or_none()
     if not ar:
@@ -1259,8 +1304,8 @@ async def reject_action_request(
             _lang = getattr(chat, "locale", "en") or "en" if chat else "en"
             _send_fcm_push(
                 _push_user.fcm_token,
-                title="ðŸ’¤ Supervisor conectado" if _lang.startswith("es") else "ðŸ’¤ Supervisor Connected",
-                body="Un supervisor revisarÃ¡ su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
+                title="Supervisor conectado" if _lang.startswith("es") else "Supervisor Connected",
+                body="Un supervisor revisara su caso personalmente." if _lang.startswith("es") else "A supervisor will review your case personally.",
                 data={"type": "action_rejected", "request_id": str(request_id), "chat_id": str(ar.chat_id)},
             )
     except Exception as e:

@@ -30,12 +30,17 @@ except Exception as _e:
     logging.warning("[FCM] Firebase Admin not available: %s", _e)
 
 
-def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
-    """Send FCM push notification. Silently skips if Firebase not available."""
+def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
+    """Send FCM push notification. Silently skips if Firebase not available.
+
+    Set is_offer=True for ride offer notifications — uses cruise_offers channel
+    which has fullScreenIntent and max priority on Android.
+    """
     if not _HAS_FIREBASE or not token:
         return
     try:
         from firebase_admin import messaging as _fcm
+        channel_id = "cruise_offers" if is_offer else "cruise_premium"
         msg = _fcm.Message(
             notification=_fcm.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
@@ -44,7 +49,9 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
                 priority="high",
                 notification=_fcm.AndroidNotification(
                     sound="cruise_online",
-                    channel_id="cruise_premium",
+                    channel_id=channel_id,
+                    notification_priority=_fcm.AndroidNotificationPriority.MAX_PRIORITY if is_offer else _fcm.AndroidNotificationPriority.HIGH_PRIORITY,
+                    visibility=_fcm.AndroidNotificationVisibility.PUBLIC,
                 ),
             ),
             apns=_fcm.APNSConfig(
@@ -53,6 +60,6 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None):
             ),
         )
         _fcm.send(msg)
-        logging.info("[FCM] Push sent to ...%s", token[-8:])
+        logging.info("[FCM] Push sent to ...%s (channel=%s)", token[-8:], channel_id)
     except Exception as _e:
         logging.warning("[FCM] Push failed: %s", _e)

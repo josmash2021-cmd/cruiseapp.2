@@ -103,6 +103,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       setState(() => _serverMethods.removeWhere((m) => m['id'] == id));
       _showSnack('Payment method removed');
     } catch (_) {
+      if (!mounted) return;
       _showSnack('Could not remove method. Try again.');
     }
   }
@@ -229,6 +230,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       } catch (_) {
         if (mounted) ErrorService.show(context, 'Failed to save PayPal on server. Please retry.');
       }
+      if (!mounted) return;
       setState(() => _paypalLinked = true);
       _showSnack(paypalMsg);
       await _loadServerMethods();

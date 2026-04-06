@@ -1913,24 +1913,37 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
     reset_link = f"{base_url}/auth/reset-page?token={reset_code}"
 
     # Send email
+    _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
+    _user_name = user.first_name or "there"
     html = f"""
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0a0a0a;color:#fff;border-radius:16px;">
-      <div style="text-align:center;margin-bottom:24px;">
-        <div style="font-size:32px;font-weight:900;color:#E8C547;letter-spacing:2px;">CRUISE</div>
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#050505;border-radius:16px;overflow:hidden;border:1px solid #1a1a1a;">
+      <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
+      <div style="padding:48px 40px 40px;">
+        <div style="text-align:center;margin-bottom:40px;">
+          <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <div style="margin-top:12px;">
+            <span style="display:inline-block;width:50px;height:1px;background:#D4AF37;vertical-align:middle;"></span>
+            <span style="display:inline-block;width:6px;height:6px;background:#D4AF37;transform:rotate(45deg);margin:0 10px;vertical-align:middle;"></span>
+            <span style="display:inline-block;width:50px;height:1px;background:#D4AF37;vertical-align:middle;"></span>
+          </div>
+        </div>
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="width:64px;height:64px;border-radius:50%;margin:0 auto;border:2px solid #D4AF37;text-align:center;line-height:64px;font-size:28px;">&#128274;</div>
+        </div>
+        <h1 style="text-align:center;color:#FFFFFF;font-size:24px;font-weight:300;margin:0 0 6px;letter-spacing:-0.3px;">Reset Your <strong>Password</strong></h1>
+        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 32px;line-height:1.6;">Hi {_user_name}, we received a request to reset the password for your Cruise account.</p>
+        <div style="text-align:center;margin-bottom:32px;">
+          <a href="{reset_link}" style="display:inline-block;background:#D4AF37;color:#000;text-decoration:none;padding:15px 52px;border-radius:28px;font-size:14px;font-weight:700;letter-spacing:1px;">RESET PASSWORD</a>
+        </div>
+        <div style="background:#111;border-radius:10px;padding:20px;border:1px solid #1a1a1a;">
+          <p style="color:#555;font-size:12px;margin:0;line-height:1.6;text-align:center;">This link expires in <strong style="color:#D4AF37;">30 minutes</strong>.<br>If you didn't request this, you can safely ignore this email.</p>
+        </div>
       </div>
-      <h2 style="color:#fff;font-size:20px;font-weight:700;margin:0 0 12px;">Reset your password</h2>
-      <p style="color:#aaa;font-size:15px;line-height:1.6;margin:0 0 24px;">
-        We received a request to reset the password for your Cruise account. Click the button below to create a new password.
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="{reset_link}"
-           style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#E8C547,#D4A800);color:#1a1400;font-size:16px;font-weight:800;text-decoration:none;border-radius:28px;">
-          Reset Password
-        </a>
+      <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
+        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
-      <p style="color:#666;font-size:13px;line-height:1.5;margin:24px 0 0;">
-        This link expires in 30 minutes. If you didn't request this, ignore this email.
-      </p>
     </div>
     """
     _send_email(user.email, "Cruise ï¿½ Reset Your Password", html)

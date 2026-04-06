@@ -62,10 +62,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _chatReady = false; // true after _initChat completes
   bool _rtdbFailed = false; // true when RTDB stream errors → REST fallback
 
-  // ── Support-mode fallback (polling) ──
+  // ── Support-mode state ──
   final List<_SupportMessage> _supportMessages = [];
   Timer? _pollTimer;
-  final bool _connectionError = false;
+  bool _supportError = false;
+  int? _supportChatId;
+  String _agentName = 'Support';
+  final int _lastSupportMsgId = 0; // tracks highest msg id seen for polling
 
   // ── REST fallback messages (used when RTDB fails) ──
   final List<ChatMessage> _restMessages = [];
@@ -120,19 +123,82 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } else if (widget.isSupport) {
       _useRtdb = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final s = S.of(context);
-        setState(() {
-          _supportMessages.add(
-            _SupportMessage(text: s.chatWelcome, isMe: false, time: DateTime.now()),
-          );
-        });
-      });
+      await _initSupportChat();
     }
 
     _chatReady = true;
     if (mounted) setState(() {});
+  }
+
+  // ── Support chat init + polling ────────────────────────────────────────
+
+  Future<void> _initSupportChat() async {
+    try {
+      final locale = Localizations.localeOf(context).languageCode;
+      final result = await ApiService.createSupportChat(locale: locale);
+      _supportChatId = (result['id'] as num?)?.toInt();
+      _agentName = (result['agent_name'] as String?) ?? 'Support';
+      if (_supportChatId != null) {
+        await _pollSupportMessages(); // load existing messages immediately
+        _startSupportPolling();
+      }
+    } catch (e) {
+      debugPrint('[Chat] Support chat init failed: $e');
+      if (mounted) setState(() => _supportError = true);
+    }
+  }
+
+  void _startSupportPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _pollSupportMessages();
+    });
+  }
+
+  Future<void> _pollSupportMessages() async {
+    final chatId = _supportChatId;
+    if (chatId == null) return;
+    try {
+      final msgs = await ApiService.getSupportMessages(chatId);
+      if (!mounted) return;
+      final parsed = msgs.map((m) {
+        final role = (m['sender_role'] as String?) ?? 'bot';
+        final isMe = role == 'rider' || role == 'driver' || role == 'user';
+        final senderName = (m['sender_name'] as String?) ?? _agentName;
+        final text = (m['message'] as String?) ?? '';
+        final createdAt = m['created_at'] as String?;
+        final time = createdAt != null
+            ? (DateTime.tryParse(createdAt) ?? DateTime.now())
+            : DateTime.now();
+        final id = (m['id'] as num?)?.toInt() ?? 0;
+        return _SupportMessage(
+          id: id,
+          text: text,
+          isMe: isMe,
+          time: time,
+          senderName: senderName,
+          role: role,
+        );
+      }).toList()
+        ..sort((a, b) => a.time.compareTo(b.time));
+
+      if (!mounted) return;
+      // Update agent name if set by backend
+      final lastBot = parsed.lastWhere((m) => !m.isMe && m.senderName.isNotEmpty, orElse: () => parsed.isNotEmpty ? parsed.last : _SupportMessage(id: 0, text: '', isMe: false, time: DateTime.now(), senderName: _agentName, role: 'bot'));
+      if (lastBot.senderName.isNotEmpty) _agentName = lastBot.senderName;
+
+      final newCount = parsed.length;
+      if (newCount != _supportMessages.length) {
+        setState(() {
+          _supportMessages
+            ..clear()
+            ..addAll(parsed);
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      debugPrint('[Chat] Support poll error: $e');
+    }
   }
 
   Future<void> _resolveRecipientPhone() async {
@@ -316,24 +382,29 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     } else if (widget.isSupport) {
-      if (widget.tripId == null) {
-        // No active trip — message cannot reach support backend
-        if (mounted) {
-          ErrorService.show(
-            context,
-            S.of(context).connectionIssueRetrying,
-          );
-        }
+      final chatId = _supportChatId;
+      if (chatId == null) {
+        if (mounted) ErrorService.show(context, S.of(context).connectionIssueRetrying);
         return;
       }
+      // Optimistic: show user message immediately
       setState(() {
         _supportMessages.add(
-          _SupportMessage(text: text, isMe: true, time: DateTime.now()),
+          _SupportMessage(
+            id: 0,
+            text: text,
+            isMe: true,
+            time: DateTime.now(),
+            senderName: '',
+            role: 'rider',
+          ),
         );
       });
       _scrollToBottom();
       try {
-        await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+        await ApiService.sendSupportMessage(chatId, text);
+        // Poll immediately to get bot response faster
+        await _pollSupportMessages();
       } catch (_) {
         if (mounted) ErrorService.show(context, 'Message failed to send. Check your connection.');
       }
@@ -343,6 +414,17 @@ class _ChatScreenState extends State<ChatScreen> {
   // ── Typing indicator ──────────────────────────────────────────────────
 
   void _onTextChanged(String text) {
+    if (widget.isSupport) {
+      final chatId = _supportChatId;
+      if (chatId != null && text.trim().isNotEmpty) {
+        unawaited(ApiService.setSupportTypingStatus(chatId, true));
+        _typingTimer?.cancel();
+        _typingTimer = Timer(const Duration(seconds: 3), () {
+          unawaited(ApiService.setSupportTypingStatus(chatId, false));
+        });
+      }
+      return;
+    }
     if (!_useRtdb) return;
     if (text.trim().isNotEmpty) {
       _chat.setTyping(rideId: _rideId, role: _myRole, isTyping: true);
@@ -628,7 +710,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildSupportMessages(S s) {
     return Column(
       children: [
-        if (_connectionError)
+        if (_supportError)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -899,9 +981,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
 /// Lightweight model for support-mode messages (polling fallback).
 class _SupportMessage {
+  final int id;
   final String text;
   final bool isMe;
   final DateTime time;
+  final String senderName;
+  final String role; // 'rider' | 'driver' | 'bot' | 'system' | 'dispatch'
 
-  _SupportMessage({required this.text, required this.isMe, required this.time});
+  _SupportMessage({
+    required this.id,
+    required this.text,
+    required this.isMe,
+    required this.time,
+    required this.senderName,
+    required this.role,
+  });
 }

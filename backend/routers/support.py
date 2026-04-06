@@ -17,6 +17,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, SupportChat, SupportMessage, ActionRequest,
+    Notification,
 )
 from utils.security import (  # type: ignore[attr-defined]
     _get_current_user, _verify_api_key, _require_dispatch_auth,

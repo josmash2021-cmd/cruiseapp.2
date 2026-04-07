@@ -354,8 +354,8 @@ extension _RideRequestController on _RideRequestScreenState {
               (_) => false,
             );
           }
-        } else {
-          // Timeout or backend cancel — pop searching screen, go home, show message
+        } else if (s.cancelReason != null && s.cancelReason!.contains('No hay driver')) {
+          // 10-minute timeout — close searching screen and go home
           _searchingShowMap = false;
           _searchingSplash = false;
           _searchMapTimer?.cancel();
@@ -363,18 +363,15 @@ extension _RideRequestController on _RideRequestScreenState {
           _splashTimer?.cancel();
           _splashTimer = null;
           _cleanupMapAnnotations();
-          if (_cancelDialogShown) break;
-          _cancelDialogShown = true;
-          final reason = s.cancelReason;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _ctrl.reset();
+          _ctrl.reset();
+          if (mounted) {
             Navigator.of(context).pushAndRemoveUntil(
               smoothFadeRoute(const HomeScreen()),
               (_) => false,
             );
-          });
+          }
         }
+        // Other backend cancels are ignored — searching screen stays open
         break;
       default:
         _fetchingRoute = false;

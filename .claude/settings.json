@@ -164,11 +164,42 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(find c:/Users/Puma/cruiseapp.2/lib/screens -name \"*.dart\" -exec grep -l \"Text\\(\" {} \\\\;)",
       "Bash(grep -v \"S\\\\.of\\\\|//.*'\\\\|Icon\\\\|'//\\\\|Asset\\\\|//\")",
-      "Bash(git -C c:/Users/Puma/cruiseapp.2 push)"
+      "Bash(git -C c:/Users/Puma/cruiseapp.2 push)",
+      "Bash(grep -ri \"HMAC_SECRET\\\\|pk_live\\\\|pk_test\" c:/Users/Puma/cruiseapp.2/backend/*.env* c:/Users/Puma/cruiseapp.2/.env* c:/Users/Puma/cruiseapp.2/lib/config/env*.dart)",
+      "Bash(python -c \"from PIL import Image; print\\('Pillow OK'\\)\")",
+      "Bash(ls -la ~/Downloads/*_filled.png)",
+      "Bash(python -c \"import os, glob; base=os.path.expanduser\\('~'\\)+'/Downloads/'; print\\([f for f in os.listdir\\(base\\) if 'filled' in f]\\)\")",
+      "Bash(curl -s -X POST https://cruiseapp2-production.up.railway.app/admin/backfill-approved -H 'Content-Type: application/json' -H 'X-Dispatch-Key: HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u')",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('routers/dispatch.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(curl -s -X POST https://cruiseapp2-production.up.railway.app/admin/resync-all-drivers -H 'X-Api-Key: HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u' -H 'X-Timestamp: __CMDSUB_OUTPUT__' -H 'X-Nonce: resync123' -H 'X-Signature: dummy' -H 'X-Device-FP: resync')",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release-new.jks\" -storepass \"\")",
+      "Bash(keytool -list -v -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"Cruise2026!\" -alias cruise)",
+      "Bash(keytool -list -v -keystore \"C:/Users/Puma/cruise-release-new.jks\" -storepass \"Cruise2026!\" -alias cruise)",
+      "Read(//tmp/**)",
+      "Bash(curl -s \"https://cruiseapp2-production.up.railway.app/ping\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('cruise_ai_engine.py', doraise=True\\); print\\('cruise_ai_engine.py: OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('routers/support.py', doraise=True\\); print\\('support.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('routers/support.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK support.py'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('cruise_ai_engine.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK cruise_ai_engine.py'\\)\")",
+      "Bash(\"C:/Users/Puma/.shorebird/bin/shorebird.bat\" release:*)",
+      "Bash(JAVA_HOME=\"C:\\\\\\\\Java\\\\\\\\jdk-17.0.12\" \"C:/Users/Puma/.shorebird/bin/shorebird.bat\" release android --release-version=1.0.2+254)",
+      "Bash(powershell -Command '& { $env:JAVA_HOME='\\\\''C:\\\\Java\\\\jdk-17.0.12'\\\\''; cd C:\\\\Users\\\\Puma\\\\cruiseapp.2; C:\\\\Users\\\\Puma\\\\.shorebird\\\\bin\\\\shorebird.bat release android }')",
+      "Bash(powershell -Command \"Copy-Item 'C:\\\\\\\\Java\\\\\\\\jdk-17.0.12\\\\\\\\bin\\\\\\\\java.exe' 'C:\\\\\\\\Program Files\\\\\\\\Android\\\\\\\\Android Studio1\\\\\\\\jbr\\\\\\\\bin\\\\\\\\java.exe' -Force\")",
+      "Bash(\"C:/Java/jdk-17.0.12/bin/java.exe\" -jar \"C:/Users/Puma/.shorebird/bin/cache/artifacts/bundletool/bundletool.jar\" dump manifest --bundle=\"C:/Users/Puma/cruiseapp.2/build/app/outputs/bundle/release/app-release.aab\" --xpath /manifest/@android:versionName)",
+      "Bash(powershell -Command '& { $env:JAVA_HOME='\\\\''C:\\\\Java\\\\jdk-17.0.12'\\\\''; cd C:\\\\Users\\\\Puma\\\\cruiseapp.2; C:\\\\Users\\\\Puma\\\\.shorebird\\\\bin\\\\shorebird.bat patch android }')",
+      "Bash(keytool -list -v -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"Cruise2026!\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"Cruise2026!\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"cruise123\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"password\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"123456\")",
+      "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"android\")",
+      "Bash(keytool -export -rfc -keystore \"C:/Users/Puma/cruise-release-new.jks\" -alias cruise -storepass \"Cruise2026!\" -file \"C:/Users/Puma/Desktop/upload_certificate.pem\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Puma",
-      "C:\\Users\\Puma"
+      "C:\\Users\\Puma",
+      "C:\\Java\\jdk-17.0.12\\bin"
     ]
   }
 }

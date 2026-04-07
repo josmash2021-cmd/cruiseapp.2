@@ -281,18 +281,15 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         // Clear cache on completion
         await CacheService.clearActiveTrip();
-      } else if (tripStatus == 'cancelled' ||
-          tripStatus == 'canceled' ||
-          tripStatus == 'no_drivers') {
+      } else if (tripStatus == 'cancelled' || tripStatus == 'canceled') {
         _pollTimer?.cancel();
         _timeoutTimer?.cancel();
         _isRequesting = false;
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'El viaje fue cancelado mientras la app estaba en segundo plano.',
+          cancelReason: 'Tu viaje fue cancelado.',
         );
         notifyListeners();
-        // Clear cache on cancellation
         await CacheService.clearActiveTrip();
       }
     } catch (e) {
@@ -677,7 +674,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _timeoutTimer?.cancel();
         _isRequesting = false;
         _onDriverMatched(data, tripId);
-      } else if (status == 'cancelled' || status == 'no_drivers' || status == 'expired') {
+      } else if (status == 'cancelled' || status == 'canceled') {
+        // Only cancel if dispatch/admin explicitly cancelled — NOT for no_drivers
         _fsMatchSub?.cancel();
         _pollTimer?.cancel();
         _tripSseSub?.cancel();
@@ -685,9 +683,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _isRequesting = false;
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: status == 'no_drivers'
-              ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
-              : 'Tu viaje fue cancelado.',
+          cancelReason: 'Tu viaje fue cancelado.',
         );
         notifyListeners();
         unawaited(CacheService.clearActiveTrip());
@@ -696,8 +692,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('[RiderTrip] Firestore match listener error: $e');
     });
 
-    // Safety-net timeout — 7 minutes max searching (backend handles expiry at 5 min)
-    _timeoutTimer = Timer(const Duration(minutes: 7), () {
+    // Safety-net timeout — 10 minutes max searching then show no-drivers message
+    _timeoutTimer = Timer(const Duration(minutes: 10), () {
       _pollTimer?.cancel();
       _tripSseSub?.cancel();
       _isRequesting = false;
@@ -705,10 +701,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _state.phase == RiderPhase.requesting) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No hay drivers disponibles cerca de tu zona en estos momentos. Intenta de nuevo.',
+          cancelReason: 'No hay drivers disponibles cerca de tu zona en estos momentos.',
         );
         notifyListeners();
-        // Clear trip cache
         unawaited(CacheService.clearActiveTrip());
       }
     });
@@ -726,18 +721,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _onDriverMatched(event, tripId);
-        } else if (status == 'cancelled' || status == 'no_drivers' || status == 'expired') {
+        } else if (status == 'cancelled' || status == 'canceled') {
           _pollTimer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason: status == 'no_drivers'
-                ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
-                : status == 'expired'
-                    ? 'La solicitud expiró. Intenta de nuevo.'
-                    : 'Tu viaje fue cancelado.',
+            cancelReason: 'Tu viaje fue cancelado.',
           );
           notifyListeners();
           unawaited(CacheService.clearActiveTrip());
@@ -771,27 +762,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _onDriverMatched(status, tripId);
-        } else if (tripStatus == 'cancelled' ||
-            tripStatus == 'no_drivers' ||
-            tripStatus == 'expired' ||
-            tripStatus == 'canceled') {
+        } else if (tripStatus == 'cancelled' || tripStatus == 'canceled') {
           timer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
-          // Extract cancel reason from trip data
           final tripData = status['trip'] as Map<String, dynamic>?;
           final reason = tripData?['cancel_reason']?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason:
-                reason ??
-                (tripStatus == 'no_drivers'
-                    ? 'No hay drivers disponibles cerca de tu zona en estos momentos'
-                    : null),
+            cancelReason: reason ?? 'Tu viaje fue cancelado.',
           );
           notifyListeners();
-          // Clear trip cache
           await CacheService.clearActiveTrip();
         }
         // Otherwise keep polling (status is 'searching' or 'pending')

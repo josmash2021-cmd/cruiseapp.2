@@ -887,8 +887,9 @@ extension _HomeScreenController on _HomeScreenState {
       final trip = await ApiService.getActiveTrip();
       if (!mounted || trip == null) return;
       final status = (trip['status'] ?? '').toString();
-      // Skip completed/cancelled trips
-      if (status == 'completed' || status == 'canceled' || status == 'cancelled') return;
+      // Skip completed/cancelled/scheduled_accepted trips
+      if (status == 'completed' || status == 'canceled' || status == 'cancelled' ||
+          status == 'scheduled_accepted') return;
 
       // If still searching for a driver — show a pending trip indicator
       // so rider knows their search is still active after reopen/reinstall.
@@ -947,7 +948,12 @@ extension _HomeScreenController on _HomeScreenState {
 
       _didAutoResumeRide = true;
 
+      // Final safety check: re-verify trip hasn't been cancelled since we started
       if (!mounted) return;
+      final verifyStatus = (trip['status'] ?? '').toString();
+      if (verifyStatus == 'canceled' || verifyStatus == 'cancelled' ||
+          verifyStatus == 'completed' || verifyStatus == 'scheduled_accepted') return;
+
       Navigator.of(context).push(
         slideUpFadeRoute(
           RiderTrackingScreen(

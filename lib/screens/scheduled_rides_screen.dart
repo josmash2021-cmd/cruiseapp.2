@@ -41,6 +41,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   List<Map<String, dynamic>> _trips = [];
   bool _loading = true;
   String? _error;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -51,10 +52,15 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     );
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _loadTrips();
+    // Refresh every 30s to pick up driver assignment status changes
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _loadTrips();
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _fadeCtrl.dispose();
     super.dispose();
   }
@@ -1217,6 +1223,10 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     } else if (status == 'in_trip') {
       color = const Color(0xFFE8C547);
       label = 'In Progress';
+      icon = Icons.directions_car_rounded;
+    } else if (status == 'scheduled_accepted') {
+      color = const Color(0xFF22C55E); // green
+      label = 'Driver Asignado';
       icon = Icons.directions_car_rounded;
     } else if (status == 'scheduled' || status == 'requested') {
       color = Colors.orange;

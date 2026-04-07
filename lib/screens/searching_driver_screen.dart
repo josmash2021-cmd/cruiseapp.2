@@ -476,7 +476,7 @@ Route<bool> searchingDriverRoute({
   bool initiallyDeclined = false,
 }) {
   return PageRouteBuilder<bool>(
-    opaque: true,
+    opaque: false,
     transitionDuration: const Duration(milliseconds: 280),
     reverseTransitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (_, __, ___) => SearchingDriverScreen(

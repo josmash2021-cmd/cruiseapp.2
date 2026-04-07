@@ -618,8 +618,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
       final tripId = result['trip_id'] as int?;
       if (tripId == null) {
-        // Stay on searching screen — don't cancel
-        debugPrint('dispatchRideRequest returned null tripId');
+        _state = _state.copyWith(
+          phase: RiderPhase.cancelled,
+          cancelReason: 'No se pudo crear el viaje. Intenta de nuevo.',
+        );
+        notifyListeners();
         return;
       }
 
@@ -634,8 +637,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       pollingStarted = true; // guard: keep _isRequesting=true while polling
     } catch (e) {
       debugPrint('dispatchRideRequest failed: $e');
-      // Don't cancel — stay on searching screen so rider can cancel manually
-      // The searching screen will show the animation while we retry or timeout
+      _state = _state.copyWith(
+        phase: RiderPhase.cancelled,
+        cancelReason: 'Error de conexion. Verifica tu red e intenta de nuevo.',
+      );
+      notifyListeners();
     } finally {
       // Reset only if polling never started — polling callbacks own the flag
       if (!pollingStarted) _isRequesting = false;

@@ -336,17 +336,17 @@ extension _RideRequestController on _RideRequestScreenState {
         }
         break;
       case RiderPhase.cancelled:
+        _searchingShowMap = false;
+        _searchingSplash = false;
+        _searchMapTimer?.cancel();
+        _searchMapTimer = null;
+        _splashTimer?.cancel();
+        _splashTimer = null;
+        _cleanupMapAnnotations();
+        // Rider already confirmed cancellation — just go home
         if (_riderInitiatedCancel) {
-          // Rider pressed cancel button — go home silently
-          _searchingShowMap = false;
-          _searchingSplash = false;
-          _searchMapTimer?.cancel();
-          _searchMapTimer = null;
-          _splashTimer?.cancel();
-          _splashTimer = null;
           _riderInitiatedCancel = false;
           _cancelDialogShown = false;
-          _cleanupMapAnnotations();
           _ctrl.reset();
           if (mounted) {
             Navigator.of(context).pushAndRemoveUntil(
@@ -354,24 +354,50 @@ extension _RideRequestController on _RideRequestScreenState {
               (_) => false,
             );
           }
-        } else if (s.cancelReason != null && s.cancelReason!.contains('No hay driver')) {
-          // 10-minute timeout — close searching screen and go home
-          _searchingShowMap = false;
-          _searchingSplash = false;
-          _searchMapTimer?.cancel();
-          _searchMapTimer = null;
-          _splashTimer?.cancel();
-          _splashTimer = null;
-          _cleanupMapAnnotations();
-          _ctrl.reset();
-          if (mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
-              smoothFadeRoute(const HomeScreen()),
-              (_) => false,
-            );
-          }
+          break;
         }
-        // Other backend cancels are ignored — searching screen stays open
+        // Guard: only show one cancel dialog per cancellation event
+        if (_cancelDialogShown) break;
+        _cancelDialogShown = true;
+        final rawReason = s.cancelReason;
+        final reason = (rawReason != null && rawReason.isNotEmpty) ? rawReason : null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final displayReason = reason ?? S.of(context).tripCancelled;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogCtx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.orange, size: 28),
+                  const SizedBox(width: 10),
+                  Text(S.of(context).tripCancelled),
+                ],
+              ),
+              content: Text(displayReason, style: const TextStyle(fontSize: 15)),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _cancelDialogShown = false;
+                    Navigator.of(dialogCtx).pop();
+                    _ctrl.reset();
+                    if (mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        smoothFadeRoute(const HomeScreen()),
+                        (_) => false,
+                      );
+                    }
+                  },
+                  child: Text(S.of(context).okBtn),
+                ),
+              ],
+            ),
+          );
+        });
         break;
       default:
         _fetchingRoute = false;

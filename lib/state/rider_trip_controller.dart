@@ -661,6 +661,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         .collection('trips')
         .doc('sql_$tripId')
         .snapshots()
+        .skip(1) // Skip locally-cached initial doc — prevents stale 'cancelled' from prior trip
         .listen((snap) {
       if (_driverMatched) return;
       final data = snap.data();
@@ -782,8 +783,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    // Immediate first check to avoid waiting for SSE connection setup.
-    checkStatus(null);
+    // Delay first check to give backend DB write time to propagate.
+    Future.delayed(const Duration(seconds: 2), () => checkStatus(null));
 
     _pollTimer = Timer.periodic(_dispatchPollInterval, (timer) async {
       await checkStatus(timer);

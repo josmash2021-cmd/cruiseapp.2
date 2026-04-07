@@ -329,6 +329,9 @@ extension _RideRequestController on _RideRequestScreenState {
         }
         break;
       case RiderPhase.driverArriving:
+        // Don't navigate while SearchingDriverScreen is still on the stack —
+        // the post-pop check in _startRideDirectly will call _goToTracking instead.
+        if (_searchingScreenShowing) break;
         if (!_navigatingToTracking) {
           _navigatingToTracking = true;
           // Keep overlay visible during slide-in transition — hide after push
@@ -848,19 +851,34 @@ extension _RideRequestController on _RideRequestScreenState {
       unawaited(_ctrl.requestRide());
 
       _searchingScreenShowing = true;
-      final cancelled = await nav.push<bool>(
-        searchingDriverRoute(
-          onCancel: _cancelSearching,
-          paymentCallback: (isNativePay || isTestMode) ? null : () => _confirmNativePayment(option),
-          initiallyDeclined: nativePayFailed,
-          onPaymentDeclined: () => paymentDeclinedFlag = true,
-        ),
-      );
-      _searchingScreenShowing = false;
+      bool cancelled;
+      try {
+        cancelled = await nav.push<bool>(
+              searchingDriverRoute(
+                onCancel: _cancelSearching,
+                paymentCallback: (isNativePay || isTestMode) ? null : () => _confirmNativePayment(option),
+                initiallyDeclined: nativePayFailed,
+                onPaymentDeclined: () => paymentDeclinedFlag = true,
+              ),
+            ) ??
+            false;
+      } finally {
+        _searchingScreenShowing = false;
+      }
 
       // If the trip was cancelled by the backend during the animation,
       // _onStateChange was blocked (flag was true). Handle navigation now.
       if (!mounted) return;
+
+      // Driver already assigned/arriving while animation was playing — navigate now
+      if ((_ctrl.state.phase == RiderPhase.driverArriving ||
+              _ctrl.state.phase == RiderPhase.driverAssigned) &&
+          !_navigatingToTracking) {
+        _navigatingToTracking = true;
+        _goToTracking();
+        return;
+      }
+
       if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
         _cancelDialogShown = true;
         final rawReason = _ctrl.state.cancelReason;

@@ -838,6 +838,12 @@ extension _RideRequestController on _RideRequestScreenState {
 
       bool paymentDeclinedFlag = false;
 
+      // Start ride request BEFORE showing the searching screen so the map
+      // bottom card renders behind the animation. When the screen fades out,
+      // the bottom card is already visible — no black flash.
+      _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
+      unawaited(_ctrl.requestRide());
+
       final cancelled = await nav.push<bool>(
         searchingDriverRoute(
           onCancel: _cancelSearching,
@@ -898,10 +904,7 @@ extension _RideRequestController on _RideRequestScreenState {
         if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
         return;
       }
-      if (!mounted) return;
-
-      _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
-      _ctrl.requestRide();
+      // requestRide() already started above — nothing more to do here
     } finally {
       _rideFlowLocked = false;
       if (mounted) _setState(() => _isProcessingPayment = false);

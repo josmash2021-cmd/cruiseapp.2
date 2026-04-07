@@ -43,18 +43,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
-          // Always fly to real GPS — never the Miami default
-          try {
-            final gps = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(
-                accuracy: LocationAccuracy.high,
-                timeLimit: Duration(seconds: 6),
-              ),
-            );
-            if (mounted) {
-              _setState(() => _pos = LatLng(gps.latitude, gps.longitude));
-            }
-          } catch (_) {}
+          // Use already-known position from home screen — no blocking GPS call needed
           if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
           _updateDriverAnnotation();
           // Re-draw route if map initialised after _drawRoute already ran

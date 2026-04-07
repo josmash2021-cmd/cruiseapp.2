@@ -714,12 +714,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Navigate immediately — no waiting on API calls
     HapticFeedback.heavyImpact();
-    NotificationService.playOnlineSound();
+    // Delay sound until AFTER the transition completes so it doesn't freeze the animation
+    Future.delayed(const Duration(milliseconds: 520), NotificationService.playOnlineSound);
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl),
+            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
         transitionDuration: const Duration(milliseconds: 500),
         reverseTransitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (ctx2, anim, anim2b, child) {

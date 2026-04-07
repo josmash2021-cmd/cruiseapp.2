@@ -1143,6 +1143,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     );
 
     _ctrl.isOnTrackingScreen = true;
+    // Hide the "Driver Found" overlay now that the tracking screen is about to slide in
+    if (_driverFoundVisible) {
+      _setState(() => _driverFoundVisible = false);
+    }
     Navigator.of(context).push(
       slideUpFadeRoute(
         RiderTrackingScreen(

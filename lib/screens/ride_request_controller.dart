@@ -321,7 +321,8 @@ extension _RideRequestController on _RideRequestScreenState {
           );
 
           _driverFoundTimer?.cancel();
-          _driverFoundTimer = Timer(const Duration(milliseconds: 2000), () {
+          // Wait for the 3800ms progress bar to finish, then navigate
+          _driverFoundTimer = Timer(const Duration(milliseconds: 4200), () {
             if (!mounted) return;
             _ctrl.transitionToArriving();
           });
@@ -330,9 +331,10 @@ extension _RideRequestController on _RideRequestScreenState {
       case RiderPhase.driverArriving:
         if (!_navigatingToTracking) {
           _navigatingToTracking = true;
-          _driverFoundVisible = false;
+          // Keep overlay visible during slide-in transition — hide after push
           _driverFoundTimer?.cancel();
           _goToTracking();
+          // Overlay is hidden in _goToTracking after Navigator.push starts
         }
         break;
       case RiderPhase.cancelled:

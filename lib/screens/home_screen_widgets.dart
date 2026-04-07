@@ -806,7 +806,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ? Responsive.h(195)
                   : verificationBlocked
                       ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
-                      : Responsive.h(140),
+                      : Responsive.h(155),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(

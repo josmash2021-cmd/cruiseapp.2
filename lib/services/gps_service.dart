@@ -16,7 +16,7 @@ class GpsService {
   GpsService._internal();
 
   final _database = FirebaseDatabase.instance;
-  static const Duration _uploadInterval = Duration(milliseconds: 500);
+  static const Duration _uploadInterval = Duration(seconds: 3);
 
   Timer? _uploadTimer;
   LatLng? _lastUploadedPos;
@@ -63,7 +63,7 @@ class GpsService {
 
     final now = DateTime.now();
     if (_lastUploadAt == null ||
-        now.difference(_lastUploadAt!) >= const Duration(milliseconds: 300)) {
+        now.difference(_lastUploadAt!) >= const Duration(seconds: 2)) {
       unawaited(_uploadToFirebase());
     }
   }

@@ -382,7 +382,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const duration = 600;
     final start = DateTime.now();
     _labelAnimTimer?.cancel();
-    _labelAnimTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _labelAnimTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);
@@ -1000,7 +1000,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const duration = 500;
     final start = DateTime.now();
     _dropoffPopTimer?.cancel();
-    _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);
@@ -1034,7 +1034,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     const duration = 600;
     final start = DateTime.now();
     _pickupPopOutTimer?.cancel();
-    _pickupPopOutTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _pickupPopOutTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) { timer.cancel(); return; }
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       final t = (elapsed / duration).clamp(0.0, 1.0);

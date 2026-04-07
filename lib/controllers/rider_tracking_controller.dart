@@ -106,7 +106,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
       _statusPollTimer?.cancel();
       _statusPollTimer = Timer.periodic(
-        const Duration(seconds: 3),
+        const Duration(seconds: 8),
         (_) => _pollBackendTripStatus(),
       );
       unawaited(_pollBackendTripStatus());

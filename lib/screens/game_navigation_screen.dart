@@ -116,13 +116,13 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     _gpsSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1, // Cada metro
+        distanceFilter: 8, // 8 meters — saves battery
       ),
     ).listen(_onGPSUpdate);
 
-    // Animation loop 60 FPS
+    // Animation loop 30 FPS (saves battery vs 60fps)
     _animationTimer = Timer.periodic(
-      const Duration(milliseconds: 16), // ~60 FPS
+      const Duration(milliseconds: 33), // ~30 FPS
       (_) => _onAnimationTick(),
     );
   }

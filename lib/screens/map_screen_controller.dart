@@ -119,7 +119,7 @@ extension _MapScreenController on _MapScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 3,
+            distanceFilter: 15,
           ),
         ).listen((position) {
           if (!mounted) return;

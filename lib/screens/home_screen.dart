@@ -385,7 +385,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _accountStatusTimer?.cancel();
       _countdownTimer?.cancel();
       _imminentRideTimer?.cancel();
+      // Pause animations to save CPU/GPU when backgrounded
+      _shimmerController.stop();
+      _clockRotateCtrl.stop();
+      _promoShimmerCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
+      // Resume looping animations
+      _shimmerController.repeat();
+      _clockRotateCtrl.repeat();
+      _promoShimmerCtrl.repeat();
       _checkDriversOnline();
       _driverCheckTimer?.cancel();
       _driverCheckTimer = Timer.periodic(

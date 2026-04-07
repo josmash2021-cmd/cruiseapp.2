@@ -699,7 +699,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 5, // 5 meters — ultra-smooth movement
+            distanceFilter: 20, // 20 meters — saves battery vs 5m
           ),
         ).listen((pos) {
           if (!mounted) return;
@@ -764,9 +764,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
           }
 
-          // Throttle backend location updates to max once per 2 seconds
+          // Throttle backend location updates to max once per 5 seconds
           final now = DateTime.now();
-          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 2) {
+          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 5) {
             _lastBackendLocSend = now;
             ApiService.updateDriverLocation(
               driverId: _driverId!,
@@ -955,6 +955,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
 
     _updateDriverAnnotation();
+
+    // Stop ticker when close enough to target — saves CPU when idle/stationary
+    final latGap = (_targetPos.latitude - _pos!.latitude).abs();
+    final lngGap = (_targetPos.longitude - _pos!.longitude).abs();
+    if (latGap < 0.000001 && lngGap < 0.000001) {
+      _smoothTicker?.stop();
+    }
+
     // Throttle widget-tree rebuilds to ~15fps — map annotation updates every frame
     // but Flutter setState only fires 4x/sec so buttons stay responsive.
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -975,14 +983,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _connectSse();
 
-    // Polling fallback (slower when SSE is active, never fully skipped)
+    // Polling fallback — only used when SSE is DOWN to save battery
     _poll();
-    int pollTick = 0;
-    _pollT = Timer.periodic(const Duration(seconds: 3), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted || _phase != _Phase.searching) return;
-      pollTick++;
-      // When SSE is delivering, poll every 7th tick (21s) as safety net
-      if (_sseActive && pollTick % 7 != 0) return;
+      if (_sseActive) return; // SSE handles it — skip polling entirely
       _poll();
     });
   }

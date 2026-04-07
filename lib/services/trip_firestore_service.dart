@@ -185,7 +185,7 @@ class TripFirestoreService {
   ) async {
     final now = DateTime.now();
     if (_lastLocationWrite != null &&
-        now.difference(_lastLocationWrite!).inMilliseconds < 800) {
+        now.difference(_lastLocationWrite!).inMilliseconds < 2000) {
       return;
     }
     _lastLocationWrite = now;

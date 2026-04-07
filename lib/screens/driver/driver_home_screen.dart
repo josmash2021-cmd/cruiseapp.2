@@ -34,7 +34,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
-import 'scheduled_rides_marketplace_screen.dart';
+import 'scheduled_rides_screen.dart';
 import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -1145,7 +1145,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           onTap: () {
             HapticFeedback.selectionClick();
             Navigator.of(context).push(
-              slideFromRightRoute(const ScheduledRidesMarketplaceScreen()),
+              slideFromRightRoute(const ScheduledRidesScreen()),
             );
           },
         ),
@@ -1171,7 +1171,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       onTap: () {
         HapticFeedback.selectionClick();
         Navigator.of(context).push(
-          slideFromRightRoute(const ScheduledRidesMarketplaceScreen()),
+          slideFromRightRoute(const ScheduledRidesScreen()),
         );
       },
       child: TweenAnimationBuilder<double>(

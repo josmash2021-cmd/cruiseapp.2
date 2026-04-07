@@ -3150,6 +3150,8 @@ class S {
       ? 'Los viajes reservados por pasajeros aparecerán aquí'
       : 'Rides scheduled by riders will appear here';
   String get acceptRideButton => _es ? 'ACEPTAR VIAJE' : 'ACCEPT RIDE';
+  String get availableLabel => _es ? 'Disponibles' : 'Available';
+  String get myRidesLabel => _es ? 'Mis Viajes' : 'My Rides';
   String scheduledRidesAvailableLabel(int count) =>
       _es ? '$count viaje${count == 1 ? '' : 's'} reservado${count == 1 ? '' : 's'} disponible${count == 1 ? '' : 's'}'
           : '$count scheduled ride${count == 1 ? '' : 's'} available near you';

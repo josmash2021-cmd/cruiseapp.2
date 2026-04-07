@@ -202,6 +202,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _searchTimer;
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
+  Timer? _fsCancelDebounce; // Debounce timer for stale Firestore cancel events
   StreamSubscription<Map<String, dynamic>>? _tripSseSub; // SSE stream sub
   StreamSubscription<DocumentSnapshot>? _fsMatchSub; // Firestore trip doc watcher
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
@@ -651,6 +652,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   void _startDispatchPolling(int tripId) {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _fsCancelDebounce?.cancel();
     _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     _sseConnected = false;
@@ -676,18 +678,25 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _isRequesting = false;
         _onDriverMatched(data, tripId);
       } else if (status == 'cancelled' || status == 'canceled') {
-        // Only cancel if dispatch/admin explicitly cancelled — NOT for no_drivers
-        _fsMatchSub?.cancel();
-        _pollTimer?.cancel();
-        _tripSseSub?.cancel();
-        _timeoutTimer?.cancel();
-        _isRequesting = false;
-        _state = _state.copyWith(
-          phase: RiderPhase.cancelled,
-          cancelReason: 'Tu viaje fue cancelado.',
-        );
-        notifyListeners();
-        unawaited(CacheService.clearActiveTrip());
+        // Guard A: ignore stale cancellation if driver was already matched
+        if (_driverMatched) return;
+        // Guard B: debounce 400ms to let a real 'driver_en_route' event win the race
+        _fsCancelDebounce?.cancel();
+        _fsCancelDebounce = Timer(const Duration(milliseconds: 400), () {
+          // Re-check after debounce — driver may have arrived in the meantime
+          if (_driverMatched) return;
+          _fsMatchSub?.cancel();
+          _pollTimer?.cancel();
+          _tripSseSub?.cancel();
+          _timeoutTimer?.cancel();
+          _isRequesting = false;
+          _state = _state.copyWith(
+            phase: RiderPhase.cancelled,
+            cancelReason: 'Tu viaje fue cancelado.',
+          );
+          notifyListeners();
+          unawaited(CacheService.clearActiveTrip());
+        });
       }
     }, onError: (e) {
       debugPrint('[RiderTrip] Firestore match listener error: $e');
@@ -723,9 +732,12 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _isRequesting = false;
           _onDriverMatched(event, tripId);
         } else if (status == 'cancelled' || status == 'canceled') {
+          // Guard C: ignore stale SSE cancel if driver was already matched
+          if (_driverMatched) return;
           _pollTimer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
+          _fsCancelDebounce?.cancel();
           _isRequesting = false;
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
@@ -764,11 +776,23 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _isRequesting = false;
           _onDriverMatched(status, tripId);
         } else if (tripStatus == 'cancelled' || tripStatus == 'canceled') {
+          // Guard D: ignore stale poll result if driver was already matched
+          if (_driverMatched) { timer?.cancel(); return; }
+          // Check if backend has assigned a driver despite the cancelled status
+          // (data race: driver accepted but DB hasn't propagated yet)
+          final tripData = status['trip'] as Map<String, dynamic>?;
+          final hasDriverId = tripData?['driver_id'] != null &&
+              tripData!['driver_id'].toString().isNotEmpty;
+          if (hasDriverId) {
+            // Driver is assigned — treat as match, let next poll confirm
+            debugPrint('[RiderTrip] Poll saw cancelled but driver_id present — ignoring stale cancel');
+            return;
+          }
           timer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
+          _fsCancelDebounce?.cancel();
           _isRequesting = false;
-          final tripData = status['trip'] as Map<String, dynamic>?;
           final reason = tripData?['cancel_reason']?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
@@ -875,6 +899,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _fsCancelDebounce?.cancel();
     _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     _sseConnected = false;
@@ -900,6 +925,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _fsCancelDebounce?.cancel();
     _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     _isRequesting = false;
@@ -917,6 +943,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
+    _fsCancelDebounce?.cancel();
     _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     super.dispose();

@@ -1018,19 +1018,34 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          // Enable native LocationPuck — never drifts on zoom
+          try {
+            await ctrl.location.updateSettings(mapbox.LocationComponentSettings(
+              enabled: true,
+              pulsingEnabled: true,
+              pulsingColor: const Color(0xFFE8C547).toARGB32(),
+              pulsingMaxRadius: 48.0,
+              locationPuck: mapbox.LocationPuck(
+                locationPuck2D: mapbox.DefaultLocationPuck2D(),
+              ),
+            ));
+          } catch (_) {}
           setState(() => _mapReady = true);
-          // Wait a moment for dot to be ready, then show it
-          if (_goldDot.isReady) {
-            _updateMyLocAnnotation();
-          } else {
-            // Retry when dot is ready
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (mounted && _goldDot.isReady) _updateMyLocAnnotation();
-            });
-          }
         },
         onStyleLoadedListener: (_) async {
           if (_mapController != null) await _applyNavyGoldTheme(_mapController!);
+          // Re-enable puck after style reload
+          try {
+            await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(
+              enabled: true,
+              pulsingEnabled: true,
+              pulsingColor: const Color(0xFFE8C547).toARGB32(),
+              pulsingMaxRadius: 48.0,
+              locationPuck: mapbox.LocationPuck(
+                locationPuck2D: mapbox.DefaultLocationPuck2D(),
+              ),
+            ));
+          } catch (_) {}
         },
       ),
     );

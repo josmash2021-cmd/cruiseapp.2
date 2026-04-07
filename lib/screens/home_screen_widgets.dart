@@ -40,6 +40,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         try { await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+        // Enable native LocationPuck — never drifts on zoom
+        try {
+          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(
+            enabled: true,
+            pulsingEnabled: true,
+            pulsingColor: const Color(0xFFE8C547).toARGB32(),
+            pulsingMaxRadius: 44.0,
+            locationPuck: mapbox.LocationPuck(
+              locationPuck2D: mapbox.DefaultLocationPuck2D(),
+            ),
+          ));
+        } catch (_) {}
         _updateMiniMapAnnotation();
         // Draw route if there's an active ride
         if (_activeRide != null) {
@@ -49,6 +61,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
       onStyleLoadedListener: (_) async {
         if (_miniMapController != null) {
           await _applyDarkNavyGoldTheme(_miniMapController!);
+          try {
+            await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
+              enabled: true,
+              pulsingEnabled: true,
+              pulsingColor: const Color(0xFFE8C547).toARGB32(),
+              pulsingMaxRadius: 44.0,
+              locationPuck: mapbox.LocationPuck(
+                locationPuck2D: mapbox.DefaultLocationPuck2D(),
+              ),
+            ));
+          } catch (_) {}
         }
       },
     );

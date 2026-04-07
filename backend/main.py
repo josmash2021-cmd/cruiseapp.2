@@ -352,6 +352,7 @@ from routers.voice import router as voice_router
 from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.misc import router as misc_router
+from routers.scheduled import router as scheduled_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -363,6 +364,7 @@ app.include_router(voice_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
 app.include_router(misc_router)
+app.include_router(scheduled_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
@@ -865,7 +867,7 @@ async def _scheduled_ride_reminder_loop():
                         and_(
                             Trip.scheduled_at.isnot(None),
                             Trip.driver_id.isnot(None),
-                            Trip.status.in_(["scheduled", "requested", "driver_en_route"]),
+                            Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested", "driver_en_route"]),
                         )
                     )
                 )
@@ -941,14 +943,19 @@ async def _scheduled_ride_reminder_loop():
                         logging.info("[Reminder] 1h reminder sent to driver %d for trip %d", driver.id, trip.id)
 
                     # --------------------------------------------------
-                    # 30-minute reminder (driver + rider)
+                    # 30-minute reminder + LOCKOUT (driver + rider)
                     # --------------------------------------------------
                     if 25 <= minutes_until <= 35 and "30m" not in trip_reminders:
+                        # Transition to scheduled_active (lockout: no more offers)
+                        if trip.status == "scheduled_accepted":
+                            trip.status = "scheduled_active"
+                            await db.commit()
+                            logging.info("[Reminder] Trip %d locked: driver %d locked out of new offers", trip.id, driver.id)
                         _send_fcm_push(
                             token=driver.fcm_token,
                             title="Tu viaje comienza en 30 minutos",
-                            body=f"{driver_name}, tu viaje reservado comienza en 30 minutos. Recomendamos estar en {pickup} 10-15 minutos antes.",
-                            data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "30m"},
+                            body=f"{driver_name}, tu viaje reservado comienza en 30 minutos. Ya no recibiras nuevos viajes hasta completar este.",
+                            data={"type": "scheduled_lockout", "trip_id": str(trip.id), "reminder": "30m"},
                         )
                         trip_reminders.add("30m")
                         logging.info("[Reminder] 30m reminder sent to driver %d for trip %d", driver.id, trip.id)

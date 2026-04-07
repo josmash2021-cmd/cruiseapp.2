@@ -75,6 +75,7 @@ _ACTIVE_TRIP_STATUSES = [
     "requested", "accepted", "driver_en_route", "driver_arriving",
     "arrived", "driver_arrived", "in_trip", "in_progress",
     "rider_onboard", "on_trip", "en_route_to_pickup",
+    "scheduled_accepted", "scheduled_active",
 ]
 
 @router.get("/trips/active", dependencies=[Depends(_verify_api_key)])
@@ -677,7 +678,7 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
     try:
         result = await db.execute(
             select(Trip).where(
-                and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "requested"]), Trip.scheduled_at.isnot(None))
+                and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested"]), Trip.scheduled_at.isnot(None))
             ).order_by(Trip.scheduled_at.asc())
         )
         return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
@@ -692,7 +693,7 @@ async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_c
         raise HTTPException(403, "Not authorized")
     result = await db.execute(
         select(Trip).where(
-            and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "driver_en_route"]), Trip.scheduled_at.isnot(None))
+            and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "driver_en_route"]), Trip.scheduled_at.isnot(None))
         ).order_by(Trip.scheduled_at.asc())
     )
     return [_trip_dict_for_user(t, user) for t in result.scalars().all()]

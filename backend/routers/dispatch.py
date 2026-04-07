@@ -521,6 +521,12 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
 @router.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Block offers when driver is locked for an upcoming scheduled ride
+    from routers.scheduled import driver_is_locked_for_scheduled
+    if await driver_is_locked_for_scheduled(driver_id, db):
+        _pending_cache[driver_id] = (time.monotonic(), [])
+        return []
+
     # L3: return cached result if same driver called within _PENDING_CACHE_TTL seconds
     _now = time.monotonic()
     _cached = _pending_cache.get(driver_id)

@@ -1345,6 +1345,64 @@ class ApiService {
     throw ApiException(res.statusCode, 'Failed to load scheduled trips');
   }
 
+  // ── Scheduled rides marketplace ──────────────────────────────
+
+  /// Get available scheduled rides that the driver can claim.
+  static Future<List<Map<String, dynamic>>> getAvailableScheduledTrips({
+    double lat = 0,
+    double lng = 0,
+    double radiusKm = 50,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/scheduled-trips/available?lat=$lat&lng=$lng&radius_km=$radiusKm'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final list = jsonDecode(res.body) as List;
+      return list.cast<Map<String, dynamic>>();
+    }
+    throw ApiException(res.statusCode, 'Failed to load scheduled trips');
+  }
+
+  /// Driver claims a scheduled ride from the marketplace.
+  static Future<Map<String, dynamic>> claimScheduledTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/scheduled-trips/$tripId/claim'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Check if driver has an active scheduled ride (called on app open).
+  static Future<Map<String, dynamic>> getActiveScheduledTrip() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/driver/active-scheduled-trip'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
+  /// Start a scheduled ride (transitions to driver_en_route).
+  static Future<Map<String, dynamic>> startScheduledTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/scheduled-trips/$tripId/start'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
+  /// Driver drops a previously-claimed scheduled ride.
+  static Future<Map<String, dynamic>> cancelScheduledTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/scheduled-trips/$tripId/cancel'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
   /// Cancel a trip (scheduled or active).
   static Future<Map<String, dynamic>> cancelTrip(int tripId) async {
     final h = await _authHeaders();

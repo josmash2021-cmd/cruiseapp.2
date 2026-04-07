@@ -34,6 +34,8 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
+import 'scheduled_rides_marketplace_screen.dart';
+import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -218,6 +220,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // _checkBackendActiveTrip uses auth token (no driver ID needed) so runs in parallel.
     _resolveDriverIdThenRefresh();
     _checkBackendActiveTrip();
+    _checkScheduledRideLockout();
     _registerFcmToken();
 
     // Observe lifecycle — restart polling when app returns from background
@@ -1124,6 +1127,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
+        // Scheduled rides marketplace
+        _glassBtn(
+          Icons.event_note_rounded,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            Navigator.of(context).push(
+              slideFromRightRoute(const ScheduledRidesMarketplaceScreen()),
+            );
+          },
+        ),
+
+        const SizedBox(width: 12),
+
         // Inbox
         _glassBtn(
           Icons.inbox_rounded,
@@ -1781,6 +1797,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       });
     } catch (e) {
       debugPrint('[DriverHome] Backend active trip check failed: $e');
+    }
+  }
+
+  /// Check if driver has a scheduled ride approaching — navigate to details if locked.
+  Future<void> _checkScheduledRideLockout() async {
+    try {
+      final data = await ApiService.getActiveScheduledTrip();
+      if (!mounted) return;
+      final hasTrip = data['has_scheduled_trip'] == true;
+      final isLocked = data['is_locked'] == true;
+      if (hasTrip && isLocked && data['trip'] != null) {
+        final minutesUntil = (data['minutes_until'] as num?)?.toDouble() ?? 30;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ScheduledRideDetailsScreen(
+              trip: data['trip'] as Map<String, dynamic>,
+              minutesUntil: minutesUntil,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[DriverHome] Scheduled ride check failed: $e');
     }
   }
 

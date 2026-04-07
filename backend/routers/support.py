@@ -1966,18 +1966,19 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
         sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
     # Build output with proper names for bot/system messages
     output = []
+    _chat_lang = getattr(chat, "locale", "en") or "en"
     for m in messages:
-        if m.sender_id == 0:
+        if m.sender_id is None or m.sender_id == 0:
             if m.sender_role == "bot":
-                name = chat.agent_name if chat else "Agente"
+                name = chat.agent_name if chat and chat.agent_name else ("Soporte Cruise" if _chat_lang.startswith("es") else "Cruise Support")
             elif m.sender_role == "system":
-                name = "Sistema"
+                name = "Sistema" if _chat_lang.startswith("es") else "System"
             elif m.sender_role == "dispatch":
                 name = "Supervisor" if (chat and chat.supervisor_connected) else "Soporte Cruise"
             else:
-                name = "Soporte Cruise"
+                name = "Soporte Cruise" if _chat_lang.startswith("es") else "Cruise Support"
         else:
-            name = sender_names.get(m.sender_id, "Unknown")
+            name = sender_names.get(m.sender_id, "Soporte Cruise")
         output.append(_support_msg_dict(m, name))
     return output
 

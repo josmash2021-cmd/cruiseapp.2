@@ -1561,7 +1561,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   PreferredSizeWidget _buildAppBar() {
     final String chatTitle = _phase == _ChatPhase.agent && _agentName != null
         ? _agentName!
-        : (_isSpanish ? 'Asistente Cruise' : 'Cruise Assistant');
+        : (_isSpanish ? 'Soporte Cruise' : 'Cruise Support');
 
     final String statusLabel;
     final Color statusColor;
@@ -1973,7 +1973,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               ),
               child: Center(
                 child: Text(
-                  msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : (isDispatch ? 'S' : 'C'),
+                  (msg.senderName.isNotEmpty && msg.senderName != 'Unknown')
+                      ? msg.senderName[0].toUpperCase()
+                      : (isDispatch ? 'S' : (_agentName != null ? _agentName![0].toUpperCase() : 'C')),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
@@ -2026,11 +2028,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               child: Column(
                 crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
-                  if (!isUser && msg.senderName.isNotEmpty)
+                  if (!isUser && (msg.senderName.isNotEmpty || _agentName != null))
                     Padding(
                       padding: const EdgeInsets.only(bottom: 3),
                       child: Text(
-                        msg.senderName,
+                        (msg.senderName.isNotEmpty && msg.senderName != 'Unknown')
+                            ? msg.senderName
+                            : (_agentName ?? (_isSpanish ? 'Soporte Cruise' : 'Cruise Support')),
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,

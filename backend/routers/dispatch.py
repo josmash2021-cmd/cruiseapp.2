@@ -804,6 +804,9 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
     if trip:
+        # Guard: do not accept if trip was already canceled
+        if trip.status in ("canceled", "cancelled", "completed"):
+            raise HTTPException(status_code=409, detail="Trip is no longer available — it was canceled or completed")
         trip.driver_id = driver_id
         trip.status = "driver_en_route"
     await db.commit()

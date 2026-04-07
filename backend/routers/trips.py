@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, FareSplit, Rating, ChatMessage, SurgeZone,
-    RiderPaymentMethod, Notification, Vehicle,
+    RiderPaymentMethod, Notification, Vehicle, DispatchOffer,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
@@ -539,6 +539,9 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    if trip.status == status:
+        # Same status — skip processing to avoid duplicate events
+        return _trip_dict_for_user(trip, user)
     trip.status = status
     trip.updated_at = datetime.now(timezone.utc)
     # Record ride start/end timestamps for duration calculation
@@ -572,12 +575,12 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     await db.refresh(trip)
 
     # --- SSE instant push to riders watching this trip (sub-second) ===
-    asyncio.create_task(event_bus.push_trip_update(trip.id, {
+    await event_bus.push_trip_update(trip.id, {
         "status": status,
         "trip_id": trip.id,
         "driver_id": trip.driver_id,
         "fare": float(trip.fare or 0),
-    }))
+    })
 
     # Sync status to Firestore (non-blocking)
     if _HAS_FIRESTORE:
@@ -726,7 +729,18 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
     trip.updated_at = datetime.now(timezone.utc)
-    
+
+    # Cancel any pending dispatch offers so driver can't accept a dead trip
+    pending_offers = await db.execute(
+        select(DispatchOffer).where(
+            DispatchOffer.trip_id == trip.id,
+            DispatchOffer.status == "pending"
+        )
+    )
+    for stale_offer in pending_offers.scalars().all():
+        stale_offer.status = "canceled"
+        logging.info("[Dispatch] Cancelled stale offer id=%d for cancelled trip %d", stale_offer.id, trip.id)
+
     # ---"= REFUND LOGIC ==="=
     # If rider was charged, issue refund (full or less cancellation fee)
     if trip.payment_status == "paid" and trip.payment_intent_id:

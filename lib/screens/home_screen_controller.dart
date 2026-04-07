@@ -887,10 +887,41 @@ extension _HomeScreenController on _HomeScreenState {
       final trip = await ApiService.getActiveTrip();
       if (!mounted || trip == null) return;
       final status = (trip['status'] ?? '').toString();
-      // Only resume trips that have a driver assigned
-      if (trip['driver_id'] == null && trip['driver_name'] == null) return;
       // Skip completed/cancelled trips
       if (status == 'completed' || status == 'canceled' || status == 'cancelled') return;
+
+      // If still searching for a driver — show a pending trip indicator
+      // so rider knows their search is still active after reopen/reinstall.
+      if (status == 'searching' || status == 'pending') {
+        final tripId = trip['id'] as int?;
+        if (tripId == null || !mounted) return;
+        _setState(() => _pendingSearchTripId = tripId);
+        // Poll every 6s until driver assigned or trip cancelled
+        _pendingSearchTimer?.cancel();
+        _pendingSearchTimer = Timer.periodic(const Duration(seconds: 6), (_) async {
+          if (!mounted) { _pendingSearchTimer?.cancel(); return; }
+          try {
+            final updated = await ApiService.getActiveTrip();
+            if (!mounted) return;
+            final updatedStatus = (updated?['status'] ?? '').toString();
+            if (updatedStatus == 'completed' || updatedStatus == 'canceled' || updatedStatus == 'cancelled' || updated == null) {
+              _pendingSearchTimer?.cancel();
+              _setState(() => _pendingSearchTripId = null);
+              return;
+            }
+            // Driver assigned → open tracking screen
+            if (updated['driver_id'] != null) {
+              _pendingSearchTimer?.cancel();
+              _setState(() => _pendingSearchTripId = null);
+              await _checkBackendActiveTrip();
+            }
+          } catch (_) {}
+        });
+        return;
+      }
+
+      // Only resume trips that have a driver assigned
+      if (trip['driver_id'] == null && trip['driver_name'] == null) return;
 
       final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
       final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();

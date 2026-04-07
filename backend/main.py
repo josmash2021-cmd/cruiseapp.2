@@ -316,6 +316,8 @@ async def lifespan(app: FastAPI):
         logging.info("Scheduled Ride Dispatcher ACTIVE -- smart timing dispatch every 60s")
         asyncio.create_task(_scheduled_ride_reminder_loop())
         logging.info("Scheduled Ride Reminder Loop ACTIVE -- driver/rider reminders every 60s")
+        asyncio.create_task(_scheduled_rides_available_notify_loop())
+        logging.info("Scheduled Rides Available Notifier ACTIVE -- notify online drivers every 15m")
 
     asyncio.create_task(_bg_init())
     # Start SSE heartbeat + stale connection cleanup
@@ -838,6 +840,80 @@ async def _scheduled_ride_dispatcher():
 
 
 # -------------------------------------------------------
+#  SCHEDULED RIDES AVAILABLE NOTIFIER (background task)
+# -------------------------------------------------------
+
+async def _scheduled_rides_available_notify_loop():
+    """Every 15 minutes, notify online drivers who have no active trip
+    that there are scheduled rides available matching their vehicle type."""
+    while True:
+        await asyncio.sleep(900)  # 15 minutes
+        try:
+            async with SessionLocal() as db:
+                from sqlalchemy import select as sa_select
+                from models import User, Trip
+
+                # Count unclaimed scheduled rides in the next 24h
+                now = datetime.now(timezone.utc)
+                cutoff = now + timedelta(hours=24)
+                sched_result = await db.execute(
+                    sa_select(Trip).where(
+                        and_(
+                            Trip.status == "scheduled",
+                            Trip.driver_id.is_(None),
+                            Trip.scheduled_at.isnot(None),
+                            Trip.scheduled_at > now,
+                            Trip.scheduled_at < cutoff,
+                        )
+                    )
+                )
+                unclaimed = sched_result.scalars().all()
+                if not unclaimed:
+                    continue
+
+                count = len(unclaimed)
+
+                # Get online drivers with no active trip and an FCM token
+                active_statuses = ["driver_en_route", "arrived", "in_progress",
+                                   "scheduled_active", "scheduled_accepted"]
+                drivers_result = await db.execute(
+                    sa_select(User).where(
+                        and_(
+                            User.role == "driver",
+                            User.is_online == True,
+                            User.fcm_token.isnot(None),
+                        )
+                    )
+                )
+                online_drivers = drivers_result.scalars().all()
+
+                for driver in online_drivers:
+                    # Skip drivers with an active trip
+                    active_result = await db.execute(
+                        sa_select(Trip).where(
+                            and_(
+                                Trip.driver_id == driver.id,
+                                Trip.status.in_(active_statuses),
+                            )
+                        )
+                    )
+                    if active_result.scalars().first():
+                        continue
+
+                    if driver.fcm_token:
+                        title = f"{count} viaje{'s' if count > 1 else ''} reservado{'s' if count > 1 else ''} disponible{'s' if count > 1 else ''}"
+                        body = "Toca para ver los viajes reservados disponibles cerca de ti."
+                        _send_fcm_push(
+                            driver.fcm_token,
+                            title=title,
+                            body=body,
+                            data={"type": "scheduled_rides_available", "count": str(count)},
+                        )
+
+        except Exception as e:
+            logging.warning("[ScheduledNotifier] Error: %s", e)
+
+
 #  SCHEDULED RIDE REMINDER LOOP (background task)
 # -------------------------------------------------------
 

@@ -2395,12 +2395,12 @@ class S {
 
   // ── Payout Methods ──
   String get plaidLinkDescription => _es
-      ? 'Vincula tu banco o tarjeta de débito con Stripe para pagos instantáneos. Retira cuando quieras.'
-      : 'Link your bank or debit card via Stripe for instant payouts. Cash out anytime.';
+      ? 'Recibe tus pagos semanales directo a tu cuenta. Los pagos se procesan cada lunes.'
+      : 'Receive your weekly earnings directly to your account. Payments are processed every Monday.';
   String get connectingLabel => _es ? 'Conectando...' : 'Connecting...';
   String get connectBankForCashouts => _es
-      ? 'Conecta tu cuenta bancaria con Plaid\npara retiros instantáneos'
-      : 'Connect your bank account with Plaid\nfor instant cashouts';
+      ? 'Agrega una cuenta bancaria para recibir\ntus ganancias cada semana'
+      : 'Add a bank account to receive\nyour weekly earnings';
   String get defaultBadge => _es ? 'Predeterminado' : 'Default';
   String get bankTransferType =>
       _es ? 'Transferencia bancaria' : 'Bank transfer';
@@ -3150,6 +3150,9 @@ class S {
       ? 'Los viajes reservados por pasajeros aparecerán aquí'
       : 'Rides scheduled by riders will appear here';
   String get acceptRideButton => _es ? 'ACEPTAR VIAJE' : 'ACCEPT RIDE';
+  String scheduledRidesAvailableLabel(int count) =>
+      _es ? '$count viaje${count == 1 ? '' : 's'} reservado${count == 1 ? '' : 's'} disponible${count == 1 ? '' : 's'}'
+          : '$count scheduled ride${count == 1 ? '' : 's'} available near you';
   String get scheduledRideConfirmed => _es ? 'Viaje reservado confirmado' : 'Scheduled ride confirmed';
   String get noScheduledRidesAvailable => _es ? 'No hay viajes reservados disponibles' : 'No scheduled rides available';
   String get cancelRideTitle => _es ? 'Cancelar viaje' : 'Cancel ride';

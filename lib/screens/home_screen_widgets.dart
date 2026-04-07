@@ -56,6 +56,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
   // "Where to?" / "Ride in progress" search bar floating over the map
   Widget _buildWhereToBar() {
     final active = _activeRide != null;
+    final searching = _pendingSearchTripId != null && !active;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeInOutCubic,
@@ -66,14 +67,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
         border: Border.all(
           color: active
               ? _gold.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.08),
-          width: active ? 1.5 : 1.0,
+              : searching
+                  ? Colors.blue.withValues(alpha: 0.4)
+                  : Colors.white.withValues(alpha: 0.08),
+          width: (active || searching) ? 1.5 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
             color: active
                 ? _gold.withValues(alpha: 0.10)
-                : Colors.black.withValues(alpha: 0.5),
+                : searching
+                    ? Colors.blue.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.5),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -85,7 +90,68 @@ extension _HomeScreenWidgets on _HomeScreenState {
         switchOutCurve: Curves.easeInOutCubic,
         transitionBuilder: (child, anim) =>
             FadeTransition(opacity: anim, child: child),
-        child: active ? _buildRideActiveContent() : _buildWhereToContent(),
+        child: active
+            ? _buildRideActiveContent()
+            : searching
+                ? _buildSearchingDriverContent()
+                : _buildWhereToContent(),
+      ),
+    );
+  }
+
+  // "Buscando conductor..." content — shown when trip is searching on reopen
+  Widget _buildSearchingDriverContent() {
+    return GestureDetector(
+      key: const ValueKey('searching_driver'),
+      onTap: () {},
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          const SizedBox(
+            width: 18, height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              S.of(context).searchingForDriver,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: Responsive.sp(14),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () async {
+              final tripId = _pendingSearchTripId;
+              if (tripId == null) return;
+              try {
+                await ApiService.cancelTrip(tripId);
+              } catch (_) {}
+              _pendingSearchTimer?.cancel();
+              _setState(() => _pendingSearchTripId = null);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                S.of(context).cancel,
+                style: const TextStyle(
+                  color: Colors.red, fontSize: 12, fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

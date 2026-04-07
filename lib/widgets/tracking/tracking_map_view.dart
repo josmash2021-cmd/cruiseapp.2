@@ -1455,4 +1455,69 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _updateCarSmooth();
     await _updateStaticAnnotationsOnce();
   }
+
+  /// Build a blue circle PNG for the rider's own location dot.
+  Future<void> _buildRiderDotBytes() async {
+    const double size = 36;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+    // Outer glow ring
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2), size / 2,
+      Paint()..color = const Color(0x553B82F6),
+    );
+    // Inner solid dot
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2), size / 2 - 6,
+      Paint()..color = const Color(0xFF3B82F6),
+    );
+    // White border
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2), size / 2 - 6,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    picture.dispose();
+    if (mounted) _setState(() => _riderDotBytes = byteData!.buffer.asUint8List());
+  }
+
+  /// Start listening to rider's own GPS and show blue dot on map.
+  void _startRiderLocationTracking() {
+    _riderLocSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
+      if (!mounted) return;
+      _updateRiderDot(LatLng(pos.latitude, pos.longitude));
+    }, onError: (_) {});
+  }
+
+  /// Place or update the blue rider dot on the map.
+  Future<void> _updateRiderDot(LatLng pos) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || _riderDotBytes == null) return;
+    try {
+      if (_riderDotAnnot != null) {
+        _riderDotAnnot!.geometry = mapbox.Point(
+          coordinates: mapbox.Position(pos.longitude, pos.latitude),
+        );
+        await mgr.update(_riderDotAnnot!);
+      } else {
+        _riderDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          image: _riderDotBytes!,
+          iconSize: 0.6,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      }
+    } catch (_) {}
+  }
 }

@@ -128,6 +128,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Active ride state
   ActiveRideInfo? _activeRide;
 
+  // Pending search state — trip exists but no driver yet (reopen/reinstall)
+  int? _pendingSearchTripId;
+  Timer? _pendingSearchTimer;
+
   // Panel lock — keeps sheet fully expanded while trip is active
   bool _panelLocked = false;
 
@@ -433,6 +437,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _accountStatusTimer?.cancel();
     _countdownTimer?.cancel();
     _imminentRideTimer?.cancel();
+    _pendingSearchTimer?.cancel();
     _locationSub?.cancel();
     _zonesSub?.cancel();
     _driverLocationSub?.cancel();

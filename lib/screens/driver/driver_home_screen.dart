@@ -116,6 +116,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   int? _driverId;
   Map<String, dynamic>? _activeTripData;
 
+  // ── Scheduled rides banner ──
+  int _scheduledAvailableCount = 0;
+  Timer? _scheduledBannerTimer;
+
   // ── Vehicle document approval ──
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
@@ -242,6 +246,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       (_) => _refreshStats(),
     );
 
+    // Poll scheduled ride count every 90s to update banner
+    _refreshScheduledCount();
+    _scheduledBannerTimer = Timer.periodic(
+      const Duration(seconds: 90),
+      (_) => _refreshScheduledCount(),
+    );
+
     // Entrance animations
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _statsCtrl.forward();
@@ -285,6 +296,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _tripPollTimer?.cancel();
     _statsRefreshTimer?.cancel();
     _docApprovalSub?.cancel();
+    _scheduledBannerTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoUpdated);
     UserSession.photoUrlNotifier.removeListener(_onPhotoUpdated);
     WidgetsBinding.instance.removeObserver(this);
@@ -1138,20 +1150,71 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           },
         ),
 
-        const SizedBox(width: 12),
-
-        // Inbox
-        _glassBtn(
-          Icons.inbox_rounded,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            Navigator.of(
-              context,
-            ).push(slideFromRightRoute(const DriverInboxScreen()));
-          },
-          badge: _unreadCount > 0 ? _unreadCount : null,
-        ),
       ],
+    );
+  }
+
+  /// Fetch count of available scheduled rides matching driver's vehicle type.
+  Future<void> _refreshScheduledCount() async {
+    if (!_isStillOnline || _activeTripData != null) return;
+    try {
+      final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
+      if (!mounted) return;
+      setState(() => _scheduledAvailableCount = trips.length);
+    } catch (_) {}
+  }
+
+  /// Animated banner above "Finding trips" showing scheduled ride count.
+  Widget _buildScheduledRidesBanner() {
+    if (_scheduledAvailableCount == 0) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        Navigator.of(context).push(
+          slideFromRightRoute(const ScheduledRidesMarketplaceScreen()),
+        );
+      },
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) => Transform.scale(
+          scaleY: scale,
+          alignment: Alignment.topCenter,
+          child: child,
+        ),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _gold.withValues(alpha: 0.15),
+                _gold.withValues(alpha: 0.08),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _gold.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.event_available_rounded, color: _gold, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  S.of(context).scheduledRidesAvailableLabel(_scheduledAvailableCount),
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: _gold, size: 18),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1430,6 +1493,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
             ),
           ),
+            // ── Scheduled Rides Banner (only when online & no active trip) ──
+            if (_isStillOnline && _activeTripData == null)
+              _buildScheduledRidesBanner(),
+
             // ── Header row: photo | status | list — also draggable ──
             GestureDetector(
               behavior: HitTestBehavior.translucent,

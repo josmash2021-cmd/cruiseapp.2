@@ -467,7 +467,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     final bottomPad = MediaQuery.of(context).padding.bottom;
     final phase = _ctrl.state.phase;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    // Block system back button while ride is being confirmed / searching for driver
+    final blockBack = phase == RiderPhase.requesting ||
+        phase == RiderPhase.searchingDriver ||
+        phase == RiderPhase.driverAssigned;
+
+    return PopScope(
+      canPop: !blockBack,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
         body: Stack(
@@ -529,10 +536,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutBack,
                 child: AnimatedOpacity(
-                  opacity: phase != RiderPhase.idle ? 1.0 : 0.0,
+                  opacity: (phase != RiderPhase.idle && !blockBack) ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
                   child: IgnorePointer(
-                    ignoring: phase == RiderPhase.idle,
+                    ignoring: phase == RiderPhase.idle || blockBack,
                     child: _circleButton(
                       icon: Icons.arrow_back,
                       onTap: () {
@@ -623,6 +630,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ],
         ),
       ),
+    ),
     );
   }
 

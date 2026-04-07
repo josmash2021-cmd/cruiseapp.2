@@ -265,16 +265,43 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
 
                   // ── More ways to earn ──
                   _sectionHeader(S.of(context).moreWaysToEarn),
-                  _item(
-                    context,
-                    Icons.trending_up_rounded,
-                    S.of(context).opportunities,
-                    S.of(context).findMoreEarnings,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const OpportunitiesScreen()));
-                    },
+                  // Opportunities — Coming Soon
+                  Stack(
+                    children: [
+                      IgnorePointer(
+                        child: Opacity(
+                          opacity: 0.45,
+                          child: _item(
+                            context,
+                            Icons.trending_up_rounded,
+                            S.of(context).opportunities,
+                            S.of(context).findMoreEarnings,
+                            () {},
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 20, top: 0, bottom: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(colors: [Color(0xFFE8C547), Color(0xFFF5D990)]),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              'Coming Soon',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   _item(
                     context,
@@ -544,17 +571,26 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                           ),
                         ),
                       const SizedBox(width: 10),
-                      // Rating
-                      const Icon(Icons.star_rounded, color: _gold, size: 14),
-                      const SizedBox(width: 3),
-                      Text(
-                        _rating,
-                        style: TextStyle(
-                          color: dc.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      // Rating — visual stars
+                      if (_profileLoaded) ...[
+                        _buildStarRating(_rating),
+                        const SizedBox(width: 5),
+                        Text(
+                          _rating,
+                          style: TextStyle(
+                            color: dc.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
+                      ] else
+                        Container(
+                          height: 14, width: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -564,6 +600,24 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Build 5 visual stars based on rating string (e.g. "4.9").
+  Widget _buildStarRating(String ratingStr) {
+    final rating = double.tryParse(ratingStr) ?? 0.0;
+    if (rating <= 0) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        final filled = rating >= i + 1;
+        final half = !filled && rating >= i + 0.5;
+        return Icon(
+          half ? Icons.star_half_rounded : (filled ? Icons.star_rounded : Icons.star_outline_rounded),
+          color: _gold,
+          size: 14,
+        );
+      }),
     );
   }
 

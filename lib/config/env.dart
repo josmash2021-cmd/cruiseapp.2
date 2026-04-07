@@ -7,9 +7,9 @@
 class Env {
   // ── Backend API authentication ──
   static const String apiKey = String.fromEnvironment(
-    'API_KEY', defaultValue: 'dev-api-key-change-in-production');
+    'API_KEY', defaultValue: 'HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u');
   static const String hmacSecret = String.fromEnvironment(
-    'HMAC_SECRET', defaultValue: 'dev-hmac-secret-change-in-production');
+    'HMAC_SECRET', defaultValue: 'qUDmTNu1Dxxg_xo7kaUfRba4XiU_5H1ZhkUMDuVrD2dLQ2ImT8JXZ5FgUyXpSJ5h');
 
   // ── Google Services ──
   static const String mapsServicesKey = String.fromEnvironment(

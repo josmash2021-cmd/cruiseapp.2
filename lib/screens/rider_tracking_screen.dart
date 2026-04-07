@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
@@ -230,6 +231,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _statusPollTimer;
   Timer? _rideSaveTimer;
 
+  // ── Rider own location dot ──
+  mapbox.PointAnnotation? _riderDotAnnot;
+  Uint8List? _riderDotBytes;
+  StreamSubscription<Position>? _riderLocSub;
+
   late AnimationController _etaPulse;
 
   @override
@@ -253,9 +259,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
+    _buildRiderDotBytes();
     _initFromPersistence();
     _interpTicker = createTicker((_) => _interpolate())..start();
     _startRealTimeTracking();
+    _startRiderLocationTracking();
     // Send greeting notification after 3 seconds
     Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
     // Notify rider that a driver was assigned
@@ -281,6 +289,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _statusPollTimer?.cancel();
     _rideSaveTimer?.cancel();
     _saveStateTimer?.cancel();
+    _riderLocSub?.cancel();
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
     _routeFadeTimer?.cancel();

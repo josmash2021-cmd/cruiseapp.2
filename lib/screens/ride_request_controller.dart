@@ -1487,15 +1487,12 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Payment helpers ──
 
-  // apple_pay and google_pay are intentionally excluded here.
-  // Device support for those methods is verified at payment time via
-  // Stripe.isPlatformPaySupported() inside _confirmApplePay/_confirmGooglePay.
-  // Counting them as "available" before that check would enable the
-  // ride-request button on devices where neither is set up.
   bool get _hasAnyPaymentMethod =>
       _linkedPaymentMethods.isNotEmpty ||
       _selectedPaymentMethod == 'test_mode' ||
-      _selectedPaymentMethod == 'paypal';
+      _selectedPaymentMethod == 'paypal' ||
+      _selectedPaymentMethod == 'apple_pay' ||
+      _selectedPaymentMethod == 'google_pay';
 
   String _paymentLabel(String id) {
     if (id.isEmpty || id == 'none') return S.of(context).selectPaymentMethod;

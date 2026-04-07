@@ -974,7 +974,7 @@ async def _scheduled_ride_reminder_loop():
                             logging.warning("[Reminder] FCM rider 30m notify failed for trip %d: %s", trip.id, _fcm_err)
 
                     # --------------------------------------------------
-                    # 15-minute reminder (driver only, urgent)
+                    # 15-minute reminder (driver + rider)
                     # --------------------------------------------------
                     if 10 <= minutes_until <= 18 and "15m" not in trip_reminders:
                         _send_fcm_push(
@@ -985,6 +985,33 @@ async def _scheduled_ride_reminder_loop():
                         )
                         trip_reminders.add("15m")
                         logging.info("[Reminder] 15m urgent reminder sent to driver %d for trip %d", driver.id, trip.id)
+
+                    # Rider 15-minute reminder — opens tracking screen
+                    if 10 <= minutes_until <= 18 and "rider_15m" not in trip_reminders:
+                        try:
+                            rider_r2 = await db.execute(
+                                select(User).where(User.id == trip.rider_id)
+                            )
+                            rider2 = rider_r2.scalar_one_or_none()
+                            if rider2 and rider2.fcm_token:
+                                rider_name2 = (rider2.first_name or "").strip() or "Cliente"
+                                _send_fcm_push(
+                                    token=rider2.fcm_token,
+                                    title="Tu viaje comienza en 15 minutos",
+                                    body=f"{rider_name2}, tu conductor {driver_name} esta en camino. Tu viaje reservado comienza en 15 minutos.",
+                                    data={
+                                        "type": "scheduled_trip_starting",
+                                        "trip_id": str(trip.id),
+                                        "driver_id": str(trip.driver_id),
+                                        "driver_name": driver_name,
+                                        "pickup_address": pickup,
+                                        "reminder": "rider_15m",
+                                    },
+                                )
+                                trip_reminders.add("rider_15m")
+                                logging.info("[Reminder] 15m rider reminder sent to rider %d for trip %d", rider2.id, trip.id)
+                        except Exception as _fcm_err:
+                            logging.warning("[Reminder] FCM rider 15m notify failed for trip %d: %s", trip.id, _fcm_err)
 
                 # ---- Memory cleanup ----
                 # Remove entries for trips no longer in the active batch

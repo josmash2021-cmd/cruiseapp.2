@@ -35,6 +35,7 @@ import 'services/keep_alive_service.dart';
 import 'services/analytics_service.dart';
 import 'services/prefs_cache.dart';
 import 'screens/chat_screen.dart';
+import 'screens/ride_request_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -437,14 +438,26 @@ Future<void> heavyInit() async {
               NotificationService.playOfferSound();
             }
 
-            // Scheduled ride reminder — use the reminders channel
-            if (type == 'scheduled_reminder') {
+            // Scheduled ride reminder — show notification
+            if (type == 'scheduled_reminder' || type == 'scheduled_trip_starting') {
               NotificationService.show(
                 id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
                 title: title,
                 body: body,
                 type: 'ride',
               );
+              // 15-min rider reminder — navigate to ride request to load trip
+              if (type == 'scheduled_trip_starting') {
+                final tripId = int.tryParse(message.data['trip_id'] ?? '');
+                if (tripId != null) {
+                  final nav = _navigatorKey.currentState;
+                  if (nav != null) {
+                    nav.push(MaterialPageRoute(
+                      builder: (_) => RideRequestScreen(initialRideId: tripId.toString()),
+                    ));
+                  }
+                }
+              }
             }
           });
           // Handle notification tap when app is backgrounded

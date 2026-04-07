@@ -221,6 +221,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Searching overlay: splash first, then map with address bars ──
   bool _searchingShowMap = false;
+  /// True while SearchingDriverScreen is on the navigator stack.
+  /// Blocks _onStateChange from navigating away while the screen is visible.
+  bool _searchingScreenShowing = false;
   bool _searchingSplash = false;
   Timer? _searchMapTimer;
   Timer? _splashTimer;

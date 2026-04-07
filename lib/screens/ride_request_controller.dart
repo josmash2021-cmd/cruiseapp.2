@@ -345,6 +345,9 @@ extension _RideRequestController on _RideRequestScreenState {
         _splashTimer?.cancel();
         _splashTimer = null;
         _cleanupMapAnnotations();
+        // If SearchingDriverScreen is still on the stack, don't navigate away —
+        // the await in _startRideDirectly will handle cleanup once the screen pops.
+        if (_searchingScreenShowing) break;
         // Rider already confirmed cancellation — just go home
         if (_riderInitiatedCancel) {
           _riderInitiatedCancel = false;
@@ -844,6 +847,7 @@ extension _RideRequestController on _RideRequestScreenState {
       _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
       unawaited(_ctrl.requestRide());
 
+      _searchingScreenShowing = true;
       final cancelled = await nav.push<bool>(
         searchingDriverRoute(
           onCancel: _cancelSearching,
@@ -852,6 +856,43 @@ extension _RideRequestController on _RideRequestScreenState {
           onPaymentDeclined: () => paymentDeclinedFlag = true,
         ),
       );
+      _searchingScreenShowing = false;
+
+      // If the trip was cancelled by the backend during the animation,
+      // _onStateChange was blocked (flag was true). Handle navigation now.
+      if (!mounted) return;
+      if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
+        _cancelDialogShown = true;
+        final rawReason = _ctrl.state.cancelReason;
+        final isNoDrivers = rawReason != null &&
+            (rawReason.toLowerCase().contains('no hay driver') ||
+             rawReason.toLowerCase().contains('no driver'));
+        _ctrl.reset();
+        Navigator.of(context).pushAndRemoveUntil(
+          smoothFadeRoute(const HomeScreen()),
+          (_) => false,
+        );
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (!mounted) return;
+          showDialog(
+            context: Navigator.of(context, rootNavigator: true).context,
+            barrierDismissible: true,
+            builder: (dialogCtx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(children: [
+                Icon(isNoDrivers ? Icons.search_off_rounded : Icons.info_outline,
+                    color: isNoDrivers ? const Color(0xFFE8C547) : Colors.orange, size: 28),
+                const SizedBox(width: 10),
+                Expanded(child: Text(isNoDrivers ? S.of(context).noDriversAvailableTitle : S.of(context).tripCancelled,
+                    style: const TextStyle(fontSize: 17))),
+              ]),
+              content: Text(rawReason ?? S.of(context).tripCancelled, style: const TextStyle(fontSize: 15)),
+              actions: [TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('OK'))],
+            ),
+          );
+        });
+        return;
+      }
 
       if (cancelled == true) {
         if (!mounted) return;

@@ -2209,7 +2209,33 @@ class S {
       ? 'Al crear una cuenta o usar la app Cruise, usted reconoce que ha leído, comprendido y acepta estar sujeto a estos Términos y Condiciones.'
       : 'By creating an account or using the Cruise app, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.';
 
+  // ── Rider Home Screen ──
+  String get rideInProgress => _es ? 'Viaje en progreso' : 'Ride in progress';
+  String promoLockedProgress(int completed) =>
+      _es ? '$completed / 3 viajes completados' : '$completed / 3 rides completed';
+  String get promoWelcomeBody => _es
+      ? 'Como bienvenida a Cruise, ¡disfruta un 10% de descuento en tu primer viaje! Esta oferta exclusiva solo puede usarse una vez y se aplicará automáticamente a tu próximo viaje.'
+      : 'As a welcome to Cruise, enjoy 10% off your first ride! This exclusive offer can only be used once and will be applied automatically to your next ride.';
+  String get searchHomeAddress => _es ? 'Buscar tu dirección de casa' : 'Search your home address';
+  String get searchWorkAddress => _es ? 'Buscar tu dirección de trabajo' : 'Search your work address';
+  String get savePlace1 => _es ? 'Guardar lugar 1' : 'Save Place 1';
+  String get editPlace1 => _es ? 'Editar lugar 1' : 'Edit Place 1';
+  String get savePlace2 => _es ? 'Guardar lugar 2' : 'Save Place 2';
+  String get editPlace2 => _es ? 'Editar lugar 2' : 'Edit Place 2';
+  String get searchAnAddress => _es ? 'Buscar una dirección' : 'Search an address';
+  String get notificationsTitle => _es ? 'Notificaciones' : 'Notifications';
+  String get driverLabel => _es ? 'Conductor' : 'Driver';
+  String get minSuffix => _es ? 'min' : 'min';
+  // Fleet descriptions
+  String get vipDesc => _es ? 'SUV de lujo con comodidades premium' : 'Luxury SUV with premium amenities';
+  String get vipFeatures => _es ? 'Espacioso • Cuero • Snacks y Bebidas' : 'Spacious • Leather • Snacks & Drinks';
+  String get premiumDesc => _es ? 'Sedán elegante para cualquier ocasión' : 'Elegant sedan for any occasion';
+  String get premiumFeatures => _es ? 'Confort • Clima • Cargador' : 'Comfort • Climate • Charger';
+  String get comfortDesc => _es ? 'Viaje confiable al mejor precio' : 'Reliable ride at great value';
+  String get comfortFeatures => _es ? 'Limpio • Seguro • Eficiente' : 'Clean • Safe • Efficient';
+
   // ── Driver Home ──
+  String get rider => _es ? 'Pasajero' : 'Rider';
   String get goodMorning => _es ? 'Buenos días' : 'Good morning';
   String get goodAfternoon => _es ? 'Buenas tardes' : 'Good afternoon';
   String get goodEvening => _es ? 'Buenas noches' : 'Good evening';

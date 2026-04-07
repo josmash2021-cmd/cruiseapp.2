@@ -602,7 +602,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {
-        setState(() => _locationError = 'Unable to get location');
+        setState(() => _locationError = S.of(context).unableToGetLocation);
       }
     }
   }
@@ -699,9 +699,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               ),
               const SizedBox(height: 12),
               Text(
-                'As a welcome to Cruise, enjoy 10% off your first ride! '
-                'This exclusive offer can only be used once and will be '
-                'applied automatically to your next ride.',
+                S.of(context).promoWelcomeBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: c.textSecondary,
@@ -789,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             ),
             const SizedBox(height: 16),
             Text(
-              'Promo Locked',
+              S.of(context).promoLocked,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 20,
@@ -821,7 +819,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             ),
             const SizedBox(height: 8),
             Text(
-              '$completed / 3 rides completed',
+              S.of(context).promoLockedProgress(completed),
               style: TextStyle(
                 color: c.textTertiary,
                 fontSize: 12,
@@ -842,9 +840,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   elevation: 0,
                 ),
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(
-                  'Got it',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                child: Text(
+                  S.of(context).gotIt,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -1295,7 +1293,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     final effectivePickup = pickupDetails ?? (
       _currentLatLng != null
           ? PlaceDetails(
-              address: pickupLabel.isNotEmpty ? pickupLabel : 'Current location',
+              address: pickupLabel.isNotEmpty ? pickupLabel : S.of(context).currentLocation,
               lat: _currentLatLng!.latitude,
               lng: _currentLatLng!.longitude,
             )
@@ -1375,9 +1373,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _requestRideToAddress(_homeFavorite!.address);
       return;
     }
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Set Home address',
-      hint: 'Search your home address',
+      title: s.setHomeAddress,
+      hint: s.searchHomeAddress,
     );
 
     if (address == null || address.isEmpty) return;
@@ -1388,9 +1387,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _editHomeAddress() async {
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Edit Home address',
-      hint: 'Search your home address',
+      title: s.editHomeAddress,
+      hint: s.searchHomeAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1404,9 +1404,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _requestRideToAddress(_workFavorite!.address);
       return;
     }
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Set Work address',
-      hint: 'Search your work address',
+      title: s.setWorkAddress,
+      hint: s.searchWorkAddress,
     );
 
     if (address == null || address.isEmpty) return;
@@ -1417,9 +1418,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _editWorkAddress() async {
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Edit Work address',
-      hint: 'Search your work address',
+      title: s.editWorkAddress,
+      hint: s.searchWorkAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1433,9 +1435,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _requestRideToAddress(_place1Favorite!.address);
       return;
     }
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Save Place 1',
-      hint: 'Search an address',
+      title: s.savePlace1,
+      hint: s.searchAnAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1445,9 +1448,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _editPlace1Address() async {
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Edit Place 1',
-      hint: 'Search an address',
+      title: s.editPlace1,
+      hint: s.searchAnAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1461,9 +1465,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _requestRideToAddress(_place2Favorite!.address);
       return;
     }
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Save Place 2',
-      hint: 'Search an address',
+      title: s.savePlace2,
+      hint: s.searchAnAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1473,9 +1478,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _editPlace2Address() async {
+    final s = S.of(context);
     final address = await _showAddressAutocomplete(
-      title: 'Edit Place 2',
-      hint: 'Search an address',
+      title: s.editPlace2,
+      hint: s.searchAnAddress,
     );
     if (address == null || address.isEmpty) return;
     await LocalDataService.saveFavorite(
@@ -1520,7 +1526,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   ),
                 ),
                 Text(
-                  'Notifications',
+                  S.of(context).notificationsTitle,
                   style: TextStyle(
                     color: c.textPrimary,
                     fontSize: 20,

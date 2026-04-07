@@ -110,7 +110,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           SizedBox(width: Responsive.w(10)),
           Expanded(
             child: Text(
-              'Where to?',
+              S.of(context).whereTo,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.5),
                 fontSize: Responsive.sp(16),
@@ -131,7 +131,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               children: [
                 Icon(Icons.schedule_rounded, color: _gold, size: Responsive.sp(14)),
                 const SizedBox(width: 4),
-                Text('Now',
+                Text(S.of(context).nowLabel,
                     style: TextStyle(
                         color: _gold,
                         fontSize: Responsive.sp(13),
@@ -168,7 +168,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Ride in progress',
+              S.of(context).rideInProgress,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
@@ -458,7 +458,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _getGreeting().toUpperCase(),
+                  _getGreeting(context).toUpperCase(),
                   style: TextStyle(
                     color: _gold,
                     fontSize: Responsive.sp(11),
@@ -468,7 +468,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  displayName.isNotEmpty ? displayName : 'Rider',
+                  displayName.isNotEmpty ? displayName : S.of(context).rider,
                   style: TextStyle(
                     color: textMain,
                     fontSize: Responsive.sp(24),
@@ -673,11 +673,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  String _getGreeting() {
+  String _getGreeting(BuildContext context) {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
+    final s = S.of(context);
+    if (hour < 12) return s.goodMorning;
+    if (hour < 18) return s.goodAfternoon;
+    return s.goodEvening;
   }
 
   // ─── Verification blocked dialog ───
@@ -1018,7 +1019,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _nowLaterPill(
-                          'Now',
+                          S.of(context).nowLabel,
                           Icons.bolt_rounded,
                           _rideNow,
                           () {
@@ -1026,7 +1027,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           },
                         ),
                         _nowLaterPill(
-                          'Later',
+                          S.of(context).laterLabel,
                           Icons.schedule_rounded,
                           !_rideNow,
                           () {
@@ -1210,7 +1211,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Driver',
+              S.of(context).driverLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
                 fontSize: 11,
@@ -1305,14 +1306,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Driver',
+              S.of(context).driverLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
                 fontSize: 11,
               ),
             ),
             Text(
-              '$mins min',
+              '$mins ${S.of(context).minSuffix}',
               style: const TextStyle(
                 color: Color(0xFFFFD700),
                 fontSize: 12,
@@ -1320,7 +1321,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
             Text(
-              'Pickup',
+              S.of(context).pickupLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
                 fontSize: 11,
@@ -1766,11 +1767,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // Unified dark card background for all tiers
     const cardBg = [Color(0xFF1A1D24), Color(0xFF252A35)];
 
+    final s = S.of(context);
     final vehicles = [
       {
         'tier': 'VIP',
-        'desc': 'Luxury SUV with premium amenities',
-        'features': 'Spacious • Leather • Snacks & Drinks',
+        'desc': s.vipDesc,
+        'features': s.vipFeatures,
         'idx': 0,
         'accent': _gold,
         'image': 'cruise_3.png',
@@ -1778,8 +1780,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
       {
         'tier': 'PREMIUM',
-        'desc': 'Elegant sedan for any occasion',
-        'features': 'Comfort • Climate • Charger',
+        'desc': s.premiumDesc,
+        'features': s.premiumFeatures,
         'idx': 1,
         'accent': const Color(0xFFCECECE),
         'image': 'cruise_7.png',
@@ -1787,8 +1789,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
       {
         'tier': 'COMFORT',
-        'desc': 'Reliable ride at great value',
-        'features': 'Clean • Safe • Efficient',
+        'desc': s.comfortDesc,
+        'features': s.comfortFeatures,
         'idx': 2,
         'accent': const Color(0xFF4CAF50),
         'image': 'cruise_6.png',
@@ -2521,9 +2523,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                   color: _gold.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Text(
-                                  'Retry',
-                                  style: TextStyle(
+                                child: Text(
+                                  S.of(context).retry,
+                                  style: const TextStyle(
                                     color: _gold,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,

@@ -8,7 +8,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, and_, func
-from models.database import SessionLocal, User, Trip, SupportChat, SupportMessage
+from models.database import SessionLocal, User, Trip, Rating, SupportChat, SupportMessage
 from services.fcm_service import _send_fcm_push
 
 log = logging.getLogger(__name__)
@@ -73,14 +73,19 @@ async def check_bad_trips(db) -> int:
     cutoff_start = datetime.now(timezone.utc) - timedelta(hours=4)
     cutoff_end = datetime.now(timezone.utc) - timedelta(minutes=30)  # at least 30 min ago
 
-    # --- Rule 1: Low driver rating (1-2 stars) ---
+    # --- Rule 1: Low driver rating (1-2 stars) — join ratings table ---
     try:
         bad_rated_r = await db.execute(
-            select(Trip).where(
+            select(Trip).join(
+                Rating,
+                and_(
+                    Rating.trip_id == Trip.id,
+                    Rating.from_user_id == Trip.rider_id,
+                    Rating.stars <= 2,
+                )
+            ).where(
                 and_(
                     Trip.status == "completed",
-                    Trip.rating_driver.isnot(None),
-                    Trip.rating_driver <= 2,
                     Trip.completed_at >= cutoff_start,
                     Trip.completed_at <= cutoff_end,
                 )
@@ -139,20 +144,28 @@ async def check_bad_trips(db) -> int:
         log.error("Proactive agent bad-rating check failed: %s", e)
 
     # --- Rule 2: Trip took 3x the estimated duration ---
+    # Actual duration is computed from started_at → completed_at; estimated from trip.duration (minutes)
     try:
         slow_r = await db.execute(
             select(Trip).where(
                 and_(
                     Trip.status == "completed",
-                    Trip.actual_duration_min.isnot(None),
-                    Trip.estimated_duration_min.isnot(None),
-                    Trip.actual_duration_min > Trip.estimated_duration_min * 3,
+                    Trip.started_at.isnot(None),
+                    Trip.completed_at.isnot(None),
+                    Trip.duration.isnot(None),
+                    Trip.duration > 0,
                     Trip.completed_at >= cutoff_start,
                     Trip.completed_at <= cutoff_end,
                 )
-            ).limit(10)
+            ).limit(30)
         )
-        slow_trips = slow_r.scalars().all()
+        candidate_trips = slow_r.scalars().all()
+        # Filter in Python: actual duration > 3x estimated
+        slow_trips = [
+            t for t in candidate_trips
+            if t.started_at and t.completed_at and t.duration
+            and (t.completed_at - t.started_at).total_seconds() / 60 > t.duration * 3
+        ]
 
         for trip in slow_trips:
             if not trip.rider_id:
@@ -167,7 +180,8 @@ async def check_bad_trips(db) -> int:
 
             lang = "es"
             name = (user.first_name or "").strip() or "Cliente"
-            extra_min = int((trip.actual_duration_min or 0) - (trip.estimated_duration_min or 0))
+            actual_min = int((trip.completed_at - trip.started_at).total_seconds() / 60)
+            extra_min = max(0, actual_min - (trip.duration or 0))
 
             if lang.startswith("es"):
                 subject = f"Viaje #{trip.id} — duracion excesiva"

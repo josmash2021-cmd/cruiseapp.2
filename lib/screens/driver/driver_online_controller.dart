@@ -864,6 +864,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _smoothMoveTo(LatLng target, double heading) {
     _targetPos = target;
     _targetHeading = heading;
+    // Start the ticker lazily on the first real GPS position so it does not
+    // burn CPU during the period before any movement data is available.
+    if (!(_smoothTicker?.isTicking ?? false)) {
+      _smoothTicker?.start();
+    }
   }
 
   /// Trim the route polyline behind the driver so only upcoming road is shown.
@@ -1273,6 +1278,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _phase = _Phase.completed;
         _stars = 5;
       });
+      _syncSearchPulse();
       _cacheEarnings();
       _doneCtrl.forward(from: 0);
     } else {
@@ -1369,6 +1375,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _slideVal = 0;
       _slid = false;
     });
+    _syncSearchPulse();
     _setPickupDropoffAnnotations();
     await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1397,6 +1404,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _slideVal = 0;
       _slid = false;
     });
+    _syncSearchPulse();
     _setPickupAnnotation();
     await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
     // Fit bounds after frame renders with updated map padding
@@ -1418,6 +1426,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _slideVal = 0;
       _slid = false;
     });
+    _syncSearchPulse();
     _clearRouteAnnotation();
     _setDropoffAnnotation();
     _animateToPosition(_pickupLL, zoom: 17);
@@ -1465,6 +1474,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _slideVal = 0;
       _slid = false;
     });
+    _syncSearchPulse();
     _setDropoffAnnotation();
     await _drawRoute(_pos!, _dropoffLL, 'trip', _navyRoute);
     _nearDropoffNotified = false;
@@ -1489,6 +1499,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _slideVal = 0;
         _slid = false;
       });
+      _syncSearchPulse();
       _setPickupAnnotation();
       _cameraBearing = _heading;
       _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
@@ -1509,6 +1520,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _slideVal = 0;
         _slid = false;
       });
+      _syncSearchPulse();
       _setDropoffAnnotation();
       _cameraBearing = _heading;
       _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
@@ -1549,6 +1561,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _currentOfferId = null;
       _pendingOffers = [];
     });
+    _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
@@ -1580,6 +1593,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _phase = _Phase.completed;
       _stars = 5;
     });
+    _syncSearchPulse();
     _cacheEarnings();
     _doneCtrl.forward(from: 0);
   }
@@ -1603,6 +1617,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _routePts = [];
       _pendingOffers = [];
     });
+    _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
@@ -1776,6 +1791,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _routePts = [];
       _pendingOffers = [];
     });
+    _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();

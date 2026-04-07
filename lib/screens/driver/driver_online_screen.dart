@@ -99,6 +99,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   void _setState(VoidCallback fn) { setState(fn); }
 
+  /// Sync the search-pulse animation to the current phase.
+  /// Call this immediately after any setState block that changes _phase.
+  void _syncSearchPulse() {
+    if (_phase == _Phase.searching) {
+      if (!_searchPulse.isAnimating) _searchPulse.repeat();
+    } else {
+      if (_searchPulse.isAnimating) _searchPulse.stop();
+    }
+  }
+
   // ── Map ──
   final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
@@ -351,8 +361,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    // Continuous 60fps ticker for ultra-smooth exponential decay movement
-    _smoothTicker = createTicker(_onSmoothTick)..start();
+    // Continuous 60fps ticker for ultra-smooth exponential decay movement.
+    // Started lazily on first GPS update (_smoothMoveTo) to avoid burning CPU
+    // before any position is available.
+    _smoothTicker = createTicker(_onSmoothTick);
 
     _reqCtrl = AnimationController(
       vsync: this,
@@ -375,7 +387,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _searchPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
-    )..repeat();
+    );
+    // Start repeating immediately — initial phase is searching.
+    _searchPulse.repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );

@@ -61,7 +61,7 @@ class _ScheduledRidesMarketplaceScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result['message'] ?? 'Viaje reservado confirmado',
+            result['message'] ?? S.of(context).scheduledRideConfirmed,
             style: const TextStyle(color: Colors.black),
           ),
           backgroundColor: _gold,
@@ -86,9 +86,9 @@ class _ScheduledRidesMarketplaceScreenState
       appBar: AppBar(
         backgroundColor: _darkBg,
         foregroundColor: Colors.white,
-        title: const Text(
-          'Viajes Reservados',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        title: Text(
+          s.scheduledRidesTitle,
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(
@@ -108,7 +108,7 @@ class _ScheduledRidesMarketplaceScreenState
                       const SizedBox(height: 12),
                       Text(_error!, style: const TextStyle(color: Colors.white70)),
                       const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _load, child: const Text('Reintentar')),
+                      ElevatedButton(onPressed: _load, child: Text(s.retry)),
                     ],
                   ),
                 )
@@ -119,14 +119,14 @@ class _ScheduledRidesMarketplaceScreenState
                         children: [
                           Icon(Icons.event_busy, color: _gold.withOpacity(0.5), size: 64),
                           const SizedBox(height: 16),
-                          const Text(
-                            'No hay viajes reservados disponibles',
-                            style: TextStyle(color: Colors.white70, fontSize: 16),
+                          Text(
+                            s.noScheduledTrips,
+                            style: const TextStyle(color: Colors.white70, fontSize: 16),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Los viajes reservados por riders apareceran aqui',
-                            style: TextStyle(color: Colors.white38, fontSize: 13),
+                            s.scheduledTripsHint,
+                            style: const TextStyle(color: Colors.white38, fontSize: 13),
                           ),
                         ],
                       ),
@@ -137,13 +137,14 @@ class _ScheduledRidesMarketplaceScreenState
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _trips.length,
-                        itemBuilder: (context, index) => _buildCard(_trips[index]),
+                        itemBuilder: (context, index) => _buildCard(context, _trips[index]),
                       ),
                     ),
     );
   }
 
-  Widget _buildCard(Map<String, dynamic> trip) {
+  Widget _buildCard(BuildContext context, Map<String, dynamic> trip) {
+    final s = S.of(context);
     final tripId = trip['id'] as int;
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
     final pickup = trip['pickup_address'] ?? '';
@@ -228,7 +229,7 @@ class _ScheduledRidesMarketplaceScreenState
                 // Time until + distance + vehicle
                 Row(
                   children: [
-                    _chip('En $timeLabel', Icons.timer, _gold),
+                    _chip('${s.pickupInLabel} $timeLabel', Icons.timer, _gold),
                     const SizedBox(width: 8),
                     if (distKm > 0) _chip('${distKm.toStringAsFixed(1)} km', Icons.near_me, Colors.blue),
                     const Spacer(),
@@ -291,9 +292,9 @@ class _ScheduledRidesMarketplaceScreenState
                             width: 20, height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                           )
-                        : const Text(
-                            'ACEPTAR VIAJE',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                        : Text(
+                            s.acceptRideButton,
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                           ),
                   ),
                 ),

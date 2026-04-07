@@ -3119,6 +3119,47 @@ class S {
   String emergencyAlertSentTo(int count) => _es
       ? 'Alerta de emergencia enviada a $count contacto${count > 1 ? 's' : ''}'
       : 'Emergency alert sent to $count contact${count > 1 ? 's' : ''}';
+
+  // ── Missing keys added for full localization ──────────────────────────────
+  String get quickAccessTitle => _es ? 'Acceso Rápido' : 'Quick Access';
+  String get favoritesLabel => _es ? 'Favoritos' : 'Favorites';
+  String get noFavoritePlacesMessage => _es ? 'No tienes lugares guardados aún' : 'No favorite places saved yet';
+  String get changeLabel => _es ? 'Cambiar' : 'Change';
+  String get amLabel => 'AM';
+  String get pmLabel => 'PM';
+  String get tripIdLabel => _es ? 'ID de Viaje' : 'Trip ID';
+  String get riderLabel => _es ? 'Pasajero' : 'Rider';
+  String get vipTierLabel => 'VIP';
+  String get premiumTierLabel => 'PREMIUM';
+  String get comfortTierLabel => 'COMFORT';
+  String get pickupAddressLabel => _es ? 'Dirección de recogida' : 'Pickup address';
+  String get dropoffAddressLabel => _es ? 'Dirección de destino' : 'Dropoff address';
+  String get noNewRidesUntilComplete => _es
+      ? 'No recibirás nuevos viajes hasta completar este viaje reservado'
+      : 'You won\'t receive new rides until this scheduled ride is completed';
+  String get scheduledRideLabel => _es ? 'VIAJE RESERVADO' : 'SCHEDULED RIDE';
+  String get pickupInLabel => _es ? 'Recogida en' : 'Pickup in';
+  String get forPickup => _es ? 'para recogida' : 'until pickup';
+  String get startRideButton => _es ? 'INICIAR VIAJE' : 'START RIDE';
+  String get availableInLabel => _es ? 'DISPONIBLE EN' : 'AVAILABLE IN';
+  String get scheduledRidesTitle => _es ? 'Viajes Reservados' : 'Scheduled Rides';
+  String get noScheduledTrips => _es
+      ? 'No hay viajes reservados disponibles'
+      : 'No scheduled rides available';
+  String get scheduledTripsHint => _es
+      ? 'Los viajes reservados por pasajeros aparecerán aquí'
+      : 'Rides scheduled by riders will appear here';
+  String get acceptRideButton => _es ? 'ACEPTAR VIAJE' : 'ACCEPT RIDE';
+  String get scheduledRideConfirmed => _es ? 'Viaje reservado confirmado' : 'Scheduled ride confirmed';
+  String get noScheduledRidesAvailable => _es ? 'No hay viajes reservados disponibles' : 'No scheduled rides available';
+  String get cancelRideTitle => _es ? 'Cancelar viaje' : 'Cancel ride';
+  String get cancelRideBody => _es
+      ? 'El viaje volverá al marketplace y otro conductor podrá tomarlo.'
+      : 'The ride will return to the marketplace and another driver can take it.';
+  String get searchStatusMsg1 => _es ? 'Buscando tu conductor…' : 'Looking for your driver…';
+  String get searchStatusMsg2 => _es ? 'Conectando con conductores cercanos…' : 'Connecting to nearby drivers…';
+  String get searchStatusMsg3 => _es ? 'Casi listo…' : 'Almost there…';
+  String get searchStatusMsg4 => _es ? 'Confirmando tu viaje…' : 'Confirming your ride…';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

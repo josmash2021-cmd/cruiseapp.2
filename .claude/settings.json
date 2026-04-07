@@ -194,7 +194,21 @@
       "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"password\")",
       "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"123456\")",
       "Bash(keytool -list -keystore \"C:/Users/Puma/cruise-release.jks\" -storepass \"android\")",
-      "Bash(keytool -export -rfc -keystore \"C:/Users/Puma/cruise-release-new.jks\" -alias cruise -storepass \"Cruise2026!\" -file \"C:/Users/Puma/Desktop/upload_certificate.pem\")"
+      "Bash(keytool -export -rfc -keystore \"C:/Users/Puma/cruise-release-new.jks\" -alias cruise -storepass \"Cruise2026!\" -file \"C:/Users/Puma/Desktop/upload_certificate.pem\")",
+      "Bash(curl -s \"https://cruiseapp2-production.up.railway.app/admin/health\" -H \"X-Api-Key: HWB88VurhLM-1GdVML2PT92iqNSbeJ52TU1VO37MBZS6RYlyWvfIpaTdD54GT_5u\")",
+      "Bash(curl -s \"https://cruiseapp2-production.up.railway.app/docs\")",
+      "Bash(cp lib/config/env.dart lib/config/env.backup.dart)",
+      "Bash(cp lib/config/env.prod.dart lib/config/env.dart)",
+      "Bash(railway variables:*)",
+      "Bash(curl -s https://cruiseapp2-production.up.railway.app/health)",
+      "Bash(python3 -m json.tool)",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(where py:*)",
+      "Bash('C:/Program Files/Python311/python.exe' -c ':*)",
+      "Bash(python3 -c \"import sys,json; [print\\(json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\)[:300] if isinstance\\(json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\),str\\) else ''\\) for l in sys.stdin if l.strip\\(\\)]\")",
+      "Bash(shorebird patch:*)",
+      "Bash(\"C:/Users/Puma/.shorebird/bin/shorebird\" patch:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Puma",

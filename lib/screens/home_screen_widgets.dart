@@ -335,7 +335,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 // ── Quick access ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildSectionHeader('Quick Access', null, null),
+                  child: _buildSectionHeader(S.of(context).quickAccessTitle, null, null),
                 ),
                 const SizedBox(height: 16),
                 Padding(

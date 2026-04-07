@@ -79,26 +79,30 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   }
 
   Future<void> _cancelRide() async {
+    final s = S.of(context);
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardBg,
-        title: const Text('Cancelar viaje', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'El viaje volvera al marketplace y otro conductor podra tomarlo.',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('No', style: TextStyle(color: Colors.white54)),
+      builder: (ctx) {
+        final ls = S.of(ctx);
+        return AlertDialog(
+          backgroundColor: _cardBg,
+          title: Text(ls.cancelRideTitle, style: const TextStyle(color: Colors.white)),
+          content: Text(
+            ls.cancelRideBody,
+            style: const TextStyle(color: Colors.white70),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Si, cancelar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(ls.no, style: const TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(ls.cancel, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
     );
     if (confirm != true) return;
 
@@ -127,6 +131,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final loc = S.of(context);
     final trip = widget.trip;
     final pickup = trip['pickup_address'] ?? '';
     final dropoff = trip['dropoff_address'] ?? '';
@@ -165,7 +170,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         const Icon(Icons.event, color: _gold, size: 16),
                         const SizedBox(width: 6),
                         Text(
-                          'VIAJE RESERVADO',
+                          S.of(context).scheduledRideLabel,
                           style: TextStyle(
                             color: _gold,
                             fontSize: 12,
@@ -221,7 +226,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      _secondsRemaining <= 0 ? 'AHORA' : _countdownText,
+                      _secondsRemaining <= 0 ? loc.nowLabel.toUpperCase() : _countdownText,
                       style: TextStyle(
                         color: _secondsRemaining <= 0 ? Colors.green : _gold,
                         fontSize: _secondsRemaining <= 0 ? 32 : 36,
@@ -231,8 +236,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                     ),
                     if (_secondsRemaining > 0)
                       Text(
-                        'para recogida',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                        loc.forPickup,
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                   ],
                 ),
@@ -305,7 +310,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                       _addressRow(
                         icon: Icons.circle,
                         color: Colors.green,
-                        label: 'RECOGIDA',
+                        label: S.of(context).pickupUpperLabel,
                         address: pickup,
                       ),
                       Padding(
@@ -316,7 +321,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                       _addressRow(
                         icon: Icons.circle,
                         color: Colors.red,
-                        label: 'DESTINO',
+                        label: S.of(context).dropoffUpperLabel,
                         address: dropoff,
                       ),
 
@@ -335,10 +340,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                           children: [
                             const Icon(Icons.block, color: Colors.orange, size: 18),
                             const SizedBox(width: 8),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'No recibiras nuevos viajes hasta completar este viaje reservado',
-                                style: TextStyle(color: Colors.orange, fontSize: 12),
+                                loc.noNewRidesUntilComplete,
+                                style: const TextStyle(color: Colors.orange, fontSize: 12),
                               ),
                             ),
                           ],
@@ -375,9 +380,9 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                                 width: 18, height: 18,
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
                               )
-                            : const Text(
-                                'CANCELAR',
-                                style: TextStyle(
+                            : Text(
+                                loc.cancel.toUpperCase(),
+                                style: const TextStyle(
                                   color: Colors.red, fontWeight: FontWeight.w700, fontSize: 13,
                                 ),
                               ),
@@ -405,7 +410,9 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                               )
                             : Text(
-                                canStart ? 'INICIAR VIAJE' : 'DISPONIBLE EN ${(_secondsRemaining ~/ 60) - 10} MIN',
+                                canStart
+                                    ? loc.startRideButton
+                                    : '${loc.availableInLabel} ${(_secondsRemaining ~/ 60) - 10} MIN',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: canStart ? 16 : 12,

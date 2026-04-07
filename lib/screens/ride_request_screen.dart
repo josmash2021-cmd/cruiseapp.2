@@ -112,12 +112,15 @@ class RideRequestScreen extends StatefulWidget {
 
 const _gold = Color(0xFFE8C547);
 const _cardGold = Color(0xFFE8C547);
-const List<String> _searchStatusMessages = [
-    'Looking for your driver…',
-    'Connecting to nearby drivers…',
-    'Almost there…',
-    'Confirming your ride…',
+List<String> _getSearchStatusMessages(BuildContext context) {
+  final s = S.of(context);
+  return [
+    s.searchStatusMsg1,
+    s.searchStatusMsg2,
+    s.searchStatusMsg3,
+    s.searchStatusMsg4,
   ];
+}
 
 /// Camera angle presets synced with each status message.
 /// Each entry: (pitch°, bearing°)

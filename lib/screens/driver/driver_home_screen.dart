@@ -865,12 +865,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         NavigationDestination(
           icon: Icon(Icons.map_outlined, color: Colors.white.withValues(alpha: 0.5), size: 22),
           selectedIcon: const Icon(Icons.map_rounded, color: Color(0xFFE8C547), size: 22),
-          label: 'Home',
+          label: S.of(context).homeNav,
         ),
         NavigationDestination(
           icon: Icon(Icons.attach_money_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
           selectedIcon: const Icon(Icons.attach_money_rounded, color: Color(0xFFE8C547), size: 22),
-          label: 'Earnings',
+          label: S.of(context).earningsNav,
         ),
         NavigationDestination(
           icon: Stack(
@@ -880,7 +880,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ],
           ),
           selectedIcon: const Icon(Icons.history_rounded, color: Color(0xFFE8C547), size: 22),
-          label: 'Trips',
+          label: S.of(context).tripsNav,
         ),
         NavigationDestination(
           icon: _unreadCount > 0
@@ -904,7 +904,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 )
               : Icon(Icons.person_outline_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
           selectedIcon: const Icon(Icons.person_rounded, color: Color(0xFFE8C547), size: 22),
-          label: 'Account',
+          label: S.of(context).accountNav,
         ),
       ],
     );

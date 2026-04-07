@@ -1218,8 +1218,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   Widget _buildSearchingBottomCard(AppColors c) {
     final s = _ctrl.state;
-    final statusMsg = _searchStatusMessages[
-        _searchStatusIdx % _searchStatusMessages.length];
+    final _msgs = _getSearchStatusMessages(context);
+    final statusMsg = _msgs[_searchStatusIdx % _msgs.length];
     final pickupText = s.pickupLabel.isNotEmpty
         ? s.pickupLabel
         : S.of(context).currentLocation;

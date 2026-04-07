@@ -30,6 +30,13 @@ except Exception as _e:
     logging.warning("[FCM] Firebase Admin not available: %s", _e)
 
 
+async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = None, is_offer: bool = False) -> None:
+    """Async wrapper — runs FCM push in thread pool to avoid blocking event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: _send_fcm_push(token, title, body, data, is_offer))
+
+
 def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
     """Send FCM push notification. Silently skips if Firebase not available.
 

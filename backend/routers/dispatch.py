@@ -17,7 +17,7 @@ from utils.security import (
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from config import (
     OWNER_EMAIL, OWNER_PASSWORD_HASH,
     DISPATCH_ALLOWED_IPS, PUBLIC_URL,
@@ -505,16 +505,16 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         }]))
-        # -- FCM push to assigned driver --
+        # -- FCM push to assigned driver (non-blocking background task) --
         if assigned.fcm_token:
             _rn = user.first_name + " " + user.last_name
-            _send_fcm_push(
+            asyncio.create_task(_send_fcm_push_async(
                 assigned.fcm_token,
                 title="New Ride Offer",
                 body=_rn + " - " + (trip.pickup_address or "")[:50],
                 data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                 is_offer=True,
-            )
+            ))
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}

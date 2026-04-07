@@ -985,7 +985,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // Polling fallback — only used when SSE is DOWN to save battery
     _poll();
-    _pollT = Timer.periodic(const Duration(seconds: 10), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       if (_sseActive) return; // SSE handles it — skip polling entirely
       _poll();
@@ -993,17 +993,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   /// Connect (or reconnect) the SSE offer stream.
-  /// Automatically retries after 5 seconds on error or stream close.
+  /// Automatically retries after 2 seconds on error or stream close.
   void _connectSse() {
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
     if (_driverId == null || !mounted) return;
 
     void scheduleReconnect(String reason) {
-      debugPrint('SSE $reason — reconnecting in 5s');
+      debugPrint('SSE $reason — reconnecting in 2s');
       _sseActive = false;
       if (mounted && _phase == _Phase.searching) {
-        _sseReconnectTimer = Timer(const Duration(seconds: 5), _connectSse);
+        _sseReconnectTimer = Timer(const Duration(seconds: 2), _connectSse);
       }
     }
 

@@ -39,6 +39,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
+        try { await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
         _updateMiniMapAnnotation();
         // Draw route if there's an active ride
         if (_activeRide != null) {

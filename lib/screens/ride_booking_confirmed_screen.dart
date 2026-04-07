@@ -405,7 +405,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
         await ctrl.annotations.createPointAnnotationManager();
     try {
       await ctrl.style.setStyleLayerProperty(
-          pointMgr.id, 'icon-pitch-alignment', 'viewport');
+          pointMgr.id, 'icon-pitch-alignment', 'map');
     } catch (_) {}
     try {
       await ctrl.style

@@ -497,7 +497,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
       await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
       await ctrl.style.setStyleLayerProperty(
           _pointAnnotMgr!.id, 'icon-allow-overlap', true);
       await ctrl.style.setStyleLayerProperty(

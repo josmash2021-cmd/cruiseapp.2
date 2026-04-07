@@ -34,12 +34,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             below: "road-label",
           );
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
           // Separate pin manager for teardrop pins — anchored at tip (bottom)
           _pinAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}

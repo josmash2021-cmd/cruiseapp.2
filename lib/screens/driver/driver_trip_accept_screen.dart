@@ -1482,8 +1482,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _annotMgr = m;
         try {
           // Keep pins upright in mini-map while preserving bottom tip anchor.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'map');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');

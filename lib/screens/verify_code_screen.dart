@@ -13,6 +13,10 @@ class VerifyCodeScreen extends StatefulWidget {
   final String expectedCode;
   final bool useVerifyApi;
   final bool useBackendVerify;
+  /// Optional callback invoked with `true` when the code is verified.
+  /// When provided, the screen pops with `true` instead of navigating to
+  /// CreatePasswordScreen — used by the social registration flow.
+  final void Function(bool verified)? onVerified;
 
   const VerifyCodeScreen({
     super.key,
@@ -20,6 +24,7 @@ class VerifyCodeScreen extends StatefulWidget {
     required this.expectedCode,
     this.useVerifyApi = false,
     this.useBackendVerify = false,
+    this.onVerified,
   });
 
   @override
@@ -107,15 +112,21 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     if (!mounted) return;
 
     if (isValid) {
-      // Success — navigate to create-password screen
-      Navigator.of(context).push(
-        slideFromRightRoute(
-          CreatePasswordScreen(
-            email: widget.email,
-            registeredWithEmail: widget.email.contains('@'),
+      if (widget.onVerified != null) {
+        // Social registration flow — pop back with verified=true
+        widget.onVerified!(true);
+        Navigator.of(context).pop(true);
+      } else {
+        // Normal registration flow — navigate to create-password screen
+        Navigator.of(context).push(
+          slideFromRightRoute(
+            CreatePasswordScreen(
+              email: widget.email,
+              registeredWithEmail: widget.email.contains('@'),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } else {
       // Wrong code — show error + shake
       setState(() {

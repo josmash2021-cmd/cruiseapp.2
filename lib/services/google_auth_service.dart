@@ -104,6 +104,39 @@ class GoogleAuthService {
     }
   }
 
+  /// Returns `{email, idToken, firstName, lastName}` for the signed-in Google
+  /// account, without calling the backend. Used by the social registration
+  /// flow so we have the idToken ready after OTP verification.
+  Future<Map<String, String?>?> getCredential() async {
+    try {
+      try { await _googleSignIn.signOut(); } catch (_) {}
+      final GoogleSignInAccount? account;
+      try {
+        account = await _googleSignIn.signIn();
+      } on PlatformException catch (e) {
+        debugPrint('[GoogleAuth] getCredential PlatformException: ${e.code} - ${e.message}');
+        if (e.code == 'sign_in_failed') {
+          throw Exception(
+            'Google Sign-In is not configured. '
+            'Please add your SHA-1 fingerprint in Firebase Console.',
+          );
+        }
+        rethrow;
+      }
+      if (account == null) return null; // user cancelled
+      final auth = await account.authentication;
+      return {
+        'email': account.email,
+        'idToken': auth.idToken,
+        'firstName': account.displayName?.split(' ').first,
+        'lastName': account.displayName?.split(' ').skip(1).join(' '),
+      };
+    } catch (e) {
+      debugPrint('[GoogleAuth] getCredential error: $e');
+      rethrow;
+    }
+  }
+
   Future<void> signOut() async {
     try {
       await _googleSignIn.signOut();

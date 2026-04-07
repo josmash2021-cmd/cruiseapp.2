@@ -58,19 +58,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _socialLoading = false;
 
-  /// Google Sign-In: check if account exists → login with OTP, else show error.
+  /// Google registration: get credential → check not exists → send OTP →
+  /// verify OTP → create account via /auth/social.
   Future<void> _signUpWithGoogle() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
-      final email = await GoogleAuthService.instance.getEmail();
+      final cred = await GoogleAuthService.instance.getCredential();
       if (!mounted) return;
-      if (email == null || email.isEmpty) {
+      if (cred == null) {
         setState(() => _socialLoading = false);
         _showSnack('Google Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
         return;
       }
-      await _socialLoginFlow(email, 'Google');
+      final email = cred['email'];
+      if (email == null || email.isEmpty) {
+        setState(() => _socialLoading = false);
+        _showSnack('Could not get email from Google. Please try again.', Colors.white.withValues(alpha: 0.6));
+        return;
+      }
+      await _socialRegistrationFlow(
+        email: email,
+        provider: 'google',
+        idToken: cred['idToken'],
+        firstName: cred['firstName'],
+        lastName: cred['lastName'],
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
@@ -78,19 +91,38 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Apple Sign-In: check if account exists → login with OTP, else show error.
+  /// Apple registration: get credential → check not exists → send OTP →
+  /// verify OTP → create account via /auth/social.
+  /// Apple only provides email on first-time auth; returning users get null.
   Future<void> _signUpWithApple() async {
     if (_socialLoading) return;
     setState(() => _socialLoading = true);
     try {
-      final email = await AppleAuthService.instance.getEmail();
+      final cred = await AppleAuthService.instance.getCredential();
       if (!mounted) return;
-      if (email == null || email.isEmpty) {
+      if (cred == null) {
         setState(() => _socialLoading = false);
         _showSnack('Apple Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
         return;
       }
-      await _socialLoginFlow(email, 'Apple');
+      final email = cred['email'];
+      if (email == null || email.isEmpty) {
+        // Apple doesn't re-send email after first auth — ask user to enter it.
+        setState(() => _socialLoading = false);
+        _showAppleEmailDialog(
+          idToken: cred['idToken'],
+          firstName: cred['firstName'],
+          lastName: cred['lastName'],
+        );
+        return;
+      }
+      await _socialRegistrationFlow(
+        email: email,
+        provider: 'apple',
+        idToken: cred['idToken'],
+        firstName: cred['firstName'],
+        lastName: cred['lastName'],
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
@@ -98,76 +130,163 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Shared social login flow: checks if account exists → social auth login.
-  Future<void> _socialLoginFlow(String email, String provider) async {
-    // Check if a rider account exists with this email
+  /// Shared social registration flow:
+  ///   1. If account already exists → tell user to sign in instead.
+  ///   2. Send OTP to email.
+  ///   3. Show OTP verify screen.
+  ///   4. After verification → create account via /auth/social.
+  Future<void> _socialRegistrationFlow({
+    required String email,
+    required String provider,
+    String? idToken,
+    String? firstName,
+    String? lastName,
+  }) async {
+    // 1. Check if account already exists
     final exists = await ApiService.checkExists(email, role: 'rider');
     if (!mounted) return;
 
-    if (!exists) {
+    if (exists) {
       setState(() => _socialLoading = false);
-      _showNoAccountDialog(email, provider);
+      _showAccountExistsDialog(email);
       return;
     }
 
-    // Account exists — do full social auth (login only)
+    // 2. Send OTP to the email obtained from Google/Apple
     try {
-      bool ok;
-      if (provider == 'Google') {
-        ok = await GoogleAuthService.instance.signIn(role: 'rider', loginOnly: true);
-      } else {
-        ok = await AppleAuthService.instance.signIn(role: 'rider', loginOnly: true);
+      final otpResult = await ApiService.sendOtp(email: email);
+      if (!mounted) return;
+      if (otpResult['ok'] != true) {
+        setState(() => _socialLoading = false);
+        _showSnack('Failed to send verification code. Please try again.', Colors.white.withValues(alpha: 0.6));
+        return;
       }
+    } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
+      _showSnack('Failed to send verification code: $e', Colors.white.withValues(alpha: 0.6));
+      return;
+    }
 
-      if (ok) {
-        // Successful login — go to home
-        Navigator.of(context).pushAndRemoveUntil(
-          smoothFadeRoute(const HomeScreen(), durationMs: 600),
-          (_) => false,
-        );
-      }
+    setState(() => _socialLoading = false);
+    if (!mounted) return;
+
+    // 3. Navigate to OTP verify screen — it calls back with verified=true
+    bool? verified = false;
+    await Navigator.of(context).push(
+      slideFromRightRoute(
+        VerifyCodeScreen(
+          email: email,
+          expectedCode: '',
+          useBackendVerify: true,
+          onVerified: (v) => verified = v,
+        ),
+      ),
+    );
+
+    if (verified != true || !mounted) return;
+
+    // 4. OTP verified — complete social registration via /auth/social
+    setState(() => _socialLoading = true);
+    try {
+      // socialAuth saves the token internally; result contains 'user' map
+      await ApiService.socialAuth(
+        provider: provider,
+        idToken: idToken ?? '',
+        firstName: firstName,
+        lastName: lastName,
+        loginOnly: false,
+        role: 'rider',
+      );
+      if (!mounted) return;
+
+      setState(() => _socialLoading = false);
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        smoothFadeRoute(const HomeScreen(), durationMs: 600),
+        (_) => false,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
       final msg = e.toString();
       if (msg.contains('401') || msg.contains('Invalid')) {
-        _showSnack('Invalid credentials. Please try again.', Colors.red.shade400);
+        _showSnack('$provider credentials rejected. Please try again.', Colors.red.shade400);
       } else {
-        _showSnack('$provider sign-in failed: $e', Colors.red.shade400);
+        _showSnack('Registration failed: $e', Colors.red.shade400);
       }
     }
   }
 
-  /// Show dialog when no account is found for a social login.
-  void _showNoAccountDialog(String email, String provider) {
+  /// Shown when Apple doesn't return an email (returning Apple user).
+  /// Prompts the user to type their email manually so we can send OTP.
+  void _showAppleEmailDialog({
+    String? idToken,
+    String? firstName,
+    String? lastName,
+  }) {
     final c = AppColors.of(context);
+    final ctrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
+        title: Text(
+          'Enter Your Email',
+          style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.person_off_rounded, color: Colors.red.shade400, size: 26),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Account Not Found',
-                style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+            Text(
+              'Apple did not share your email this time. Please enter the email address linked to your Apple ID.',
+              style: TextStyle(color: c.textSecondary, fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'your@email.com',
+                hintStyle: TextStyle(color: c.textTertiary),
+                filled: true,
+                fillColor: c.bg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: c.border),
+                ),
               ),
             ),
           ],
         ),
-        content: Text(
-          'No account found with this $provider email ($email). Please create an account first or log in with a different method.',
-          style: TextStyle(color: c.textSecondary, fontSize: 15, height: 1.4),
-        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('OK', style: TextStyle(color: c.textTertiary, fontWeight: FontWeight.w600)),
+            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE8C547),
+              foregroundColor: const Color(0xFF1A1400),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              final email = ctrl.text.trim();
+              if (email.isEmpty || !_isValidEmail(email)) return;
+              Navigator.of(ctx).pop();
+              _socialRegistrationFlow(
+                email: email,
+                provider: 'apple',
+                idToken: idToken,
+                firstName: firstName,
+                lastName: lastName,
+              );
+            },
+            child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),

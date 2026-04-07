@@ -34,6 +34,35 @@ class AppleAuthService {
     }
   }
 
+  /// Returns `{email, idToken, firstName, lastName}` for the signed-in Apple
+  /// account, without calling the backend. Used by the social registration
+  /// flow so we have the idToken ready after OTP verification.
+  /// NOTE: Apple only provides email on the first authentication. On subsequent
+  /// authentications `email` will be null — callers must handle this case.
+  Future<Map<String, String?>?> getCredential() async {
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      return {
+        'email': credential.email,
+        'idToken': credential.identityToken,
+        'firstName': credential.givenName,
+        'lastName': credential.familyName,
+      };
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) return null;
+      debugPrint('[AppleAuth] getCredential error: $e');
+      rethrow;
+    } catch (e) {
+      debugPrint('[AppleAuth] getCredential error: $e');
+      rethrow;
+    }
+  }
+
   /// Returns true on success, false on cancel/failure.
   /// When [loginOnly] is true, rejects if no account exists (login screen).
   Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async {

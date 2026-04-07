@@ -261,8 +261,6 @@ extension _RideRequestController on _RideRequestScreenState {
         if (!_searchingShowMap) {
           _searchMapTimer?.cancel();
           _searchingSplash = false;
-          _searchingShowMap = true;
-          // Start cycling status messages
           _searchStatusIdx = 0;
           _searchElapsedSec = 0;
           _searchStatusTimer?.cancel();
@@ -276,6 +274,8 @@ extension _RideRequestController on _RideRequestScreenState {
           _searchElapsedTimer = Timer.periodic(const Duration(seconds: 2), (_) {
             if (mounted) _setState(() => _searchElapsedSec += 2);
           });
+          // Force immediate rebuild so bottom card shows right away (no black flash)
+          _setState(() => _searchingShowMap = true);
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
         }

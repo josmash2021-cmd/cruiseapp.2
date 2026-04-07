@@ -65,13 +65,20 @@ class NotificationService {
 
     _initialized = true;
 
-    // Pre-load audio players in background — never block init
+    // Pre-load audio players AND pre-warm iOS audio session in background
     Future<void>(() async {
       try {
         await _onlinePlayer.setReleaseMode(ReleaseMode.stop);
         await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
         await _offerPlayer.setReleaseMode(ReleaseMode.stop);
         await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+        // Pre-warm iOS audio session: play silently so first real play is instant
+        await _onlinePlayer.setVolume(0.0);
+        await _onlinePlayer.resume();
+        await Future.delayed(const Duration(milliseconds: 100));
+        await _onlinePlayer.pause();
+        await _onlinePlayer.setVolume(1.0);
+        await _onlinePlayer.seek(Duration.zero);
       } catch (e) {
         debugPrint('[NotificationService] audio preload error: $e');
       }

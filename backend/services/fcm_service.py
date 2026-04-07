@@ -50,8 +50,7 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
                 notification=_fcm.AndroidNotification(
                     sound="cruise_online",
                     channel_id=channel_id,
-                    notification_priority=_fcm.AndroidNotificationPriority.MAX_PRIORITY if is_offer else _fcm.AndroidNotificationPriority.HIGH_PRIORITY,
-                    visibility=_fcm.AndroidNotificationVisibility.PUBLIC,
+                    visibility="public",
                 ),
             ),
             apns=_fcm.APNSConfig(

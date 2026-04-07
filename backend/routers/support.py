@@ -26,10 +26,10 @@ from utils.security import (  # type: ignore[attr-defined]
 from utils.helpers import utc_now, _support_msg_dict  # type: ignore[attr-defined]
 from services.fcm_service import _send_fcm_push  # type: ignore[attr-defined]
 from config import (
-    ANTHROPIC_API_KEY, _HAS_CLAUDE,  # type: ignore[attr-defined]
     firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
 )
-from support_cache import find_cached_response, add_natural_variation, claude_health, maybe_cache_response
+from support_cache import find_cached_response, add_natural_variation, maybe_cache_response
+from cruise_ai_engine import detect_intent, generate_response, detect_language
 
 router = APIRouter()
 
@@ -640,8 +640,8 @@ _GENERAL_CHAT_RESPONSES = {
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-#  CLAUDE AI SUPPORT - intelligent agent responses
-#  4-layer fallback: Claude -> Cache -> Keywords -> Handoff
+#  AI SUPPORT RESPONSES - autonomous agent engine (cruise_ai_engine)
+#  4-layer fallback: Intent Detection -> Cache -> Keywords -> Handoff
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Action request reminder tasks: {request_id: asyncio.Task}
@@ -823,55 +823,7 @@ async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10) -> 
     return history
 
 
-async def _call_claude_api(system_prompt: str, messages: list[dict], user_msg: str) -> str | None:
-    """Call Anthropic Messages API via httpx with health monitoring. Returns response text or None."""
-    import httpx
-
-    # Circuit breaker check
-    if claude_health.should_skip_claude():
-        logging.info("Claude circuit breaker active - skipping API call")
-        return None
-
-    conv = messages + [{"role": "user", "content": user_msg}]
-    merged: list[dict] = []
-    for m in conv:
-        if merged and merged[-1]["role"] == m["role"]:
-            merged[-1]["content"] += "\n" + m["content"]
-        else:
-            merged.append(dict(m))
-    if not merged or merged[0]["role"] != "user":
-        merged.insert(0, {"role": "user", "content": user_msg})
-
-    start_time = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 512,
-                    "system": system_prompt,
-                    "messages": merged,
-                },
-            )
-            elapsed = time.monotonic() - start_time
-            if resp.status_code == 200:
-                data = resp.json()
-                claude_health.record_success(elapsed)
-                if data.get("content") and len(data["content"]) > 0:
-                    return data["content"][0].get("text", "")
-            else:
-                claude_health.record_failure()
-                logging.warning(f"Claude API returned {resp.status_code}: {resp.text[:200]}")
-    except Exception as e:
-        claude_health.record_failure()
-        logging.warning(f"Claude API call failed: {e}")
-    return None
+# _call_claude_api removed -- replaced by cruise_ai_engine.py
 
 
 def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
@@ -1116,61 +1068,59 @@ async def _rehydrate_pending_reminders():
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """4-layer AI response: Claude (+ retry) -> Cache -> Keywords -> Handoff.
+    """AI response engine: Intent Detection -> Context Response -> Cache -> Keywords -> Handoff.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
     lang = getattr(chat, "locale", "en") or "en"
     actions: list[dict] = []
 
-    # â"€â"€ Layer 1: Claude API (primary) + 1 retry â"€â"€
-    if _HAS_CLAUDE and not claude_health.should_skip_claude():
+    # Auto-detect language from message if locale seems wrong
+    detected_lang = detect_language(user_msg)
+    if detected_lang == "es" and not lang.startswith("es"):
+        lang = "es"
+        chat.locale = "es"
+
+    # -- Layer 1: Smart Intent Detection + Context-Aware Response --
+    intent, confidence = detect_intent(user_msg)
+    if confidence >= 20:
         ctx = await _get_user_context(chat.user_id, db, lang)
         ctx["frustration_score"] = await _compute_frustration_score(chat.id, db)
-        user_type = "rider"
-        if ctx.get("user") and ctx["user"].get("role"):
-            user_type = ctx["user"]["role"]
-        system_prompt = _build_claude_system_prompt(agent_name, user_type, lang, ctx)
-        history = await _get_chat_history(chat.id, db, limit=10)
-        claude_resp = await _call_claude_api(system_prompt, history, user_msg)
-        if claude_resp:
-            clean_msg, actions = _parse_action_markers(claude_resp)
-            # Auto-learn: cache good Claude responses for future use
-            maybe_cache_response(user_msg, clean_msg, "general", lang)
-            return clean_msg, actions
-        # â"€â"€ Retry once with shorter timeout before falling to cache â"€â"€
-        await asyncio.sleep(1.0)
-        claude_resp = await _call_claude_api(system_prompt, history, user_msg)
-        if claude_resp:
-            clean_msg, actions = _parse_action_markers(claude_resp)
-            maybe_cache_response(user_msg, clean_msg, "general", lang)
-            return clean_msg, actions
 
-    # â"€â"€ Layer 2: Cached responses (instant) â"€â"€
+        # Check if this is a follow-up (user already discussed this intent)
+        history = await _get_chat_history(chat.id, db, limit=6)
+        is_followup = len(history) >= 4  # 4+ messages means likely a follow-up
+
+        response = generate_response(
+            intent=intent,
+            user_name=user_name,
+            lang=lang,
+            agent_name=agent_name,
+            is_followup=is_followup,
+            user_context=ctx,
+            frustration_score=ctx.get("frustration_score", 0),
+        )
+
+        # Parse action markers from response
+        clean_msg, actions = _parse_action_markers(response)
+        # Cache good responses for future use
+        maybe_cache_response(user_msg, clean_msg, intent, lang)
+        return clean_msg, actions
+
+    # -- Layer 2: Cached responses (instant) --
     cached = find_cached_response(user_msg, lang)
     if cached:
         varied = add_natural_variation(cached, agent_name, user_name, lang)
         return varied, []
 
-    # â"€â"€ Layer 3: Smart keyword responses (existing system) â"€â"€
+    # -- Layer 3: Smart keyword responses (existing system) --
     fallback = _generate_human_chat(user_msg, user_name, agent_name, lang)
     if fallback:
         return fallback, []
 
-    # â"€â"€ Layer 4: Graceful handoff â"€â"€
-    if _HAS_CLAUDE:
-        # One retry after 10 seconds
-        if lang.startswith("es"):
-            stall = "Permtame un momento, estoy verificando la informacion con mi equipo..."
-        else:
-            stall = "Give me a moment, I'm checking the information with my team..."
-        # Don't retry here - just return stall message.
-        # The next user message will trigger another Claude attempt.
-        return stall, []
-
-    # Absolute fallback
+    # -- Layer 4: Graceful general response --
     if lang.startswith("es"):
-        return f"Entiendo, {user_name}. Para poder ayudarle mejor con este tema, le sugiero que nos escriba a support@cruiseapp.com o intente de nuevo en unos minutos.", []
-    return f"I understand, {user_name}. To better assist you with this, I'd suggest emailing us at support@cruiseapp.com or trying again in a few minutes.", []
+        return f"Entiendo, {user_name}. Podria darme un poco mas de detalle sobre lo que necesita? Quiero asegurarme de ayudarle de la mejor manera.", []
+    return f"I understand, {user_name}. Could you give me a bit more detail about what you need? I want to make sure I help you in the best way.", []
 
 
 def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: str = "en") -> str:

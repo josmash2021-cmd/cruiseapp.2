@@ -336,18 +336,44 @@ extension _RideRequestController on _RideRequestScreenState {
         }
         break;
       case RiderPhase.cancelled:
-        _searchingShowMap = false;
-        _searchingSplash = false;
-        _searchMapTimer?.cancel();
-        _searchMapTimer = null;
-        _splashTimer?.cancel();
-        _splashTimer = null;
-        _cleanupMapAnnotations();
-        // Pop the searching screen (if open) so it returns to ride_request
-        // The nav.push<bool> in _onRequestRidePressed will receive `true`
-        if (mounted) {
-          // Try to pop the searching screen — if nothing to pop, it's a no-op
-          try { Navigator.of(context).pop(true); } catch (_) {}
+        if (_riderInitiatedCancel) {
+          // Rider pressed cancel button — go home silently
+          _searchingShowMap = false;
+          _searchingSplash = false;
+          _searchMapTimer?.cancel();
+          _searchMapTimer = null;
+          _splashTimer?.cancel();
+          _splashTimer = null;
+          _riderInitiatedCancel = false;
+          _cancelDialogShown = false;
+          _cleanupMapAnnotations();
+          _ctrl.reset();
+          if (mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              smoothFadeRoute(const HomeScreen()),
+              (_) => false,
+            );
+          }
+        } else {
+          // Timeout or backend cancel — pop searching screen, go home, show message
+          _searchingShowMap = false;
+          _searchingSplash = false;
+          _searchMapTimer?.cancel();
+          _searchMapTimer = null;
+          _splashTimer?.cancel();
+          _splashTimer = null;
+          _cleanupMapAnnotations();
+          if (_cancelDialogShown) break;
+          _cancelDialogShown = true;
+          final reason = s.cancelReason;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _ctrl.reset();
+            Navigator.of(context).pushAndRemoveUntil(
+              smoothFadeRoute(const HomeScreen()),
+              (_) => false,
+            );
+          });
         }
         break;
       default:

@@ -231,9 +231,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _statusPollTimer;
   Timer? _rideSaveTimer;
 
-  // ── Rider own location dot ──
-  mapbox.PointAnnotation? _riderDotAnnot;
-  Uint8List? _riderDotBytes;
+  // ── Rider own location dot (uses Mapbox native location puck — no drift on zoom) ──
   StreamSubscription<Position>? _riderLocSub;
 
   late AnimationController _etaPulse;
@@ -259,7 +257,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
-    _buildRiderDotBytes();
     _initFromPersistence();
     _interpTicker = createTicker((_) => _interpolate())..start();
     _startRealTimeTracking();

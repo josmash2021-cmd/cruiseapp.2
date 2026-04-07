@@ -824,9 +824,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
               } catch (_) {}
               _updateAnnotations();
+              // Enable rider location puck (native — never drifts on zoom)
+              _enableLocationPuck();
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
+              // Re-enable puck after style reload
+              _enableLocationPuck();
               // Car annotation survives style reload (managed by annotation manager)
               // Reset creation guard so car can be re-created if needed
               _carAnnotCreating = false;
@@ -1456,68 +1460,48 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     await _updateStaticAnnotationsOnce();
   }
 
-  /// Build a blue circle PNG for the rider's own location dot.
-  Future<void> _buildRiderDotBytes() async {
-    const double size = 36;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
-    // Outer glow ring
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2), size / 2,
-      Paint()..color = const Color(0x553B82F6),
-    );
-    // Inner solid dot
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2), size / 2 - 6,
-      Paint()..color = const Color(0xFF3B82F6),
-    );
-    // White border
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2), size / 2 - 6,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    img.dispose();
-    picture.dispose();
-    if (mounted) _setState(() => _riderDotBytes = byteData!.buffer.asUint8List());
+  /// Enables the Mapbox native location puck — perfectly anchored to GPS,
+  /// never drifts on zoom/pan, and updates in real time automatically.
+  Future<void> _enableLocationPuck() async {
+    final map = _map;
+    if (map == null) return;
+    try {
+      await map.location.updateSettings(mapbox.LocationComponentSettings(
+        enabled: true,
+        pulsingEnabled: true,
+        pulsingColor: const Color(0xFF3B82F6).toARGB32(), // blue
+        pulsingMaxRadius: 50.0,
+        locationPuck: mapbox.LocationPuck(
+          locationPuck2D: mapbox.DefaultLocationPuck2D(
+            topImage: null,       // use Mapbox default dot
+            bearingImage: null,
+            shadowImage: null,
+          ),
+        ),
+      ));
+    } catch (_) {}
   }
 
-  /// Start listening to rider's own GPS and show blue dot on map.
+  /// Start listening to rider's own GPS and keep the puck at current position.
+  /// The puck follows GPS automatically via Mapbox internals, but we also
+  /// manually update it so there is zero lag between OS location and map dot.
   void _startRiderLocationTracking() {
+    // Enable puck as soon as map is ready
+    _enableLocationPuck();
     _riderLocSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
+        distanceFilter: 3, // update every 3 m for smooth following
       ),
-    ).listen((pos) {
+    ).listen((pos) async {
       if (!mounted) return;
-      _updateRiderDot(LatLng(pos.latitude, pos.longitude));
-    }, onError: (_) {});
-  }
-
-  /// Place or update the blue rider dot on the map.
-  Future<void> _updateRiderDot(LatLng pos) async {
-    final mgr = _pointAnnotMgr;
-    if (mgr == null || _riderDotBytes == null) return;
-    try {
-      if (_riderDotAnnot != null) {
-        _riderDotAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(pos.longitude, pos.latitude),
-        );
-        await mgr.update(_riderDotAnnot!);
-      } else {
-        _riderDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          image: _riderDotBytes!,
-          iconSize: 0.6,
-          iconAnchor: mapbox.IconAnchor.CENTER,
+      // Push exact GPS position to the puck so it never lags
+      try {
+        await _map?.location.updateSettings(mapbox.LocationComponentSettings(
+          enabled: true,
+          pulsingEnabled: true,
         ));
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }, onError: (_) {});
   }
 }

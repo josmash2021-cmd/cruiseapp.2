@@ -63,6 +63,11 @@ String _riderNotifTitle(String type) => switch (type) {
   'arrived_dropoff'    => 'You Have Arrived',
   'fast_ride'          => 'Drivers Available Nearby',
   'driver_cancelled' || 'ride_reassigned' => 'Ride Update',
+  'scheduled_claimed'  => 'Driver Accepted Your Ride',
+  'arrived'            => 'Driver Has Arrived',
+  'in_trip'            => 'Trip Started',
+  'completed'          => 'Trip Completed',
+  'scheduled_reminder' => 'Upcoming Ride Reminder',
   // ── Driver notifications ──
   'trip_offer' || 'new_offer' => 'New Ride Offer',
   'rider_cancelled'    => 'Ride Cancelled',
@@ -85,6 +90,11 @@ String _riderNotifBody(String type) => switch (type) {
   'fast_ride'          => 'There are drivers near you — request a ride now!',
   'driver_cancelled'   => 'Your driver cancelled. We are assigning a new driver.',
   'ride_reassigned'    => 'A new driver is being assigned to your ride.',
+  'scheduled_claimed'  => 'A driver has accepted your scheduled ride.',
+  'arrived'            => 'Your driver is waiting at the pickup location.',
+  'in_trip'            => 'You are on your way to your destination.',
+  'completed'          => 'You have arrived. Thanks for riding with Cruise!',
+  'scheduled_reminder' => 'Your scheduled ride is coming up soon.',
   // ── Driver notifications ──
   'trip_offer' || 'new_offer' => 'A rider needs a ride — open Cruise to accept.',
   'rider_cancelled'    => 'The rider has cancelled the ride.',
@@ -153,6 +163,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     'fast_ride',
     'driver_cancelled',
     'ride_reassigned',
+    'scheduled_claimed',
+    'arrived',
+    'in_trip',
+    'completed',
+    'scheduled_reminder',
     // Driver
     'rider_cancelled',
     'scheduled_cancelled',
@@ -438,14 +453,8 @@ Future<void> heavyInit() async {
               NotificationService.playOfferSound();
             }
 
-            // Scheduled ride reminder — show notification
+            // Scheduled ride reminder — navigate to ride request if 15-min alert
             if (type == 'scheduled_reminder' || type == 'scheduled_trip_starting') {
-              NotificationService.show(
-                id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                title: title,
-                body: body,
-                type: 'ride',
-              );
               // 15-min rider reminder — navigate to ride request to load trip
               if (type == 'scheduled_trip_starting') {
                 final tripId = int.tryParse(message.data['trip_id'] ?? '');

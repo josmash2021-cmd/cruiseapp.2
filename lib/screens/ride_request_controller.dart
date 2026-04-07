@@ -847,7 +847,7 @@ extension _RideRequestController on _RideRequestScreenState {
       final cancelled = await nav.push<bool>(
         searchingDriverRoute(
           onCancel: _cancelSearching,
-          paymentCallback: isNativePay ? null : () => _confirmNativePayment(option),
+          paymentCallback: (isNativePay || isTestMode) ? null : () => _confirmNativePayment(option),
           initiallyDeclined: nativePayFailed,
           onPaymentDeclined: () => paymentDeclinedFlag = true,
         ),

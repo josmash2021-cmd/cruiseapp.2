@@ -2379,10 +2379,10 @@ class S {
   String get approvedByDispatch =>
       _es ? 'Aprobado por despacho ✓' : 'Approved by dispatch ✓';
   String get applicationRejected =>
-      _es ? 'Solicitud Rechazada' : 'Application Rejected';
+      _es ? 'Verificación Rechazada' : 'Verification Rejected';
   String get rejectionDescription => _es
-      ? 'Tu solicitud fue rechazada. Por favor revisa los detalles y vuelve a intentarlo.'
-      : 'Your application was rejected. Please review the details and try again.';
+      ? 'Tu verificación fue rechazada. Por favor intenta de nuevo y revisa cada requisito cuidadosamente para que coincida con tu información.'
+      : 'Your verification was rejected. Please try again and review each requirement carefully so it matches your information.';
   String get backToWelcome => _es ? 'Volver al Inicio' : 'Back to Welcome';
 
   // ── License Scanner ──

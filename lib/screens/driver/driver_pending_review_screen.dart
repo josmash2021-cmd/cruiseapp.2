@@ -67,6 +67,13 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
       curve: Curves.elasticOut,
     );
 
+    // Pre-seed status from local cache so rejected drivers don't flash pending UI
+    LocalDataService.getDriverApprovalStatus().then((cached) {
+      if (mounted && cached == 'rejected' && _status != 'rejected') {
+        setState(() => _status = 'rejected');
+      }
+    });
+
     _checkImmediateAndPoll();
   }
 

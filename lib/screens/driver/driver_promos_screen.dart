@@ -32,7 +32,6 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
-    _buildPromoData();
     // Tick countdown every second for upcoming promos
     _countdownTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -40,6 +39,12 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         if (mounted) setState(() {});
       },
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _buildPromoData();
   }
 
   @override
@@ -57,7 +62,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.local_fire_department_rounded,
         color: const Color(0xFFFF6B35),
         title: 'Surge Zone Active',
-        desc: 'High demand in your area! Complete trips now for boosted fares.',
+        desc: S.of(context).surgeZonePromoDesc,
         badge: '1.5x',
         type: _PromoType.multiplier,
         progress: 0.0,
@@ -79,7 +84,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.star_rounded,
         color: _gold,
         title: 'Consecutive Trip Bonus',
-        desc: 'Complete 5 trips in a row without declining to earn \$5 extra.',
+        desc: S.of(context).consecutiveBonusPromoDesc,
         badge: '+\$5',
         type: _PromoType.bonus,
         progress: 0.6,
@@ -101,7 +106,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.schedule_rounded,
         color: const Color(0xFF26C6DA),
         title: 'Peak Hours Bonus',
-        desc: 'Drive between 5PM–9PM for an extra \$1.50 per trip.',
+        desc: S.of(context).peakHoursBonusPromoDesc,
         badge: '+\$1.50',
         type: _PromoType.bonus,
         progress: 0.4,
@@ -125,7 +130,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.nightlight_round,
         color: const Color(0xFF7B68EE),
         title: 'Night Owl Bonus',
-        desc: 'Drive between 11PM–4AM and earn \$3 extra per trip.',
+        desc: S.of(context).nightOwlBonusPromoDesc,
         badge: '+\$3',
         type: _PromoType.bonus,
         progress: 0.0,
@@ -146,7 +151,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.weekend_rounded,
         color: const Color(0xFF4CAF50),
         title: 'Weekend Warrior',
-        desc: 'Complete 20 trips this weekend for a 10% earnings boost.',
+        desc: S.of(context).weekendWarriorPromoDesc,
         badge: '+10%',
         type: _PromoType.multiplier,
         progress: 0.0,
@@ -167,7 +172,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         icon: Icons.flight_rounded,
         color: const Color(0xFF42A5F5),
         title: 'Airport Pickup Bonus',
-        desc: 'Earn \$2 extra on every airport pickup this week.',
+        desc: S.of(context).airportBonusPromoDesc,
         badge: '+\$2',
         type: _PromoType.bonus,
         progress: 0.0,
@@ -187,8 +192,8 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         id: 'referral_blitz',
         icon: Icons.group_add_rounded,
         color: const Color(0xFFEC407A),
-        title: 'Referral Blitz',
-        desc: 'Refer a new driver and both earn \$50 after their 10th trip.',
+        title: S.of(context).referralBlitz,
+        desc: S.of(context).referralBlitzDesc,
         badge: '\$50',
         type: _PromoType.bonus,
         progress: 0.0,

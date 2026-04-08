@@ -161,7 +161,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _gold.withOpacity(0.15),
+                      color: _gold.withValues(alpha:0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -215,12 +215,12 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      _gold.withOpacity(0.2),
-                      _gold.withOpacity(0.05),
+                      _gold.withValues(alpha:0.2),
+                      _gold.withValues(alpha:0.05),
                       Colors.transparent,
                     ],
                   ),
-                  border: Border.all(color: _gold.withOpacity(0.4), width: 3),
+                  border: Border.all(color: _gold.withValues(alpha:0.4), width: 3),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -260,7 +260,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                 decoration: BoxDecoration(
                   color: _cardBg,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _gold.withOpacity(0.15)),
+                  border: Border.all(color: _gold.withValues(alpha:0.15)),
                 ),
                 child: SingleChildScrollView(
                   child: Column(
@@ -271,7 +271,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor: _gold.withOpacity(0.2),
+                              backgroundColor: _gold.withValues(alpha:0.2),
                               radius: 22,
                               child: Text(
                                 riderName.isNotEmpty ? riderName[0].toUpperCase() : '?',
@@ -332,9 +332,9 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
+                          color: Colors.orange.withValues(alpha:0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          border: Border.all(color: Colors.orange.withValues(alpha:0.3)),
                         ),
                         child: Row(
                           children: [
@@ -451,7 +451,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
               Text(
                 label,
                 style: TextStyle(
-                  color: color.withOpacity(0.7),
+                  color: color.withValues(alpha:0.7),
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1,

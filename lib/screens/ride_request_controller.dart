@@ -6,6 +6,24 @@ part of 'ride_request_screen.dart';
 
 extension _RideRequestController on _RideRequestScreenState {
 
+  /// Shows an error SnackBar with a Retry action button (8-second duration).
+  void _showRetrySnackBar(String message, VoidCallback onRetry) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: const Color(0xFFE8C547),
+          onPressed: onRetry,
+        ),
+        backgroundColor: const Color(0xFF1A1A1A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   Future<void> _loadPinIcon() async {
     _goldPinIcon = await renderCircularPinBytes(
       icon: CircularPinIcon.person,
@@ -750,12 +768,9 @@ extension _RideRequestController on _RideRequestScreenState {
         debugPrint('Payment error: $e');
         Navigator.of(context).pop(); // close payment modal
         _setState(() => _showPaymentDeclinedBanner = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment declined. Please check your card or try another payment method.'),
-            backgroundColor: Color(0xFFB71C1C),
-            duration: Duration(seconds: 4),
-          ),
+        _showRetrySnackBar(
+          'Payment declined. Please check your card or try another payment method.',
+          () => _processPayment(context, AppColors.of(context), option, setSheetState),
         );
         return;
       }
@@ -821,12 +836,9 @@ extension _RideRequestController on _RideRequestScreenState {
         if (nativePayFailed) {
           if (mounted) {
             _setState(() => _showPaymentDeclinedBanner = true);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Payment declined. Please check your card or try another payment method.'),
-                backgroundColor: Color(0xFFB71C1C),
-                duration: Duration(seconds: 4),
-              ),
+            _showRetrySnackBar(
+              'Payment declined. Please check your card or try another payment method.',
+              () => _startRideDirectly(AppColors.of(context), option),
             );
           }
           return;
@@ -927,15 +939,15 @@ extension _RideRequestController on _RideRequestScreenState {
             : (rawReason ?? S.of(context).tripCancelled);
         _ctrl.reset();
         // Navigate home cleanly
+        final navRoot = Navigator.of(context, rootNavigator: true);
         Navigator.of(context).pushAndRemoveUntil(
           smoothFadeRoute(const HomeScreen()),
           (_) => false,
         );
         // Show dialog on home screen after a short delay
         Future.delayed(const Duration(milliseconds: 600), () {
-          final navState = Navigator.of(context, rootNavigator: true);
           showDialog(
-            context: navState.context,
+            context: navRoot.context,
             barrierDismissible: true,
             builder: (dialogCtx) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1288,14 +1300,9 @@ extension _RideRequestController on _RideRequestScreenState {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFFF5252),
-          content: Text(
-            S.of(context).failedToScheduleRide(e.toString()),
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
+      _showRetrySnackBar(
+        S.of(context).failedToScheduleRide(e.toString()),
+        _createScheduledTrip,
       );
     }
   }

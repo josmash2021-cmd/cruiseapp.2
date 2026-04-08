@@ -117,7 +117,7 @@ class _ScheduledRidesMarketplaceScreenState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.event_busy, color: _gold.withOpacity(0.5), size: 64),
+                          Icon(Icons.event_busy, color: _gold.withValues(alpha:0.5), size: 64),
                           const SizedBox(height: 16),
                           Text(
                             s.noScheduledTrips,
@@ -181,7 +181,7 @@ class _ScheduledRidesMarketplaceScreenState
       decoration: BoxDecoration(
         color: _cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _gold.withOpacity(0.2)),
+        border: Border.all(color: _gold.withValues(alpha:0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,7 +190,7 @@ class _ScheduledRidesMarketplaceScreenState
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: _gold.withOpacity(0.1),
+              color: _gold.withValues(alpha:0.1),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
@@ -310,7 +310,7 @@ class _ScheduledRidesMarketplaceScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha:0.15),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(

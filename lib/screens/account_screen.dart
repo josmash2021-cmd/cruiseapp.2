@@ -267,6 +267,8 @@ class _AccountScreenState extends State<AccountScreen> {
                               ? null
                               : () async {
                                   setSheetState(() { sending = true; errorMsg = null; });
+                                  final codeResentMsg = S.of(context).codeResent;
+                                  final failedMsg = S.of(context).failedToResendCode;
                                   try {
                                     final res = await ApiService.resendEmailVerification();
                                     if (res['error'] != null) {
@@ -275,12 +277,12 @@ class _AccountScreenState extends State<AccountScreen> {
                                       setSheetState(() { errorMsg = null; sending = false; });
                                       if (ctx.mounted) {
                                         ScaffoldMessenger.of(ctx).showSnackBar(
-                                          SnackBar(content: Text(S.of(context).codeResent)),
+                                          SnackBar(content: Text(codeResentMsg)),
                                         );
                                       }
                                     }
                                   } catch (e) {
-                                    setSheetState(() { errorMsg = S.of(context).failedToResendCode; sending = false; });
+                                    setSheetState(() { errorMsg = failedMsg; sending = false; });
                                   }
                                 },
                           child: Text(

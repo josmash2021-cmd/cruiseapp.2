@@ -849,6 +849,18 @@ extension _HomeScreenController on _HomeScreenState {
   void _resumeActiveRide() {
     final ride = _activeRide;
     if (ride == null) return;
+    // Map persisted phase to initialStatus so the tracking controller
+    // starts at the correct phase even before Firestore delivers an update.
+    String? resumeStatus;
+    switch (ride.phase) {
+      case 'onTrip':
+      case 'nearDestination':
+        resumeStatus = 'in_trip';
+      case 'arrived':
+        resumeStatus = 'arrived';
+      default:
+        resumeStatus = null;
+    }
     Navigator.of(context).push(
       slideUpFadeRoute(
         RiderTrackingScreen(
@@ -870,6 +882,7 @@ extension _HomeScreenController on _HomeScreenState {
           firestoreTripId: ride.firestoreTripId,
           driverPhotoUrl: ride.driverPhotoUrl,
           driverId: ride.driverId,
+          initialStatus: resumeStatus,
           onTripComplete: () {
             LocalDataService.clearActiveRide();
             Navigator.of(context).pop();

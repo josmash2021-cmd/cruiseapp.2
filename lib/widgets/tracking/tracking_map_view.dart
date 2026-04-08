@@ -1482,18 +1482,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final map = _map;
     if (map == null) return;
     try {
+      // Rider is identified by the pickup pin — hide the blue GPS dot.
       await map.location.updateSettings(mapbox.LocationComponentSettings(
-        enabled: true,
-        pulsingEnabled: true,
-        pulsingColor: const Color(0xFF3B82F6).toARGB32(), // blue
-        pulsingMaxRadius: 50.0,
-        locationPuck: mapbox.LocationPuck(
-          locationPuck2D: mapbox.DefaultLocationPuck2D(
-            topImage: null,       // use Mapbox default dot
-            bearingImage: null,
-            shadowImage: null,
-          ),
-        ),
+        enabled: false,
       ));
     } catch (_) {}
   }
@@ -1502,22 +1493,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// The puck follows GPS automatically via Mapbox internals, but we also
   /// manually update it so there is zero lag between OS location and map dot.
   void _startRiderLocationTracking() {
-    // Enable puck as soon as map is ready
+    // Blue puck disabled — rider is identified by the pickup pin.
     _enableLocationPuck();
-    _riderLocSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 3, // update every 3 m for smooth following
-      ),
-    ).listen((pos) async {
-      if (!mounted) return;
-      // Push exact GPS position to the puck so it never lags
-      try {
-        await _map?.location.updateSettings(mapbox.LocationComponentSettings(
-          enabled: true,
-          pulsingEnabled: true,
-        ));
-      } catch (_) {}
-    }, onError: (_) {});
   }
 }

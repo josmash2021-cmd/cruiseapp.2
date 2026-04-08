@@ -262,10 +262,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
-    _initFromPersistence();
+    // Await persistence before starting real-time tracking to prevent
+    // race condition where backend poll resets phase/traveledM to 0.
+    _initFromPersistence().then((_) {
+      if (mounted) _startRealTimeTracking();
+    });
     _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
-    _startRealTimeTracking();
-    _startRiderLocationTracking();
     // Send greeting notification after 3 seconds
     Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
     // Notify rider that a driver was assigned

@@ -2736,12 +2736,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final sa = ride['scheduled_at']?.toString() ?? '';
     final dt = DateTime.tryParse(sa);
     final isEs = Localizations.localeOf(ctx).languageCode == 'es';
-    final label = isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride';
+    final status = (ride['status'] as String? ?? 'scheduled').toLowerCase();
+    final hasDriver = status == 'scheduled_accepted' || status == 'driver_assigned';
+
+    final label = hasDriver
+        ? (isEs ? 'Tienes un conductor asignado' : 'You have a driver assigned to your ride')
+        : (isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride');
     final dateStr = dt != null
         ? DateFormat(isEs ? "d 'de' MMM, h:mm a" : 'MMM d, h:mm a',
                 isEs ? 'es' : 'en')
             .format(dt.toLocal())
         : '';
+
+    final accent = hasDriver ? const Color(0xFF4CAF50) : _gold;
 
     return GestureDetector(
       onTap: () async {
@@ -2753,13 +2760,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: _gold.withValues(alpha: 0.10),
+          color: accent.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _gold.withValues(alpha: 0.30), width: 1),
+          border: Border.all(color: accent.withValues(alpha: 0.30), width: 1),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today_rounded, color: _gold, size: 20),
+            Icon(
+              hasDriver ? Icons.check_circle_rounded : Icons.calendar_today_rounded,
+              color: accent,
+              size: 20,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -2767,7 +2778,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 children: [
                   Text(label,
                       style: TextStyle(
-                        color: _gold,
+                        color: accent,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       )),
@@ -2781,7 +2792,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
             Icon(Icons.chevron_right_rounded,
-                color: _gold.withValues(alpha: 0.6), size: 22),
+                color: accent.withValues(alpha: 0.6), size: 22),
           ],
         ),
       ),

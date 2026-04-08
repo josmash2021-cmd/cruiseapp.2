@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -184,38 +185,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
   }
 
-  // ─────────────────────────────────────────────
-  //  Mapbox Static mini-map URL
-  // ─────────────────────────────────────────────
 
-  String? _miniMapUrl({
-    double? pickupLat, double? pickupLng,
-    double? dropoffLat, double? dropoffLng,
-  }) {
-    if (pickupLat == null || pickupLng == null) return null;
-    final token = MapboxConfig.accessToken;
-    final pLng = pickupLng.toStringAsFixed(6);
-    final pLat = pickupLat.toStringAsFixed(6);
-
-    String overlay;
-    String viewport;
-
-    if (dropoffLat != null && dropoffLng != null) {
-      final dLng = dropoffLng.toStringAsFixed(6);
-      final dLat = dropoffLat.toStringAsFixed(6);
-      // Golden route path + golden pins
-      final path = 'path-3+E8C547-0.6($pLng,$pLat;$dLng,$dLat)';
-      overlay = '$path,pin-s+E8C547($pLng,$pLat),pin-s+E8C547($dLng,$dLat)';
-      viewport = 'auto';
-    } else {
-      overlay = 'pin-s+E8C547($pLng,$pLat)';
-      viewport = '$pLng,$pLat,14';
-    }
-
-    return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-        '$overlay/$viewport/360x140@2x'
-        '?padding=35,25,35,25&access_token=$token';
-  }
 
   // ─────────────────────────────────────────────
   //  Countdown helper
@@ -473,14 +443,18 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         : '';
     final countdownStr = _countdown(scheduledAt);
     final isClaiming = _claimingId == tripId;
-    final mapUrl = _miniMapUrl(
-      pickupLat: pickupLat, pickupLng: pickupLng,
-      dropoffLat: dropoffLat, dropoffLng: dropoffLng,
-    );
+    final hasPickup = pickupLat != null && pickupLng != null;
 
     return _cardShell(
       isAirport: false,
-      mapUrl: mapUrl,
+      mapWidget: hasPickup
+          ? _AvailableMiniMap(
+              pickupLat: pickupLat,
+              pickupLng: pickupLng,
+              dropoffLat: dropoffLat,
+              dropoffLng: dropoffLng,
+            )
+          : null,
       children: [
         // Header
         _cardHeader(
@@ -544,7 +518,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   Widget _cardShell({
     required bool isAirport,
-    String? mapUrl,
+    Widget? mapWidget,
     required List<Widget> children,
   }) {
     return Container(
@@ -570,34 +544,14 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Mini-map ──
-            if (mapUrl != null)
+            if (mapWidget != null)
               SizedBox(
                 height: 140,
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      mapUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFF12151C),
-                        child: const Center(
-                          child: Icon(Icons.map_outlined,
-                              color: Colors.white12, size: 36),
-                        ),
-                      ),
-                      loadingBuilder: (_, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color: const Color(0xFF12151C),
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                                color: _gold, strokeWidth: 2),
-                          ),
-                        );
-                      },
-                    ),
+                    mapWidget,
                     // Fade bottom into card
                     Positioned(
                       bottom: 0, left: 0, right: 0,
@@ -1595,5 +1549,162 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         ],
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _AvailableMiniMap — lightweight interactive map with golden teardrop pins
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AvailableMiniMap extends StatefulWidget {
+  final double pickupLat;
+  final double pickupLng;
+  final double? dropoffLat;
+  final double? dropoffLng;
+
+  const _AvailableMiniMap({
+    required this.pickupLat,
+    required this.pickupLng,
+    this.dropoffLat,
+    this.dropoffLng,
+  });
+
+  @override
+  State<_AvailableMiniMap> createState() => _AvailableMiniMapState();
+}
+
+class _AvailableMiniMapState extends State<_AvailableMiniMap> {
+  mapbox.MapboxMap? _mapCtrl;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
+  mapbox.PolylineAnnotationManager? _polyAnnotMgr;
+
+  bool get _hasDropoff =>
+      widget.dropoffLat != null && widget.dropoffLng != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final centerLng = _hasDropoff
+        ? (widget.pickupLng + widget.dropoffLng!) / 2
+        : widget.pickupLng;
+    final centerLat = _hasDropoff
+        ? (widget.pickupLat + widget.dropoffLat!) / 2
+        : widget.pickupLat;
+
+    return mapbox.MapWidget(
+      styleUri: MapboxConfig.styleDark,
+      cameraOptions: mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(centerLng, centerLat),
+        ),
+        zoom: _hasDropoff ? 11.0 : 14.0,
+      ),
+      onMapCreated: _onMapCreated,
+      onStyleLoadedListener: (_) async {
+        if (_mapCtrl != null) {
+          await MapTheme.applyNavyGold(_mapCtrl!);
+        }
+      },
+    );
+  }
+
+  Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
+    _mapCtrl = ctrl;
+    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+    ctrl.attribution
+        .updateSettings(mapbox.AttributionSettings(enabled: false));
+    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+    try {
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-allow-overlap', true);
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-ignore-placement', true);
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+    } catch (_) {}
+    _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+    if (mounted) await _placePins();
+    if (mounted && _hasDropoff) await _fitBounds();
+  }
+
+  Future<void> _placePins() async {
+    if (_pointAnnotMgr == null) return;
+    final pickupBytes = await renderCircularPinBytes(
+        icon: CircularPinIcon.person, isPickup: true, radius: 44);
+    if (!mounted) return;
+    try {
+      await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(
+            coordinates:
+                mapbox.Position(widget.pickupLng, widget.pickupLat)),
+        image: pickupBytes,
+        iconSize: 0.55,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconOffset: [0, 0],
+      ));
+    } catch (_) {}
+
+    if (_hasDropoff) {
+      final dropBytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 44);
+      if (!mounted) return;
+      try {
+        await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+              coordinates:
+                  mapbox.Position(widget.dropoffLng!, widget.dropoffLat!)),
+          image: dropBytes,
+          iconSize: 0.55,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      } catch (_) {}
+
+      // Golden route line
+      if (_polyAnnotMgr != null) {
+        try {
+          await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+            geometry: mapbox.LineString(coordinates: [
+              mapbox.Position(widget.pickupLng, widget.pickupLat),
+              mapbox.Position(widget.dropoffLng!, widget.dropoffLat!),
+            ]),
+            lineColor: const Color(0xFFE8C547).toARGB32(),
+            lineWidth: 3.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _fitBounds() async {
+    if (_mapCtrl == null || !_hasDropoff) return;
+    try {
+      final cam = await _mapCtrl!.cameraForCoordinateBounds(
+        mapbox.CoordinateBounds(
+          southwest: mapbox.Point(
+            coordinates: mapbox.Position(
+              math.min(widget.pickupLng, widget.dropoffLng!),
+              math.min(widget.pickupLat, widget.dropoffLat!),
+            ),
+          ),
+          northeast: mapbox.Point(
+            coordinates: mapbox.Position(
+              math.max(widget.pickupLng, widget.dropoffLng!),
+              math.max(widget.pickupLat, widget.dropoffLat!),
+            ),
+          ),
+          infiniteBounds: false,
+        ),
+        mapbox.MbxEdgeInsets(top: 45, left: 35, bottom: 45, right: 35),
+        null, null, null, null,
+      );
+      await _mapCtrl!.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
+    } catch (_) {}
   }
 }

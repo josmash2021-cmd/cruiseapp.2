@@ -936,7 +936,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  /// Message button with real-time unread badge from Firebase RTDB.
+  /// Message button with real-time unread badge + bounce animation from Firebase RTDB.
   Widget _msgBtnWithBadge() {
     return Stack(
       clipBehavior: Clip.none,
@@ -952,19 +952,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             if (count == 0) return const SizedBox.shrink();
             return Positioned(
               right: -4, top: -4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFEF4444),
-                  shape: BoxShape.circle,
-                ),
-                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                child: Text(
-                  count > 9 ? '9+' : '$count',
-                  style: const TextStyle(
-                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800,
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey(count),
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.elasticOut,
+                builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEF4444),
+                    shape: BoxShape.circle,
                   ),
-                  textAlign: TextAlign.center,
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  child: Text(
+                    count > 9 ? '9+' : '$count',
+                    style: const TextStyle(
+                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
             );
@@ -1483,7 +1490,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         try {
           // Keep pins upright in mini-map while preserving bottom tip anchor.
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'map');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
           await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');
@@ -2260,6 +2267,48 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   ],
                 ),
               ),
+
+            // ── Real-time messages from rider ──
+            StreamBuilder<int>(
+              stream: ChatService().unreadCountStream(
+                rideId: widget.tripId.toString(),
+                readerRole: 'driver',
+              ),
+              builder: (context, snap) {
+                final count = snap.data ?? 0;
+                if (count == 0) return const SizedBox.shrink();
+                return GestureDetector(
+                  onTap: _openChat,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: EdgeInsets.fromLTRB(Responsive.w(16), 8, Responsive.w(16), 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _gold.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _gold.withValues(alpha: 0.40)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.message_rounded, color: _gold, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '$count new message${count > 1 ? "s" : ""} from rider',
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: _gold.withValues(alpha: 0.6), size: 18),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
 
             const Spacer(),
 

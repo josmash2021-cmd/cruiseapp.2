@@ -25,6 +25,7 @@ from config import (
     firestore_sync, _HAS_FIRESTORE,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
     _HAS_STRIPE, _stripe_mod,
+    GOOGLE_MAPS_API_KEY,
 )
 from services.event_bus import event_bus
 from routers.admin import _pricing_config
@@ -35,6 +36,110 @@ DRIVER_SHARE_RATE = 0.60
 
 # Local dict to track action-request reminder tasks (avoids cross-router import)
 _action_reminder_tasks: dict[int, asyncio.Task] = {}
+
+# In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
+_route_cache: dict = {}
+_ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
+
+
+async def _fetch_route_for_offer(
+    pickup_lat: float, pickup_lng: float,
+    dropoff_lat: float, dropoff_lng: float,
+    driver_lat: float, driver_lng: float,
+) -> dict:
+    """Fetch pickup→dropoff polyline and driver ETA from Google Directions.
+    Returns dict with route_points (list of {lat, lng}), driver_to_pickup_km, eta_minutes.
+    Falls back to empty route_points with haversine estimates if Google unavailable."""
+    import urllib.request, urllib.parse
+
+    cache_key = (round(pickup_lat, 4), round(pickup_lng, 4), round(dropoff_lat, 4), round(dropoff_lng, 4))
+    _now = time.monotonic()
+    _cached = _route_cache.get(cache_key)
+    if _cached and (_now - _cached[0]) < _ROUTE_CACHE_TTL:
+        cached_data = _cached[1].copy()
+        # Recalculate driver_to_pickup_km with fresh driver position
+        cached_data["driver_to_pickup_km"] = round(
+            _haversine(driver_lat, driver_lng, pickup_lat, pickup_lng), 2
+        )
+        cached_data["eta_minutes"] = max(1, int(cached_data["driver_to_pickup_km"] / 0.5))
+        return cached_data
+
+    route_points: list = []
+    driver_to_pickup_km = round(_haversine(driver_lat, driver_lng, pickup_lat, pickup_lng), 2)
+    eta_minutes = max(1, int(driver_to_pickup_km / 0.5))  # ~30 km/h default estimate
+
+    if GOOGLE_MAPS_API_KEY:
+        try:
+            params = {
+                "origin": f"{pickup_lat},{pickup_lng}",
+                "destination": f"{dropoff_lat},{dropoff_lng}",
+                "mode": "driving",
+                "key": GOOGLE_MAPS_API_KEY,
+            }
+            url = "https://maps.googleapis.com/maps/api/directions/json?" + urllib.parse.urlencode(params)
+            loop = asyncio.get_event_loop()
+
+            def _fetch():
+                with urllib.request.urlopen(
+                    urllib.request.Request(url, method="GET"), timeout=5
+                ) as resp:
+                    return json.loads(resp.read().decode())
+
+            data = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=6.0)
+            if data.get("status") == "OK" and data.get("routes"):
+                leg = data["routes"][0]["legs"][0]
+                # Decode overview polyline into lat/lng points
+                encoded = data["routes"][0].get("overview_polyline", {}).get("points", "")
+                route_points = _decode_polyline(encoded)
+                # Use Google's duration to pickup as ETA estimate (driver_to_pickup via haversine + speed)
+                dur_sec = leg.get("duration", {}).get("value", 0)
+                eta_minutes = max(1, int(dur_sec / 60))
+                logging.info(
+                    "[RouteCache] Fetched route for trip (%s,%s)->(%s,%s): %d points",
+                    pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, len(route_points),
+                )
+        except Exception as _e:
+            logging.warning("[RouteCache] Directions API failed: %s", _e)
+
+    result = {
+        "route_points": route_points,
+        "driver_to_pickup_km": driver_to_pickup_km,
+        "eta_minutes": eta_minutes,
+    }
+    _route_cache[cache_key] = (_now, result.copy())
+    # Evict if cache grows too large (> 1000 routes)
+    if len(_route_cache) > 1000:
+        oldest = sorted(_route_cache, key=lambda k: _route_cache[k][0])
+        for k in oldest[:200]:
+            _route_cache.pop(k, None)
+    return result
+
+
+def _decode_polyline(encoded: str) -> list:
+    """Decode a Google Maps encoded polyline into a list of {lat, lng} dicts."""
+    if not encoded:
+        return []
+    points = []
+    index, lat, lng = 0, 0, 0
+    while index < len(encoded):
+        for is_lng in (False, True):
+            shift, result = 0, 0
+            while True:
+                if index >= len(encoded):
+                    break
+                b = ord(encoded[index]) - 63
+                index += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if (result & 1) else (result >> 1)
+            if is_lng:
+                lng += delta
+            else:
+                lat += delta
+        points.append({"lat": lat / 1e5, "lng": lng / 1e5})
+    return points
 
 
 async def _lookup_user_trips(user_id: int, db: AsyncSession, limit: int = 5) -> list:
@@ -491,6 +596,12 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
+        # -- Pre-fetch route polyline so Flutter doesn't need a separate Directions call --
+        _route_data = await _fetch_route_for_offer(
+            trip.pickup_lat, trip.pickup_lng,
+            trip.dropoff_lat, trip.dropoff_lng,
+            assigned.lat or trip.pickup_lat, assigned.lng or trip.pickup_lng,
+        )
         # -- SSE instant push to driver (sub-second delivery) --
         _pending_cache.pop(assigned.id, None)  # Invalidate cache so SSE and poll both get fresh data
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
@@ -504,6 +615,9 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             **_trip_dict(trip),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
+            "route_points": _route_data["route_points"],
+            "driver_to_pickup_km": _route_data["driver_to_pickup_km"],
+            "eta_minutes": _route_data["eta_minutes"],
         }]))
         # -- FCM push to assigned driver (non-blocking background task) --
         if assigned.fcm_token:
@@ -837,42 +951,41 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         asyncio.create_task(_sync_firestore_accept())
 
     # -- SSE instant push to rider watching this trip (with FULL driver info) --
+    # Uses await (not create_task) so the push is guaranteed delivered before HTTP response returns.
     if trip:
-        async def _push_sse_with_driver():
-            try:
-                async with SessionLocal() as _db2:
-                    drv_r = await _db2.execute(select(User).where(User.id == driver_id))
-                    drv = drv_r.scalar_one_or_none()
-                    veh_r = await _db2.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
-                    veh = veh_r.scalar_one_or_none()
-                    # Fetch actual driver stats from ratings
-                    _stats_r = await _db2.execute(
-                        select(
-                            func.count(Rating.id).label("trip_count"),
-                            func.avg(Rating.stars).label("avg_rating"),
-                        ).where(Rating.to_user_id == driver_id)
-                    )
-                    _stats_row = _stats_r.first()
-                    _driver_trips = _stats_row.trip_count if _stats_row else 0
-                    _driver_rating = round(float(_stats_row.avg_rating or 5.0), 1) if _stats_row else 5.0
-                await event_bus.push_trip_update(trip.id, {
-                    "status": "driver_en_route",
-                    "trip_id": trip.id,
-                    "driver_id": driver_id,
-                    "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
-                    "driver_phone": (drv.phone or "") if drv else "",
-                    "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
-                    "driver_rating": _driver_rating,
-                    "driver_trips": _driver_trips,
-                    "vehicle_make": veh.make if veh else "",
-                    "vehicle_model": veh.model if veh else "",
-                    "vehicle_color": veh.color if veh else "",
-                    "vehicle_plate": veh.plate if veh else "",
-                    "vehicle_year": str(veh.year) if veh else "",
-                })
-            except Exception as e:
-                logging.error("SSE push with driver info failed: %s", e)
-        asyncio.create_task(_push_sse_with_driver())
+        try:
+            async with SessionLocal() as _db2:
+                drv_r = await _db2.execute(select(User).where(User.id == driver_id))
+                drv = drv_r.scalar_one_or_none()
+                veh_r = await _db2.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
+                veh = veh_r.scalar_one_or_none()
+                # Fetch actual driver stats from ratings
+                _stats_r = await _db2.execute(
+                    select(
+                        func.count(Rating.id).label("trip_count"),
+                        func.avg(Rating.stars).label("avg_rating"),
+                    ).where(Rating.to_user_id == driver_id)
+                )
+                _stats_row = _stats_r.first()
+                _driver_trips = _stats_row.trip_count if _stats_row else 0
+                _driver_rating = round(float(_stats_row.avg_rating or 5.0), 1) if _stats_row else 5.0
+            await event_bus.push_trip_update(trip.id, {
+                "status": "driver_en_route",
+                "trip_id": trip.id,
+                "driver_id": driver_id,
+                "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
+                "driver_phone": (drv.phone or "") if drv else "",
+                "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
+                "driver_rating": _driver_rating,
+                "driver_trips": _driver_trips,
+                "vehicle_make": veh.make if veh else "",
+                "vehicle_model": veh.model if veh else "",
+                "vehicle_color": veh.color if veh else "",
+                "vehicle_plate": veh.plate if veh else "",
+                "vehicle_year": str(veh.year) if veh else "",
+            })
+        except Exception as e:
+            logging.error("SSE push with driver info failed: %s", e)
 
     # -- Push + SMS notification to rider when driver accepts --
     if trip:

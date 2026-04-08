@@ -40,19 +40,20 @@ extension _HomeScreenWidgets on _HomeScreenState {
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         try { await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
-        // Enable native LocationPuck — never drifts on zoom
+        // Enable native LocationPuck (gold, white border) — never drifts on zoom
         try {
+          final puckImg = await _buildGoldPuckImage();
           await ctrl.location.updateSettings(mapbox.LocationComponentSettings(
             enabled: true,
             pulsingEnabled: true,
             pulsingColor: const Color(0xFFE8C547).toARGB32(),
-            pulsingMaxRadius: 44.0,
+            pulsingMaxRadius: 20.0,
             locationPuck: mapbox.LocationPuck(
-              locationPuck2D: mapbox.DefaultLocationPuck2D(),
+              locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
             ),
           ));
         } catch (_) {}
-        _updateMiniMapAnnotation();
+        // GoldLocationDot PointAnnotation removed — LocationPuck replaces it
         // Draw route if there's an active ride
         if (_activeRide != null) {
           _drawRouteOnMap();
@@ -62,19 +63,33 @@ extension _HomeScreenWidgets on _HomeScreenState {
         if (_miniMapController != null) {
           await _applyDarkNavyGoldTheme(_miniMapController!);
           try {
+            final puckImg = await _buildGoldPuckImage();
             await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
               enabled: true,
               pulsingEnabled: true,
               pulsingColor: const Color(0xFFE8C547).toARGB32(),
-              pulsingMaxRadius: 44.0,
+              pulsingMaxRadius: 20.0,
               locationPuck: mapbox.LocationPuck(
-                locationPuck2D: mapbox.DefaultLocationPuck2D(),
+                locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
               ),
             ));
           } catch (_) {}
         }
       },
     );
+  }
+
+  Future<Uint8List> _buildGoldPuckImage() async {
+    const size = 24.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+    canvas.drawCircle(center, size / 2, Paint()..color = Colors.white);
+    canvas.drawCircle(center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes!.buffer.asUint8List();
   }
 
   // "Where to?" / "Ride in progress" search bar floating over the map
@@ -2645,10 +2660,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                   ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
                   _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                  _updateMiniMapAnnotation();
+                  // GoldLocationDot removed — LocationPuck via onStyleLoadedListener
                 },
                 onStyleLoadedListener: (_) async {
-                  if (_miniMapController != null) await _applyDarkNavyGoldTheme(_miniMapController!);
+                  if (_miniMapController != null) {
+                    await _applyDarkNavyGoldTheme(_miniMapController!);
+                    try {
+                      final puckImg = await _buildGoldPuckImage();
+                      await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
+                        enabled: true,
+                        pulsingEnabled: true,
+                        pulsingColor: const Color(0xFFE8C547).toARGB32(),
+                        pulsingMaxRadius: 20.0,
+                        locationPuck: mapbox.LocationPuck(
+                          locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
+                        ),
+                      ));
+                    } catch (_) {}
+                  }
                 },
                 gestureRecognizers: const {},
               ),

@@ -37,9 +37,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
-          // Separate pin manager for teardrop pins — anchored at tip (bottom)
+          // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
           _pinAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
@@ -57,7 +58,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           }
         },
         onStyleLoadedListener: (_) async {
-          if (_map != null) await MapTheme.applyNavyGold(_map!);
+          if (_map != null) {
+            await MapTheme.applyNavyGold(_map!);
+            // Ensure top-down view on entry (no tilt unless actively navigating)
+            if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
+              await _map!.flyTo(
+                mapbox.CameraOptions(pitch: 0, bearing: 0),
+                mapbox.MapAnimationOptions(duration: 0),
+              );
+            }
+          }
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();

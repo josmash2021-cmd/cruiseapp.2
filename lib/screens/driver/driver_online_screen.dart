@@ -51,6 +51,7 @@ import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
 import '../../services/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';

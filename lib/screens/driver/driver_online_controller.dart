@@ -667,6 +667,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           AnalyticsService.instance.logDriverOnline();
           // Show persistent notification (fire-and-forget, non-blocking)
           NotificationService.showDriverOnlineNotification();
+          // Subscribe to scheduled rides topic — receives FCM when new
+          // scheduled trips enter the marketplace.
+          FirebaseMessaging.instance.subscribeToTopic('drivers_available').catchError(
+            (e) => debugPrint('FCM subscribeToTopic drivers_available failed: $e'),
+          );
         })
         .catchError((e) {
           debugPrint('âŒ Failed to go online: $e');
@@ -678,6 +683,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     AnalyticsService.instance.logDriverOffline();
     NotificationService.cancelDriverOnlineNotification();
     NotificationService.cancelOfferNotifications();
+    // Unsubscribe from scheduled rides topic when going offline.
+    FirebaseMessaging.instance.unsubscribeFromTopic('drivers_available').catchError(
+      (e) => debugPrint('FCM unsubscribeFromTopic drivers_available failed: $e'),
+    );
     ApiService.updateDriverLocation(
       driverId: _driverId!,
       lat: _pos!.latitude,

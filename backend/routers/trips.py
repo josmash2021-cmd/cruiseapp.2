@@ -14,7 +14,7 @@ from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push, send_to_topic_async
 from services.n8n_webhooks import fire as _n8n_fire
 from routers.drivers import reevaluate_driver_tier
 from services.event_bus import event_bus
@@ -195,6 +195,23 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 logging.error("Firestore sync on create_trip failed: %s", e)
         asyncio.create_task(_bg_firestore_sync())
 
+    # Notify online drivers when a new scheduled ride enters the marketplace
+    if trip.status == "scheduled" and trip.scheduled_at:
+        try:
+            _fare_str = f"${trip.fare:.2f}" if trip.fare else ""
+            _pickup = (trip.pickup_address or "")[:40]
+            _dropoff = (trip.dropoff_address or "")[:40]
+            _sched_time = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
+            _body = f"{_fare_str} \u00b7 {_pickup} \u2192 {_dropoff} \u00b7 {_sched_time}".strip(" \u00b7")
+            asyncio.create_task(send_to_topic_async(
+                topic="drivers_available",
+                title="New Scheduled Ride Available",
+                body=_body,
+                data={"type": "scheduled_ride", "trip_id": str(trip.id)},
+            ))
+        except Exception as _fcm_err:
+            logging.warning("[FCM] Scheduled ride topic push failed: %s", _fcm_err)
+
     return _trip_dict(trip)
 
 @router.get("/trips/{trip_id}", dependencies=[Depends(_verify_api_key)])
@@ -270,6 +287,16 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
             )
         except Exception as e:
             logging.error("Firestore sync on accept_trip failed: %s", e)
+
+    # SSE instant push to rider — must await before returning HTTP response
+    try:
+        await event_bus.push_trip_update(trip.id, {
+            "status": "driver_en_route",
+            "trip_id": trip.id,
+            "driver_id": body.driver_id,
+        })
+    except Exception as _sse_err:
+        logging.warning("[SSE] accept_trip push failed: %s", _sse_err)
 
     # FCM push: "Driver Found" notification to rider
     try:

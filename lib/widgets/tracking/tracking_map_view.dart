@@ -809,7 +809,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
               try {
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'map');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
@@ -824,13 +824,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
               } catch (_) {}
               _updateAnnotations();
-              // Enable rider location puck (native — never drifts on zoom)
-              _enableLocationPuck();
+              // Rider is identified by pickup pin — no location puck on tracking screen
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) await _applyDarkNavyGoldTheme(_map!);
-              // Re-enable puck after style reload
-              _enableLocationPuck();
               // Car annotation survives style reload (managed by annotation manager)
               // Reset creation guard so car can be re-created if needed
               _carAnnotCreating = false;

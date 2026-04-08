@@ -549,7 +549,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 GestureDetector(
                                   onTap: (_isProcessingPayment || !_hasAnyPaymentMethod)
                                       ? null
-                                      : () => _startRideDirectly(c, option),
+                                      : () {
+                                          HapticFeedback.mediumImpact();
+                                          _startRideDirectly(c, option);
+                                        },
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 350),
                                     curve: Curves.easeInOut,

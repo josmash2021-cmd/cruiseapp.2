@@ -84,7 +84,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     try {
       double lat = 0, lng = 0;
       try {
-        final pos = await Geolocator.getLastKnownPosition();
+        final pos = await Geolocator.getLastKnownPosition()
+            .timeout(const Duration(milliseconds: 400), onTimeout: () => null);
         if (pos != null) { lat = pos.latitude; lng = pos.longitude; }
       } catch (_) {}
       final trips = await ApiService.getAvailableScheduledTrips(
@@ -833,6 +834,8 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     try {
       await ctrl.style.setStyleLayerProperty(
           _pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+      await ctrl.style.setStyleLayerProperty(
+          _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
       await ctrl.style.setStyleLayerProperty(
           _pointAnnotMgr!.id, 'icon-allow-overlap', true);
       await ctrl.style.setStyleLayerProperty(

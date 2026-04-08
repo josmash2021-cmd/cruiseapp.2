@@ -30,6 +30,43 @@ except Exception as _e:
     logging.warning("[FCM] Firebase Admin not available: %s", _e)
 
 
+async def send_to_topic_async(topic: str, title: str, body: str, data: dict = None) -> None:
+    """Send FCM push to all subscribers of a topic (e.g. 'drivers_available').
+    Runs in thread pool to avoid blocking the event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: _send_to_topic(topic, title, body, data))
+
+
+def _send_to_topic(topic: str, title: str, body: str, data: dict = None) -> None:
+    """Send FCM message to a topic. Silently skips if Firebase not available."""
+    if not _HAS_FIREBASE or not topic:
+        return
+    try:
+        from firebase_admin import messaging as _fcm
+        msg = _fcm.Message(
+            notification=_fcm.Notification(title=title, body=body),
+            data={k: str(v) for k, v in (data or {}).items()},
+            topic=topic,
+            android=_fcm.AndroidConfig(
+                priority="high",
+                notification=_fcm.AndroidNotification(
+                    sound="cruise_online",
+                    channel_id="cruise_premium",
+                    visibility="public",
+                ),
+            ),
+            apns=_fcm.APNSConfig(
+                headers={"apns-priority": "10"},
+                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="cruise_online.wav", badge=1)),
+            ),
+        )
+        _fcm.send(msg)
+        logging.info("[FCM] Topic push sent to '%s'", topic)
+    except Exception as _e:
+        logging.warning("[FCM] Topic push to '%s' failed: %s", topic, _e)
+
+
 async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = None, is_offer: bool = False) -> None:
     """Async wrapper — runs FCM push in thread pool to avoid blocking event loop."""
     import asyncio

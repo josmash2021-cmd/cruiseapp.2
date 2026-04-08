@@ -410,7 +410,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         }
       });
     }
-    _goldDot.build(() { if (mounted) _updateUserDotAnnotation(); });
+    // GoldLocationDot replaced by LocationPuck — no dot annotation needed
     _loadLinkedPayments();
     _loadPinIcon();
   }
@@ -510,16 +510,38 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     try {
                       final lid = _pointAnnotMgr!.id;
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'map');
+                      await ctrl.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
                     } catch (_) {}
-                    _updateUserDotAnnotation();
                     setState(() => _mapReady = true);
                   },
                   onStyleLoadedListener: (_) async {
-                    if (_mapCtrl != null) await _applyDarkNavyGoldTheme(_mapCtrl!);
+                    if (_mapCtrl != null) {
+                      await _applyDarkNavyGoldTheme(_mapCtrl!);
+                      try {
+                        const size = 24.0;
+                        final recorder = ui.PictureRecorder();
+                        final canvas = Canvas(recorder);
+                        final center = Offset(size / 2, size / 2);
+                        canvas.drawCircle(center, size / 2, Paint()..color = Colors.white);
+                        canvas.drawCircle(center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
+                        final picture = recorder.endRecording();
+                        final img = await picture.toImage(size.toInt(), size.toInt());
+                        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+                        final puckImg = bytes!.buffer.asUint8List();
+                        await _mapCtrl!.location.updateSettings(mapbox.LocationComponentSettings(
+                          enabled: true,
+                          pulsingEnabled: true,
+                          pulsingColor: const Color(0xFFE8C547).toARGB32(),
+                          pulsingMaxRadius: 20.0,
+                          locationPuck: mapbox.LocationPuck(
+                            locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
+                          ),
+                        ));
+                      } catch (_) {}
+                    }
                   },
                   onScrollListener: (_) {
                     if (!_programmaticCam) setState(() => _userMovedMap = true);

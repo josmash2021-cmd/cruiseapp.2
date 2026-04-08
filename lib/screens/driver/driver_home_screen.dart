@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:io' show File;
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -359,11 +360,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  /// Re-sync the location dot annotation whenever the dot animation frame changes.
-  void _syncDotAnnotation() {
-    if (!mounted) return;
-    _updateMyLocAnnotation();
-  }
+  /// LocationPuck handles location rendering — no dot annotation sync needed.
+  void _syncDotAnnotation() {}
 
   // ═══════════════════════════════════════════════════
   //  ACCOUNT STATUS CHECK
@@ -1018,37 +1016,40 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
-          // Enable native LocationPuck — never drifts on zoom
-          try {
-            await ctrl.location.updateSettings(mapbox.LocationComponentSettings(
-              enabled: true,
-              pulsingEnabled: true,
-              pulsingColor: const Color(0xFFE8C547).toARGB32(),
-              pulsingMaxRadius: 48.0,
-              locationPuck: mapbox.LocationPuck(
-                locationPuck2D: mapbox.DefaultLocationPuck2D(),
-              ),
-            ));
-          } catch (_) {}
           setState(() => _mapReady = true);
         },
         onStyleLoadedListener: (_) async {
-          if (_mapController != null) await _applyNavyGoldTheme(_mapController!);
-          // Re-enable puck after style reload
-          try {
-            await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(
-              enabled: true,
-              pulsingEnabled: true,
-              pulsingColor: const Color(0xFFE8C547).toARGB32(),
-              pulsingMaxRadius: 48.0,
-              locationPuck: mapbox.LocationPuck(
-                locationPuck2D: mapbox.DefaultLocationPuck2D(),
-              ),
-            ));
-          } catch (_) {}
+          if (_mapController != null) {
+            await _applyNavyGoldTheme(_mapController!);
+            try {
+              final puckImg = await _buildGoldPuckImage();
+              await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(
+                enabled: true,
+                pulsingEnabled: true,
+                pulsingColor: const Color(0xFFE8C547).toARGB32(),
+                pulsingMaxRadius: 20.0,
+                locationPuck: mapbox.LocationPuck(
+                  locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
+                ),
+              ));
+            } catch (_) {}
+          }
         },
       ),
     );
+  }
+
+  Future<Uint8List> _buildGoldPuckImage() async {
+    const size = 24.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+    canvas.drawCircle(center, size / 2, Paint()..color = Colors.white);
+    canvas.drawCircle(center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bytes!.buffer.asUint8List();
   }
 
   // ── Dark navy + gold freeway theme ──
@@ -1158,6 +1159,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // Scheduled rides marketplace
         _glassBtn(
           Icons.event_note_rounded,
+          badge: _scheduledAvailableCount > 0 ? _scheduledAvailableCount : null,
           onTap: () {
             HapticFeedback.selectionClick();
             Navigator.of(context).push(

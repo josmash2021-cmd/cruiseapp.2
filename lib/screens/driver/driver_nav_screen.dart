@@ -1821,7 +1821,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           // they stand upright at 55° nav pitch instead of lying flat on the map.
           _pointMgr = await ctrl.annotations.createPointAnnotationManager();
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}

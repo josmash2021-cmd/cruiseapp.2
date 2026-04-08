@@ -10,6 +10,7 @@ import '../models/lat_lng.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/car_icon_loader.dart';
 
 /// Indicación de navegación turn-by-turn
@@ -182,8 +183,8 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
                       ),
                       Text(
                         widget.phase == 'toPickup' 
-                            ? 'Hacia pickup'
-                            : 'Hacia destino',
+                            ? S.of(context).headToPickup
+                            : S.of(context).headToDestination,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.8),
                           fontSize: 12,
@@ -245,7 +246,7 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              'Salida ${nextInstruction.exitNumber}',
+                              S.of(context).exitNumberLabel(int.tryParse(nextInstruction.exitNumber ?? '0') ?? 0),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -338,8 +339,8 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
                         _launchExternalNavigation();
                       },
                       icon: const Icon(Icons.navigation_rounded, size: 22),
-                      label: const Text(
-                        'ABRIR EN GOOGLE MAPS',
+                      label: Text(
+                        S.of(context).openInGoogleMaps,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
@@ -417,7 +418,7 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.riderName.isNotEmpty ? widget.riderName : 'Pasajero',
+                  widget.riderName.isNotEmpty ? widget.riderName : S.of(context).passengerFallback,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,

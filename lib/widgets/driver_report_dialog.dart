@@ -27,13 +27,16 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
   final _messageController = TextEditingController();
   bool _submitting = false;
 
-  final List<Map<String, dynamic>> _reportTypes = [
-    {'value': 'app_crash', 'label': 'App se cerró', 'icon': Icons.error_outline, 'color': Colors.red},
-    {'value': 'bug', 'label': 'Error/Bug', 'icon': Icons.bug_report, 'color': Colors.orange},
-    {'value': 'feature_request', 'label': 'Sugerencia', 'icon': Icons.lightbulb_outline, 'color': Colors.blue},
-    {'value': 'complaint', 'label': 'Queja', 'icon': Icons.warning_amber, 'color': Colors.purple},
-    {'value': 'other', 'label': 'Otro', 'icon': Icons.report_problem, 'color': Colors.grey},
-  ];
+  List<Map<String, dynamic>> _getReportTypes(BuildContext context) {
+    final loc = S.of(context);
+    return [
+      {'value': 'app_crash', 'label': loc.appCrashLabel, 'icon': Icons.error_outline, 'color': Colors.red},
+      {'value': 'bug', 'label': loc.errorBugLabel, 'icon': Icons.bug_report, 'color': Colors.orange},
+      {'value': 'feature_request', 'label': loc.featureRequestLabel, 'icon': Icons.lightbulb_outline, 'color': Colors.blue},
+      {'value': 'complaint', 'label': loc.complaintLabel, 'icon': Icons.warning_amber, 'color': Colors.purple},
+      {'value': 'other', 'label': loc.otherLabel, 'icon': Icons.report_problem, 'color': Colors.grey},
+    ];
+  }
 
   @override
   void dispose() {
@@ -67,9 +70,9 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✓ Reporte enviado. Gracias!'),
-            backgroundColor: Color(0xFF4CAF50),
+          SnackBar(
+            content: Text(S.of(context).reportSentSuccess),
+            backgroundColor: const Color(0xFF4CAF50),
           ),
         );
       }
@@ -110,21 +113,21 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
                 child: const Icon(Icons.report_problem, color: Color(0xFFF44336)),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Reportar Problema',
-                      style: TextStyle(
+                      S.of(context).reportProblemTitle,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     Text(
-                      'Ayúdanos a mejorar la app',
-                      style: TextStyle(color: Color(0xFF8A8FA0), fontSize: 13),
+                      S.of(context).helpUsImprove,
+                      style: const TextStyle(color: Color(0xFF8A8FA0), fontSize: 13),
                     ),
                   ],
                 ),
@@ -139,15 +142,15 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
           const SizedBox(height: 20),
           
           // Report type selector
-          const Text(
-            'Tipo de problema',
-            style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
+          Text(
+            S.of(context).problemTypeLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _reportTypes.map((type) {
+            children: _getReportTypes(context).map((type) {
               final isSelected = _selectedType == type['value'];
               return ChoiceChip(
                 label: Row(
@@ -176,9 +179,9 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
           const SizedBox(height: 20),
           
           // Message input
-          const Text(
-            'Descripción',
-            style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
+          Text(
+            S.of(context).descriptionLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -214,7 +217,7 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                     )
                   : const Icon(Icons.send),
-              label: Text(_submitting ? 'Enviando...' : 'Enviar Reporte'),
+              label: Text(_submitting ? S.of(context).submittingLabel : S.of(context).submitReport),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFD4A24C),
                 foregroundColor: Colors.black,

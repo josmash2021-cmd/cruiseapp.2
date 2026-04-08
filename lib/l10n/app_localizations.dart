@@ -1630,7 +1630,7 @@ class S {
 
   // ── Driver Offers Screen ───────────────────────────────────────────────────
   String get goOfflineBtn => _es ? 'Desconectarse' : 'Go Offline';
-  String get onlineStatus => 'ONLINE';
+  String get onlineStatus => _es ? 'EN LÍNEA' : 'ONLINE';
   String get acceptingRide => _es ? 'Aceptando viaje...' : 'Accepting ride...';
   String get findingRidesNearYou =>
       _es ? 'Buscando viajes cerca de ti...' : 'Finding rides near you...';
@@ -1640,7 +1640,7 @@ class S {
       ? 'Los nuevos viajes aparecerán aquí automáticamente'
       : 'New offers will appear here automatically';
   String get availableRides => _es ? 'Viajes disponibles' : 'Available Rides';
-  String get skipOffer => 'SKIP';
+  String get skipOffer => _es ? 'SALTAR' : 'SKIP';
   String get acceptOffer => _es ? 'ACEPTAR' : 'ACCEPT';
 
   // ── Ride Request Screen ────────────────────────────────────────────────────
@@ -1734,7 +1734,7 @@ class S {
       : 'Enter both pickup and destination';
   String get rideScheduled => _es ? 'Viaje programado' : 'Ride scheduled';
   String get readyLabel => _es ? 'Listo' : 'Ready';
-  String get bestLabel => 'BEST';
+  String get bestLabel => _es ? 'MEJOR' : 'BEST';
 
   // ── Airport Terminal Sheet ─────────────────────────────────────────────────
   String get selectZone => _es ? 'Selecciona zona' : 'Select Zone';
@@ -3118,6 +3118,128 @@ class S {
   String get waitingForGps => _es
       ? 'Esperando ubicación GPS...'
       : 'Waiting for GPS location...';
+
+  // ── Report Dialog ──
+  String get reportProblemTitle => _es ? 'Reportar Problema' : 'Report Problem';
+  String get helpUsImprove => _es ? 'Ayúdanos a mejorar la app' : 'Help us improve the app';
+  String get problemTypeLabel => _es ? 'Tipo de problema' : 'Problem type';
+  String get descriptionLabel => _es ? 'Descripción' : 'Description';
+  String get appCrashLabel => _es ? 'App se cerró' : 'App crashed';
+  String get errorBugLabel => _es ? 'Error/Bug' : 'Error/Bug';
+  String get featureRequestLabel => _es ? 'Sugerencia' : 'Suggestion';
+  String get complaintLabel => _es ? 'Queja' : 'Complaint';
+  String get otherLabel => _es ? 'Otro' : 'Other';
+  String get submittingLabel => _es ? 'Enviando...' : 'Submitting...';
+  String get submitReport => _es ? 'Enviar Reporte' : 'Submit Report';
+  String get reportSentSuccess => _es ? '✓ Reporte enviado. ¡Gracias!' : '✓ Report sent. Thank you!';
+
+  // ── Navigation Panel ──
+  String get headToPickup => _es ? 'Hacia pickup' : 'To pickup';
+  String get headToDestination => _es ? 'Hacia destino' : 'To destination';
+  String get openInGoogleMaps => _es ? 'ABRIR EN GOOGLE MAPS' : 'OPEN IN GOOGLE MAPS';
+  String get passengerFallback => _es ? 'Pasajero' : 'Rider';
+  String exitNumberLabel(int n) => _es ? 'Salida $n' : 'Exit $n';
+
+  // ── Driver Earnings ──
+  String get payoutSetupFailed => _es
+      ? 'No se pudo configurar los pagos. Intenta de nuevo más tarde.'
+      : 'Could not set up payments. Please try again later.';
+
+  // ── Referral Screen (NEW) ──
+  String get inviteFriendsTitle => _es ? 'Invitar Amigos' : 'Invite Friends';
+  String get friendsJoined => _es ? 'Amigos unidos' : 'Friends Joined';
+  String get bonusEarned => _es ? 'Bonificación ganada' : 'Bonus Earned';
+  String get yourReferralCode => _es ? 'Tu Código de Referido' : 'Your Referral Code';
+  String get friendsYouveInvited => _es ? 'Amigos que has invitado' : "Friends You've Invited";
+  String get shareYourCode => _es ? 'Comparte tu código' : 'Share your code';
+  String get friendSignsUp => _es ? 'Tu amigo se registra' : 'Friend signs up';
+  String get youBothEarn => _es ? 'Ambos ganan \$10' : 'You both earn \$10';
+  String get shareCodeDescription => _es
+      ? 'Envía tu código único a tus amigos.'
+      : 'Send your unique code to friends.';
+  String get friendSignsUpDescription => _es
+      ? 'Tu amigo completa su primer viaje.'
+      : 'Your friend completes their first ride.';
+  String get youBothEarnDescription => _es
+      ? '¡Ambos reciben \$10 de crédito!'
+      : 'You both get \$10 credit!';
+  String codeAppliedCredit(String amount) => _es
+      ? '🎉 ¡Código aplicado! \$$amount de crédito añadido a tu cuenta.'
+      : '🎉 Code applied! \$$amount credit added to your account.';
+
+  // ── Saved Addresses ──
+  String get failedToSaveAddress => _es ? 'Error al guardar dirección' : 'Failed to save address';
+  String get failedToDelete => _es ? 'Error al eliminar' : 'Failed to delete';
+
+  // ── Driver Promos (labels) ──
+  String get surgeZonePromoDesc => _es
+      ? '¡Alta demanda en tu zona! Gana más por viaje.'
+      : 'High demand in your area! Earn more per trip.';
+  String get consecutiveBonusPromoDesc => _es
+      ? 'Completa 5 viajes seguidos y gana un bono.'
+      : 'Complete 5 trips in a row and earn a bonus.';
+  String get peakHoursBonusPromoDesc => _es
+      ? 'Maneja entre 5PM–9PM y gana extra.'
+      : 'Drive between 5PM–9PM and earn extra.';
+  String get nightOwlBonusPromoDesc => _es
+      ? 'Maneja entre 11PM–4AM y gana un bono.'
+      : 'Drive between 11PM–4AM and earn a bonus.';
+  String get weekendWarriorPromoDesc => _es
+      ? 'Completa 20 viajes este fin de semana y gana un bono.'
+      : 'Complete 20 trips this weekend and earn a bonus.';
+  String get airportBonusPromoDesc => _es
+      ? 'Gana \$2 extra en cada recogida de aeropuerto.'
+      : 'Earn \$2 extra on every airport pickup.';
+  String get referralBlitz => _es ? 'Blitz de Referidos' : 'Referral Blitz';
+  String get referralBlitzDesc => _es
+      ? 'Refiere un nuevo conductor y ambos ganan \$50.'
+      : 'Refer a new driver and both earn \$50.';
+
+  // ── Payout Methods ──
+  String get completeStripeOnboarding => _es
+      ? 'Completa la configuración de Stripe para activar tu cuenta bancaria.'
+      : 'Complete Stripe onboarding to activate your bank account.';
+
+  // ── Driver Info Pages ──
+  String get keepVehicleSpotless => _es ? 'Mantén tu vehículo impecable' : 'Keep Your Vehicle Spotless';
+  String get firstImpressionsMatter => _es ? 'Las primeras impresiones importan' : 'First impressions matter';
+  String get cleanInsideOut => _es ? 'Limpio por dentro y por fuera' : 'Clean Inside & Out';
+  String get cleanInsideOutBody => _es ? 'Lava tu auto regularmente y mantén el interior limpio.' : 'Wash your car regularly and keep the interior clean.';
+  String get freshComfortable => _es ? 'Fresco y cómodo' : 'Fresh & Comfortable';
+  String get freshComfortableBody => _es ? 'Mantén la cabina fresca con un aroma agradable.' : 'Keep the cabin fresh with a pleasant scent.';
+  String get phoneMountCharger => _es ? 'Soporte de teléfono y cargador' : 'Phone Mount & Charger';
+  String get phoneMountChargerBody => _es ? 'Usa un soporte seguro para tu teléfono y ofrece cargador.' : 'Use a secure phone mount and offer a charger.';
+  String get professionalAppearance => _es ? 'Apariencia profesional' : 'Professional Appearance';
+  String get professionalAppearanceBody => _es ? 'Vístete de forma presentable.' : 'Dress neatly and professionally.';
+  String get driveSafeAlways => _es ? 'Conduce seguro, siempre' : 'Drive Safe, Always';
+  String get safetyPriority => _es ? 'La seguridad es tu prioridad #1' : 'Safety is your #1 priority';
+  String get obeyTrafficLaws => _es ? 'Obedece las leyes de tránsito' : 'Obey Traffic Laws';
+  String get obeyTrafficLawsBody => _es ? 'Respeta los límites de velocidad y señales de tránsito.' : 'Follow speed limits and traffic signs.';
+  String get zeroTolerancePolicy => _es ? 'Política de tolerancia cero' : 'Zero Tolerance Policy';
+  String get zeroToleranceBody => _es ? 'Nunca conduzcas bajo la influencia del alcohol o drogas.' : 'Never drive under the influence of alcohol or drugs.';
+  String get stayFocused => _es ? 'Mantente enfocado' : 'Stay Focused';
+  String get stayFocusedBody => _es ? 'No envíes mensajes mientras conduces.' : 'No texting while driving.';
+  String get seatbeltRequired => _es ? 'Cinturón de seguridad obligatorio' : 'Seatbelt Required';
+  String get seatbeltRequiredBody => _es ? 'Asegúrate de que todos los pasajeros usen el cinturón.' : 'Ensure all passengers wear their seatbelt.';
+  String get deliver5StarService => _es ? 'Brinda servicio 5 estrellas' : 'Deliver 5-Star Service';
+  String get makeRideMemorableSubtitle => _es ? 'Haz cada viaje memorable' : 'Make every ride memorable';
+  String get greetEveryRider => _es ? 'Saluda a cada pasajero' : 'Greet Every Rider';
+  String get greetEveryRiderBody => _es ? 'Dale la bienvenida a los pasajeros por su nombre.' : 'Welcome riders by name.';
+  String get efficientRoutes => _es ? 'Rutas eficientes' : 'Efficient Routes';
+  String get efficientRoutesBody => _es ? 'Sigue la navegación GPS y toma la ruta más rápida.' : 'Follow GPS navigation and take the fastest route.';
+  String get respectPreferences => _es ? 'Respeta las preferencias' : 'Respect Preferences';
+  String get respectPreferencesBody => _es ? 'Mantén la música baja y pregunta las preferencias.' : 'Keep music low and ask for preferences.';
+  String get goExtraMile => _es ? 'Da un esfuerzo extra' : 'Go the Extra Mile';
+  String get goExtraMileBody => _es ? 'Ayuda con el equipaje y ofrece una experiencia premium.' : 'Help with luggage and offer a premium experience.';
+
+  // ── Signup ──
+  String get carRegistration => _es ? 'Registro del vehículo' : 'Car Registration';
+  String get carRegistrationSubtitle => _es ? 'Toma o sube una foto de tu registro' : 'Take or upload a photo of your registration';
+
+  // ── Scheduled rides ──
+  String get claimedLabel => _es ? 'Reclamado' : 'Claimed';
+  String get contactSupportToCancel => _es ? 'Contacta soporte para cancelar' : 'Contact Support to cancel';
+  String labelCopied(String label) => _es ? '$label copiado' : '$label copied';
   String get locationServicesDisabled => _es
       ? 'Servicios de ubicación desactivados'
       : 'Location services disabled';
@@ -3275,6 +3397,134 @@ class S {
 
   // ── Scheduled Rides Screen (rider) ────────────────────────────────────────
   String get driverAssignedLabel => _es ? 'Conductor Asignado' : 'Driver Assigned';
+
+  // ── Referral Screen (remaining) ───────────────────────────────────────────
+  String get giveGetTitle => _es ? 'Da \$10, Recibe \$10' : 'Give \$10, Get \$10';
+  String get shareCodeBannerSubtitle => _es
+      ? 'Comparte tu código con amigos. Cuando se unan,\nambos ganan \$10.'
+      : 'Share your code with friends. When they join,\nyou both earn \$10.';
+  String shareInviteMessage(String code) => _es
+      ? '¡Únete a Cruise! Usa mi código de referido $code cuando te registres y obtén \$10 de descuento en tu primer viaje. ¡Descarga la app ahora! 🚗✨'
+      : 'Join me on Cruise! Use my referral code $code when you sign up and get \$10 off your first ride. Download the app now! 🚗✨';
+  String get shareInviteSubject => _es ? '¡Únete a Cruise — obtén \$10 de descuento!' : 'Join Cruise — get \$10 off!';
+  String get haveAFriendsCode => _es ? '¿Tienes el código de un amigo?' : "Have a Friend's Code?";
+  String get enterCodeHint => _es ? 'INGRESA EL CÓDIGO' : 'ENTER CODE';
+
+  // ── Account Screen (remaining) ────────────────────────────────────────────
+  String get emailVerificationTitle => _es ? 'Verificación de Email' : 'Email Verification';
+  String get emailVerificationDesc => _es
+      ? 'Enviaremos un código de verificación a tu dirección de email.'
+      : "We'll send a verification code to your email address.";
+  String get enterCodeSentToEmail => _es
+      ? 'Ingresa el código enviado a tu email:'
+      : 'Enter the code sent to your email:';
+  String get verificationFailed => _es ? 'Verificación fallida. Intenta de nuevo.' : 'Verification failed. Try again.';
+  String get homeLabel => _es ? 'Casa' : 'Home';
+  String get workLabel => _es ? 'Trabajo' : 'Work';
+  String get placeLabel => _es ? 'Lugar' : 'Place';
+  String addLabel(String label) => _es ? 'Agregar $label' : 'Add $label';
+  String setLabelAddress(String label) => _es ? 'Establecer dirección de $label' : 'Set $label address';
+  String get searchAddressHint => _es ? 'Buscar dirección...' : 'Search address...';
+
+  // ── Schedule Picker Sheet (remaining) ─────────────────────────────────────
+  String get selectTimeTitle => _es ? 'Seleccionar hora' : 'Select Time';
+  String get pickPreferredTime => _es ? 'Elige tu hora preferida' : 'Pick your preferred time';
+  String get chooseDateForRide => _es ? 'Elige una fecha para tu viaje' : 'Choose a date for your ride';
+  String get airportTripLabel => _es ? 'Viaje al aeropuerto' : 'Airport trip';
+  String get confirmAndBook => _es ? 'Confirmar y Reservar' : 'Confirm & Book';
+  String get hourLabel => _es ? 'Hora' : 'Hour';
+  String get minLabel => _es ? 'Min' : 'Min';
+
+  // ── Login Screen ──────────────────────────────────────────────────────────
+  String get googleSignInCancelled => _es ? 'Inicio de sesión con Google cancelado' : 'Google Sign In was cancelled';
+  String get googleNoEmail => _es ? 'No se pudo obtener el email de Google. Intenta de nuevo.' : 'Could not get email from Google. Please try again.';
+  String googleSignInError(String e) => _es ? 'Error de inicio de sesión con Google: $e' : 'Google Sign In error: $e';
+  String get appleSignInCancelled => _es ? 'Inicio de sesión con Apple cancelado' : 'Apple Sign In was cancelled';
+  String appleSignInError(String e) => _es ? 'Error de inicio de sesión con Apple: $e' : 'Apple Sign In error: $e';
+  String get failedToSendVerificationCode => _es
+      ? 'Error al enviar código de verificación. Intenta de nuevo.'
+      : 'Failed to send verification code. Please try again.';
+  String failedToSendVerificationCodeError(String e) => _es
+      ? 'Error al enviar código de verificación: $e'
+      : 'Failed to send verification code: $e';
+  String providerCredentialsRejected(String provider) => _es
+      ? 'Credenciales de $provider rechazadas. Intenta de nuevo.'
+      : '$provider credentials rejected. Please try again.';
+  String registrationFailed(String e) => _es ? 'Registro fallido: $e' : 'Registration failed: $e';
+  String get enterYourEmailTitle => _es ? 'Ingresa tu Email' : 'Enter Your Email';
+  String get appleEmailExplanation => _es
+      ? 'Apple no compartió tu email esta vez. Ingresa el email vinculado a tu Apple ID.'
+      : 'Apple did not share your email this time. Please enter the email address linked to your Apple ID.';
+  String get cancelBtn => _es ? 'Cancelar' : 'Cancel';
+  String get continueBtn => _es ? 'Continuar' : 'Continue';
+  String accountAlreadyRegistered(String method) => _es
+      ? 'Ya existe una cuenta con este $method. ¿Deseas iniciar sesión?'
+      : 'An account with this $method is already registered. Would you like to log in instead?';
+  String get logInBtn => _es ? 'Iniciar Sesión' : 'Log In';
+  String get createAccountTitle => _es ? 'Crear cuenta' : 'Create account';
+  String get enterPhoneToSignUp => _es ? 'Ingresa tu número de teléfono para registrarte.' : 'Enter your phone number to sign up.';
+  String get enterEmailToSignUp => _es ? 'Ingresa tu email para registrarte.' : 'Enter your email to sign up.';
+  String get emailAddressHint => _es ? 'Dirección de email' : 'Email address';
+  String get continueWithPhone => _es ? 'Continuar con Teléfono' : 'Continue with Phone';
+  String get continueWithEmail => _es ? 'Continuar con Email' : 'Continue with Email';
+  String get orDivider => _es ? 'O' : 'OR';
+  String get continueWithGoogle => _es ? 'Continuar con Google' : 'Continue with Google';
+  String get continueWithApple => _es ? 'Continuar con Apple' : 'Continue with Apple';
+  String get signInBtn => _es ? 'Iniciar sesión' : 'Sign in';
+  String get byContinuingAgree => _es ? 'Al continuar, aceptas nuestros ' : 'By continuing, you agree to our ';
+  String get termsLink => _es ? 'Términos' : 'Terms';
+  String get andConjunction => _es ? ' y ' : ' and ';
+  String get privacyPolicyLink => _es ? 'Política de Privacidad' : 'Privacy Policy';
+
+  // ── Login Password Screen ─────────────────────────────────────────────────
+  String get invalidCredentialsNoAccount => _es
+      ? 'Credenciales inválidas. No se encontró cuenta con este email.'
+      : 'Invalid credentials. No account found with this email.';
+  String get googleSignInFailed => _es ? 'Inicio de sesión con Google falló. Intenta de nuevo.' : 'Google sign-in failed. Please try again.';
+  String get appleSignInFailed => _es ? 'Inicio de sesión con Apple falló. Intenta de nuevo.' : 'Apple sign-in failed. Please try again.';
+  String get couldNotSendVerificationEmail => _es
+      ? 'No se pudo enviar el email de verificación. Intenta de nuevo.'
+      : 'Could not send verification email. Please try again.';
+  String get whereToSendCode => _es
+      ? '¿Dónde enviaremos tu\ncódigo de verificación?'
+      : 'Where should we send\nyour verification code?';
+  String get textMessageSms => _es ? 'Mensaje de texto (SMS)' : 'Text message (SMS)';
+  String get emailOption => _es ? 'Email' : 'Email';
+  String get noContactMethodAvailable => _es ? 'No hay método de contacto disponible' : 'No contact method available';
+  String get deviceClockOutOfSync => _es
+      ? 'Reloj del dispositivo desincronizado. Ve a Ajustes → Fecha y Hora y activa "Ajustar automáticamente".'
+      : 'Device clock out of sync. Go to Settings → Date & Time and enable "Set Automatically".';
+  String get invalidEmailPhoneOrPassword => _es ? 'Email/teléfono o contraseña inválida' : 'Invalid email/phone or password';
+  String get accountNoLongerExists => _es ? 'Esta cuenta ya no existe' : 'This account no longer exists';
+  String get accountBlocked => _es ? 'Tu cuenta ha sido bloqueada' : 'Your account has been blocked';
+  String get accountDeactivated => _es ? 'Tu cuenta ha sido desactivada' : 'Your account has been deactivated';
+  String get connectionError => _es ? 'Error de conexión — ¿está el servidor activo?' : 'Connection error — is the server running?';
+  String get orLower => _es ? 'o' : 'or';
+  String get signInWithGoogle => _es ? 'Iniciar sesión con Google' : 'Sign in with Google';
+  String get signInWithApple => _es ? 'Iniciar sesión con Apple' : 'Sign in with Apple';
+
+  // ── Trip Receipt Screen ───────────────────────────────────────────────────
+  String receiptSentToEmail(String email) => _es ? 'Recibo enviado a $email' : 'Receipt sent to $email';
+  String completedOnDate(String date) => _es ? 'Completado · $date' : 'Completed · $date';
+  String get tripDetailsHeader => _es ? 'Detalles del Viaje' : 'Trip Details';
+  String get paymentLabel => _es ? 'Pago' : 'Payment';
+  String get fareBreakdownHeader => _es ? 'Desglose de Tarifa' : 'Fare Breakdown';
+  String get baseFareLabel => _es ? 'Tarifa base' : 'Base fare';
+  String mileageLabel(String dist) => _es ? 'Distancia ($dist)' : 'Mileage ($dist)';
+  String timeFareLabel(String time) => _es ? 'Tiempo ($time)' : 'Time ($time)';
+  String surgeLabel(String mult) => _es ? 'Recargo ($mult)' : 'Surge ($mult)';
+  String waitTimeLabel(String time) => _es ? 'Tiempo de espera ($time)' : 'Wait time ($time)';
+  String get tipLabel => _es ? 'Propina' : 'Tip';
+  String get totalLabel => _es ? 'Total' : 'Total';
+  String get routeHeader => _es ? 'Ruta' : 'Route';
+  String get pickupTagLabel => _es ? 'RECOGIDA' : 'PICKUP';
+  String get dropoffTagLabel => _es ? 'DESTINO' : 'DROP-OFF';
+  String get shareBtn => _es ? 'Compartir' : 'Share';
+  String get sentLabel => _es ? 'Enviado' : 'Sent';
+  String get thankYouForRiding => _es ? 'Gracias por viajar con Cruise' : 'Thank you for riding with Cruise';
+
+  // ── Emergency Dialog (driver) ─────────────────────────────────────────────
+  String get emergencyHelpTitle => _es ? '¿Necesitas ayuda de emergencia?' : 'Need emergency help?';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

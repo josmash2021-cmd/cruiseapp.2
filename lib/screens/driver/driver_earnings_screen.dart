@@ -1002,7 +1002,7 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('No se pudo configurar los pagos. Intenta de nuevo mas tarde.'), backgroundColor: Colors.red),
+          SnackBar(content: Text(S.of(context).payoutSetupFailed), backgroundColor: Colors.red),
         );
       }
     } finally {

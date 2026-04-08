@@ -675,7 +675,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
     final isPast = scheduledAt != null && scheduledAt.isBefore(DateTime.now());
     final cancelableStatus = status == 'scheduled' || status == 'scheduled_accepted' || status == 'driver_assigned' || status == 'requested';
-    final canCancel = cancelableStatus && !isPast;
+    final canCancel = cancelableStatus && !isPast && (scheduledAt == null || scheduledAt.difference(DateTime.now()).inMinutes > 60);
+    final showContactSupport = cancelableStatus && !isPast && !canCancel;
 
     return SizeTransition(
       sizeFactor: _removeSize,
@@ -1024,6 +1025,30 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+                  ),
+                ),
+              )
+            else if (showContactSupport)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.support_agent_rounded, color: Colors.white54, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        'Contact Support to cancel',
+                        style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ],
                   ),
                 ),
               )

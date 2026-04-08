@@ -19,6 +19,7 @@ import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
+import '../../widgets/tier_badge.dart';
 
 /// Unified scheduled rides screen with two tabs:
 ///   0 = Available  (marketplace — claim a ride)
@@ -528,7 +529,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             _chip(Icons.timer_rounded, countdownStr, _gold),
             if (distKm > 0)
               _chip(Icons.near_me_rounded, '${distKm.toStringAsFixed(1)} km', Colors.blue),
-            _chip(Icons.directions_car_rounded, vehicleType.toUpperCase(), Colors.white54),
+            TierBadge(rideName: vehicleType),
           ]),
         ),
         // Action — Accept or Claimed+Cancel
@@ -582,7 +583,26 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
               ),
             )
           else
-            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.support_agent_rounded, color: Colors.white54, size: 16),
+                    SizedBox(width: 6),
+                    Text('Contact Support to cancel', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
         ] else ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -1054,7 +1074,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
           mapbox.Point(coordinates: mapbox.Position(lngs.last,  lats.last)),
         ],
         mapbox.CameraOptions(pitch: pitch),
-        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 60, right: 50),
+        mapbox.MbxEdgeInsets(top: 70, left: 60, bottom: 70, right: 60),
         null,
         null,
       );
@@ -1407,8 +1427,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Wrap(spacing: 8, runSpacing: 6, children: [
-                  _chip(Icons.directions_car_rounded, vehicleType,
-                      Colors.white54),
+                  TierBadge(rideName: vehicleType),
                   if (fare != null && fare > 0)
                     _chip(Icons.attach_money_rounded,
                         '\$${fare.toStringAsFixed(2)}', _gold),
@@ -1468,7 +1487,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                       : const SizedBox.shrink(),
                 ),
 
-              // ── Cancel button (only if more than 60 min before ride) ──
+              // ── Cancel button (>60 min) or Contact Support (<60 min) ──
               if (canCancel)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
@@ -1495,6 +1514,30 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                                 ),
                               ],
                             ),
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.support_agent_rounded, color: Colors.white54, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Contact Support to cancel',
+                          style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1851,7 +1894,7 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
           ),
           infiniteBounds: false,
         ),
-        mapbox.MbxEdgeInsets(top: 45, left: 35, bottom: 45, right: 35),
+        mapbox.MbxEdgeInsets(top: 55, left: 45, bottom: 55, right: 45),
         null, null, null, null,
       );
       await _mapCtrl!.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));

@@ -44,6 +44,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _startPosStream();
     _loadAllEarnings();
     _startEarningsRefresh();
+    _startScheduledPoll();
 
     // Run approval gate (fast DB check) synchronously; GPS runs in background
     // to avoid blocking the screen transition with Geolocator.getCurrentPosition.
@@ -999,6 +1000,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (_sseActive) return; // SSE handles it — skip polling entirely
       _poll();
     });
+  }
+
+  /// Poll for available scheduled rides every 90 seconds.
+  void _startScheduledPoll() {
+    _scheduledPollTimer?.cancel();
+    _fetchScheduledCount();
+    _scheduledPollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+      if (mounted) _fetchScheduledCount();
+    });
+  }
+
+  Future<void> _fetchScheduledCount() async {
+    try {
+      final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
+      if (!mounted) return;
+      _setState(() => _scheduledAvailCount = trips.length);
+    } catch (_) {}
   }
 
   /// Connect (or reconnect) the SSE offer stream.

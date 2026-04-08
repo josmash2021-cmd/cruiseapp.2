@@ -50,8 +50,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
+import 'scheduled_rides_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import '../../widgets/tier_badge.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -178,6 +180,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   AnimationController? _pulseCtrl;
   Animation<double>? _pulseAnim;
   bool _isCardAnimating = false;
+
+  // ── Scheduled rides badge ──
+  int _scheduledAvailCount = 0;
+  Timer? _scheduledPollTimer;
   String? _animatingOfferId; // which card is pulsing
   bool _offerDetailsVisible = false;
 
@@ -452,6 +458,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pollT?.cancel();
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
+    _scheduledPollTimer?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
     _goldDot.dispose();
@@ -817,6 +824,72 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
+            // Scheduled rides badge (top-right, hidden during nav)
+            if (!isNav && _scheduledAvailCount > 0)
+              Positioned(
+                top: top + 10,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.push(
+                      context,
+                      slideFromRightRoute(
+                        const ScheduledRidesScreen(initialTab: 0),
+                      ),
+                    ).then((_) => _fetchScheduledCount());
+                  },
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: fabBg,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: fabBorder, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Center(
+                          child: Icon(
+                            Icons.calendar_today_rounded,
+                            size: 22,
+                            color: Color(0xFFE8C547),
+                          ),
+                        ),
+                        Positioned(
+                          top: -4,
+                          right: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8C547),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.black, width: 1.5),
+                            ),
+                            child: Text(
+                              '$_scheduledAvailCount',
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
             if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
               Positioned(
                 bottom: 54 + bot + 60,

@@ -16,7 +16,7 @@ class GpsService {
   GpsService._internal();
 
   final _database = FirebaseDatabase.instance;
-  static const Duration _uploadInterval = Duration(seconds: 3);
+  static const Duration _uploadInterval = Duration(seconds: 2);
 
   Timer? _uploadTimer;
   LatLng? _lastUploadedPos;
@@ -118,7 +118,12 @@ class GpsService {
 
   Future<void> _uploadToFirebase() async {
     if (_currentPos == null || _activeDriverId == null) return;
-    if (_currentPos == _lastUploadedPos) return; // no change
+    // Always upload on periodic heartbeat so RTDB stays fresh even at slow speeds.
+    // Only skip if position truly unchanged AND last upload was very recent (< 2 s).
+    if (_currentPos == _lastUploadedPos && _lastUploadAt != null &&
+        DateTime.now().difference(_lastUploadAt!).inMilliseconds < 2000) {
+      return;
+    }
 
     final payload = {
       'lat': _currentPos!.latitude,

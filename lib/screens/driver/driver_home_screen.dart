@@ -201,10 +201,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     if (widget.returnFromTrip) _isStillOnline = true;
     _goldDot.build(() {
-      if (mounted) {
-        setState(() {});
-        _syncDotAnnotation(); // Keep dot pulsing on map
-      }
+      // Update the Mapbox annotation directly — no setState needed (avoids rebuild storm)
+      if (mounted) _syncDotAnnotation();
     });
     _initLocation();
     _loadDriverData();
@@ -360,8 +358,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  /// LocationPuck handles location rendering — no dot annotation sync needed.
-  void _syncDotAnnotation() {}
+  /// Update the gold dot PointAnnotation with latest interpolated position + frame.
+  void _syncDotAnnotation() {
+    _updateMyLocAnnotation();
+  }
 
   // ═══════════════════════════════════════════════════
   //  ACCOUNT STATUS CHECK
@@ -491,6 +491,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
         _goldDot.setTarget(ll.latitude, ll.longitude);
+        _updateMyLocAnnotation(); // sync annotation immediately on GPS event
         // Camera follows smoothly — dot glides via GoldLocationDot interpolation
         _mapController?.flyTo(
           mapbox.CameraOptions(

@@ -146,12 +146,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (ll.latitude == 0 && ll.longitude == 0) return;
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
-    // Wake up the ticker if it was idling — new GPS data means new animation to run
-    if (_interpIdle) {
-      _interpIdle = false;
-      if (_interpTicker != null && !_interpTicker!.isActive) {
-        _interpTicker!.start();
-      }
+    // Always wake up the ticker on new GPS data — restarts if idle or stopped.
+    _interpIdle = false;
+    if (_interpTicker != null && !_interpTicker!.isActive) {
+      _interpTicker!.start();
     }
 
     // Always try to snap GPS onto the route polyline.
@@ -1060,8 +1058,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // ── Ultra-smooth advance with velocity prediction ──
-    // Predict ahead 250ms so the car never stalls between GPS updates.
-    final predicted = _tgtTraveledM + _velocityMps * 0.25;
+    // Predict ahead 2 s so the car keeps gliding between 2-3 s GPS gaps.
+    final predicted = _tgtTraveledM + _velocityMps * 2.0;
     final effectiveTarget = math.min(predicted, _segDist.last);
     final diff = effectiveTarget - _traveledM;
     // Time-based catch-up: 24% base at 60fps, scales with dt
@@ -1072,8 +1070,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } else {
       _traveledM += step;
     }
-    // Time-based velocity decay: ~88% per second regardless of frame rate
-    _velocityMps *= math.pow(0.88, dt);
+    // Time-based velocity decay: ~97% per second — sustains prediction between GPS gaps
+    _velocityMps *= math.pow(0.97, dt);
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 

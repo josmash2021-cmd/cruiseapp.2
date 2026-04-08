@@ -8,6 +8,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
+import '../../models/lat_lng.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
 import '../../utils/responsive.dart';
@@ -121,12 +122,16 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
-        pageBuilder: (_, anim, __) => const DriverOnlineScreen(),
+        pageBuilder: (_, anim, __) => DriverOnlineScreen(
+          initialPos: (widget.dropoffLat != null && widget.dropoffLng != null)
+              ? LatLng(widget.dropoffLat!, widget.dropoffLng!)
+              : null,
+        ),
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
           child: child,
         ),
-        transitionDuration: const Duration(milliseconds: 600),
+        transitionDuration: const Duration(milliseconds: 400),
       ),
       (route) => false,
     );

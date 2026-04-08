@@ -713,21 +713,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Navigate immediately — no waiting on API calls
     HapticFeedback.heavyImpact();
-    // Delay sound until AFTER the transition completes so it doesn't freeze the animation
-    Future.delayed(const Duration(milliseconds: 520), NotificationService.playOnlineSound);
+    // Play sound completely async — don't let it interfere with the transition
+    unawaited(Future.microtask(() => NotificationService.playOnlineSound()));
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
-        transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
             opacity: curved,
             child: ScaleTransition(
-              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
               child: child,
             ),
           );
@@ -825,15 +825,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl),
-        transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 400),
+            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng),
+        transitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
             opacity: curved,
             child: ScaleTransition(
-              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
               child: child,
             ),
           );

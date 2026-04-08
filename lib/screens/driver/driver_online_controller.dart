@@ -20,42 +20,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   //  BOOT
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _boot() async {
-    // Retry getting driver ID up to 3 times (critical for dispatch)
-    for (int attempt = 1; attempt <= 3; attempt++) {
-      try {
-        final id = await ApiService.getCurrentUserId();
-        if (id != null) {
-          _driverId = id;
-          debugPrint('âœ… Got driverId=$_driverId on attempt $attempt');
-          break;
-        }
-      } catch (e) {
-        debugPrint('âš ï¸ getCurrentUserId attempt $attempt failed: $e');
+    // Get driver ID — single fast attempt, retry later if needed
+    try {
+      final id = await ApiService.getCurrentUserId();
+      if (id != null) {
+        _driverId = id;
+        debugPrint('✅ Got driverId=$_driverId');
       }
-      if (attempt < 3) await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      debugPrint('⚠️ getCurrentUserId failed: $e');
     }
-    if (_driverId == null) {
-      debugPrint('âŒ Could not get driver ID after 3 attempts');
-    }
-    // Run GPS + icon loading in parallel — they are independent
-    // Start non-blocking tasks immediately so UI stays responsive
+
+    // Start ALL non-blocking tasks immediately — zero delay
     _startClock();
     _startPolling();
     _startPosStream();
     _loadAllEarnings();
     _startEarningsRefresh();
     _startScheduledPoll();
-
-    // Run approval gate (fast DB check) synchronously; GPS runs in background
-    // to avoid blocking the screen transition with Geolocator.getCurrentPosition.
-    await _verifyDriverApproval();
-    _goOnlineBackend();
-    // Get precise GPS in background — don't await, splash preload already set _pos
     unawaited(_locate());
 
-    // Build vehicle icons after transition (avoids competing with the
-    // 500ms fade+scale animation which causes a 1-second freeze).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Verification + go-online in background — don't block the UI.
+    // Driver already passed the home-screen gate (_ensureVerified +
+    // _checkVehicleDocStatus) so this is a background safety net.
+    unawaited(_verifyAndGoOnline());
+
+    // Build vehicle icons well after the transition settles (700ms)
+    // to avoid jank during the 400ms fade+scale entrance animation.
+    Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) _buildVehicleIcons();
     });
 
@@ -70,6 +62,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         radiusKm: 5.0,
       );
     }
+  }
+
+  /// Background verification + go-online — never blocks boot.
+  Future<void> _verifyAndGoOnline() async {
+    // Retry driver ID if first attempt failed
+    if (_driverId == null) {
+      for (int attempt = 1; attempt <= 2; attempt++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          final id = await ApiService.getCurrentUserId();
+          if (id != null) {
+            _driverId = id;
+            debugPrint('✅ Got driverId=$_driverId on retry $attempt');
+            // Reconnect SSE now that we have an ID
+            _connectSse();
+            _startPosStream();
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+    await _verifyDriverApproval();
+    _goOnlineBackend();
   }
 
   /// Start a periodic timer to refresh earnings every 45 seconds.

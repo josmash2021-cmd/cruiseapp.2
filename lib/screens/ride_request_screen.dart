@@ -378,9 +378,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _initLocation();
     } else {
       _initLocation().then((_) {
-        // Auto-geocode airport and set as pickup when airport selection provided
+        // Auto-geocode airport and apply as pickup or dropoff based on direction
         if (widget.airportSelection != null) {
-          _autoSetAirportPickup(widget.airportSelection!);
+          _autoApplyAirportSelection(widget.airportSelection!);
         }
         // Direct details available (e.g. from Choose on map) — use immediately
         if (widget.initialPickupDetails != null) {

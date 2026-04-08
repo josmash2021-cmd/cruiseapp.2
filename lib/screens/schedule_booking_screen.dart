@@ -592,8 +592,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         scheduledAt: widget.scheduledAt,
         isAirport: isAirport,
         airportCode: _airportSelection?.airport.code,
-        terminal: _airportSelection?.terminal,
-        pickupZone: _airportSelection?.pickupZone,
+        terminal: _airportSelection?.terminal?.name,
+        pickupZone: _airportSelection?.arrivalDoor ?? _airportSelection?.airline,
         notes: notes,
       );
 

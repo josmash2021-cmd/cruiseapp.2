@@ -46,55 +46,75 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
-  /// Geocode the airport name + terminal + zone into real coordinates,
-  /// then auto-fill the pickup field so the rider sees the exact address.
-  Future<void> _autoSetAirportPickup(AirportSelection sel) async {
+  /// Geocode the airport selection and apply it as either pickup or dropoff
+  /// depending on [sel.direction]:
+  ///   - toAirport  → airport becomes the DROPOFF; rider's current location auto-set as pickup
+  ///   - fromAirport → airport becomes the PICKUP; rider sets their own dropoff
+  Future<void> _autoApplyAirportSelection(AirportSelection sel) async {
     final places = PlacesService(ApiKeys.webServices);
     final ap = sel.airport;
-    // Build a descriptive search query that includes terminal & zone
-    final terminalPart = sel.terminal != null ? ', ${sel.terminal}' : '';
-    final zonePart = sel.pickupZone != null ? ' — ${sel.pickupZone}' : '';
-    final query = '${ap.name}$terminalPart';
+    final isFrom = sel.direction == AirportDirection.fromAirport;
 
+    // Build geocode query
+    final terminalPart = sel.terminal != null ? ', ${sel.terminal!.name}' : '';
+    final departureSuffix = isFrom ? '' : ' Departures';
+    final query = '${ap.name}$terminalPart$departureSuffix';
+
+    // Build human-readable label
+    final doorPart = isFrom && sel.arrivalDoor != null ? ' — ${sel.arrivalDoor}' : '';
+    final airlinePart = !isFrom && sel.airline != null ? ' — ${sel.airline}' : '';
+    final label = '${ap.code} · ${sel.terminal?.name ?? ap.name}$doorPart$airlinePart';
+
+    PlaceDetails? details;
     try {
-      // Search via Places autocomplete
       final results = await places.autocomplete(query);
       if (!mounted) return;
       if (results.isNotEmpty) {
-        final first = results.first;
-        final details = await places.details(first.placeId);
-        if (!mounted) return;
-        if (details != null) {
-          // Build the display label: "Terminal S — Arrivals Level 1 - Door 5"
-          final label = '${ap.code} · ${sel.terminal ?? ap.name}$zonePart';
-          _ctrl.setPickup(details, label);
-          // Animate map camera to airport
-          final target = LatLng(details.lat, details.lng);
-          _mapCtrl?.flyTo(
-            mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)), zoom: 17.0),
-            mapbox.MapAnimationOptions(duration: 800),
-          );
-          return;
-        }
+        details = await places.details(results.first.placeId);
       }
     } catch (_) {}
 
-    // Fallback: use airport name as manual label with no coords
-    // (rider must confirm/adjust pickup on map)
-    final terminalLabel = sel.terminal != null
-        ? '${ap.code} · ${sel.terminal}$zonePart'
-        : ap.name;
-    // Try a direct text search as second fallback
-    try {
-      final results = await places.autocomplete(ap.name);
-      if (!mounted) return;
-      if (results.isNotEmpty) {
-        final details = await places.details(results.first.placeId);
-        if (!mounted || details == null) return;
-        _ctrl.setPickup(details, terminalLabel);
+    // Fallback: search by airport name only
+    if (details == null) {
+      try {
+        final results = await places.autocomplete(ap.name);
+        if (!mounted) return;
+        if (results.isNotEmpty) details = await places.details(results.first.placeId);
+      } catch (_) {}
+    }
+
+    if (!mounted || details == null) return;
+
+    if (isFrom) {
+      // fromAirport: airport = pickup origin
+      _ctrl.setPickup(details, label);
+    } else {
+      // toAirport: airport = dropoff destination
+      _ctrl.setDropoff(details, label);
+      // Auto-set current location as pickup if available
+      if (_userLocation != null) {
+        final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'Current location';
+        _ctrl.setPickup(
+          PlaceDetails(address: curLabel, lat: _userLocation!.latitude, lng: _userLocation!.longitude),
+          curLabel,
+        );
       }
-    } catch (_) {}
+    }
+
+    // Fly map to airport
+    final target = LatLng(details.lat, details.lng);
+    _mapCtrl?.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)),
+        zoom: 16.5,
+      ),
+      mapbox.MapAnimationOptions(duration: 800),
+    );
   }
+
+  // Keep old name as alias for backward compat with any lingering call sites.
+  Future<void> _autoSetAirportPickup(AirportSelection sel) =>
+      _autoApplyAirportSelection(sel);
 
   /// Auto-geocode a dropoff address string (from Quick Access) and set it.
   Future<void> _autoSetDropoff(String address) async {

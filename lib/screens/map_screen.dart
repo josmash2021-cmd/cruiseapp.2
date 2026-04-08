@@ -1982,8 +1982,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             scheduledAt: scheduledAt,
             isAirport: isAirport,
             airportCode: _airportSelection?.airport.code,
-            terminal: _airportSelection?.terminal,
-            pickupZone: _airportSelection?.pickupZone,
+            terminal: _airportSelection?.terminal?.name,
+            pickupZone: _airportSelection?.arrivalDoor ?? _airportSelection?.airline,
             notes: airportNotes,
           );
           _currentTripId = tripData['id'] as int?;
@@ -2157,8 +2157,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           vehicleType: vehicleType,
           isAirport: isAirport,
           airportCode: _airportSelection?.airport.code,
-          terminal: _airportSelection?.terminal,
-          pickupZone: _airportSelection?.pickupZone,
+          terminal: _airportSelection?.terminal?.name,
+          pickupZone: _airportSelection?.arrivalDoor ?? _airportSelection?.airline,
           notes: airportNotes,
         );
 

@@ -5,439 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_keys.dart';
-import '../config/app_theme.dart';
+import '../data/airport_data.dart';
 import '../l10n/app_localizations.dart';
+import '../models/airport_models.dart';
 
-/// Airport data model
-class AirportInfo {
-  final String code;
-  final String name;
-  final List<String> terminals;
-  final List<String> pickupZones;
-  final double? flatRateSurcharge;
+export '../models/airport_models.dart';
 
-  const AirportInfo({
-    required this.code,
-    required this.name,
-    required this.terminals,
-    required this.pickupZones,
-    this.flatRateSurcharge,
-  });
-}
-
-/// Result from airport terminal selection
-class AirportSelection {
-  final AirportInfo airport;
-  final String? terminal;
-  final String? pickupZone;
-  final String? flightNumber;
-
-  const AirportSelection({
-    required this.airport,
-    this.terminal,
-    this.pickupZone,
-    this.flightNumber,
-  });
-}
-
-/// Common US airports (50 major airports)
-const List<AirportInfo> _commonAirports = [
-  // ─── ALABAMA ───
-  AirportInfo(
-    code: 'BHM',
-    name: 'Birmingham-Shuttlesworth Intl',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Arrivals Level 1 - Rideshare Pickup', 'Cell Phone Lot'],
-    flatRateSurcharge: 4.0,
-  ),
-  AirportInfo(
-    code: 'HSV',
-    name: 'Huntsville International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Ground Level - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  AirportInfo(
-    code: 'MOB',
-    name: 'Mobile Regional Airport',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Arrivals - Curbside Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── ARIZONA ───
-  AirportInfo(
-    code: 'PHX',
-    name: 'Phoenix Sky Harbor International',
-    terminals: ['Terminal 3', 'Terminal 4'],
-    pickupZones: ['Rideshare Pickup - 44th St Station'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── CALIFORNIA ───
-  AirportInfo(
-    code: 'LAX',
-    name: 'Los Angeles International',
-    terminals: [
-      'Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 4',
-      'Terminal 5', 'Terminal 6', 'Terminal 7', 'Tom Bradley Intl',
-    ],
-    pickupZones: ['LAX-it Rideshare Lot'],
-    flatRateSurcharge: 6.0,
-  ),
-  AirportInfo(
-    code: 'SFO',
-    name: 'San Francisco International',
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'International Terminal'],
-    pickupZones: ['Domestic Parking Garage Level 5', 'International Terminal G'],
-    flatRateSurcharge: 6.0,
-  ),
-  AirportInfo(
-    code: 'SAN',
-    name: 'San Diego International',
-    terminals: ['Terminal 1', 'Terminal 2'],
-    pickupZones: ['Transportation Plaza - Rideshare'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'SJC',
-    name: 'San José Mineta International',
-    terminals: ['Terminal A', 'Terminal B'],
-    pickupZones: ['Ground Level - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'OAK',
-    name: 'Oakland International',
-    terminals: ['Terminal 1', 'Terminal 2'],
-    pickupZones: ['Rideshare Pickup - Ground Level'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'SMF',
-    name: 'Sacramento International',
-    terminals: ['Terminal A', 'Terminal B'],
-    pickupZones: ['Ground Transportation - Rideshare'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── COLORADO ───
-  AirportInfo(
-    code: 'DEN',
-    name: 'Denver International',
-    terminals: ['Jeppesen Terminal'],
-    pickupZones: ['Level 5 East - Rideshare', 'Level 5 West - Rideshare'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── CONNECTICUT ───
-  AirportInfo(
-    code: 'BDL',
-    name: 'Bradley International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── FLORIDA ───
-  AirportInfo(
-    code: 'MIA',
-    name: 'Miami International Airport',
-    terminals: ['Terminal N', 'Terminal S', 'Central Terminal'],
-    pickupZones: [
-      'Arrivals Level 1 - Door 1',
-      'Arrivals Level 1 - Door 5',
-      'Arrivals Level 1 - Door 9',
-    ],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'FLL',
-    name: 'Fort Lauderdale-Hollywood Intl',
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 4'],
-    pickupZones: ['Ground Level - Rideshare Zone', 'Arrivals - Door 1'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'MCO',
-    name: 'Orlando International',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
-    pickupZones: ['Ground Transportation Level 1 - Rideshare'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'TPA',
-    name: 'Tampa International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Level 1 - Blue Express Curbside'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'JAX',
-    name: 'Jacksonville International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Lower Level - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  AirportInfo(
-    code: 'RSW',
-    name: 'Southwest Florida International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── GEORGIA ───
-  AirportInfo(
-    code: 'ATL',
-    name: 'Hartsfield-Jackson Atlanta Intl',
-    terminals: ['Domestic Terminal N', 'Domestic Terminal S', 'International Terminal'],
-    pickupZones: ['Ground Transportation - Rideshare Island F'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── ILLINOIS ───
-  AirportInfo(
-    code: 'ORD',
-    name: "Chicago O'Hare International",
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3', 'Terminal 5 (Intl)'],
-    pickupZones: ['Lower Level - Rideshare Pickup'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'MDW',
-    name: 'Chicago Midway International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Arrivals - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── INDIANA ───
-  AirportInfo(
-    code: 'IND',
-    name: 'Indianapolis International',
-    terminals: ['Col. H. Weir Cook Terminal'],
-    pickupZones: ['Ground Transportation - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── KENTUCKY ───
-  AirportInfo(
-    code: 'CVG',
-    name: 'Cincinnati/Northern Kentucky Intl',
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 3'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── LOUISIANA ───
-  AirportInfo(
-    code: 'MSY',
-    name: 'Louis Armstrong New Orleans Intl',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Level 1 - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── MARYLAND ───
-  AirportInfo(
-    code: 'BWI',
-    name: 'Baltimore/Washington Intl',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
-    pickupZones: ['Lower Level - Rideshare Pickup'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── MASSACHUSETTS ───
-  AirportInfo(
-    code: 'BOS',
-    name: 'Boston Logan International',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal E'],
-    pickupZones: ['Central Parking Garage - Rideshare Level 1'],
-    flatRateSurcharge: 6.0,
-  ),
-  // ─── MICHIGAN ───
-  AirportInfo(
-    code: 'DTW',
-    name: 'Detroit Metropolitan Wayne County',
-    terminals: ['McNamara Terminal', 'North Terminal'],
-    pickupZones: ['Ground Level - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── MINNESOTA ───
-  AirportInfo(
-    code: 'MSP',
-    name: 'Minneapolis-Saint Paul Intl',
-    terminals: ['Terminal 1 (Lindbergh)', 'Terminal 2 (Humphrey)'],
-    pickupZones: ['Level 1 Ground Transport - Rideshare'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── MISSOURI ───
-  AirportInfo(
-    code: 'STL',
-    name: 'St. Louis Lambert International',
-    terminals: ['Terminal 1', 'Terminal 2'],
-    pickupZones: ['Lower Level - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  AirportInfo(
-    code: 'MCI',
-    name: 'Kansas City International',
-    terminals: ['New Terminal'],
-    pickupZones: ['Level 1 - Rideshare Pickup Area'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── NEVADA ───
-  AirportInfo(
-    code: 'LAS',
-    name: 'Harry Reid International',
-    terminals: ['Terminal 1', 'Terminal 3'],
-    pickupZones: ['Level 2M - Rideshare Pickup'],
-    flatRateSurcharge: 6.0,
-  ),
-  // ─── NEW JERSEY ───
-  AirportInfo(
-    code: 'EWR',
-    name: 'Newark Liberty International',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
-    pickupZones: ['Arrivals - Rideshare Pickup P4'],
-    flatRateSurcharge: 7.0,
-  ),
-  // ─── NEW YORK ───
-  AirportInfo(
-    code: 'JFK',
-    name: 'John F. Kennedy International',
-    terminals: ['Terminal 1', 'Terminal 2', 'Terminal 4', 'Terminal 5', 'Terminal 7', 'Terminal 8'],
-    pickupZones: ['Arrivals - Rideshare Pickup', 'Terminal Curbside'],
-    flatRateSurcharge: 8.0,
-  ),
-  AirportInfo(
-    code: 'LGA',
-    name: 'LaGuardia Airport',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
-    pickupZones: ['Arrivals Level - Rideshare Zone'],
-    flatRateSurcharge: 7.0,
-  ),
-  // ─── NORTH CAROLINA ───
-  AirportInfo(
-    code: 'CLT',
-    name: 'Charlotte Douglas International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Lower Level - Rideshare Pickup Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'RDU',
-    name: 'Raleigh-Durham International',
-    terminals: ['Terminal 1', 'Terminal 2'],
-    pickupZones: ['Arrivals - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── OHIO ───
-  AirportInfo(
-    code: 'CMH',
-    name: 'John Glenn Columbus International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── OREGON ───
-  AirportInfo(
-    code: 'PDX',
-    name: 'Portland International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Lower Level - Rideshare Island'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── PENNSYLVANIA ───
-  AirportInfo(
-    code: 'PHL',
-    name: 'Philadelphia International',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E', 'Terminal F'],
-    pickupZones: ['Arrivals - Rideshare Zone A'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'PIT',
-    name: 'Pittsburgh International',
-    terminals: ['Airside Terminal'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── TENNESSEE ───
-  AirportInfo(
-    code: 'BNA',
-    name: 'Nashville International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Level 1 - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'MEM',
-    name: 'Memphis International',
-    terminals: ['Terminal A', 'Terminal B'],
-    pickupZones: ['Ground Level - Rideshare Pickup'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── TEXAS ───
-  AirportInfo(
-    code: 'DFW',
-    name: 'Dallas/Fort Worth International',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
-    pickupZones: ['Lower Level - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'IAH',
-    name: 'George Bush Intercontinental',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C', 'Terminal D', 'Terminal E'],
-    pickupZones: ['Arrivals Level - Rideshare Pickup'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'HOU',
-    name: 'William P. Hobby Airport',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Lower Level - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'DAL',
-    name: 'Dallas Love Field',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Lower Level - Rideshare Pickup'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'AUS',
-    name: 'Austin-Bergstrom International',
-    terminals: ['Barbara Jordan Terminal'],
-    pickupZones: ['Ground Transportation - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  AirportInfo(
-    code: 'SAT',
-    name: 'San Antonio International',
-    terminals: ['Terminal A', 'Terminal B'],
-    pickupZones: ['Lower Level - Rideshare Zone'],
-    flatRateSurcharge: 4.0,
-  ),
-  // ─── UTAH ───
-  AirportInfo(
-    code: 'SLC',
-    name: 'Salt Lake City International',
-    terminals: ['Main Terminal'],
-    pickupZones: ['Level 1 - Rideshare Pickup'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── VIRGINIA ───
-  AirportInfo(
-    code: 'DCA',
-    name: 'Ronald Reagan Washington National',
-    terminals: ['Terminal A', 'Terminal B', 'Terminal C'],
-    pickupZones: ['Arrivals Level - Rideshare Zone'],
-    flatRateSurcharge: 5.0,
-  ),
-  // ─── WASHINGTON ───
-  AirportInfo(
-    code: 'SEA',
-    name: 'Seattle-Tacoma International',
-    terminals: ['North Terminal', 'South Terminal'],
-    pickupZones: ['3rd Floor Parking Garage - Rideshare'],
-    flatRateSurcharge: 6.0,
-  ),
-];
-
-/// Premium airport terminal selector bottom sheet.
-/// Returns an [AirportSelection] with the chosen airport, terminal, pickup zone, and flight number.
+/// Premium airport ride selector — 4-step bottom sheet.
+/// Returns an [AirportSelection] on confirm, or null if dismissed.
+///
+/// Step 0: Direction (to / from airport)
+/// Step 1: Select airport
+/// Step 2a (toAirport):   Select airline → terminal auto-resolved
+/// Step 2b (fromAirport): Select terminal → select arrival door
+/// Step 3: Flight number + confirm
 class AirportTerminalSheet extends StatefulWidget {
   final bool isDark;
   const AirportTerminalSheet({super.key, required this.isDark});
@@ -448,46 +29,51 @@ class AirportTerminalSheet extends StatefulWidget {
 
 class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     with SingleTickerProviderStateMixin {
-  static const _gold = Color(0xFFE8C547);
+  // ── colours ──
+  static const _gold      = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
-  static const _airportBlue = Color(0xFF4285F4);
+  static const _blue      = Color(0xFF4285F4);
+  static const _green     = Color(0xFF34A853);
 
+  // ── animation ──
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeOut;
   late final Animation<double> _fadeIn;
 
-  // Steps: 0 = select airport, 1 = select terminal, 2 = confirm details
-  int _step = 0;
-  AirportInfo? _selectedAirport;
-  String? _selectedTerminal;
-  String? _selectedPickupZone;
-  final _flightCtrl = TextEditingController();
-  final _searchCtrl = TextEditingController();
-  String _searchQuery = '';
+  // ── state ──
+  int _step = 0; // 0=direction 1=airport 2=details 3=confirm
 
-  // Google Places airport autocomplete
+  AirportDirection? _direction;
+  AirportInfo?      _selectedAirport;
+  AirportTerminal?  _selectedTerminal;
+  String?           _selectedAirline;
+  String?           _selectedArrivalDoor;
+
+  final _flightCtrl  = TextEditingController();
+  final _searchCtrl  = TextEditingController();
+  String _searchQuery = '';
+  bool   _flightError = false;
+
+  // ── Google Places fallback ──
   List<_AirportSuggestion> _suggestions = [];
   bool _loadingSuggestions = false;
   Timer? _debounce;
 
+  // ─────────────────────────────────────────────
+  //  Lifecycle
+  // ─────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 300),
     );
     _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _animCtrl,
-        curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
-      ),
+      CurvedAnimation(parent: _animCtrl, curve: const Interval(0.0, 0.4, curve: Curves.easeOut)),
     );
     _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animCtrl,
-        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
-      ),
+      CurvedAnimation(parent: _animCtrl, curve: const Interval(0.4, 1.0, curve: Curves.easeOut)),
     );
   }
 
@@ -500,138 +86,89 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     super.dispose();
   }
 
-  Color get _bg => widget.isDark ? const Color(0xFF111318) : Colors.white;
-  Color get _surface =>
-      widget.isDark ? const Color(0xFF1A1D24) : const Color(0xFFF5F5F5);
-  Color get _textPrimary =>
-      widget.isDark ? Colors.white : const Color(0xFF1A1D24);
-  Color get _textSecondary =>
-      widget.isDark ? Colors.white54 : const Color(0xFF6B7280);
-  Color get _border => widget.isDark ? Colors.white10 : Colors.black12;
+  // ─────────────────────────────────────────────
+  //  Theme helpers
+  // ─────────────────────────────────────────────
+  Color get _bg         => widget.isDark ? const Color(0xFF111318) : Colors.white;
+  Color get _surface    => widget.isDark ? const Color(0xFF1A1D24) : const Color(0xFFF5F5F5);
+  Color get _textPrimary   => widget.isDark ? Colors.white : const Color(0xFF1A1D24);
+  Color get _textSecondary => widget.isDark ? Colors.white54 : const Color(0xFF6B7280);
+  Color get _border     => widget.isDark ? Colors.white10 : Colors.black12;
+
+  // ─────────────────────────────────────────────
+  //  Navigation helpers
+  // ─────────────────────────────────────────────
+  void _advance() {
+    setState(() => _step++);
+    _animCtrl.forward(from: 0);
+  }
+
+  void _goBack() {
+    if (_step == 0) {
+      Navigator.of(context).pop();
+      return;
+    }
+    if (_step == 2) {
+      // back to airport list — reset selections
+      _selectedAirline = null;
+      _selectedArrivalDoor = null;
+      _selectedTerminal = null;
+    }
+    if (_step == 3) {
+      // back to details — keep selections
+    }
+    setState(() => _step--);
+    _animCtrl.reverse(from: 1);
+  }
+
+  void _selectDirection(AirportDirection dir) {
+    setState(() => _direction = dir);
+    _advance();
+  }
 
   void _selectAirport(AirportInfo airport) {
     setState(() {
       _selectedAirport = airport;
-      _selectedTerminal = airport.terminals.isNotEmpty
-          ? airport.terminals.first
-          : null;
-      _selectedPickupZone = airport.pickupZones.isNotEmpty
-          ? airport.pickupZones.first
-          : null;
+      _selectedTerminal = null;
+      _selectedAirline = null;
+      _selectedArrivalDoor = null;
       _suggestions = [];
-      _step = 1;
     });
-    _animCtrl.forward(from: 0);
+    _advance();
   }
 
-  void _onSearchChanged(String q) {
-    setState(() => _searchQuery = q);
-    _debounce?.cancel();
-    if (q.trim().length < 2) {
-      setState(() {
-        _suggestions = [];
-        _loadingSuggestions = false;
-      });
-      return;
-    }
-    // Check local list first — only call API when needed
-    final localHits = _commonAirports
-        .where(
-          (a) =>
-              a.code.toLowerCase().contains(q.toLowerCase()) ||
-              a.name.toLowerCase().contains(q.toLowerCase()),
-        )
-        .toList();
-    if (localHits.isNotEmpty) {
-      setState(() => _suggestions = []);
-    }
-    _debounce = Timer(
-      const Duration(milliseconds: 450),
-      () => _fetchAirportSuggestions(q),
-    );
+  void _selectAirline(String airline) {
+    final matches = _selectedAirport!.terminalsForAirline(airline);
+    setState(() {
+      _selectedAirline  = airline;
+      _selectedTerminal = matches.isNotEmpty ? matches.first : null;
+    });
+    // Small delay so user sees the selection highlight before advancing
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) _advance();
+    });
   }
 
-  Future<void> _fetchAirportSuggestions(String q) async {
-    setState(() => _loadingSuggestions = true);
-    try {
-      final uri = Uri.https(
-        'maps.googleapis.com',
-        '/maps/api/place/autocomplete/json',
-        {
-          'input': q,
-          'types': 'airport',
-          'key': ApiKeys.webServices,
-          'language': 'en',
-        },
-      );
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      if (!mounted) return;
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final predictions = data['predictions'] as List? ?? [];
-        // Filter out airports already in local list
-        final localCodes = _commonAirports.map((a) => a.code).toSet();
-        final suggestions = <_AirportSuggestion>[];
-        for (final p in predictions) {
-          final desc = p['description'] as String? ?? '';
-          final placeId = p['place_id'] as String? ?? '';
-          // Extract IATA code from description (e.g. "Birmingham–Shuttlesworth (BHM)")
-          final codeMatch = RegExp(r'\b([A-Z]{3})\b').allMatches(desc);
-          final code = codeMatch.isNotEmpty ? codeMatch.last.group(0)! : '';
-          if (localCodes.contains(code)) continue;
-          suggestions.add(
-            _AirportSuggestion(description: desc, placeId: placeId, code: code),
-          );
-        }
-        if (mounted) {
-          setState(() {
-            _suggestions = suggestions;
-            _loadingSuggestions = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() => _loadingSuggestions = false);
-        }
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingSuggestions = false);
-    }
-  }
-
-  /// When user picks a Google Places airport result, create a minimal AirportInfo
-  void _selectSuggestion(_AirportSuggestion s) {
-    final airport = AirportInfo(
-      code: s.code.isNotEmpty ? s.code : '???',
-      name: s.description,
-      terminals: [S.of(context).mainTerminal],
-      pickupZones: [S.of(context).arrivalsRidesharePickup],
-      flatRateSurcharge: null,
-    );
-    _selectAirport(airport);
-  }
-
-  void _goBack() {
-    if (_step == 1) {
-      setState(() => _step = 0);
-      _animCtrl.reverse(from: 1);
-    } else if (_step == 2) {
-      setState(() => _step = 1);
-      _animCtrl.reverse(from: 1);
-    }
-  }
-
-  void _goToConfirm() {
-    setState(() => _step = 2);
-    _animCtrl.forward(from: 0);
+  void _selectArrivalDoor(String door) {
+    setState(() => _selectedArrivalDoor = door);
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) _advance();
+    });
   }
 
   void _confirm() {
+    if (_direction == AirportDirection.fromAirport &&
+        _flightCtrl.text.trim().isEmpty) {
+      setState(() => _flightError = true);
+      return;
+    }
     Navigator.of(context).pop(
       AirportSelection(
-        airport: _selectedAirport!,
-        terminal: _selectedTerminal,
-        pickupZone: _selectedPickupZone,
+        airport:     _selectedAirport!,
+        direction:   _direction!,
+        terminal:    _selectedTerminal,
+        airline:     _selectedAirline,
+        arrivalDoor: _selectedArrivalDoor,
         flightNumber: _flightCtrl.text.trim().isNotEmpty
             ? _flightCtrl.text.trim()
             : null,
@@ -639,12 +176,73 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
+  // ─────────────────────────────────────────────
+  //  Google Places search
+  // ─────────────────────────────────────────────
+  void _onSearchChanged(String q) {
+    setState(() => _searchQuery = q);
+    _debounce?.cancel();
+    if (q.trim().length < 2) {
+      setState(() { _suggestions = []; _loadingSuggestions = false; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 450), () => _fetchSuggestions(q));
+  }
+
+  Future<void> _fetchSuggestions(String q) async {
+    setState(() => _loadingSuggestions = true);
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/place/autocomplete/json', {
+        'input': q, 'types': 'airport', 'key': ApiKeys.webServices, 'language': 'en',
+      });
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final predictions = data['predictions'] as List? ?? [];
+        final localCodes = kCommonAirports.map((a) => a.code).toSet();
+        final suggestions = <_AirportSuggestion>[];
+        for (final p in predictions) {
+          final desc    = p['description'] as String? ?? '';
+          final placeId = p['place_id']   as String? ?? '';
+          final codeM   = RegExp(r'\b([A-Z]{3})\b').allMatches(desc);
+          final code    = codeM.isNotEmpty ? codeM.last.group(0)! : '';
+          if (localCodes.contains(code)) continue;
+          suggestions.add(_AirportSuggestion(description: desc, placeId: placeId, code: code));
+        }
+        if (mounted) setState(() { _suggestions = suggestions; _loadingSuggestions = false; });
+      } else {
+        if (mounted) setState(() => _loadingSuggestions = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingSuggestions = false);
+    }
+  }
+
+  void _selectSuggestion(_AirportSuggestion s) {
+    // Build a minimal AirportInfo for airports not in the local list
+    final airport = AirportInfo(
+      code: s.code.isNotEmpty ? s.code : '???',
+      name: s.description,
+      flatRateSurcharge: null,
+      terminals: [
+        AirportTerminal(
+          name: S.of(context).mainTerminal,
+          airlines: [],
+          arrivalDoors: [S.of(context).arrivalsRidesharePickup, 'Rideshare Pickup Area'],
+        ),
+      ],
+    );
+    _selectAirport(airport);
+  }
+
+  // ─────────────────────────────────────────────
+  //  BUILD
+  // ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
       decoration: BoxDecoration(
         color: _bg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -657,83 +255,31 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             // Handle
             Container(
               margin: const EdgeInsets.only(top: 10),
-              width: 36,
-              height: 4,
+              width: 36, height: 4,
               decoration: BoxDecoration(
                 color: _textSecondary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 16),
-
+            const SizedBox(height: 14),
             // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  if (_step > 0)
-                    GestureDetector(
-                      onTap: _goBack,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: Icon(
-                          Icons.arrow_back_ios_rounded,
-                          color: _airportBlue,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  Icon(
-                    Icons.flight_takeoff_rounded,
-                    color: _airportBlue,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _step == 0
-                          ? S.of(context).selectAirport
-                          : _step == 1
-                          ? S.of(context).selectTerminal
-                          : S.of(context).confirmDetails,
-                      style: TextStyle(
-                        color: _textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  if (_selectedAirport != null && _step > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _airportBlue.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        _selectedAirport!.code,
-                        style: const TextStyle(
-                          color: _airportBlue,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Content
+            _buildHeader(),
+            const SizedBox(height: 4),
+            // Progress dots
+            if (_step > 0) _buildProgressDots(),
+            const SizedBox(height: 12),
+            // Step content
             Flexible(
-              child: _step == 0
-                  ? _buildAirportList()
-                  : _step == 1
-                  ? _buildTerminalSelector()
-                  : _buildConfirmDetails(),
+              child: AnimatedBuilder(
+                animation: _animCtrl,
+                builder: (_, child) => Opacity(
+                  opacity: _animCtrl.isAnimating
+                      ? (_animCtrl.value < 0.4 ? _fadeOut.value : _fadeIn.value)
+                      : 1.0,
+                  child: child,
+                ),
+                child: _buildStep(),
+              ),
             ),
           ],
         ),
@@ -741,21 +287,188 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
-  // ── Step 0: Airport List ──
+  Widget _buildHeader() {
+    final bool isTo   = _direction == AirportDirection.toAirport;
+    final bool isFrom = _direction == AirportDirection.fromAirport;
+    final IconData dirIcon = isFrom
+        ? Icons.flight_land_rounded
+        : Icons.flight_takeoff_rounded;
+    final Color dirColor = isFrom ? _green : _blue;
+
+    final String title = switch (_step) {
+      0 => S.of(context).airportRideTitle,
+      1 => S.of(context).selectAirport,
+      2 => isFrom ? S.of(context).selectTerminalAndDoor : S.of(context).selectYourAirline,
+      3 => isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
+      _ => S.of(context).airportRideTitle,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          if (_step > 0)
+            GestureDetector(
+              onTap: _goBack,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Icon(Icons.arrow_back_ios_rounded, color: _blue, size: 20),
+              ),
+            ),
+          Icon(
+            _step == 0 ? Icons.connecting_airports_rounded : dirIcon,
+            color: _step == 0 ? _blue : dirColor,
+            size: 24,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(color: _textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+          ),
+          if (_selectedAirport != null && _step > 1)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _blue.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                _selectedAirport!.code,
+                style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressDots() {
+    const labels = ['', '', '', ''];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: List.generate(4, (i) {
+          final active   = i == _step;
+          final complete = i < _step;
+          return Expanded(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              height: 3,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
+                color: complete
+                    ? _blue
+                    : active
+                        ? _blue.withValues(alpha: 0.6)
+                        : _border,
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildStep() {
+    return switch (_step) {
+      0 => _buildDirectionPicker(),
+      1 => _buildAirportList(),
+      2 => _direction == AirportDirection.fromAirport
+          ? _buildArrivalPicker()
+          : _buildAirlinePicker(),
+      3 => _buildConfirmDetails(),
+      _ => const SizedBox.shrink(),
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  //  STEP 0 — Direction Picker
+  // ─────────────────────────────────────────────
+  Widget _buildDirectionPicker() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      child: Column(
+        children: [
+          _buildDirectionCard(
+            direction: AirportDirection.toAirport,
+            icon: Icons.flight_takeoff_rounded,
+            color: _blue,
+            title: S.of(context).takeMeToAirport,
+            subtitle: S.of(context).flyingOutSubtitle,
+          ),
+          const SizedBox(height: 14),
+          _buildDirectionCard(
+            direction: AirportDirection.fromAirport,
+            icon: Icons.flight_land_rounded,
+            color: _green,
+            title: S.of(context).pickMeUpFromAirport,
+            subtitle: S.of(context).justLandedSubtitle,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDirectionCard({
+    required AirportDirection direction,
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    return GestureDetector(
+      onTap: () => _selectDirection(direction),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(color: _textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: TextStyle(color: _textSecondary, fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, color: color, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  //  STEP 1 — Airport List
+  // ─────────────────────────────────────────────
   Widget _buildAirportList() {
     final filtered = _searchQuery.isEmpty
-        ? _commonAirports
-        : _commonAirports
-              .where(
-                (a) =>
-                    a.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                    a.name.toLowerCase().contains(_searchQuery.toLowerCase()),
-              )
-              .toList();
+        ? kCommonAirports
+        : kCommonAirports.where((a) =>
+              a.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+              a.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
     return Column(
       children: [
-        // Search
+        // Search field
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Container(
@@ -772,22 +485,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               decoration: InputDecoration(
                 hintText: S.of(context).searchAnyAirport,
                 hintStyle: TextStyle(color: _textSecondary),
-                icon: Icon(
-                  Icons.search_rounded,
-                  color: _textSecondary,
-                  size: 20,
-                ),
+                icon: Icon(Icons.search_rounded, color: _textSecondary, size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? GestureDetector(
-                        onTap: () {
-                          _searchCtrl.clear();
-                          _onSearchChanged('');
-                        },
-                        child: Icon(
-                          Icons.close_rounded,
-                          color: _textSecondary,
-                          size: 18,
-                        ),
+                        onTap: () { _searchCtrl.clear(); _onSearchChanged(''); },
+                        child: Icon(Icons.close_rounded, color: _textSecondary, size: 18),
                       )
                     : null,
                 border: InputBorder.none,
@@ -795,143 +497,31 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             ),
           ),
         ),
-        const SizedBox(height: 12),
-
-        // Results list
+        const SizedBox(height: 10),
         Expanded(
           child: ListView(
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
             children: [
-              // Local matches
-              if (filtered.isNotEmpty)
-                ...filtered.map((a) => _buildLocalAirportTile(a)),
-
-              // Separator when showing Google results
-              if (_suggestions.isNotEmpty && filtered.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Expanded(child: Divider(color: _border, height: 1)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(
-                          S.of(context).moreAirports,
-                          style: TextStyle(
-                            color: _textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Expanded(child: Divider(color: _border, height: 1)),
-                    ],
-                  ),
-                ),
-
-              // Google Places suggestions
-              if (_suggestions.isNotEmpty)
-                ..._suggestions.map(
-                  (s) => GestureDetector(
-                    onTap: () => _selectSuggestion(s),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: _surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFF4285F4,
-                              ).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Center(
-                              child: s.code.isNotEmpty
-                                  ? Text(
-                                      s.code,
-                                      style: const TextStyle(
-                                        color: Color(0xFF4285F4),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.flight_rounded,
-                                      color: Color(0xFF4285F4),
-                                      size: 20,
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              s.description,
-                              style: TextStyle(
-                                color: _textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: _textSecondary,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Loading indicator
+              ...filtered.map((a) => _buildAirportTile(a)),
+              if (_suggestions.isNotEmpty && filtered.isNotEmpty) _buildSeparator(),
+              ..._suggestions.map((s) => _buildSuggestionTile(s)),
               if (_loadingSuggestions)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: const Color(0xFF4285F4).withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
+                  child: Center(child: SizedBox(
+                    width: 22, height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: _blue.withValues(alpha: 0.7)),
+                  )),
                 ),
-
-              // Empty state
-              if (!_loadingSuggestions &&
-                  _suggestions.isEmpty &&
-                  filtered.isEmpty)
+              if (!_loadingSuggestions && _suggestions.isEmpty && filtered.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 32),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.search_off_rounded,
-                        color: _textSecondary,
-                        size: 40,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        S.of(context).noAirportsFound,
-                        style: TextStyle(color: _textSecondary, fontSize: 14),
-                      ),
-                    ],
-                  ),
+                  child: Column(children: [
+                    Icon(Icons.search_off_rounded, color: _textSecondary, size: 40),
+                    const SizedBox(height: 12),
+                    Text(S.of(context).noAirportsFound, style: TextStyle(color: _textSecondary, fontSize: 14)),
+                  ]),
                 ),
             ],
           ),
@@ -940,75 +530,39 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
-  Widget _buildLocalAirportTile(AirportInfo a) {
+  Widget _buildAirportTile(AirportInfo a) {
+    final int terminalCount = a.terminals.length;
     return GestureDetector(
       onTap: () => _selectAirport(a),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
+          color: _surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _border),
         ),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: _airportBlue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: Text(
-                  a.code,
-                  style: const TextStyle(
-                    color: _airportBlue,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
+              width: 48, height: 48,
+              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
+              child: Center(child: Text(a.code, style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w900))),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    a.name,
-                    style: TextStyle(
-                      color: _textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(a.name, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 3),
-                  Text(
-                    S.of(context).terminalsCount(a.terminals.length),
-                    style: TextStyle(color: _textSecondary, fontSize: 12),
-                  ),
+                  Text(S.of(context).terminalsCount(terminalCount), style: TextStyle(color: _textSecondary, fontSize: 12)),
                 ],
               ),
             ),
             if (a.flatRateSurcharge != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '+\$${a.flatRateSurcharge!.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                child: Text('+\$${a.flatRateSurcharge!.toStringAsFixed(0)}', style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w700)),
               ),
             const SizedBox(width: 8),
             Icon(Icons.chevron_right_rounded, color: _textSecondary, size: 20),
@@ -1018,192 +572,159 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
-  // ── Step 1: Terminal Selector ──
-  Widget _buildTerminalSelector() {
+  Widget _buildSuggestionTile(_AirportSuggestion s) {
+    return GestureDetector(
+      onTap: () => _selectSuggestion(s),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _border)),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
+              child: Center(
+                child: s.code.isNotEmpty
+                    ? Text(s.code, style: const TextStyle(color: _blue, fontSize: 13, fontWeight: FontWeight.w900))
+                    : Icon(Icons.flight_rounded, color: _blue, size: 20),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Text(s.description, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis)),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: _textSecondary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeparator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Expanded(child: Divider(color: _border, height: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(S.of(context).moreAirports, style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+        Expanded(child: Divider(color: _border, height: 1)),
+      ]),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  //  STEP 2a — Airline Picker (toAirport)
+  // ─────────────────────────────────────────────
+  Widget _buildAirlinePicker() {
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
+    final allAirlines = ap.allAirlines;
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Airport badge
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _airportBlue.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _airportBlue.withValues(alpha: 0.15)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.flight_rounded, color: _airportBlue, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    ap.name,
-                    style: TextStyle(
-                      color: _textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildAirportBadge(ap),
           const SizedBox(height: 20),
 
-          // Terminal selection
           Text(
-            S.of(context).terminalLabel,
-            style: TextStyle(
-              color: _textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
+            S.of(context).whichAirlineFlying,
+            style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: ap.terminals.map((t) {
-              final selected = _selectedTerminal == t;
+          const SizedBox(height: 10),
+
+          if (allAirlines.isEmpty)
+            // Fallback for unknown airports
+            _buildUnknownAirportFallback()
+          else
+            ...allAirlines.map((airline) {
+              // Show which terminal this airline maps to
+              final terminals = ap.terminalsForAirline(airline);
+              final termLabel = terminals.isNotEmpty ? terminals.first.name : '';
+              final selected = _selectedAirline == airline;
               return GestureDetector(
-                onTap: () => setState(() => _selectedTerminal = t),
+                onTap: () => _selectAirline(airline),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    color: selected
-                        ? _airportBlue.withValues(alpha: 0.15)
-                        : _surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? _airportBlue : _border,
-                      width: selected ? 1.5 : 1,
-                    ),
+                    color: selected ? _blue.withValues(alpha: 0.12) : _surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: selected ? _blue : _border, width: selected ? 1.5 : 1),
                   ),
-                  child: Text(
-                    t,
-                    style: TextStyle(
-                      color: selected ? _airportBlue : _textPrimary,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      fontSize: 14,
-                    ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(
+                          color: (selected ? _blue : _textSecondary).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.airplanemode_active_rounded, color: selected ? _blue : _textSecondary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(airline, style: TextStyle(color: selected ? _blue : _textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                            if (termLabel.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(termLabel, style: TextStyle(color: _textSecondary, fontSize: 11)),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (selected) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: _blue.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                          child: Text(S.of(context).terminalAutoSelectedLabel, style: TextStyle(color: _blue, fontSize: 10, fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(Icons.check_circle_rounded, color: _blue, size: 20),
+                      ] else
+                        Icon(Icons.chevron_right_rounded, color: _textSecondary, size: 18),
+                    ],
                   ),
                 ),
               );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
+            }),
+        ],
+      ),
+    );
+  }
 
-          // Pickup zone
-          Text(
-            S.of(context).pickupZone,
-            style: TextStyle(
-              color: _textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
-          ),
+  Widget _buildUnknownAirportFallback() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _gold.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _gold.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.info_outline_rounded, color: _gold, size: 24),
           const SizedBox(height: 8),
-          ...ap.pickupZones.map((z) {
-            final selected = _selectedPickupZone == z;
-            return GestureDetector(
-              onTap: () => setState(() => _selectedPickupZone = z),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: selected ? _gold.withValues(alpha: 0.08) : _surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: selected ? _gold.withValues(alpha: 0.4) : _border,
-                    width: selected ? 1.5 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.pin_drop_rounded,
-                      color: selected ? _gold : _textSecondary,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        z,
-                        style: TextStyle(
-                          color: selected ? _gold : _textPrimary,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    if (selected)
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: _gold,
-                        size: 20,
-                      ),
-                  ],
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 20),
-
-          // Continue button
+          Text(
+            "This airport's terminal data is not available. Your driver will confirm the terminal with you.",
+            style: TextStyle(color: _textSecondary, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
           GestureDetector(
-            onTap: _goToConfirm,
+            onTap: _advance,
             child: Container(
-              width: double.infinity,
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_airportBlue, Color(0xFF5A9CF5)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: _airportBlue.withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.arrow_forward_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      S.of(context).continueButton,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+              decoration: BoxDecoration(color: _blue, borderRadius: BorderRadius.circular(12)),
+              child: Text(S.of(context).continueButton, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
@@ -1211,14 +732,98 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
-  // ── Step 2: Confirm Details ──
-  Widget _buildConfirmDetails() {
+  // ─────────────────────────────────────────────
+  //  STEP 2b — Arrival Picker (fromAirport)
+  // ─────────────────────────────────────────────
+  Widget _buildArrivalPicker() {
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAirportBadge(ap),
+          const SizedBox(height: 20),
+
+          // Terminal chips
+          Text(S.of(context).whichTerminalArrived,
+            style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: ap.terminals.map((t) {
+              final selected = _selectedTerminal?.name == t.name;
+              return GestureDetector(
+                onTap: () => setState(() {
+                  _selectedTerminal = t;
+                  _selectedArrivalDoor = null;
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: selected ? _green.withValues(alpha: 0.12) : _surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: selected ? _green : _border, width: selected ? 1.5 : 1),
+                  ),
+                  child: Text(t.name,
+                    style: TextStyle(color: selected ? _green : _textPrimary, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 13)),
+                ),
+              );
+            }).toList(),
+          ),
+
+          // Arrival doors — revealed after terminal selected
+          if (_selectedTerminal != null) ...[
+            const SizedBox(height: 20),
+            Text(S.of(context).selectArrivalDoor,
+              style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+            const SizedBox(height: 10),
+            ..._selectedTerminal!.arrivalDoors.map((door) {
+              final selected = _selectedArrivalDoor == door;
+              return GestureDetector(
+                onTap: () => _selectArrivalDoor(door),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: selected ? _gold.withValues(alpha: 0.08) : _surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: selected ? _gold.withValues(alpha: 0.45) : _border, width: selected ? 1.5 : 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.pin_drop_rounded, color: selected ? _gold : _textSecondary, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(door, style: TextStyle(color: selected ? _gold : _textPrimary, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 14))),
+                      if (selected) Icon(Icons.check_circle_rounded, color: _gold, size: 20),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  //  STEP 3 — Flight Number + Confirm
+  // ─────────────────────────────────────────────
+  Widget _buildConfirmDetails() {
+    if (_selectedAirport == null || _direction == null) return const SizedBox.shrink();
+    final ap      = _selectedAirport!;
+    final isFrom  = _direction == AirportDirection.fromAirport;
+    final dirColor = isFrom ? _green : _blue;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1226,52 +831,62 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _airportBlue.withValues(alpha: 0.06),
+              color: dirColor.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _airportBlue.withValues(alpha: 0.15)),
+              border: Border.all(color: dirColor.withValues(alpha: 0.18)),
             ),
             child: Column(
               children: [
-                _summaryRow(
-                  Icons.flight_rounded,
-                  S.of(context).airport,
-                  '${ap.code} — ${ap.name}',
-                ),
-                const SizedBox(height: 10),
-                if (_selectedTerminal != null)
-                  _summaryRow(
-                    Icons.door_front_door_outlined,
-                    S.of(context).terminalLabel,
-                    _selectedTerminal!,
-                  ),
-                if (_selectedTerminal != null) const SizedBox(height: 10),
-                if (_selectedPickupZone != null)
-                  _summaryRow(
-                    Icons.pin_drop_rounded,
-                    S.of(context).pickupLabel,
-                    _selectedPickupZone!,
-                  ),
+                _summaryRow(Icons.flight_rounded, S.of(context).airport, '${ap.code} — ${ap.name}', dirColor),
+                if (_selectedTerminal != null) ...[
+                  const SizedBox(height: 10),
+                  _summaryRow(Icons.door_front_door_outlined, S.of(context).terminalLabel, _selectedTerminal!.name, dirColor),
+                ],
+                if (_selectedAirline != null) ...[
+                  const SizedBox(height: 10),
+                  _summaryRow(Icons.airplanemode_active_rounded, S.of(context).airlineLabel, _selectedAirline!, dirColor),
+                ],
+                if (_selectedArrivalDoor != null) ...[
+                  const SizedBox(height: 10),
+                  _summaryRow(Icons.pin_drop_rounded, S.of(context).arrivalDoorLabel, _selectedArrivalDoor!, dirColor),
+                ],
                 if (ap.flatRateSurcharge != null) ...[
                   const SizedBox(height: 10),
-                  _summaryRow(
-                    Icons.attach_money_rounded,
-                    S.of(context).airportSurchargeLabel,
-                    '+\$${ap.flatRateSurcharge!.toStringAsFixed(2)}',
-                  ),
+                  _summaryRow(Icons.attach_money_rounded, S.of(context).airportSurchargeLabel, '+\$${ap.flatRateSurcharge!.toStringAsFixed(2)}', _gold),
                 ],
               ],
             ),
           ),
           const SizedBox(height: 20),
 
-          // Flight number (optional)
+          // Direction note
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: dirColor.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(isFrom ? Icons.hail_rounded : Icons.place_rounded, color: dirColor, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isFrom ? S.of(context).driverWillWaitAtDoor : S.of(context).driverWillDropAtDepartures,
+                    style: TextStyle(color: _textSecondary, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Flight number
           Text(
-            S.of(context).flightNumberOptional,
+            isFrom ? S.of(context).flightNumberRequiredLabel : S.of(context).flightNumberOptional,
             style: TextStyle(
-              color: _textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
+              color: isFrom && _flightError ? Colors.red : _textSecondary,
+              fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5,
             ),
           ),
           const SizedBox(height: 8),
@@ -1280,61 +895,48 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             decoration: BoxDecoration(
               color: _surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _border),
+              border: Border.all(color: _flightError ? Colors.red.withValues(alpha: 0.6) : _border),
             ),
             child: TextField(
               controller: _flightCtrl,
               style: TextStyle(color: _textPrimary, fontSize: 15),
               textCapitalization: TextCapitalization.characters,
+              onChanged: (_) { if (_flightError) setState(() => _flightError = false); },
               decoration: InputDecoration(
                 hintText: S.of(context).flightNumberHint,
                 hintStyle: TextStyle(color: _textSecondary),
-                icon: Icon(
-                  Icons.airplane_ticket_outlined,
-                  color: _airportBlue,
-                  size: 20,
-                ),
+                icon: Icon(Icons.airplane_ticket_outlined, color: _blue, size: 20),
                 border: InputBorder.none,
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            S.of(context).flightTrackingNote,
-            style: TextStyle(color: _textSecondary, fontSize: 12),
-          ),
+          if (_flightError) ...[
+            const SizedBox(height: 6),
+            Text(S.of(context).flightNumberRequiredError, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ],
+          const SizedBox(height: 6),
+          Text(S.of(context).flightTrackingNote, style: TextStyle(color: _textSecondary, fontSize: 12)),
           const SizedBox(height: 24),
 
           // Confirm button
           GestureDetector(
             onTap: _confirm,
             child: Container(
-              width: double.infinity,
-              height: 52,
+              width: double.infinity, height: 54,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_gold, _goldLight]),
+                gradient: LinearGradient(colors: isFrom ? [_green, const Color(0xFF4CAF50)] : [_gold, _goldLight]),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: _gold.withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: (isFrom ? _green : _gold).withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_rounded, color: Colors.black87, size: 20),
-                    SizedBox(width: 8),
+                    Icon(Icons.check_rounded, color: isFrom ? Colors.white : Colors.black87, size: 20),
+                    const SizedBox(width: 8),
                     Text(
-                      S.of(context).confirmAirportDetails,
-                      style: TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
+                      isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
+                      style: TextStyle(color: isFrom ? Colors.white : Colors.black87, fontWeight: FontWeight.w700, fontSize: 15),
                     ),
                   ],
                 ),
@@ -1346,23 +948,34 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     );
   }
 
-  Widget _summaryRow(IconData icon, String label, String value) {
+  Widget _buildAirportBadge(AirportInfo ap) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _blue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _blue.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.flight_rounded, color: _blue, size: 20),
+          const SizedBox(width: 10),
+          Text(ap.code, style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w800)),
+          const SizedBox(width: 6),
+          Expanded(child: Text(ap.name, style: TextStyle(color: _textPrimary, fontSize: 13, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(IconData icon, String label, String value, Color iconColor) {
     return Row(
       children: [
-        Icon(icon, color: _airportBlue, size: 18),
+        Icon(icon, color: iconColor, size: 18),
         const SizedBox(width: 10),
         Text('$label: ', style: TextStyle(color: _textSecondary, fontSize: 13)),
         Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              color: _textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text(value, style: TextStyle(color: _textPrimary, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ],
     );
@@ -1374,9 +987,5 @@ class _AirportSuggestion {
   final String description;
   final String placeId;
   final String code;
-  const _AirportSuggestion({
-    required this.description,
-    required this.placeId,
-    required this.code,
-  });
+  const _AirportSuggestion({required this.description, required this.placeId, required this.code});
 }

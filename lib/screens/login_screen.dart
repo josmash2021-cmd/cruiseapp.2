@@ -214,7 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (msg.contains('401') || msg.contains('Invalid')) {
         _showSnack(S.of(context).providerCredentialsRejected(provider), Colors.red.shade400);
       } else {
-        _showSnack(S.of(context).registrationFailed(e.toString()), Colors.red.shade400);
+        _showSnack(S.of(context).registrationFailedWith(e.toString()), Colors.red.shade400);
       }
     }
   }

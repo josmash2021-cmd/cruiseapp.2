@@ -3419,12 +3419,8 @@ class S {
       ? 'Ingresa el código enviado a tu email:'
       : 'Enter the code sent to your email:';
   String get verificationFailed => _es ? 'Verificación fallida. Intenta de nuevo.' : 'Verification failed. Try again.';
-  String get homeLabel => _es ? 'Casa' : 'Home';
-  String get workLabel => _es ? 'Trabajo' : 'Work';
-  String get placeLabel => _es ? 'Lugar' : 'Place';
-  String addLabel(String label) => _es ? 'Agregar $label' : 'Add $label';
+  String addLabelFor(String label) => _es ? 'Agregar $label' : 'Add $label';
   String setLabelAddress(String label) => _es ? 'Establecer dirección de $label' : 'Set $label address';
-  String get searchAddressHint => _es ? 'Buscar dirección...' : 'Search address...';
 
   // ── Schedule Picker Sheet (remaining) ─────────────────────────────────────
   String get selectTimeTitle => _es ? 'Seleccionar hora' : 'Select Time';
@@ -3432,7 +3428,6 @@ class S {
   String get chooseDateForRide => _es ? 'Elige una fecha para tu viaje' : 'Choose a date for your ride';
   String get airportTripLabel => _es ? 'Viaje al aeropuerto' : 'Airport trip';
   String get confirmAndBook => _es ? 'Confirmar y Reservar' : 'Confirm & Book';
-  String get hourLabel => _es ? 'Hora' : 'Hour';
   String get minLabel => _es ? 'Min' : 'Min';
 
   // ── Login Screen ──────────────────────────────────────────────────────────
@@ -3450,13 +3445,11 @@ class S {
   String providerCredentialsRejected(String provider) => _es
       ? 'Credenciales de $provider rechazadas. Intenta de nuevo.'
       : '$provider credentials rejected. Please try again.';
-  String registrationFailed(String e) => _es ? 'Registro fallido: $e' : 'Registration failed: $e';
+  String registrationFailedWith(String e) => _es ? 'Registro fallido: $e' : 'Registration failed: $e';
   String get enterYourEmailTitle => _es ? 'Ingresa tu Email' : 'Enter Your Email';
   String get appleEmailExplanation => _es
       ? 'Apple no compartió tu email esta vez. Ingresa el email vinculado a tu Apple ID.'
       : 'Apple did not share your email this time. Please enter the email address linked to your Apple ID.';
-  String get cancelBtn => _es ? 'Cancelar' : 'Cancel';
-  String get continueBtn => _es ? 'Continuar' : 'Continue';
   String accountAlreadyRegistered(String method) => _es
       ? 'Ya existe una cuenta con este $method. ¿Deseas iniciar sesión?'
       : 'An account with this $method is already registered. Would you like to log in instead?';
@@ -3489,7 +3482,6 @@ class S {
       ? '¿Dónde enviaremos tu\ncódigo de verificación?'
       : 'Where should we send\nyour verification code?';
   String get textMessageSms => _es ? 'Mensaje de texto (SMS)' : 'Text message (SMS)';
-  String get emailOption => _es ? 'Email' : 'Email';
   String get noContactMethodAvailable => _es ? 'No hay método de contacto disponible' : 'No contact method available';
   String get deviceClockOutOfSync => _es
       ? 'Reloj del dispositivo desincronizado. Ve a Ajustes → Fecha y Hora y activa "Ajustar automáticamente".'

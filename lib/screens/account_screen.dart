@@ -667,7 +667,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    hasSaved ? label : S.of(context).addLabel(label),
+                    hasSaved ? label : S.of(context).addLabelFor(label),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,

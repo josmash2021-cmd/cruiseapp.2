@@ -344,8 +344,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          iconSize: 1.3,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconSize: 1.0,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       } else {
@@ -491,16 +491,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
         _goldDot.setTarget(ll.latitude, ll.longitude);
-        _updateMyLocAnnotation(); // sync annotation immediately on GPS event
-        // Camera follows smoothly — dot glides via GoldLocationDot interpolation
-        _mapController?.flyTo(
+        // Camera follows instantly via setCamera — no conflicting flyTo animations.
+        // The GoldLocationDot 60fps ticker handles smooth annotation movement.
+        _mapController?.setCamera(
           mapbox.CameraOptions(
             center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
             zoom: 16.0,
             pitch: 0.0,
             bearing: 0.0,
           ),
-          mapbox.MapAnimationOptions(duration: 800, startDelay: 0),
         );
       });
     } catch (_) {}

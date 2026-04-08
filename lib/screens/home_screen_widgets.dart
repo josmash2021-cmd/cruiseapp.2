@@ -839,10 +839,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           return;
         }
         if (imminent) {
-          await Navigator.of(context).push(
-            slideFromRightRoute(const ScheduledRidesScreen()),
-          );
-          _loadSavedData();
+          await _openScheduledRideLive();
           return;
         }
         if (zoneBlocked) {
@@ -2752,10 +2749,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
     return GestureDetector(
       onTap: () async {
-        await Navigator.of(ctx).push(
-          slideFromRightRoute(const ScheduledRidesScreen()),
-        );
-        _loadSavedData();
+        await _openScheduledRideLive();
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

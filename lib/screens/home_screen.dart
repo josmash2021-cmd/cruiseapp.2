@@ -421,6 +421,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         const Duration(seconds: 60),
         (_) => _updateImminentRide(),
       );
+      // Refresh scheduled ride status so card reflects real-time state
+      _loadNextScheduledRide().then((ride) {
+        if (!mounted) return;
+        setState(() => _nextScheduledRide = ride);
+        _updateImminentRide();
+      });
     }
   }
 

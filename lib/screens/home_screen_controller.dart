@@ -893,6 +893,88 @@ extension _HomeScreenController on _HomeScreenState {
     );
   }
 
+  /// Opens the scheduled ride's live state: if the trip is already active
+  /// (en route / arrived / in trip), navigates to RiderTrackingScreen at the
+  /// current phase. Otherwise falls back to the ScheduledRidesScreen list.
+  Future<void> _openScheduledRideLive() async {
+    final ride = _nextScheduledRide;
+    if (ride == null) {
+      await Navigator.of(context).push(
+        slideFromRightRoute(const ScheduledRidesScreen()),
+      );
+      _loadSavedData();
+      return;
+    }
+
+    // Fetch fresh trip status from backend
+    try {
+      final tripId = ride['id'] as int?;
+      if (tripId != null) {
+        final fresh = await ApiService.getTrip(tripId);
+        if (mounted) {
+          final status = (fresh['status'] ?? '').toString().toLowerCase();
+          // If trip is actively in progress, open tracking screen
+          const activeStatuses = {
+            'accepted', 'en_route', 'en_route_to_pickup',
+            'arriving', 'arrived', 'in_trip', 'in_progress',
+            'near_destination',
+          };
+          if (activeStatuses.contains(status) && fresh['driver_id'] != null) {
+            final pickupLat = (fresh['pickup_lat'] as num?)?.toDouble();
+            final pickupLng = (fresh['pickup_lng'] as num?)?.toDouble();
+            final dropoffLat = (fresh['dropoff_lat'] as num?)?.toDouble();
+            final dropoffLng = (fresh['dropoff_lng'] as num?)?.toDouble();
+            if (pickupLat != null && pickupLng != null &&
+                dropoffLat != null && dropoffLng != null) {
+              Navigator.of(context).push(
+                slideUpFadeRoute(
+                  RiderTrackingScreen(
+                    pickupLatLng: LatLng(pickupLat, pickupLng),
+                    dropoffLatLng: LatLng(dropoffLat, dropoffLng),
+                    driverName: (fresh['driver_name'] ?? 'Driver').toString(),
+                    driverPhone: (fresh['driver_phone'] ?? '').toString().isNotEmpty
+                        ? (fresh['driver_phone']).toString()
+                        : null,
+                    driverRating: (fresh['driver_rating'] as num?)?.toDouble() ?? 4.9,
+                    vehicleMake: (fresh['vehicle_make'] ?? '').toString(),
+                    vehicleModel: (fresh['vehicle_model'] ?? '').toString(),
+                    vehicleColor: (fresh['vehicle_color'] ?? '').toString(),
+                    vehiclePlate: (fresh['vehicle_plate'] ?? '').toString(),
+                    vehicleYear: (fresh['vehicle_year'] ?? '').toString(),
+                    rideName: (fresh['vehicle_type'] ?? 'Ride').toString(),
+                    price: (fresh['fare'] as num?)?.toDouble() ?? 0,
+                    pickupLabel: (fresh['pickup_address'] ?? '').toString(),
+                    dropoffLabel: (fresh['dropoff_address'] ?? '').toString(),
+                    tripId: tripId,
+                    firestoreTripId: 'sql_$tripId',
+                    driverPhotoUrl: (fresh['driver_photo_url'] ?? '').toString(),
+                    driverId: (fresh['driver_id'] ?? '').toString(),
+                    initialStatus: status,
+                    onTripComplete: () {
+                      LocalDataService.clearActiveRide();
+                      Navigator.of(context).pop();
+                      _loadSavedData();
+                    },
+                  ),
+                ),
+              );
+              return;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] Scheduled ride live check failed: $e');
+    }
+
+    // Fallback: open scheduled rides list
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      slideFromRightRoute(const ScheduledRidesScreen()),
+    );
+    _loadSavedData();
+  }
+
   /// Check backend for an active trip (handles reinstall / re-login where
   /// SharedPreferences are cleared but trip is still in-progress).
   Future<void> _checkBackendActiveTrip() async {
@@ -900,9 +982,10 @@ extension _HomeScreenController on _HomeScreenState {
       final trip = await ApiService.getActiveTrip();
       if (!mounted || trip == null) return;
       final status = (trip['status'] ?? '').toString();
-      // Skip completed/cancelled/scheduled_accepted trips
+      // Skip completed/cancelled/scheduled trips — never auto-navigate for scheduled rides
       if (status == 'completed' || status == 'canceled' || status == 'cancelled' ||
-          status == 'scheduled_accepted') { return; }
+          status == 'scheduled_accepted' || status == 'driver_assigned' ||
+          status == 'scheduled') { return; }
 
       // If still searching for a driver — show a pending trip indicator
       // so rider knows their search is still active after reopen/reinstall.
@@ -961,11 +1044,12 @@ extension _HomeScreenController on _HomeScreenState {
 
       _didAutoResumeRide = true;
 
-      // Final safety check: re-verify trip hasn't been cancelled since we started
+      // Final safety check: re-verify trip hasn't been cancelled/scheduled since we started
       if (!mounted) return;
       final verifyStatus = (trip['status'] ?? '').toString();
       if (verifyStatus == 'canceled' || verifyStatus == 'cancelled' ||
-          verifyStatus == 'completed' || verifyStatus == 'scheduled_accepted') { return; }
+          verifyStatus == 'completed' || verifyStatus == 'scheduled_accepted' ||
+          verifyStatus == 'driver_assigned' || verifyStatus == 'scheduled') { return; }
 
       Navigator.of(context).push(
         slideUpFadeRoute(

@@ -254,10 +254,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final canStart = _secondsRemaining <= 900; // Can start 15 min early
 
     return Scaffold(
-      backgroundColor: _darkBg,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // ── Blurry map background ──
+          // ── Live map background ──
           if (pickupLat != null && pickupLng != null)
             Positioned.fill(
               child: IgnorePointer(
@@ -280,12 +280,12 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                 ),
               ),
             ),
-          // ── Blur + dark tint overlay ──
+          // ── Semi-transparent dark tint (map visible behind) ──
           Positioned.fill(
             child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: Container(
-                color: _darkBg.withValues(alpha: 0.78),
+                color: Colors.black.withValues(alpha: 0.55),
               ),
             ),
           ),
@@ -293,7 +293,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           SafeArea(
         child: Column(
           children: [
-            // Top bar
+            // Top bar: SCHEDULED RIDE badge + X close button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
@@ -301,7 +301,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _gold.withValues(alpha:0.15),
+                      color: _gold.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -311,7 +311,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         const SizedBox(width: 6),
                         Text(
                           S.of(context).scheduledRideLabel,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: _gold,
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
@@ -322,17 +322,17 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                     ),
                   ),
                   const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _gold,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '\$${fare.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Colors.black, fontWeight: FontWeight.w900, fontSize: 16,
+                  // X close button
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
                       ),
+                      child: const Icon(Icons.close, color: Colors.white70, size: 20),
                     ),
                   ),
                 ],
@@ -355,12 +355,12 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      _gold.withValues(alpha:0.2),
-                      _gold.withValues(alpha:0.05),
+                      _gold.withValues(alpha: 0.2),
+                      _gold.withValues(alpha: 0.05),
                       Colors.transparent,
                     ],
                   ),
-                  border: Border.all(color: _gold.withValues(alpha:0.4), width: 3),
+                  border: Border.all(color: _gold.withValues(alpha: 0.4), width: 3),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -398,59 +398,14 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: _cardBg,
+                  color: _cardBg.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _gold.withValues(alpha:0.15)),
+                  border: Border.all(color: _gold.withValues(alpha: 0.15)),
                 ),
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Rider info
-                      if (riderName.isNotEmpty)
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: _gold.withValues(alpha:0.2),
-                              radius: 22,
-                              backgroundImage: riderPhoto.isNotEmpty
-                                  ? NetworkImage(riderPhoto)
-                                  : null,
-                              child: riderPhoto.isEmpty
-                                  ? Text(
-                                      riderName.isNotEmpty ? riderName[0].toUpperCase() : '?',
-                                      style: TextStyle(color: _gold, fontWeight: FontWeight.bold, fontSize: 18),
-                                    )
-                                  : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    riderName,
-                                    style: const TextStyle(
-                                      color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    vehicleType.toUpperCase(),
-                                    style: TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w700),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (riderPhone.isNotEmpty)
-                              IconButton(
-                                icon: const Icon(Icons.phone, color: Colors.green),
-                                onPressed: () => launchUrl(Uri.parse('tel:$riderPhone')),
-                              ),
-                          ],
-                        ),
-
-                      if (riderName.isNotEmpty) const SizedBox(height: 20),
-
                       // Pickup
                       _addressRow(
                         icon: Icons.circle,
@@ -470,16 +425,84 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         address: dropoff,
                       ),
 
-                      const SizedBox(height: 24),
+                      // ── Fare below addresses ──
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Text(
+                          '\$${fare.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+
+                      // ── Rider info row ──
+                      if (riderName.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: _gold.withValues(alpha: 0.2),
+                                radius: 18,
+                                backgroundImage: riderPhoto.isNotEmpty
+                                    ? NetworkImage(riderPhoto)
+                                    : null,
+                                child: riderPhoto.isEmpty
+                                    ? Text(
+                                        riderName.isNotEmpty ? riderName[0].toUpperCase() : '?',
+                                        style: const TextStyle(color: _gold, fontWeight: FontWeight.bold, fontSize: 14),
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      riderName,
+                                      style: const TextStyle(
+                                        color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      vehicleType.toUpperCase(),
+                                      style: const TextStyle(color: _gold, fontSize: 10, fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (riderPhone.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.phone, color: Colors.green, size: 20),
+                                  onPressed: () => launchUrl(Uri.parse('tel:$riderPhone')),
+                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                  padding: EdgeInsets.zero,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 16),
 
                       // No more offers banner
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha:0.1),
+                          color: Colors.orange.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.withValues(alpha:0.3)),
+                          border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           children: [

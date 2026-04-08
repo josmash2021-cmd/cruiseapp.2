@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 
 class ReferralScreen extends StatefulWidget {
@@ -80,7 +81,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('🎉 Code applied! \$10 credit added to your account.'),
+          content: Text(S.of(context).codeAppliedCredit('10')),
           backgroundColor: const Color(0xFF34A853),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -107,7 +108,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Code copied to clipboard!'),
+        content: Text(S.of(context).codeCopied),
         // Uses global snackBarTheme
         duration: const Duration(seconds: 2),
       ),
@@ -141,11 +142,11 @@ class _ReferralScreenState extends State<ReferralScreen> {
                 ),
               ),
             ),
-            flexibleSpace: const FlexibleSpaceBar(
-              titlePadding: EdgeInsets.only(left: 20, bottom: 16),
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
-                'Invite Friends',
-                style: TextStyle(
+                S.of(context).inviteFriendsTitle,
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.3,
@@ -213,9 +214,9 @@ class _ReferralScreenState extends State<ReferralScreen> {
                     // ── Stats row ──
                     Row(
                       children: [
-                        _statCard('$_referralCount', 'Friends Joined'),
+                        _statCard('$_referralCount', S.of(context).friendsJoined),
                         const SizedBox(width: 12),
-                        _statCard('\$${_totalBonus.toStringAsFixed(0)}', 'Bonus Earned'),
+                        _statCard('\$${_totalBonus.toStringAsFixed(0)}', S.of(context).bonusEarned),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -231,7 +232,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Your Referral Code',
+                            S.of(context).yourReferralCode,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 13,
@@ -278,8 +279,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _share,
                               icon: const Icon(Icons.share_rounded, size: 18),
-                              label: const Text('Share with Friends',
-                                  style: TextStyle(
+                              label: Text(S.of(context).shareWithFriends,
+                                  style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700)),
                               style: ElevatedButton.styleFrom(
@@ -382,8 +383,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
                                             child: CircularProgressIndicator(
                                                 strokeWidth: 2,
                                                 color: Colors.black))
-                                        : const Text('Apply',
-                                            style: TextStyle(
+                                        : Text(S.of(context).applyBtn,
+                                            style: const TextStyle(
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 15)),
                                   ),
@@ -397,9 +398,9 @@ class _ReferralScreenState extends State<ReferralScreen> {
 
                     // ── Referrals list ──
                     if (_referrals.isNotEmpty) ...[
-                      const Text(
-                        'Friends You\'ve Invited',
-                        style: TextStyle(
+                      Text(
+                        S.of(context).friendsYouveInvited,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -495,20 +496,20 @@ class _ReferralScreenState extends State<ReferralScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('How it works',
-                              style: TextStyle(
+                          Text(S.of(context).howItWorks,
+                              style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700)),
                           const SizedBox(height: 16),
-                          _howStep('1', 'Share your code',
-                              'Send your unique code to friends.'),
+                          _howStep('1', S.of(context).shareYourCode,
+                              S.of(context).shareCodeDescription),
                           const SizedBox(height: 12),
-                          _howStep('2', 'Friend signs up',
-                              'They enter your code when registering.'),
+                          _howStep('2', S.of(context).friendSignsUp,
+                              S.of(context).friendSignsUpDescription),
                           const SizedBox(height: 12),
-                          _howStep('3', 'You both earn \$10',
-                              'Bonus is added to your accounts instantly.'),
+                          _howStep('3', S.of(context).youBothEarn,
+                              S.of(context).youBothEarnDescription),
                         ],
                       ),
                     ),

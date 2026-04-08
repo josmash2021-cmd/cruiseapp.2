@@ -1317,7 +1317,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     // Adaptive zoom: 14.5 when far (>2mi) → 16.0 max when very close (<0.1mi)
     double zoom;
-    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
+    double camBearing;
+    double camPitch;
+    final isTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+
+    if (isTrip) {
       if (_distanceMiles > 2.0) {
         zoom = 14.5;
       } else if (_distanceMiles < 0.1) {
@@ -1326,8 +1330,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         final t = (2.0 - _distanceMiles) / 1.9;
         zoom = 14.5 + t * 1.5;
       }
+      // Chase-style: camera rotates with driver bearing, subtle 3D tilt
+      camBearing = bearing;
+      camPitch = 25;
     } else {
       zoom = 15.5;
+      // Arriving phase: north-up so rider sees driver relative to themselves
+      camBearing = 0;
+      camPitch = 0;
     }
 
     // 2.5s animation matches the camera follow interval so each new animation
@@ -1338,8 +1348,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           coordinates: mapbox.Position(position.longitude, position.latitude),
         ),
         zoom: zoom,
-        bearing: 0,
-        pitch: 0,
+        bearing: camBearing,
+        pitch: camPitch,
         padding: mapbox.MbxEdgeInsets(
           top: topInset,
           bottom: bottomInset,

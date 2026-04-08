@@ -130,6 +130,7 @@ class User(Base):
     background_check_status = Column(String(20), default="none")
     background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
     active_session_id = Column(String(64), nullable=True)
+    cruise_level = Column(String(20), default="bronze")
 
 
 class ConsentLog(Base):

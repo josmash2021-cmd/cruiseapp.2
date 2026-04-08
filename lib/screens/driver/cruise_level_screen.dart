@@ -170,22 +170,26 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         _cancellationRate = total > 0 ? (canceled / total * 100) : 0;
         _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
         _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
-        // Determine driver level by completed trips + average rating
-        // Diamond:  500+ trips AND rating >= 4.9
-        // Platinum: 300-499 trips AND rating >= 4.8
-        // Gold:     150-299 trips AND rating >= 4.7
-        // Silver:   50-149 trips AND rating >= 4.5
-        // Bronze:   0-49 trips (no rating requirement)
-        if (completed >= 500 && avgRating >= 4.9) {
-          _currentTierIndex = 4; // Diamond
-        } else if (completed >= 300 && avgRating >= 4.8) {
-          _currentTierIndex = 3; // Platinum
-        } else if (completed >= 150 && avgRating >= 4.7) {
-          _currentTierIndex = 2; // Gold
-        } else if (completed >= 50 && avgRating >= 4.5) {
-          _currentTierIndex = 1; // Silver
+
+        // Use backend authoritative cruise_level if available,
+        // otherwise fall back to client-side computation
+        final backendLevel = stats['cruise_level'] as String?;
+        if (backendLevel != null && backendLevel.isNotEmpty) {
+          const tierMap = {'bronze': 0, 'silver': 1, 'gold': 2, 'platinum': 3, 'diamond': 4};
+          _currentTierIndex = tierMap[backendLevel.toLowerCase()] ?? 0;
         } else {
-          _currentTierIndex = 0; // Bronze
+          // Fallback: compute client-side
+          if (completed >= 500 && avgRating >= 4.9) {
+            _currentTierIndex = 4; // Diamond
+          } else if (completed >= 300 && avgRating >= 4.8) {
+            _currentTierIndex = 3; // Platinum
+          } else if (completed >= 150 && avgRating >= 4.7) {
+            _currentTierIndex = 2; // Gold
+          } else if (completed >= 50 && avgRating >= 4.5) {
+            _currentTierIndex = 1; // Silver
+          } else {
+            _currentTierIndex = 0; // Bronze
+          }
         }
         // Persist new tier index
         prefs.setInt('cruise_tier_index', _currentTierIndex);

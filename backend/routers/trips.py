@@ -17,6 +17,7 @@ from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url
 from services.fcm_service import _send_fcm_push, send_to_topic_async
 from services.n8n_webhooks import fire as _n8n_fire
 from routers.drivers import reevaluate_driver_tier
+from cruise_level_agent import evaluate_driver_level
 from services.event_bus import event_bus
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
@@ -694,6 +695,13 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                 "error_message": "Auto-charge after trip completion failed",
             }))
 
+    # --- Evaluate driver cruise level after trip completion ---
+    if status == "completed" and trip.driver_id:
+        try:
+            await evaluate_driver_level(db, trip.driver_id)
+        except Exception as e:
+            logging.warning("[CruiseLevel] Post-trip evaluation failed for driver %s: %s", trip.driver_id, e)
+
     return _trip_dict_for_user(trip, user)
 
 # ---====================================================
@@ -1027,6 +1035,11 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
             await reevaluate_driver_tier(db, trip.driver_id)
         except Exception as e:
             logging.warning("[Tier] Re-evaluation failed for driver %s: %s", trip.driver_id, e)
+        # Also re-evaluate cruise level (Bronze → Silver → Gold etc.)
+        try:
+            await evaluate_driver_level(db, trip.driver_id)
+        except Exception as e:
+            logging.warning("[CruiseLevel] Post-rating evaluation failed for driver %s: %s", trip.driver_id, e)
 
     return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount}
 

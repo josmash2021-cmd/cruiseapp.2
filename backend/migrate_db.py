@@ -28,6 +28,7 @@ def migrate():
             ("referred_by", "INTEGER"),
             ("total_earnings", "REAL DEFAULT 0.0"),
             ("pending_balance", "REAL DEFAULT 0.0"),
+            ("cruise_level", "TEXT DEFAULT 'bronze'"),
         ]
         
         for col_name, col_type in new_user_columns:

@@ -352,7 +352,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       _gpsSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 15, // 15 meters – saves battery
+          distanceFilter: 5, // 5 meters – smooth rider tracking
         ),
       ).listen(_onGps);
     } catch (_) {}

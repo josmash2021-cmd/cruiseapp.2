@@ -34,9 +34,10 @@ class GoldLocationDot {
   double? _currentLng;
   double? _targetLat;
   double? _targetLng;
-  // Velocity tracking for prediction
-  double _velLat = 0;
-  double _velLng = 0;
+  // Velocity tracking — degrees per second (not displacement)
+  DateTime? _lastTargetTime;
+  double _velLatSec = 0;
+  double _velLngSec = 0;
 
   /// Interpolated position (lat, lng) — use this to place the annotation.
   double? get lat => _currentLat;
@@ -46,13 +47,21 @@ class GoldLocationDot {
 
   Uint8List? get currentBytes => _frames.isEmpty ? null : _frames[_frame];
 
-  /// Set the GPS target position. The dot will smoothly lerp toward it.
+  /// Set the GPS target position. The dot will smoothly glide toward it
+  /// at constant velocity — no jumps, no stalls.
   void setTarget(double lat, double lng) {
-    // Track velocity for smooth prediction
-    if (_targetLat != null) {
-      _velLat = lat - _targetLat!;
-      _velLng = lng - _targetLng!;
+    final now = DateTime.now();
+    if (_targetLat != null && _lastTargetTime != null) {
+      final dtSec = now.difference(_lastTargetTime!).inMilliseconds / 1000.0;
+      if (dtSec > 0.05 && dtSec < 10.0) {
+        final newVLat = (lat - _targetLat!) / dtSec;
+        final newVLng = (lng - _targetLng!) / dtSec;
+        // Smooth exponential average to avoid velocity spikes
+        _velLatSec = _velLatSec * 0.3 + newVLat * 0.7;
+        _velLngSec = _velLngSec * 0.3 + newVLng * 0.7;
+      }
     }
+    _lastTargetTime = now;
     _targetLat = lat;
     _targetLng = lng;
     // First position — snap immediately, no lerp
@@ -62,24 +71,45 @@ class GoldLocationDot {
     }
   }
 
-  /// Advance interpolated position toward target with velocity smoothing.
+  /// Advance position at CONSTANT VELOCITY toward target.
+  /// No proportional lerp (which catches up in 200ms then stalls).
+  /// The dot moves at measured speed every 16ms tick → glass-smooth.
   void _lerpPosition() {
     if (_currentLat == null || _targetLat == null) return;
-    // 0.14 at 16ms tick ≈ same responsiveness as 0.25 at 40ms, but 2.5× smoother
-    const f = 0.14;
+    const dt = 0.016; // 16ms tick
+
     final dLat = _targetLat! - _currentLat!;
     final dLng = _targetLng! - _currentLng!;
 
-    // Velocity prediction — look 20% ahead for buttery-smooth anticipation
-    final predLat = _targetLat! + _velLat * 0.20;
-    final predLng = _targetLng! + _velLng * 0.20;
+    // Primary: constant-velocity advance (deg/sec × dt)
+    final vStepLat = _velLatSec * dt;
+    final vStepLng = _velLngSec * dt;
 
-    _currentLat = _currentLat! + (predLat - _currentLat!) * f;
-    _currentLng = _currentLng! + (predLng - _currentLng!) * f;
+    // Fallback: very gentle proportional correction (3% per tick)
+    final cStepLat = dLat * 0.03;
+    final cStepLng = dLng * 0.03;
 
-    // Slower decay at 60fps so prediction sustains between GPS updates
-    _velLat *= 0.96;
-    _velLng *= 0.96;
+    // Move in correct direction — pick larger of velocity vs correction.
+    // Clamp so we never overshoot past the target.
+    double stepLat = 0, stepLng = 0;
+    if (dLat.abs() > 0.0000003) {
+      stepLat = dLat > 0
+          ? math.max(vStepLat, cStepLat).clamp(0.0, dLat)
+          : math.min(vStepLat, cStepLat).clamp(dLat, 0.0);
+    }
+    if (dLng.abs() > 0.0000003) {
+      stepLng = dLng > 0
+          ? math.max(vStepLng, cStepLng).clamp(0.0, dLng)
+          : math.min(vStepLng, cStepLng).clamp(dLng, 0.0);
+    }
+
+    _currentLat = _currentLat! + stepLat;
+    _currentLng = _currentLng! + stepLng;
+
+    // Velocity decay: retain ~98% per second
+    final decay = math.pow(0.98, dt * 60);
+    _velLatSec *= decay;
+    _velLngSec *= decay;
 
     // Snap when close enough to avoid perpetual micro-lerping
     if (dLat.abs() < 0.0000003 && dLng.abs() < 0.0000003) {

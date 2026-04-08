@@ -1057,21 +1057,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
 
-    // ── Ultra-smooth advance with velocity prediction ──
-    // Predict ahead 2 s so the car keeps gliding between 2-3 s GPS gaps.
-    final predicted = _tgtTraveledM + _velocityMps * 2.0;
+    // ── CONSTANT-VELOCITY advance (glass-smooth, ZERO jumps) ──
+    // Predict modestly ahead so the car doesn't overshoot.
+    final predicted = _tgtTraveledM + _velocityMps * 0.8;
     final effectiveTarget = math.min(predicted, _segDist.last);
     final diff = effectiveTarget - _traveledM;
-    // Time-based catch-up: 24% base at 60fps, scales with dt
-    final stepFactor = tf(0.24);
-    final step = (diff * stepFactor).clamp(-8.0, 8.0);
-    if (diff.abs() < 0.05) {
+
+    // Primary: advance at measured driver speed (m/s × dt).
+    // This distributes movement EVENLY across ALL frames between GPS updates
+    // instead of proportional catch-up which reaches target in 200ms then stalls.
+    final velStep = _velocityMps * dt;
+    // Fallback: very gentle proportional correction (< 4%/frame at 60fps)
+    // for when the car is stopped or accumulated drift needs fixing.
+    final corrStep = diff * tf(0.04);
+    // Use whichever produces more forward movement — velocity dominates while
+    // driving, correction dominates when stopped.
+    if (diff > 0.05) {
+      final step2 = math.max(velStep, corrStep).clamp(0.0, 15.0);
+      _traveledM = math.min(_traveledM + step2, effectiveTarget);
+    } else if (diff.abs() <= 0.05) {
       _traveledM = _tgtTraveledM;
-    } else {
-      _traveledM += step;
     }
-    // Time-based velocity decay: ~97% per second — sustains prediction between GPS gaps
-    _velocityMps *= math.pow(0.97, dt);
+    // Velocity decay: retain ~98% per second — sustains glide for 3+ sec gaps
+    _velocityMps *= math.pow(0.98, dt);
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
@@ -1090,7 +1098,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
-      final offRouteFactor = tf(0.22);
+      // Constant-velocity off-route: advance at ~6% of remaining per frame
+      // (~tf(0.06)) which is gentle enough to avoid jumps.
+      final offRouteFactor = tf(0.06);
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * offRouteFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * offRouteFactor;
       final fallbackBearing = _directTargetBearing;
@@ -1102,7 +1112,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         double dbo = desiredBearing - _animBearing;
         if (dbo > 180) dbo -= 360;
         if (dbo < -180) dbo += 360;
-        final offBrgFactor = tf(0.30);
+        final offBrgFactor = tf(0.12);
         _animBearing = (_animBearing + dbo * offBrgFactor) % 360;
       }
     }
@@ -1114,15 +1124,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
     _updateApproachLine(); // dashed approach line driver→pickup
 
-    // ── Idle detection: pause ticker when animation has fully converged ──
-    // With factor 0.20/frame, diff decays to <0.05m in ~20-25 frames (~400ms).
-    // After convergence there is nothing left to animate — parking the ticker
-    // eliminates ~60 CPU wakeups/sec until the next real GPS update arrives.
+    // ── Idle detection: pause ticker only when car is truly stationary ──
+    // With constant-velocity interpolation the ticker must stay running
+    // as long as there is ANY predicted velocity remaining.
     final diff2 = (_tgtTraveledM - _traveledM).abs();
-    double db2 = _animBearing - (_driverBearing);
-    if (db2 > 180) db2 -= 360;
-    if (db2 < -180) db2 += 360;
-    if (diff2 < 0.01 && db2.abs() < 0.1 && _directTargetPos == null) {
+    if (diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
       _interpIdle = true;
       _interpTicker?.stop();
     }

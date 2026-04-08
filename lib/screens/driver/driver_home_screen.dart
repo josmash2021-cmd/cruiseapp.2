@@ -484,7 +484,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
+          distanceFilter: 5, // 5 m — smooth golden dot movement
         ),
       ).listen((p) {
         if (!mounted) return;

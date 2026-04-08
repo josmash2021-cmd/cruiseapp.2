@@ -87,23 +87,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (tripId != null) {
       _attachTripDocListener(sqlDocId!, isFallbackDoc: false);
 
-      _tripSseSub?.cancel();
-      _tripSseSub = ApiService.streamTripStatus(tripId).listen(
-        (event) {
-          if (!mounted || event.isEmpty) return;
-          final status = (event['status']?.toString() ?? '').trim().toLowerCase();
-          if (status.isEmpty) return;
-          debugPrint('[RiderTracking] SSE trip_update status=$status');
-          _onTripStatusUpdate(event);
-        },
-        onError: (error) {
-          debugPrint('[RiderTracking] SSE listener error: $error');
-        },
-        onDone: () {
-          debugPrint('[RiderTracking] SSE listener closed');
-        },
-      );
-
       _statusPollTimer?.cancel();
       _statusPollTimer = Timer.periodic(
         const Duration(seconds: 8),
@@ -112,7 +95,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       unawaited(_pollBackendTripStatus());
     } else {
       _statusPollTimer?.cancel();
-      _tripSseSub?.cancel();
     }
 
     if (fallbackDocId != null &&

@@ -203,10 +203,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
   Timer? _fsCancelDebounce; // Debounce timer for stale Firestore cancel events
-  StreamSubscription<Map<String, dynamic>>? _tripSseSub; // SSE stream sub
   StreamSubscription<DocumentSnapshot>? _fsMatchSub; // Firestore trip doc watcher
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
-  bool _sseConnected = false; // true when SSE stream is active
   bool _driverMatched = false; // true once driver match is confirmed — blocks stale polls
   double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
   String? _currentStatus; // Last confirmed backend status string for transition validation
@@ -668,9 +666,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
-    _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
-    _sseConnected = false;
 
     // ── Firestore real-time listener: instant detection when driver accepts ──
     // Fires within ~100ms of driver writing to Firestore, bypassing HTTP latency.
@@ -694,7 +690,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _currentStatus = status;
         _fsMatchSub?.cancel();
         _pollTimer?.cancel();
-        _tripSseSub?.cancel();
         _timeoutTimer?.cancel();
         _isRequesting = false;
         _onDriverMatched(data, tripId);
@@ -709,7 +704,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _currentStatus = status;
           _fsMatchSub?.cancel();
           _pollTimer?.cancel();
-          _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _state = _state.copyWith(
@@ -727,7 +721,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Safety-net timeout — 10 minutes max searching then show no-drivers message
     _timeoutTimer = Timer(const Duration(minutes: 10), () {
       _pollTimer?.cancel();
-      _tripSseSub?.cancel();
       _isRequesting = false;
       if (_state.phase == RiderPhase.searchingDriver ||
           _state.phase == RiderPhase.requesting) {
@@ -740,68 +733,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
 
-    // ── SSE: real-time instant push from backend ──
-    _tripSseSub = ApiService.streamTripStatus(tripId).listen(
-      (event) {
-        _sseConnected = true;
-        final status = event['status']?.toString() ?? '';
-        debugPrint('🔴 SSE trip_update: status=$status');
-
-        // State machine: reject invalid status regressions
-        if (!_isValidTransition(_currentStatus, status)) {
-          debugPrint('[RiderTrip] SSE: ignoring invalid transition $_currentStatus → $status');
-          return;
-        }
-
-        if (status == 'driver_en_route' || status == 'accepted') {
-          _currentStatus = status;
-          _pollTimer?.cancel();
-          _tripSseSub?.cancel();
-          _timeoutTimer?.cancel();
-          _isRequesting = false;
-          _onDriverMatched(event, tripId);
-        } else if (status == 'cancelled' || status == 'canceled') {
-          // Guard C: ignore stale SSE cancel if driver was already matched
-          if (_driverMatched) return;
-          _currentStatus = status;
-          _pollTimer?.cancel();
-          _tripSseSub?.cancel();
-          _timeoutTimer?.cancel();
-          _fsCancelDebounce?.cancel();
-          _isRequesting = false;
-          _state = _state.copyWith(
-            phase: RiderPhase.cancelled,
-            cancelReason: 'Tu viaje fue cancelado.',
-          );
-          notifyListeners();
-          unawaited(CacheService.clearActiveTrip());
-        }
-      },
-      onError: (e) {
-        debugPrint('⚠️ SSE stream error, polling is active as fallback: $e');
-        _sseConnected = false;
-      },
-      onDone: () {
-        debugPrint('ℹ️ SSE stream ended, polling continues as fallback');
-        _sseConnected = false;
-      },
-    );
-
-    // ── Polling fallback (slower when SSE is active, never fully skipped) ──
-    int pollTick = 0;
+    // ── Polling fallback — safety net behind Firestore real-time listener ──
     Future<void> checkStatus(Timer? timer) async {
-      // If driver already matched (e.g. via SSE), ignore stale poll responses
+      // If driver already matched (e.g. via Firestore), ignore stale poll responses
       if (_driverMatched) { timer?.cancel(); return; }
-      pollTick++;
-      // When SSE is delivering, poll every 4th tick (~8s) as safety net
-      if (_sseConnected && pollTick % 4 != 0) return;
       try {
         final status = await ApiService.getDispatchStatus(tripId);
         final tripStatus = status['status']?.toString() ?? '';
 
         if (tripStatus == 'accepted' || tripStatus == 'driver_en_route') {
           timer?.cancel();
-          _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
           _onDriverMatched(status, tripId);
@@ -819,7 +760,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
             return;
           }
           timer?.cancel();
-          _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
           _fsCancelDebounce?.cancel();
           _isRequesting = false;
@@ -930,9 +870,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
-    _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
-    _sseConnected = false;
     _isRequesting = false;
     _currentStatus = null;
 
@@ -957,7 +895,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
-    _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     _isRequesting = false;
     _driverMatched = false;
@@ -976,7 +913,6 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
-    _tripSseSub?.cancel();
     _fsMatchSub?.cancel();
     super.dispose();
   }

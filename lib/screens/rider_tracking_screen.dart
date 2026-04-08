@@ -225,7 +225,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   StreamSubscription<LatLng>? _driverLocSub;
   StreamSubscription<Map<String, dynamic>?>? _tripStatusSub;
   StreamSubscription<Map<String, dynamic>?>? _fallbackTripStatusSub;
-  StreamSubscription<Map<String, dynamic>>? _tripSseSub;
   StreamSubscription? _rtdbDriverLocSub;
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
@@ -282,7 +281,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _rtdbDriverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _fallbackTripStatusSub?.cancel();
-    _tripSseSub?.cancel();
     _statusPollTimer?.cancel();
     _rideSaveTimer?.cancel();
     _saveStateTimer?.cancel();

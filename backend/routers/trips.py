@@ -708,7 +708,7 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
     try:
         result = await db.execute(
             select(Trip).where(
-                and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested"]), Trip.scheduled_at.isnot(None))
+                and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested", "driver_assigned", "accepted", "driver_en_route", "en_route_to_pickup", "driver_arriving", "arrived", "driver_arrived", "in_trip", "in_progress"]), Trip.scheduled_at.isnot(None))
             ).order_by(Trip.scheduled_at.asc())
         )
         return [_trip_dict_for_user(t, user) for t in result.scalars().all()]

@@ -2734,10 +2734,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final dt = DateTime.tryParse(sa);
     final isEs = Localizations.localeOf(ctx).languageCode == 'es';
     final status = (ride['status'] as String? ?? 'scheduled').toLowerCase();
-    final hasDriver = status == 'scheduled_accepted' || status == 'driver_assigned';
+    final hasDriver = status == 'scheduled_accepted' || status == 'driver_assigned' ||
+        status == 'accepted' || status == 'en_route' || status == 'en_route_to_pickup' ||
+        status == 'driver_en_route' || status == 'arriving' || status == 'arrived' ||
+        status == 'driver_arrived' || status == 'in_trip' || status == 'in_progress';
 
     final label = hasDriver
-        ? (isEs ? 'Tienes un conductor asignado' : 'You have a driver assigned to your ride')
+        ? (isEs ? 'Ya tienes un conductor para tu viaje reservado' : 'You have a driver for your scheduled ride')
         : (isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride');
     final dateStr = dt != null
         ? DateFormat(isEs ? "d 'de' MMM, h:mm a" : 'MMM d, h:mm a',

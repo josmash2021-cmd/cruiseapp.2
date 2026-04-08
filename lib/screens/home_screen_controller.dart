@@ -987,6 +987,11 @@ extension _HomeScreenController on _HomeScreenState {
           status == 'scheduled_accepted' || status == 'driver_assigned' ||
           status == 'scheduled') { return; }
 
+      // If trip was originally scheduled (has scheduled_at), never auto-navigate.
+      // The rider must tap the card to open the tracking screen.
+      final scheduledAt = trip['scheduled_at'];
+      if (scheduledAt != null && scheduledAt.toString().isNotEmpty) { return; }
+
       // If still searching for a driver — show a pending trip indicator
       // so rider knows their search is still active after reopen/reinstall.
       if (status == 'searching' || status == 'pending') {

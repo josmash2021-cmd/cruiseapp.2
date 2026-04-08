@@ -1056,10 +1056,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         if (trips.isNotEmpty) {
           final now = DateTime.now();
           for (final t in trips) {
-            // Show scheduled, accepted, and driver-assigned trips (not completed/canceled)
+            // Show all scheduled-origin trips until completed/canceled by driver/rider
             final status = (t['status'] as String? ?? 'scheduled').toLowerCase();
-            const activeStatuses = {'scheduled', 'scheduled_accepted', 'driver_assigned'};
-            if (!activeStatuses.contains(status)) continue;
+            const dismissedStatuses = {'completed', 'canceled', 'cancelled'};
+            if (dismissedStatuses.contains(status)) continue;
             final sa = t['scheduled_at'];
             if (sa != null) {
               final dt = DateTime.tryParse(sa.toString());

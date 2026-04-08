@@ -319,7 +319,9 @@ extension _RideRequestController on _RideRequestScreenState {
         }
         break;
       case RiderPhase.driverAssigned:
-        // Show premium "Driver Found" overlay, then auto-navigate after 4s
+        // Signal SearchingDriverScreen to pop immediately if still visible
+        _driverMatchedNotifier.value = true;
+        // Show premium "Driver Found" overlay, then auto-navigate quickly
         if (!_driverFoundVisible && !_navigatingToTracking) {
           _driverFoundVisible = true;
           HapticFeedback.heavyImpact();
@@ -359,8 +361,8 @@ extension _RideRequestController on _RideRequestScreenState {
           );
 
           _driverFoundTimer?.cancel();
-          // Wait for the 3800ms progress bar to finish, then navigate
-          _driverFoundTimer = Timer(const Duration(milliseconds: 4200), () {
+          // Navigate quickly — just enough time for checkmark + haptic to register
+          _driverFoundTimer = Timer(const Duration(milliseconds: 1800), () {
             if (!mounted) return;
             _ctrl.transitionToArriving();
           });
@@ -885,6 +887,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // bottom card renders behind the animation. When the screen fades out,
       // the bottom card is already visible — no black flash.
       _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
+      _driverMatchedNotifier.value = false; // Reset for this request
       unawaited(_ctrl.requestRide());
 
       _searchingScreenShowing = true;
@@ -896,6 +899,7 @@ extension _RideRequestController on _RideRequestScreenState {
                 paymentCallback: (isNativePay || isTestMode) ? null : () => _confirmNativePayment(option),
                 initiallyDeclined: nativePayFailed,
                 onPaymentDeclined: () => paymentDeclinedFlag = true,
+                driverFound: _driverMatchedNotifier,
               ),
             ) ??
             false;

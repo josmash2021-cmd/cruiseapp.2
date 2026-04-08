@@ -248,6 +248,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
+  final ValueNotifier<bool> _driverMatchedNotifier = ValueNotifier(false);
   AnimationController? _dfCheckCtrl;
   AnimationController? _dfStaggerCtrl;
   AnimationController? _dfShimmerCtrl;
@@ -422,6 +423,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _driverFoundTimer?.cancel();
+    _driverMatchedNotifier.dispose();
     _dfCheckCtrl?.dispose();
     _dfStaggerCtrl?.dispose();
     _dfShimmerCtrl?.dispose();

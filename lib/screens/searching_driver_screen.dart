@@ -13,6 +13,7 @@ class SearchingDriverScreen extends StatefulWidget {
     this.paymentCallback,
     this.onPaymentDeclined,
     this.initiallyDeclined = false,
+    this.driverFound,
   });
 
   /// Called when the rider confirms they want to cancel the ride.
@@ -28,6 +29,9 @@ class SearchingDriverScreen extends StatefulWidget {
   /// Start immediately in the payment-declined state (used when native pay
   /// sheet was shown before this screen and the bank rejected the charge).
   final bool initiallyDeclined;
+
+  /// When this notifier becomes true, pop immediately (driver was matched).
+  final ValueNotifier<bool>? driverFound;
 
   @override
   State<SearchingDriverScreen> createState() => _SearchingDriverScreenState();
@@ -55,6 +59,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   bool _paymentDeclined = false;
   Timer? _paymentStartTimer;
   Timer? _declinedPopTimer;
+
+  // ── driver-found early-pop ──
+  VoidCallback? _driverFoundCb;
 
   // ── particles (20 total) ──
   late final List<_Particle> _particles;
@@ -129,7 +136,23 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat();
 
-    // ── 8. Payment handling ──
+    // ── 8. Driver-found early pop ──
+    if (widget.driverFound != null) {
+      _driverFoundCb = () {
+        if (widget.driverFound!.value && mounted) {
+          Navigator.of(context).pop();
+        }
+      };
+      widget.driverFound!.addListener(_driverFoundCb!);
+      // Already matched before screen opened
+      if (widget.driverFound!.value && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Navigator.of(context).pop();
+        });
+      }
+    }
+
+    // ── 9. Payment handling ──
     if (widget.initiallyDeclined) {
       // Native pay sheet already ran and was declined — show error immediately
       WidgetsBinding.instance.addPostFrameCallback((_) => _handleDeclined());
@@ -155,6 +178,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   @override
   void dispose() {
+    if (_driverFoundCb != null) widget.driverFound?.removeListener(_driverFoundCb!);
     _paymentStartTimer?.cancel();
     _declinedPopTimer?.cancel();
     _radarCtrl.dispose();
@@ -475,6 +499,7 @@ Route<bool> searchingDriverRoute({
   Future<bool> Function()? paymentCallback,
   VoidCallback? onPaymentDeclined,
   bool initiallyDeclined = false,
+  ValueNotifier<bool>? driverFound,
 }) {
   return PageRouteBuilder<bool>(
     opaque: false,
@@ -485,6 +510,7 @@ Route<bool> searchingDriverRoute({
       paymentCallback: paymentCallback,
       onPaymentDeclined: onPaymentDeclined,
       initiallyDeclined: initiallyDeclined,
+      driverFound: driverFound,
     ),
     transitionsBuilder: (_, anim, __, child) {
       return FadeTransition(

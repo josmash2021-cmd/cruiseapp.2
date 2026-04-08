@@ -2176,7 +2176,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // â”€â”€ Poll dispatch status for driver assignment â”€â”€
     int noDriverCount = 0;
     _tripPollTimer?.cancel();
-    _tripPollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    _tripPollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       if (!mounted || _stage != RideStage.matching) {
         timer.cancel();
         return;

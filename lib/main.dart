@@ -126,8 +126,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   );
 
   if (type == 'trip_offer' || type == 'new_offer') {
-    final title = message.notification?.title ?? _riderNotifTitle(type);
-    final body = message.notification?.body ?? _riderNotifBody(type);
+    // Always show clean title/body — never expose price or address to driver
+    const title = 'New Ride Offer';
+    const body = '';
     await plugin.show(
       id: 9001,
       title: title,
@@ -427,12 +428,18 @@ Future<void> heavyInit() async {
 
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final type = message.data['type'] as String? ?? 'general';
-            final title = message.notification?.title ??
-                message.data['title'] ??
-                _riderNotifTitle(type);
-            final body = message.notification?.body ??
-                message.data['body'] ??
-                _riderNotifBody(type);
+            // For driver ride offers: always use clean title/body — never show price or address
+            final bool isOffer = type == 'trip_offer' || type == 'new_offer';
+            final title = isOffer
+                ? 'New Ride Offer'
+                : (message.notification?.title ??
+                    message.data['title'] ??
+                    _riderNotifTitle(type));
+            final body = isOffer
+                ? ''
+                : (message.notification?.body ??
+                    message.data['body'] ??
+                    _riderNotifBody(type));
 
             // Suppress chat notification if user is already in that chat
             if (type == 'chat_message') {

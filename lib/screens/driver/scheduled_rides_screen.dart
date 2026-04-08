@@ -927,7 +927,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
       await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
       await ctrl.style.setStyleLayerProperty(
           _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
       await ctrl.style.setStyleLayerProperty(
@@ -1527,7 +1527,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                 await MapTheme.applyNavyGold(_mapCtrl!);
                 if (_pointAnnotMgr != null) {
                   try {
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');

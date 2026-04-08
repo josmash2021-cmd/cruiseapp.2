@@ -808,7 +808,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               );
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
               try {
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
@@ -817,7 +817,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // Separate annotation manager for car icon (icon-anchor: center, on top)
               _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
               try {
-                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
@@ -832,7 +832,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 // Re-apply annotation manager layer properties after style reload
                 if (_pointAnnotMgr != null) {
                   try {
-                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                     await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                     await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                     await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
@@ -840,7 +840,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 }
                 if (_carAnnotMgr != null) {
                   try {
-                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                     await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                     await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                   } catch (_) {}

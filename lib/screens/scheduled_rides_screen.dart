@@ -496,7 +496,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
-      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
       await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
       await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
       await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
@@ -678,9 +678,10 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     final minutesUntil = scheduledAt != null
         ? scheduledAt.difference(DateTime.now()).inMinutes
         : 0;
-    final canCancel = status == 'scheduled' && !isPast && minutesUntil > 60;
+    final cancelableStatus = status == 'scheduled' || status == 'scheduled_accepted' || status == 'driver_assigned' || status == 'requested';
+    final canCancel = cancelableStatus && !isPast && minutesUntil > 60;
     final showContactSupport =
-        status == 'scheduled' && !isPast && minutesUntil <= 60 && minutesUntil > 0;
+        cancelableStatus && !isPast && minutesUntil <= 60 && minutesUntil > 0;
 
     return SizeTransition(
       sizeFactor: _removeSize,
@@ -1099,7 +1100,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 await MapTheme.applyNavyGold(_mapCtrl!);
                 if (_pointAnnotMgr != null) {
                   try {
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');

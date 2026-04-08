@@ -1820,7 +1820,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           // Pin manager (pickup / dropoff pins) — pitch-aligned to viewport so
           // they stand upright at 55° nav pitch instead of lying flat on the map.
           _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
@@ -1829,7 +1829,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           // Arrow manager (driver icon only) — rotation-alignment 'map' so
           // iconRotate tracks geographic bearing, not screen-space bearing.
           _arrowMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
           try { await ctrl.style.setStyleLayerProperty(_arrowMgr!.id, 'icon-rotation-alignment', 'map'); } catch (_) {}
           _updateRouteAnnotation();
           _updateDestPin(widget.startInTripMode ? widget.dropoffLatLng : widget.pickupLatLng);

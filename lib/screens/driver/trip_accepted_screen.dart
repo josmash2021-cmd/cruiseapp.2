@@ -346,7 +346,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+    try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
     try { await ctrl.style.setStyleLayerProperty(_pointMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
@@ -472,7 +472,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                         await MapTheme.applyNavyGold(_mapCtrl!);
                         if (_pointMgr != null) {
                           try {
-                            await _mapCtrl!.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'map');
+                            await _mapCtrl!.style.setStyleLayerProperty(_pointMgr!.id, 'icon-pitch-alignment', 'viewport');
                             await _mapCtrl!.style.setStyleLayerProperty(_pointMgr!.id, 'icon-rotation-alignment', 'viewport');
                             await _mapCtrl!.style.setStyleLayerProperty(_pointMgr!.id, 'icon-allow-overlap', true);
                             await _mapCtrl!.style.setStyleLayerProperty(_pointMgr!.id, 'icon-anchor', 'bottom');

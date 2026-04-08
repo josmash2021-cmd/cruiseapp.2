@@ -1016,7 +1016,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try {
-            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
           } catch (_) {}
@@ -1027,7 +1027,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             await _applyNavyGoldTheme(_mapController!);
             if (_pointAnnotMgr != null) {
               try {
-                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                 await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
               } catch (_) {}

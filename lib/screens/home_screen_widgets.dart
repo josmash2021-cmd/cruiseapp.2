@@ -40,7 +40,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
         try {
-          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
         } catch (_) {}
@@ -56,7 +56,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           // Re-apply annotation manager layer properties after style reload
           if (_miniMapAnnotMgr != null) {
             try {
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
               await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
               await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
             } catch (_) {}

@@ -1577,6 +1577,8 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polyAnnotMgr;
+  bool _routeLoading = false;
+  bool _routeLoaded = false;
 
   bool get _hasDropoff =>
       widget.dropoffLat != null && widget.dropoffLng != null;
@@ -1665,21 +1667,63 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
         ));
       } catch (_) {}
 
-      // Golden route line
+      // Fetch real road-based route and draw golden polyline
       if (_polyAnnotMgr != null) {
-        try {
-          await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-            geometry: mapbox.LineString(coordinates: [
-              mapbox.Position(widget.pickupLng, widget.pickupLat),
-              mapbox.Position(widget.dropoffLng!, widget.dropoffLat!),
-            ]),
-            lineColor: const Color(0xFFE8C547).toARGB32(),
-            lineWidth: 3.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (_) {}
+        _fetchAndDrawRoute();
       }
     }
+  }
+
+  Future<void> _fetchAndDrawRoute() async {
+    if (!_hasDropoff || _routeLoading || _routeLoaded) return;
+    _routeLoading = true;
+    try {
+      final pickup = LatLng(widget.pickupLat, widget.pickupLng);
+      final dropoff = LatLng(widget.dropoffLat!, widget.dropoffLng!);
+      final dirs = DirectionsService(ApiKeys.webServices);
+      final route = await dirs.getRoute(origin: pickup, destination: dropoff);
+      if (!mounted || route == null || route.points.length < 2) {
+        // Fallback: straight line if directions API fails
+        _drawStraightLine();
+        return;
+      }
+      _routeLoaded = true;
+      final cappedPts = List<LatLng>.from(route.points);
+      cappedPts[0] = pickup;
+      cappedPts[cappedPts.length - 1] = dropoff;
+      final coords = cappedPts
+          .map((p) => mapbox.Position(p.longitude, p.latitude))
+          .toList();
+      try {
+        await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+          geometry: mapbox.LineString(coordinates: coords),
+          lineColor: const Color(0xFFE8C547).toARGB32(),
+          lineWidth: 3.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      } catch (_) {}
+      // Fit bounds to route
+      if (_mapCtrl != null) await _fitBounds();
+    } catch (_) {
+      _drawStraightLine();
+    } finally {
+      _routeLoading = false;
+    }
+  }
+
+  void _drawStraightLine() {
+    if (_polyAnnotMgr == null || !_hasDropoff) return;
+    try {
+      _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: [
+          mapbox.Position(widget.pickupLng, widget.pickupLat),
+          mapbox.Position(widget.dropoffLng!, widget.dropoffLat!),
+        ]),
+        lineColor: const Color(0xFFE8C547).toARGB32(),
+        lineWidth: 3.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
   }
 
   Future<void> _fitBounds() async {

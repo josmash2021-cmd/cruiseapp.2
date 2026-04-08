@@ -596,14 +596,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         db.add(offer)
         await db.commit()
         await db.refresh(offer)
-        # -- Pre-fetch route polyline so Flutter doesn't need a separate Directions call --
-        _route_data = await _fetch_route_for_offer(
-            trip.pickup_lat, trip.pickup_lng,
-            trip.dropoff_lat, trip.dropoff_lng,
-            assigned.lat or trip.pickup_lat, assigned.lng or trip.pickup_lng,
-        )
-        # -- SSE instant push to driver (sub-second delivery) --
-        _pending_cache.pop(assigned.id, None)  # Invalidate cache so SSE and poll both get fresh data
+        # -- SSE instant push to driver — no blocking calls before this --
+        _pending_cache.pop(assigned.id, None)
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         asyncio.create_task(event_bus.push_driver_offer(assigned.id, [{
             "offer_id": offer.id,
@@ -615,9 +609,6 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             **_trip_dict(trip),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
-            "route_points": _route_data["route_points"],
-            "driver_to_pickup_km": _route_data["driver_to_pickup_km"],
-            "eta_minutes": _route_data["eta_minutes"],
         }]))
         # -- FCM push to assigned driver (non-blocking background task) --
         if assigned.fcm_token:

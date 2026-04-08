@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -79,8 +81,20 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   //  Data loaders
   // ─────────────────────────────────────────────
 
+  static const _cacheKey = 'sched_avail_cache';
+
   Future<void> _loadAvailable() async {
-    setState(() { _loadingAvail = true; _errorAvail = null; });
+    // Show cached data instantly while fresh data loads in background
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_cacheKey);
+      if (cached != null && mounted) {
+        final list = (jsonDecode(cached) as List).cast<Map<String, dynamic>>();
+        setState(() { _available = list; _loadingAvail = false; });
+      }
+    } catch (_) {}
+
+    // Fetch fresh data in background
     try {
       double lat = 0, lng = 0;
       try {
@@ -92,27 +106,51 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         lat: lat, lng: lng, radiusKm: 50,
       );
       if (!mounted) return;
+      // Save to cache for next open
+      SharedPreferences.getInstance().then((p) =>
+        p.setString(_cacheKey, jsonEncode(trips)));
       setState(() { _available = trips; _loadingAvail = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _errorAvail = e.toString(); _loadingAvail = false; });
+      if (_available.isEmpty) {
+        setState(() { _errorAvail = e.toString(); _loadingAvail = false; });
+      } else {
+        setState(() { _loadingAvail = false; }); // keep showing cache on error
+      }
     }
   }
 
+  static const _myCacheKey = 'sched_mine_cache';
+
   Future<void> _loadMyRides() async {
-    setState(() { _loadingMine = true; _errorMine = null; });
+    // Show cached data instantly
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_myCacheKey);
+      if (cached != null && mounted) {
+        final list = (jsonDecode(cached) as List).cast<Map<String, dynamic>>();
+        setState(() { _myRides = list; _loadingMine = false; });
+      }
+    } catch (_) {}
+
     try {
       final uid = await ApiService.getCurrentUserId();
       if (uid == null) {
-        setState(() { _errorMine = 'Not logged in'; _loadingMine = false; });
+        if (mounted) setState(() { _errorMine = 'Not logged in'; _loadingMine = false; });
         return;
       }
       final trips = await ApiService.getDriverScheduledTrips(uid);
       if (!mounted) return;
+      SharedPreferences.getInstance().then((p) =>
+        p.setString(_myCacheKey, jsonEncode(trips)));
       setState(() { _myRides = trips; _loadingMine = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _errorMine = e.toString(); _loadingMine = false; });
+      if (_myRides.isEmpty) {
+        setState(() { _errorMine = e.toString(); _loadingMine = false; });
+      } else {
+        setState(() { _loadingMine = false; });
+      }
     }
   }
 

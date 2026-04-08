@@ -769,7 +769,7 @@ extension _RideRequestController on _RideRequestScreenState {
         Navigator.of(context).pop(); // close payment modal
         _setState(() => _showPaymentDeclinedBanner = true);
         _showRetrySnackBar(
-          'Payment declined. Please check your card or try another payment method.',
+          S.of(context).paymentDeclinedMsg,
           () => _processPayment(context, AppColors.of(context), option, setSheetState),
         );
         return;
@@ -793,6 +793,11 @@ extension _RideRequestController on _RideRequestScreenState {
       _ctrl.requestRide();
     } finally {
       _rideFlowLocked = false;
+      // Safety net: ensure button never stays stuck regardless of exception path.
+      if (mounted) {
+        setSheetState(() => _isProcessingPayment = false);
+        _setState(() => _isProcessingPayment = false);
+      }
     }
   }
 
@@ -837,7 +842,7 @@ extension _RideRequestController on _RideRequestScreenState {
           if (mounted) {
             _setState(() => _showPaymentDeclinedBanner = true);
             _showRetrySnackBar(
-              'Payment declined. Please check your card or try another payment method.',
+              S.of(context).paymentDeclinedMsg,
               () => _startRideDirectly(AppColors.of(context), option),
             );
           }
@@ -973,6 +978,9 @@ extension _RideRequestController on _RideRequestScreenState {
         return;
       }
       if (nativePayFailed || paymentDeclinedFlag) {
+        // Payment failed after the ride request was already dispatched — cancel it.
+        _ctrl.cancelRide();
+        _ctrl.reset();
         if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
         return;
       }
@@ -1050,11 +1058,12 @@ extension _RideRequestController on _RideRequestScreenState {
     } on stripe.StripeException catch (e) {
       debugPrint('[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
-      // If Apple Pay fails, fall back to card sheet
-      return _confirmCardSheet(amountCents, label);
+      // Apple Pay was declined by the bank — surface the error so the caller
+      // shows the "Payment declined" banner instead of opening a card sheet.
+      rethrow;
     } catch (e) {
       debugPrint('[ApplePay] Error: $e');
-      return _confirmCardSheet(amountCents, label);
+      rethrow;
     }
   }
 
@@ -1090,10 +1099,12 @@ extension _RideRequestController on _RideRequestScreenState {
     } on stripe.StripeException catch (e) {
       debugPrint('[GooglePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
-      return _confirmCardSheet(amountCents, label);
+      // Google Pay was declined — surface the error so the caller shows the
+      // "Payment declined" banner instead of silently opening a card sheet.
+      rethrow;
     } catch (e) {
       debugPrint('[GooglePay] Error: $e');
-      return _confirmCardSheet(amountCents, label);
+      rethrow;
     }
   }
 

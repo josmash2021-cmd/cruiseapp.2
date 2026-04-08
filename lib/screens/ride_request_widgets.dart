@@ -252,10 +252,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             const Icon(Icons.error_outline_rounded,
                                 color: Color(0xFFEF9A9A), size: 18),
                             const SizedBox(width: 8),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Payment declined. Try a different method.',
-                                style: TextStyle(
+                                S.of(context).paymentDeclinedMsg,
+                                style: const TextStyle(
                                     color: Color(0xFFEF9A9A), fontSize: 13),
                               ),
                             ),

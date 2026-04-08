@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Spectacular "Confirming your ride." screen with radar pulse rings,
 /// orbiting dots, floating particles, shimmer text, and a gleaming
@@ -195,27 +196,27 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: Color(0xFFc8a951), width: 1),
         ),
-        title: const Text(
-          '¿Estás seguro?',
-          style: TextStyle(
+        title: Text(
+          S.of(context).cancelRideQuestion,
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
           textAlign: TextAlign.center,
         ),
-        content: const Text(
-          '¿Deseas cancelar tu viaje?',
-          style: TextStyle(color: Colors.grey, fontSize: 14),
+        content: Text(
+          S.of(context).cancelRideMsg,
+          style: const TextStyle(color: Colors.grey, fontSize: 14),
           textAlign: TextAlign.center,
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'No, continuar',
-              style: TextStyle(color: Color(0xFFc8a951)),
+            child: Text(
+              S.of(context).keepWaiting,
+              style: const TextStyle(color: Color(0xFFc8a951)),
             ),
           ),
           ElevatedButton(
@@ -230,9 +231,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
               widget.onCancel?.call();      // run cancel logic in controller
               Navigator.of(context).pop(true); // pop this screen with cancelled=true
             },
-            child: const Text(
-              'Sí, cancelar',
-              style: TextStyle(color: Colors.black),
+            child: Text(
+              S.of(context).yesCancelBtn,
+              style: const TextStyle(color: Colors.black),
             ),
           ),
         ],
@@ -322,7 +323,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
                 TextButton(
                   onPressed: _showCancelDialog,
                   child: Text(
-                    'Cancelar',
+                    S.of(context).cancel,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.45),
                       fontSize: 14,
@@ -383,9 +384,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildShimmerText() {
     if (_paymentDeclined) {
-      return const Text(
-        'Payment Declined',
-        style: TextStyle(
+      return Text(
+        S.of(context).paymentDeclined,
+        style: const TextStyle(
           color: Color(0xFFFF4444),
           fontSize: 22,
           fontWeight: FontWeight.w500,
@@ -412,9 +413,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
               end: Alignment(v * 3 - 0.5, 0),
             ).createShader(bounds);
           },
-          child: const Text(
-            'Confirming your ride.',
-            style: TextStyle(
+          child: Text(
+            S.of(context).searchStatusMsg4,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
               fontWeight: FontWeight.w300,

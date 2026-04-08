@@ -237,7 +237,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ElevatedButton(
             onPressed: _loadMethods,
             style: ElevatedButton.styleFrom(backgroundColor: _gold),
-            child: const Text('Retry', style: TextStyle(color: Colors.black)),
+            child: Text(S.of(context).retry, style: const TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -266,7 +266,7 @@ class _WalletScreenState extends State<WalletScreen> {
               TextButton.icon(
                 onPressed: _openPaymentAccounts,
                 icon: const Icon(Icons.edit_rounded, size: 16),
-                label: const Text('Manage'),
+                label: Text(S.of(context).manageLabel),
               ),
             ],
           ),
@@ -292,12 +292,12 @@ class _WalletScreenState extends State<WalletScreen> {
         children: [
           Icon(Icons.credit_card_off_rounded, size: 40, color: c.textTertiary),
           const SizedBox(height: 12),
-          Text('No payment methods configured', style: TextStyle(
+          Text(S.of(context).noPaymentMethods, style: TextStyle(
             color: c.textSecondary,
             fontSize: 14,
           )),
           const SizedBox(height: 4),
-          Text('Add at least one method to pay for rides', style: TextStyle(
+          Text(S.of(context).addMethodDescription, style: TextStyle(
             color: c.textTertiary,
             fontSize: 12,
           )),
@@ -305,7 +305,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ElevatedButton.icon(
             onPressed: _openPaymentAccounts,
             icon: const Icon(Icons.add_rounded),
-            label: const Text('Add payment method'),
+            label: Text(S.of(context).addPaymentMethod),
             style: ElevatedButton.styleFrom(
               backgroundColor: _gold,
               foregroundColor: Colors.black,

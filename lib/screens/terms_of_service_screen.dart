@@ -12,7 +12,7 @@ class TermsOfServiceScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        title: const Text('Terms of Service'),
+        title: Text(S.of(context).termsOfService),
         backgroundColor: c.surface,
         elevation: 0,
       ),

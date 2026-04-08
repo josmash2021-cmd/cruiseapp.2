@@ -100,7 +100,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
       if (!mounted) return;
       _autoStarted = false; // allow retry
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('${S.of(context).error}: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _starting = false);
@@ -216,7 +216,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('${S.of(context).error}: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _cancelling = false);

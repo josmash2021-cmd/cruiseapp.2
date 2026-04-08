@@ -203,7 +203,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
+        content: Text('${S.of(context).error}: $e'),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -221,7 +221,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       HapticFeedback.mediumImpact();
       setState(() => _claimedIds.remove(tripId));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Ride cancelled', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+        content: Text(S.of(context).rideCancelled, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
         backgroundColor: _gold,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -230,7 +230,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not cancel: $e'),
+        content: Text('${S.of(context).error}: $e'),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -546,12 +546,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                 borderRadius: BorderRadius.circular(13),
                 border: Border.all(color: _gold.withValues(alpha: 0.35)),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.check_circle_rounded, color: _gold, size: 18),
-                  SizedBox(width: 6),
-                  Text('Claimed', style: TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
+                  const Icon(Icons.check_circle_rounded, color: _gold, size: 18),
+                  const SizedBox(width: 6),
+                  Text(S.of(context).claimedLabel, style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
                 ],
               ),
             ),
@@ -572,12 +572,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   ),
                   child: _cancellingClaimId == tripId
                       ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF5252))))
-                      : const Row(
+                      : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 16),
-                            SizedBox(width: 6),
-                            Text('Cancel Ride', style: TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700, fontSize: 14)),
+                            const Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 16),
+                            const SizedBox(width: 6),
+                            Text(S.of(context).cancelRideTitle, style: const TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700, fontSize: 14)),
                           ],
                         ),
                 ),
@@ -594,12 +594,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   borderRadius: BorderRadius.circular(13),
                   border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.support_agent_rounded, color: Colors.white54, size: 16),
-                    SizedBox(width: 6),
-                    Text('Contact Support to cancel', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600, fontSize: 13)),
+                    const Icon(Icons.support_agent_rounded, color: Colors.white54, size: 16),
+                    const SizedBox(width: 6),
+                    Text(S.of(context).contactSupportToCancel, style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w600, fontSize: 13)),
                   ],
                 ),
               ),
@@ -955,7 +955,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1D24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Cancel Ride', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: Text(S.of(context).cancelRideTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         content: const Text(
           'Are you sure you want to cancel this scheduled ride? The ride will go back to the marketplace.',
           style: TextStyle(color: Colors.white70, fontSize: 14),
@@ -963,11 +963,11 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep', style: TextStyle(color: Colors.white54)),
+            child: Text(S.of(context).keep, style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cancel Ride', style: TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700)),
+            child: Text(S.of(context).cancelRideTitle, style: const TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -978,7 +978,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       await ApiService.cancelScheduledTrip(tripId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Ride cancelled', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+          content: Text(S.of(context).rideCancelled, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
           backgroundColor: const Color(0xFFE8C547),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -988,7 +988,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not cancel: $e'),
+          content: Text('${S.of(context).error}: $e'),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

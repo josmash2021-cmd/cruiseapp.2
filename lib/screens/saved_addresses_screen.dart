@@ -110,7 +110,7 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save address: $e')),
+        SnackBar(content: Text('${S.of(context).failedToSaveAddress}: $e')),
       );
     }
   }
@@ -121,13 +121,13 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Name this place', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context).nameThisPlace, style: const TextStyle(color: Colors.white)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            hintText: 'e.g. Gym, Mom\'s house',
+            hintText: S.of(context).namePlaceHint,
             hintStyle: TextStyle(color: Colors.white38),
             filled: true,
             fillColor: Colors.white.withValues(alpha: 0.06),
@@ -140,11 +140,11 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text(S.of(context).cancel, style: TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: Text('Save', style: TextStyle(color: _gold)),
+            child: Text(S.of(context).save, style: TextStyle(color: _gold)),
           ),
         ],
       ),
@@ -158,7 +158,7 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Delete address?', style: TextStyle(color: Colors.white)),
+        title: Text(S.of(context).deleteAddress, style: const TextStyle(color: Colors.white)),
         content: Text(
           'Remove "${addr['label']}" from saved addresses?',
           style: const TextStyle(color: Colors.white70),
@@ -166,11 +166,11 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text(S.of(context).cancel, style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+            child: Text(S.of(context).delete, style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -186,7 +186,7 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete: $e')),
+        SnackBar(content: Text('${S.of(context).failedToDelete}: $e')),
       );
     }
   }

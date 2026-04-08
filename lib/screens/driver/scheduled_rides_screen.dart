@@ -203,10 +203,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     if (dropoffLat != null && dropoffLng != null) {
       final dLng = dropoffLng.toStringAsFixed(6);
       final dLat = dropoffLat.toStringAsFixed(6);
-      overlay = 'pin-s+22c55e($pLng,$pLat),pin-s+ef4444($dLng,$dLat)';
+      // Golden route path + golden pins
+      final path = 'path-3+E8C547-0.6($pLng,$pLat;$dLng,$dLat)';
+      overlay = '$path,pin-s+E8C547($pLng,$pLat),pin-s+E8C547($dLng,$dLat)';
       viewport = 'auto';
     } else {
-      overlay = 'pin-s+22c55e($pLng,$pLat)';
+      overlay = 'pin-s+E8C547($pLng,$pLat)';
       viewport = '$pLng,$pLat,14';
     }
 

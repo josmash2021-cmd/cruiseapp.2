@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Reusable schedule bottom sheet with calendar → clock picker.
 /// Returns (DateTime scheduledAt, bool isAirport) on confirm, or null on cancel.
@@ -122,7 +123,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
                     child: Text(
-                      _showingClock ? 'Select Time' : 'Schedule a Ride',
+                      _showingClock ? 'Select Time' : S.of(context).scheduleARide,
                       key: ValueKey(_showingClock),
                       style: TextStyle(
                         color: _textPrimary,

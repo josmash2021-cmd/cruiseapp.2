@@ -1913,12 +1913,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _resumeActiveTrip() async {
-    // Try to refresh from Firestore, but keep existing data if Firestore
-    // returns nothing (backend data may have been set by _checkBackendActiveTrip)
-    final existing = _activeTripData;
-    await _refreshActiveTripStatus();
-    if (_activeTripData == null && existing != null) {
-      _activeTripData = existing; // restore backend data
+    // Use existing trip data immediately — don't block on Firestore.
+    // Refresh in background for status updates, but navigate instantly.
+    if (_activeTripData != null) {
+      unawaited(_refreshActiveTripStatus());
+    } else {
+      // No cached data — must fetch before navigating
+      await _refreshActiveTripStatus();
     }
     final trip = _activeTripData;
     if (!mounted || trip == null) return;

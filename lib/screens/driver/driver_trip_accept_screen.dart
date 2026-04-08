@@ -1935,10 +1935,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _returnToDriverHome() {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    Navigator.of(context).pushAndRemoveUntil(
-      fadeThroughRoute(const DriverHomeScreen(returnFromTrip: true)),
-      (route) => false,
-    );
+    // Pop back to the existing DriverHomeScreen instead of creating a new one.
+    // This preserves the home screen state and lets the Resume button work
+    // instantly without re-querying Firestore from scratch.
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      // Fallback: if we're the root (shouldn't happen), push a fresh home
+      Navigator.of(context).pushAndRemoveUntil(
+        fadeThroughRoute(const DriverHomeScreen(returnFromTrip: true)),
+        (route) => false,
+      );
+    }
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────

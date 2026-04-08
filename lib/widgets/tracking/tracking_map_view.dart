@@ -417,31 +417,31 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (tripRoute.isEmpty) {
       tripRoute = [widget.pickupLatLng, widget.dropoffLatLng];
     }
-    // Do NOT force raw pin coordinates — Mapbox Directions API already
-    // snaps start/end to the nearest road. Replacing them with the user's
-    // raw tap coordinates creates off-road straight-line segments.
 
-    // 2) Set up route — driver position comes from Firestore in real time
-    _pickupIdx = 0;
-    _routePts = tripRoute;
+    // Always store trip route for later use when trip starts (pickup→dropoff)
+    _tripRoutePts = tripRoute;
 
-    // Build cumulative distance array
-    _buildSegDist();
-
-    // 3) Driver starts at pickup (will be updated by Firestore stream)
-    _traveledM = 0;
-    _tgtTraveledM = 0;
-    _driverPos = widget.pickupLatLng;
-    _animPos = _driverPos;
-
-    // 4) Calculate initial distance
-    // During arriving phase: show distance from pickup to driver (will update from GPS)
-    // During onTrip: use full route distance
     if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
-      // Will be overridden by real GPS in _onRealDriverLocation
+      // ── Uber-style: DON'T draw pickup→dropoff yet.
+      // The approach route (driver→pickup) is fetched on first driver GPS.
+      _pickupIdx = 0;
+      _routePts = [];
+      _segDist = [];
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      _driverPos = const LatLng(0, 0); // Car hidden until first GPS
+      _animPos = _driverPos;
       _distanceMiles = 0;
       _etaMinutes = 1;
     } else {
+      // onTrip / nearDestination: use trip route (pickup→dropoff)
+      _pickupIdx = 0;
+      _routePts = tripRoute;
+      _buildSegDist();
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      _driverPos = widget.pickupLatLng;
+      _animPos = _driverPos;
       double acc = 0;
       for (int i = 0; i + 1 < _routePts.length; i++) {
         acc += _hav(_routePts[i], _routePts[i + 1]);
@@ -454,7 +454,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _fitAllPoints();
-        // Fit route bounds after short delay to allow card measurements
         Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted) _fitRouteBounds();
         });
@@ -513,8 +512,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           pts.add(widget.dropoffLatLng);
         }
       }
+    } else if (_phase == _TrackPhase.arriving) {
+      // Arriving: show driver → pickup approach route (no dropoff until trip)
+      pts.add(widget.pickupLatLng);
+      if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
+      if (_routePts.isNotEmpty) pts.addAll(_routePts);
     } else {
-      // Overview: show full route (pickup + dropoff + driver + all route pts)
+      // Arrived / overview: show full route
       pts.add(widget.pickupLatLng);
       pts.add(widget.dropoffLatLng);
       if (_animPos.latitude != 0) pts.add(_animPos);
@@ -943,19 +947,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
     if (_pickupPinBytes == null || _dropoffPinBytes == null) return;
-    if (_routePts.length < 2) return;
+    // During arriving: allow pins even before approach route arrives
+    if (_routePts.length < 2 && _phase != _TrackPhase.arriving) return;
     _staticAnnotsDone = true; // mark before await to prevent double-creation
 
-    // ── Draw dimmed full route (pickup→dropoff) always visible ──
-    final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    try {
-      _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: allCoords),
-        lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
+    // ── Draw dimmed route (only when route points available) ──
+    if (_routePts.length >= 2) {
+      final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+      try {
+        _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+          geometry: mapbox.LineString(coordinates: allCoords),
+          lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      } catch (_) {}
+    }
 
     // Pickup pin — always visible
     try {
@@ -968,8 +975,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ));
     } catch (_) {}
 
-    // Dropoff pin — always visible from start
-    _addDropoffPin();
+    // Dropoff pin — show when trip starts, not during arriving
+    if (_phase != _TrackPhase.arriving) _addDropoffPin();
 
     // Cinematic intro: fit camera
     _startCinematicIntro();
@@ -1247,6 +1254,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _updateApproachLine() {
+    // When approach route is fetched (road-following), the main route polyline
+    // IS the approach — no need for an extra straight line.
+    if (_approachRouteFetched) return;
+
     // Throttle: update every 500ms
     final now = DateTime.now();
     if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;

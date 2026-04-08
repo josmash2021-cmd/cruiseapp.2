@@ -467,4 +467,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// and driver is more than 200m away. Removed on arrival.
   DateTime _lastApproachUpdate = DateTime(2000);
   bool _approachLineRemoved = false;
+
+  // ── Approach route: driver→pickup (Uber-style) ──
+  List<LatLng> _tripRoutePts = [];         // stored pickup→dropoff route (for after arriving)
+  bool _approachRouteFetched = false;      // guard: approach route already obtained
+  bool _approachRouteFetching = false;     // guard: fetch in progress
 }

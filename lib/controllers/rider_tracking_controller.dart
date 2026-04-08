@@ -152,6 +152,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _interpTicker!.start();
     }
 
+    // Uber-style: fetch approach route (driver→pickup) on first GPS during arriving
+    if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
+      unawaited(_fetchApproachRoute(ll));
+    }
+
     // Always try to snap GPS onto the route polyline.
     // Only fall back to raw GPS lerp when we truly have no route.
     if (_segDist.isNotEmpty && _routePts.length >= 2) {
@@ -349,6 +354,80 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _startAnimatedRouteDraw();
   }
 
+  /// Fetch road-following route from driver's current position to pickup
+  /// for Uber-style approach visualization during arriving phase.
+  Future<void> _fetchApproachRoute(LatLng driverPos) async {
+    if (_approachRouteFetching || _approachRouteFetched) return;
+    _approachRouteFetching = true;
+    debugPrint('[RiderTracking] Fetching approach route: driver(${driverPos.latitude.toStringAsFixed(5)},${driverPos.longitude.toStringAsFixed(5)}) → pickup');
+    try {
+      final ds = DirectionsService(ApiKeys.webServices);
+      final result = await ds.getRoute(
+        origin: driverPos,
+        destination: widget.pickupLatLng,
+      );
+      if (result == null || result.points.length < 2 || !mounted) {
+        _approachRouteFetching = false;
+        return;
+      }
+      _approachRouteFetched = true;
+      _approachRouteFetching = false;
+
+      // Set approach route as the active route
+      _routePts = result.points;
+      _buildSegDist();
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      _velocityMps = 0;
+      _directTargetPos = null;
+      _directTargetBearing = null;
+
+      // Initial ETA from route distance
+      _distanceMiles = result.distanceMeters / 1609.34;
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+
+      _setState(() {});
+
+      // Draw dimmed background route (driver→pickup)
+      final polyMgr = _polylineAnnotMgr;
+      if (polyMgr != null) {
+        final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        try {
+          if (_dimmedRouteAnnot != null) {
+            try { polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+            _dimmedRouteAnnot = null;
+          }
+          _dimmedRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: mapbox.LineString(coordinates: allCoords),
+            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+            lineWidth: 5.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (_) {}
+      }
+
+      // Remove straight-line approach annotation (replaced by road route)
+      if (_approachAnnot != null && _polylineAnnotMgr != null) {
+        try { _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
+        _approachAnnot = null;
+      }
+
+      // Animate the gold route draw
+      _routeDrawDone = false;
+      _startAnimatedRouteDraw();
+
+      // Fit camera to show driver + pickup
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) _fitRouteBounds();
+      });
+
+      debugPrint('[RiderTracking] Approach route ready: ${_routePts.length} pts, ${_distanceMiles.toStringAsFixed(1)} mi, ETA $_etaMinutes min');
+    } catch (e) {
+      debugPrint('[RiderTracking] Approach route fetch error: $e');
+      _approachRouteFetching = false;
+    }
+  }
+
   /// FIX 4: Smooth animate driver marker from current position to new position
   /// Uses Ticker (vsync‑synced 60fps) for buttery smooth car movement.
   void _startSmoothMarkerAnimation(LatLng targetPos, double? targetBearing) {
@@ -489,9 +568,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } else if (isInTripStatus &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
+      // Swap from approach route (driver→pickup) to trip route (pickup→dropoff)
+      if (_tripRoutePts.isNotEmpty) {
+        _routePts = _tripRoutePts;
+        _buildSegDist();
+      }
       // Reset traveled distance for the new trip leg and recalculate ETA
       _traveledM = 0;
       _tgtTraveledM = 0;
+      _velocityMps = 0;
+      _approachRouteFetched = false;
       if (_segDist.isNotEmpty) {
         final totalRouteM = _segDist.last;
         _distanceMiles = totalRouteM / 1609.34;
@@ -932,6 +1018,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;
     _distanceMiles = remainingM / 1609.34;
     _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+
+    // Arriving phase: the persisted route is pickup→dropoff (trip route).
+    // Store it for later and clear current route; the approach route
+    // (driver→pickup) will be fetched on first RTDB GPS update.
+    if (_phase == _TrackPhase.arriving) {
+      if (_tripRoutePts.isEmpty && _routePts.isNotEmpty) {
+        _tripRoutePts = List.from(_routePts);
+      }
+      _routePts = [];
+      _segDist = [];
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      if (activeRide.driverLat != null && activeRide.driverLng != null &&
+          activeRide.driverLat! != 0 && activeRide.driverLng! != 0) {
+        _driverPos = LatLng(activeRide.driverLat!, activeRide.driverLng!);
+        _animPos = _driverPos;
+      }
+      _distanceMiles = 0;
+      _etaMinutes = 1;
+    }
 
     if (!mounted) return;
     _setState(() {});

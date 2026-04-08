@@ -49,6 +49,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   bool _loadingAvail  = true;
   String? _errorAvail;
   int? _claimingId;
+  final Set<int> _claimedIds = {};   // locally claimed — show cancel
+  int? _cancellingClaimId;           // cancel in progress
 
   // ── My Rides tab state ──
   List<Map<String, dynamic>> _myRides = [];
@@ -170,7 +172,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
-      _loadAvailable();
+      setState(() => _claimedIds.add(tripId));
       _loadMyRides();
     } catch (e) {
       if (!mounted) return;
@@ -182,6 +184,33 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       ));
     } finally {
       if (mounted) setState(() => _claimingId = null);
+    }
+  }
+
+  Future<void> _cancelClaimedTrip(int tripId) async {
+    setState(() => _cancellingClaimId = tripId);
+    try {
+      await ApiService.cancelScheduledTrip(tripId);
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      setState(() => _claimedIds.remove(tripId));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Ride cancelled', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+        backgroundColor: _gold,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      _loadMyRides();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not cancel: $e'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } finally {
+      if (mounted) setState(() => _cancellingClaimId = null);
     }
   }
 
@@ -478,35 +507,88 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             _chip(Icons.directions_car_rounded, vehicleType.toUpperCase(), Colors.white54),
           ]),
         ),
-        // Action
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: isClaiming ? null : () => _claimTrip(tripId),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor: _gold.withValues(alpha: 0.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                elevation: 0,
+        // Action — Accept or Claimed+Cancel
+        if (_claimedIds.contains(tripId)) ...[
+          // ── Claimed badge ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: _gold.withValues(alpha: 0.35)),
               ),
-              child: isClaiming
-                  ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black87),
-                    )
-                  : Text(
-                      S.of(context).acceptRideButton,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                    ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded, color: _gold, size: 18),
+                  SizedBox(width: 6),
+                  Text('Claimed', style: TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
+                ],
+              ),
             ),
           ),
-        ),
+          // ── Cancel button (only if >60 min before ride) ──
+          if (scheduledAt != null && scheduledAt.difference(DateTime.now()).inMinutes > 60)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: GestureDetector(
+                onTap: _cancellingClaimId == tripId ? null : () => _cancelClaimedTrip(tripId),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF5252).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(color: const Color(0xFFFF5252).withValues(alpha: 0.25)),
+                  ),
+                  child: _cancellingClaimId == tripId
+                      ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF5252))))
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 16),
+                            SizedBox(width: 6),
+                            Text('Cancel Ride', style: TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700, fontSize: 14)),
+                          ],
+                        ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(height: 16),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: isClaiming ? null : () => _claimTrip(tripId),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  disabledBackgroundColor: _gold.withValues(alpha: 0.4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  elevation: 0,
+                ),
+                child: isClaiming
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black87),
+                      )
+                    : Text(
+                        S.of(context).acceptRideButton,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

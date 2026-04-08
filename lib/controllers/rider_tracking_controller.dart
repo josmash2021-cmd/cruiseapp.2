@@ -16,7 +16,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (data == null) {
           _pollFailCount++;
           debugPrint('[RiderTracking] Trip data null for $docId ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
             _setState(() => _connectionLost = true);
           }
           return;
@@ -33,7 +33,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       onError: (error) {
         debugPrint('[RiderTracking] Trip status listener error for $docId: $error');
         _pollFailCount++;
-        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
           _setState(() => _connectionLost = true);
         }
         // Fix 4: Firestore down → poll backend every 3s (instead of 8s) until recovered
@@ -765,7 +765,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
       _rtdbFailCount++;
-      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
+      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost && !NetworkService().isOnline) {
         _setState(() => _connectionLost = true);
       }
       // Fix 3: auto-reconnect RTDB after errors with exponential back-off (max 30s)
@@ -906,10 +906,21 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!mounted || _greetingSent) return;
     _greetingSent = true;
     final firstName = widget.driverName.split(' ').first;
-    _sendRideNotification(
-      'Message from $firstName',
-      'Hello! I\'m $firstName, your private driver. I\'ll be arriving shortly.',
-    );
+    final greetingText =
+        'Hello! I\'m $firstName, your private driver. I\'ll be arriving shortly.';
+
+    // Write greeting to RTDB chat so it appears in the chat screen
+    // (not as a system notification that shows on top of the app).
+    final rideId = widget.firestoreTripId;
+    final driverId = widget.driverId;
+    if (rideId != null && rideId.isNotEmpty) {
+      ChatService().sendMessage(
+        rideId: rideId,
+        senderId: driverId?.toString() ?? 'driver',
+        senderRole: 'driver',
+        text: greetingText,
+      );
+    }
   }
 
   void _sendRideNotification(String title, String body) {
@@ -1193,7 +1204,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final brgFactor = tf(0.35);
+    final brgFactor = tf(0.50);
     final newBearing = (_animBearing + db * brgFactor) % 360;
 
     _animPos = pos;
@@ -1202,25 +1213,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _driverBearing = newBearing;
 
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
+    // Off-route: position follows GPS but bearing ALWAYS follows route direction
+    // so the car icon consistently faces along the gold line.
     final tgt = _directTargetPos;
     if (tgt != null) {
-      // Constant-velocity off-route: advance at ~6% of remaining per frame
-      // (~tf(0.06)) which is gentle enough to avoid jumps.
       final offRouteFactor = tf(0.06);
       final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * offRouteFactor;
       final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * offRouteFactor;
-      final fallbackBearing = _directTargetBearing;
-      final newBrg = _bearing(_animPos, LatLng(newLat, newLng));
       _animPos = LatLng(newLat, newLng);
       _driverPos = _animPos;
-      final desiredBearing = newBrg != 0 ? newBrg : fallbackBearing;
-      if (desiredBearing != null) {
-        double dbo = desiredBearing - _animBearing;
-        if (dbo > 180) dbo -= 360;
-        if (dbo < -180) dbo += 360;
-        final offBrgFactor = tf(0.12);
-        _animBearing = (_animBearing + dbo * offBrgFactor) % 360;
-      }
+      // Keep bearing from route (already set above) — don't override with GPS bearing
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)

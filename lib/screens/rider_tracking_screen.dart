@@ -40,6 +40,7 @@ import '../widgets/verified_avatar.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../services/user_session.dart';
+import '../services/network_service.dart';
 
 part '../controllers/rider_tracking_controller.dart';
 part '../widgets/tracking/driver_info_card.dart';

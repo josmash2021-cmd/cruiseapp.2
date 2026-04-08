@@ -442,12 +442,23 @@ Future<void> heavyInit() async {
                     _riderNotifBody(type));
 
             // Suppress chat notification if user is already in that chat
+            // or on the tracking screen (message will appear in chat stream)
             if (type == 'chat_message') {
               final tripId = int.tryParse(message.data['trip_id']?.toString() ?? '');
               if (tripId != null && ChatScreen.activeTripId == tripId) {
                 debugPrint('[FCM] suppressed chat notification — user is in chat');
                 return;
               }
+              // Suppress all chat notifications while app is in foreground —
+              // the unread badge on the tracking screen is sufficient.
+              debugPrint('[FCM] suppressed chat notification in foreground — badge will show');
+              // Still save to notification history
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+              );
+              return;
             }
 
             NotificationService.show(

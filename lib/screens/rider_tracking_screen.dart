@@ -217,6 +217,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _velocityMps = 0; // meters per second along route
   DateTime _lastGpsTime = DateTime.now();
 
+  /// Delta-time tracking for frame-rate independent interpolation
+  Duration _lastInterpElapsed = Duration.zero;
+
+  /// Throttle UI rebuilds — car annotation updates don't need setState
+  DateTime _lastUiRebuild = DateTime(2000);
+
   // ── Rerouting when driver deviates ──
   int _offRouteCount = 0; // consecutive off-route GPS updates
   bool _rerouteInProgress = false; // guard: prevents concurrent reroute fetches
@@ -257,7 +263,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _loadCarIcon();
     _loadPins();
     _initFromPersistence();
-    _interpTicker = createTicker((_) => _interpolate())..start();
+    _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
     _startRealTimeTracking();
     _startRiderLocationTracking();
     // Send greeting notification after 3 seconds

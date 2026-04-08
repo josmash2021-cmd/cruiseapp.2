@@ -260,13 +260,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     }
 
-    _setState(() {});
-    _throttleCam();
-    
-    // FIX 4: Update camera follow if enabled
-    if (_shouldFollowDriver) {
-      _followDriver(ll, bearing ?? _animBearing);
+    // Throttle UI rebuilds to max 3/sec — car annotation is updated
+    // directly in _updateCarSmooth() without needing widget rebuild.
+    final now2 = DateTime.now();
+    if (now2.difference(_lastUiRebuild).inMilliseconds > 333) {
+      _lastUiRebuild = now2;
+      _setState(() {});
     }
+    _throttleCam();
   }
 
   /// Fetch a new route from the driver's current position to the dropoff
@@ -1009,20 +1010,28 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     await LocalDataService.setActiveRide(updatedRide);
   }
 
-  // Called every vsync frame via Ticker — GPU-synchronized, zero-jolt movement
-  void _interpolate() {
+  // Called every vsync frame via Ticker — GPU-synchronized, zero-jolt movement.
+  // Uses delta-time for frame-rate independent animation (smooth on 30/60/120Hz).
+  void _interpolate(Duration elapsed) {
     if (!mounted) return;
+
+    // ── Compute delta-time (seconds), clamped to avoid huge jumps on resume ──
+    final dtMs = (elapsed - _lastInterpElapsed).inMilliseconds.clamp(1, 100);
+    _lastInterpElapsed = elapsed;
+    final dt = dtMs / 1000.0;
+
+    // Time-based factor: at 60fps gives ~base per frame; scales with any refresh rate
+    double tf(double base) => 1.0 - math.pow(1.0 - base, dt * 60);
 
     // No route yet — use direct GPS lerp so car still moves before route arrives
     if (_segDist.isEmpty) {
       final tgt = _directTargetPos;
       if (tgt != null) {
-        // Aggressive lerp for responsive real-car feel
-        const factor = 0.22;
+        final posFactor = tf(0.22);
         final dLat = tgt.latitude - _animPos.latitude;
         final dLng = tgt.longitude - _animPos.longitude;
-        final newLat = _animPos.latitude + dLat * factor;
-        final newLng = _animPos.longitude + dLng * factor;
+        final newLat = _animPos.latitude + dLat * posFactor;
+        final newLng = _animPos.longitude + dLng * posFactor;
         _animPos = LatLng(newLat, newLng);
         _driverPos = _animPos;
         final tgtBrg = _directTargetBearing;
@@ -1030,8 +1039,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           double d = tgtBrg - _animBearing;
           if (d > 180) d -= 360;
           if (d < -180) d += 360;
-          // Fast bearing snap — car nose always points forward
-          _animBearing = (_animBearing + d * 0.30) % 360;
+          final brgFactor = tf(0.30);
+          _animBearing = (_animBearing + d * brgFactor) % 360;
           _driverBearing = _animBearing;
           if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
             _interpIdle = true;
@@ -1039,8 +1048,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
             return;
           }
         } else {
-          // No bearing from RTDB — still idle-detect on position convergence alone
-          // so the ticker is parked when car has fully settled at its target.
           if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005) {
             _interpIdle = true;
             _interpTicker?.stop();
@@ -1053,29 +1060,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // ── Ultra-smooth advance with velocity prediction ──
-    // Predict ahead based on measured velocity so the car never stalls
-    // between GPS updates. Prediction adds ~200ms of forward movement.
-    final predicted = _tgtTraveledM + _velocityMps * 0.20;
+    // Predict ahead 250ms so the car never stalls between GPS updates.
+    final predicted = _tgtTraveledM + _velocityMps * 0.25;
     final effectiveTarget = math.min(predicted, _segDist.last);
     final diff = effectiveTarget - _traveledM;
-    // 24% catch-up per frame for instant-feel responsiveness.
-    // 8m cap supports smooth highway-speed tracking.
-    final step = (diff * 0.24).clamp(-8.0, 8.0);
+    // Time-based catch-up: 24% base at 60fps, scales with dt
+    final stepFactor = tf(0.24);
+    final step = (diff * stepFactor).clamp(-8.0, 8.0);
     if (diff.abs() < 0.05) {
       _traveledM = _tgtTraveledM;
     } else {
       _traveledM += step;
     }
-    // Decay velocity when idle so prediction fades out naturally
-    _velocityMps *= 0.998;
+    // Time-based velocity decay: ~88% per second regardless of frame rate
+    _velocityMps *= math.pow(0.88, dt);
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
-    // ── Bearing: 35% rotation per frame — car nose snaps forward fast ──
+    // ── Bearing: time-based rotation for smooth car nose direction ──
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final newBearing = (_animBearing + db * 0.35) % 360;
+    final brgFactor = tf(0.35);
+    final newBearing = (_animBearing + db * brgFactor) % 360;
 
     _animPos = pos;
     _animBearing = newBearing;
@@ -1085,9 +1092,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
     final tgt = _directTargetPos;
     if (tgt != null) {
-      const lerpFactor = 0.22;
-      final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * lerpFactor;
-      final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * lerpFactor;
+      final offRouteFactor = tf(0.22);
+      final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * offRouteFactor;
+      final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * offRouteFactor;
       final fallbackBearing = _directTargetBearing;
       final newBrg = _bearing(_animPos, LatLng(newLat, newLng));
       _animPos = LatLng(newLat, newLng);
@@ -1097,7 +1104,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         double dbo = desiredBearing - _animBearing;
         if (dbo > 180) dbo -= 360;
         if (dbo < -180) dbo += 360;
-        _animBearing = (_animBearing + dbo * 0.30) % 360;
+        final offBrgFactor = tf(0.30);
+        _animBearing = (_animBearing + dbo * offBrgFactor) % 360;
       }
     }
 
@@ -1177,8 +1185,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Start real-time camera tracking - follows driver every 2s
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
-    // Follow every 1.5s for fluid chase camera that keeps up with the car
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+    // Follow every 2.5s — longer interval prevents overlapping easeTo animations
+    // which cause camera jitter when a new flyTo starts mid-animation.
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
       _followDriver(_animPos, _animBearing);
@@ -1208,7 +1217,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       zoom = 15.5;
     }
 
-    // Longer animation = smoother camera glide between positions
+    // 2.5s animation matches the camera follow interval so each new animation
+    // begins exactly as the previous completes — no overlap, no jitter.
     _map!.easeTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -1224,7 +1234,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           right: 40,
         ),
       ),
-      mapbox.MapAnimationOptions(duration: 1800),
+      mapbox.MapAnimationOptions(duration: 2500),
     );
   }
 

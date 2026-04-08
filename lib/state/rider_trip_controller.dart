@@ -881,6 +881,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   // ─── Cancel ─────────────────────────────────────────────────
 
   void cancelRide() {
+    // Fix 6: Race condition guard — if a driver was already matched while the rider
+    // was tapping cancel (e.g. network lag), do NOT cancel. Let the match win.
+    if (_driverMatched) {
+      debugPrint('[RiderTrip] cancelRide() ignored — driver already matched');
+      return;
+    }
+
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
@@ -892,15 +899,34 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Cancel on backend if we have a trip ID
     final tripId = _state.tripId;
     if (tripId != null) {
-      ApiService.cancelTrip(tripId).catchError((e) {
-        debugPrint('[RiderTrip] cancelTrip failed: $e');
-        return <String, dynamic>{};
+      // Check one more time before actually cancelling — Firestore might have
+      // just written a driver match in the last 300ms.
+      Future.delayed(const Duration(milliseconds: 300), () async {
+        if (_driverMatched) {
+          debugPrint('[RiderTrip] cancelRide() backend call skipped — driver matched during delay');
+          // Revert to driverAssigned so the rider sees the Driver Found overlay
+          _state = _state.copyWith(phase: RiderPhase.driverAssigned);
+          notifyListeners();
+          return;
+        }
+        try {
+          await ApiService.cancelTrip(tripId);
+        } catch (e) {
+          debugPrint('[RiderTrip] cancelTrip failed: $e');
+          final msg = e.toString();
+          // 409 = driver already assigned — revert UI so rider sees Driver Found
+          if (msg.contains('409') || msg.contains('already been assigned')) {
+            debugPrint('[RiderTrip] 409 on cancel — driver was assigned, reverting phase');
+            _state = _state.copyWith(phase: RiderPhase.driverAssigned);
+            notifyListeners();
+          }
+        }
       });
     }
 
     _state = _state.copyWith(phase: RiderPhase.cancelled);
     notifyListeners();
-    
+
     // Clear trip from cache
     unawaited(CacheService.clearActiveTrip());
   }

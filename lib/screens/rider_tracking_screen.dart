@@ -292,6 +292,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _markerAnimTicker?.dispose();
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
+    _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _labelAnimTimer?.cancel();
     _dropoffPopTimer?.cancel();
@@ -366,6 +367,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _dropoffPopTimer;
   Timer? _pickupPopOutTimer;
   bool _completionCheckInFlight = false;
+
+  // RTDB auto-reconnect: retry when stream errors out
+  Timer? _rtdbReconnectTimer;
+  int _rtdbFailCount = 0;
 
   @override
   Widget build(BuildContext context) {

@@ -730,14 +730,18 @@ async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_c
 
 @router.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    # Fix 6: Use FOR UPDATE to prevent race condition where driver accepts simultaneously
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
     # IDOR protection: only rider, assigned driver, or admin can cancel
     if user.id != trip.rider_id and user.id != trip.driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to cancel this trip")
-    if trip.status in ("completed", "canceled"):
+    # Fix 6: If a driver was already assigned (race condition), block cancellation
+    if trip.status in ("driver_en_route", "arrived", "in_trip", "in_progress"):
+        raise HTTPException(409, "A driver has already been assigned to this trip and is on the way")
+    if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     # Accept optional cancel_reason from body
     reason = None

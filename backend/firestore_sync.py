@@ -777,15 +777,27 @@ def sync_trip_status(trip_id: int, status: str,
     doc_id = f"sql_{trip_id}"
     data = {"status": status}
     now = _ts()
-    # Set timestamps based on status
+    # Normalise incoming status to canonical values before writing to Firestore.
+    # This ensures the Flutter listener only ever sees one spelling per state.
+    _canonical = {
+        "driver_arrived": "arrived",
+        "arrived_pickup": "arrived",
+        "arrived_at_pickup": "arrived",
+        "in_progress": "in_trip",
+        "rider_onboard": "in_trip",
+        "on_trip": "in_trip",
+        "trip_started": "in_trip",
+        "canceled": "cancelled",
+    }
+    status = _canonical.get(status, status)
+    data["status"] = status
+
+    # Set timestamps based on canonical status
     status_ts_map = {
         "driver_en_route": "acceptedAt",
         "arrived": "driverArrivedAt",
-        "driver_arrived": "driverArrivedAt",
         "in_trip": "startedAt",
-        "in_progress": "startedAt",
         "completed": "completedAt",
-        "canceled": "cancelledAt",
         "cancelled": "cancelledAt",
     }
     ts_field = status_ts_map.get(status)

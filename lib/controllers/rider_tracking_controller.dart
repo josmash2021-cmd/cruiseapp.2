@@ -23,6 +23,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
         _pollFailCount = 0;
         if (_connectionLost) _setState(() => _connectionLost = false);
+        // Fix 4: Firestore recovered — restore normal 8s polling interval
+        _statusPollTimer?.cancel();
+        _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+          _pollBackendTripStatus();
+        });
         _onTripStatusUpdate(data);
       },
       onError: (error) {
@@ -30,6 +35,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _pollFailCount++;
         if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
           _setState(() => _connectionLost = true);
+        }
+        // Fix 4: Firestore down → poll backend every 3s (instead of 8s) until recovered
+        if (mounted && _phase != _TrackPhase.completed) {
+          _statusPollTimer?.cancel();
+          _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+            _pollBackendTripStatus();
+          });
         }
       },
     );
@@ -435,28 +447,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     final rawStatus = data['status']?.toString() ?? '';
-    final status = rawStatus.trim().toLowerCase();
-    final hasArrivedTs = data['driverArrivedAt'] != null || data['driver_arrived_at'] != null;
-    final hasStartedTs = data['startedAt'] != null || data['started_at'] != null;
-    final hasCompletedTs = data['completedAt'] != null || data['completed_at'] != null;
+    // Normalise to canonical values — backend firestore_sync already canonicalises,
+    // but keep aliases here as a safety net for any legacy documents.
+    final statusAliases = <String, String>{
+      'driver_arrived': 'arrived',
+      'arrived_pickup': 'arrived',
+      'arrived_at_pickup': 'arrived',
+      'in_progress': 'in_trip',
+      'rider_onboard': 'in_trip',
+      'on_trip': 'in_trip',
+      'trip_started': 'in_trip',
+      'canceled': 'cancelled',
+    };
+    final status = statusAliases[rawStatus.trim().toLowerCase()] ??
+        rawStatus.trim().toLowerCase();
 
-    final isArrivedStatus =
-        status == 'arrived' ||
-        status == 'driver_arrived' ||
-        status == 'arrived_pickup' ||
-        status == 'arrived_at_pickup' ||
-        hasArrivedTs;
-    final isInTripStatus =
-        status == 'in_trip' ||
-        status == 'in_progress' ||
-        status == 'rider_onboard' ||
-        status == 'trip_started' ||
-        hasStartedTs;
-    final isCompletedStatus = status == 'completed' || hasCompletedTs;
-    // Only trust the explicit status field for cancellation — never stale
-    // timestamps alone, which can persist from previous Firestore merges.
-    final isCancelledStatus =
-        status == 'cancelled' || status == 'canceled';
+    final isArrivedStatus = status == 'arrived';
+    final isInTripStatus = status == 'in_trip';
+    final isCompletedStatus = status == 'completed';
+    // Only trust the explicit status field for cancellation — never timestamps alone.
+    final isCancelledStatus = status == 'cancelled';
 
     debugPrint('[RiderTracking] Firestore status update: "$rawStatus" normalized="$status" (phase=$_phase, driverId=$did)');
     if (isArrivedStatus && _phase == _TrackPhase.arriving) {
@@ -655,13 +665,40 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final bearing = (data['bearing'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
       _pollFailCount = 0;
+      // Fix 3: successful update — reset fail count and restore normal 8s polling
+      if (_rtdbFailCount > 0) {
+        _rtdbFailCount = 0;
+        _rtdbReconnectTimer?.cancel();
+        _statusPollTimer?.cancel();
+        _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+          _pollBackendTripStatus();
+        });
+      }
       if (_connectionLost) _setState(() => _connectionLost = false);
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
     }, onError: (e) {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
+      _rtdbFailCount++;
       if (_pollFailCount >= 3 && mounted && !_connectionLost) {
         _setState(() => _connectionLost = true);
+      }
+      // Fix 3: auto-reconnect RTDB after errors with exponential back-off (max 30s)
+      if (mounted && _phase != _TrackPhase.completed) {
+        final delay = Duration(seconds: (_rtdbFailCount * 3).clamp(3, 30));
+        debugPrint('[RiderTracking] RTDB reconnect in ${delay.inSeconds}s (attempt $_rtdbFailCount)');
+        _rtdbReconnectTimer?.cancel();
+        _rtdbReconnectTimer = Timer(delay, () {
+          if (mounted && _phase != _TrackPhase.completed && _rtdbDriverId != null) {
+            debugPrint('[RiderTracking] RTDB reconnecting to driver_locations/$_rtdbDriverId');
+            _startRtdbDriverListener(_rtdbDriverId!);
+          }
+        });
+        // Fix 4: while RTDB is down, poll backend every 3s (faster than normal 8s)
+        _statusPollTimer?.cancel();
+        _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+          _pollBackendTripStatus();
+        });
       }
     });
   }
@@ -764,7 +801,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
             status == 'in_trip' ||
             status == 'in_progress' ||
             status == 'arrived' ||
-            status == 'driver_arrived') {
+            status == 'driver_arrived' ||
+            status == 'arrived_at_pickup') {
           debugPrint('[RiderTracking] Firestore fallback found status=$status on $docId');
           _onTripStatusUpdate(data);
           return;
@@ -858,9 +896,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     // If persisted phase seems behind the backend status, upgrade it.
     // e.g., persistence says 'arriving' but backend says 'in_trip'
-    final s = (widget.initialStatus ?? '').toLowerCase().trim();
-    final isBackendInTrip = s == 'in_trip' || s == 'in_progress' || s == 'rider_onboard' || s == 'on_trip';
-    final isBackendArrived = s == 'arrived' || s == 'driver_arrived' || s == 'arrived_at_pickup';
+    final rawInit = (widget.initialStatus ?? '').toLowerCase().trim();
+    final initAliases = <String, String>{
+      'driver_arrived': 'arrived', 'arrived_pickup': 'arrived', 'arrived_at_pickup': 'arrived',
+      'in_progress': 'in_trip', 'rider_onboard': 'in_trip', 'on_trip': 'in_trip', 'trip_started': 'in_trip',
+    };
+    final s = initAliases[rawInit] ?? rawInit;
+    final isBackendInTrip = s == 'in_trip';
+    final isBackendArrived = s == 'arrived';
     if (isBackendInTrip && (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _phase = _TrackPhase.onTrip;
     } else if (isBackendArrived && _phase == _TrackPhase.arriving) {
@@ -901,10 +944,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Use the backend trip status (passed via widget.initialStatus) to set
   /// the correct phase when local persistence is unavailable (reinstall, etc.)
   void _applyInitialStatus() {
-    final s = (widget.initialStatus ?? '').toLowerCase().trim();
-    if (s == 'in_trip' || s == 'in_progress' || s == 'rider_onboard' || s == 'on_trip') {
+    final raw = (widget.initialStatus ?? '').toLowerCase().trim();
+    final aliases = <String, String>{
+      'driver_arrived': 'arrived', 'arrived_pickup': 'arrived', 'arrived_at_pickup': 'arrived',
+      'in_progress': 'in_trip', 'rider_onboard': 'in_trip', 'on_trip': 'in_trip', 'trip_started': 'in_trip',
+    };
+    final s = aliases[raw] ?? raw;
+    if (s == 'in_trip') {
       _phase = _TrackPhase.onTrip;
-    } else if (s == 'arrived' || s == 'driver_arrived' || s == 'arrived_at_pickup') {
+    } else if (s == 'arrived') {
       _phase = _TrackPhase.arrived;
     }
     // else keep default = arriving

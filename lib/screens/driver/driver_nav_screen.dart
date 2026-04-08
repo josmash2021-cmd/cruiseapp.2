@@ -2519,8 +2519,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                 style: const TextStyle(
                   color: Colors.white, fontSize: 20,
                   fontWeight: FontWeight.w900, height: 1.0)),
-              const Text('mph',
-                style: TextStyle(
+              Text(S.of(context).mphLabel,
+                style: const TextStyle(
                   color: Colors.white70, fontSize: 9,
                   fontWeight: FontWeight.w600, height: 1.2)),
             ],
@@ -2576,8 +2576,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                   style: const TextStyle(
                     color: Colors.white, fontSize: 20,
                     fontWeight: FontWeight.w900, height: 1.0)),
-                const Text('mph',
-                  style: TextStyle(
+                Text(S.of(context).mphLabel,
+                  style: const TextStyle(
                     color: Colors.white70, fontSize: 9,
                     fontWeight: FontWeight.w600, height: 1.2)),
               ],

@@ -133,7 +133,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Receipt sent to $email'),
+              content: Text(S.of(context).receiptSentToEmail(email)),
               backgroundColor: _gold,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -381,7 +381,7 @@ Thank you for riding with Cruise!
                                     ),
                                     const SizedBox(width: 5),
                                     Text(
-                                      'Completed · ${_formatDate(trip.createdAt)}',
+                                      S.of(context).completedOnDate(_formatDate(trip.createdAt)),
                                       style: const TextStyle(
                                         color: Color(0xBB08090C),
                                         fontSize: 11,
@@ -427,7 +427,7 @@ Thank you for riding with Cruise!
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Trip Details',
+                              S.of(context).tripDetailsHeader,
                               style: TextStyle(
                                 color: c.textTertiary,
                                 fontSize: 11,
@@ -447,7 +447,7 @@ Thank you for riding with Cruise!
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 child: Divider(color: c.divider, height: 1),
                               ),
-                              _detailRow(c, Icons.credit_card_rounded, 'Payment', _fareBreakdown!['payment_method'] as String),
+                              _detailRow(c, Icons.credit_card_rounded, S.of(context).paymentLabel, _fareBreakdown!['payment_method'] as String),
                             ],
                           ],
                         ),
@@ -468,7 +468,7 @@ Thank you for riding with Cruise!
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Fare Breakdown',
+                                S.of(context).fareBreakdownHeader,
                                 style: TextStyle(
                                   color: c.textTertiary,
                                   fontSize: 11,
@@ -477,15 +477,15 @@ Thank you for riding with Cruise!
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              _breakdownRow(c, 'Base fare', '\$${(_fareBreakdown!['base_fare'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
-                              _breakdownRow(c, 'Mileage (${(_fareBreakdown!['distance_miles'] as num?)?.toStringAsFixed(1) ?? '0'} mi)', '\$${(_fareBreakdown!['mileage_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
-                              _breakdownRow(c, 'Time (${(_fareBreakdown!['duration_minutes'] as num?)?.toInt() ?? 0} min)', '\$${(_fareBreakdown!['time_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              _breakdownRow(c, S.of(context).baseFareLabel, '\$${(_fareBreakdown!['base_fare'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              _breakdownRow(c, S.of(context).mileageLabel('${(_fareBreakdown!['distance_miles'] as num?)?.toStringAsFixed(1) ?? '0'} mi'), '\$${(_fareBreakdown!['mileage_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
+                              _breakdownRow(c, S.of(context).timeFareLabel('${(_fareBreakdown!['duration_minutes'] as num?)?.toInt() ?? 0} min'), '\$${(_fareBreakdown!['time_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
                               if ((_fareBreakdown!['surge_multiplier'] as num?) != null && (_fareBreakdown!['surge_multiplier'] as num) > 1.0)
-                                _breakdownRow(c, 'Surge (${(_fareBreakdown!['surge_multiplier'] as num).toStringAsFixed(1)}x)', '+\$${(_fareBreakdown!['surge_extra'] as num?)?.toStringAsFixed(2) ?? '0.00'}', highlight: true),
+                                _breakdownRow(c, S.of(context).surgeLabel('${(_fareBreakdown!['surge_multiplier'] as num).toStringAsFixed(1)}x'), '+\$${(_fareBreakdown!['surge_extra'] as num?)?.toStringAsFixed(2) ?? '0.00'}', highlight: true),
                               if ((_fareBreakdown!['wait_time_charge'] as num?) != null && (_fareBreakdown!['wait_time_charge'] as num) > 0)
-                                _breakdownRow(c, 'Wait time (${(_fareBreakdown!['wait_time_minutes'] as num?)?.toInt() ?? 0} min)', '\$${(_fareBreakdown!['wait_time_charge'] as num).toStringAsFixed(2)}'),
+                                _breakdownRow(c, S.of(context).waitTimeLabel('${(_fareBreakdown!['wait_time_minutes'] as num?)?.toInt() ?? 0} min'), '\$${(_fareBreakdown!['wait_time_charge'] as num).toStringAsFixed(2)}'),
                               if ((_fareBreakdown!['tip_amount'] as num?) != null && (_fareBreakdown!['tip_amount'] as num) > 0)
-                                _breakdownRow(c, 'Tip', '\$${(_fareBreakdown!['tip_amount'] as num).toStringAsFixed(2)}'),
+                                _breakdownRow(c, S.of(context).tipLabel, '\$${(_fareBreakdown!['tip_amount'] as num).toStringAsFixed(2)}'),
                               Padding(
                                 padding: const EdgeInsets.only(top: 12, bottom: 4),
                                 child: Divider(color: c.divider, height: 1),
@@ -493,7 +493,7 @@ Thank you for riding with Cruise!
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Text('Total', style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+                                  Text(S.of(context).totalLabel, style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
                                   const Spacer(),
                                   Text(trip.price, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
                                 ],
@@ -516,7 +516,7 @@ Thank you for riding with Cruise!
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Route',
+                              S.of(context).routeHeader,
                               style: TextStyle(
                                 color: c.textTertiary,
                                 fontSize: 11,
@@ -528,7 +528,7 @@ Thank you for riding with Cruise!
                             _routePoint(
                               c,
                               isPickup: true,
-                              label: 'PICKUP',
+                              label: S.of(context).pickupTagLabel,
                               address: trip.pickup,
                             ),
                             Padding(
@@ -548,7 +548,7 @@ Thank you for riding with Cruise!
                             _routePoint(
                               c,
                               isPickup: false,
-                              label: 'DROP-OFF',
+                              label: S.of(context).dropoffTagLabel,
                               address: trip.dropoff,
                             ),
                           ],
@@ -577,7 +577,7 @@ Thank you for riding with Cruise!
                                     Icon(Icons.share_outlined, color: c.textSecondary, size: 18),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Share',
+                                      S.of(context).shareBtn,
                                       style: TextStyle(
                                         color: c.textSecondary,
                                         fontSize: 14,
@@ -623,7 +623,7 @@ Thank you for riding with Cruise!
                                       ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      _emailSent ? 'Sent' : S.of(context).sendReceipt,
+                                      _emailSent ? S.of(context).sentLabel : S.of(context).sendReceipt,
                                       style: TextStyle(
                                         color: _emailSent ? _gold : c.textSecondary,
                                         fontSize: 14,
@@ -641,7 +641,7 @@ Thank you for riding with Cruise!
                       const SizedBox(height: 16),
                       Center(
                         child: Text(
-                          'Thank you for riding with Cruise',
+                          S.of(context).thankYouForRiding,
                           style: TextStyle(
                             color: c.textTertiary,
                             fontSize: 12,

@@ -98,8 +98,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
 
   void _share() {
     Share.share(
-      'Join me on Cruise! Use my referral code $_code when you sign up and get \$10 off your first ride. Download the app now! 🚗✨',
-      subject: 'Join Cruise — get \$10 off!',
+      S.of(context).shareInviteMessage(_code),
+      subject: S.of(context).shareInviteSubject,
     );
   }
 
@@ -187,8 +187,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
                           const Icon(Icons.card_giftcard_rounded,
                               color: _gold, size: 40),
                           const SizedBox(height: 12),
-                          const Text(
-                            'Give \$10, Get \$10',
+                          Text(
+                            S.of(context).giveGetTitle,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 26,
@@ -198,7 +198,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Share your code with friends. When they join,\nyou both earn \$10.',
+                            S.of(context).shareCodeBannerSubtitle,
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.6),
@@ -308,7 +308,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Have a Friend\'s Code?',
+                              S.of(context).haveAFriendsCode,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.5),
                                 fontSize: 13,
@@ -329,7 +329,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                                         fontWeight: FontWeight.w700,
                                         letterSpacing: 2),
                                     decoration: InputDecoration(
-                                      hintText: 'ENTER CODE',
+                                      hintText: S.of(context).enterCodeHint,
                                       hintStyle: TextStyle(
                                           color:
                                               Colors.white.withValues(alpha: 0.25),

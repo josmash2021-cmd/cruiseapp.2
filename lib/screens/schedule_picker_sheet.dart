@@ -123,7 +123,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
                     child: Text(
-                      _showingClock ? 'Select Time' : S.of(context).scheduleARide,
+                      _showingClock ? S.of(context).selectTimeTitle : S.of(context).scheduleARide,
                       key: ValueKey(_showingClock),
                       style: TextStyle(
                         color: _textPrimary,
@@ -153,8 +153,8 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                   duration: const Duration(milliseconds: 250),
                   child: Text(
                     _showingClock
-                        ? 'Pick your preferred time'
-                        : 'Choose a date for your ride',
+                        ? S.of(context).pickPreferredTime
+                        : S.of(context).chooseDateForRide,
                     key: ValueKey(_showingClock),
                     style: TextStyle(color: _textSecondary, fontSize: 13),
                   ),
@@ -214,7 +214,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Airport trip',
+                        S.of(context).airportTripLabel,
                         style: TextStyle(
                           color: _isAirport
                               ? const Color(0xFF4285F4)
@@ -288,7 +288,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _showingClock ? 'Confirm & Book' : 'Select Time',
+                            _showingClock ? S.of(context).confirmAndBook : S.of(context).selectTimeTitle,
                             style: const TextStyle(
                               color: Colors.black87,
                               fontWeight: FontWeight.w700,
@@ -381,7 +381,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
         children: [
           const SizedBox(height: 8),
           Text(
-            _selectedHour < 12 ? 'AM' : 'PM',
+            _selectedHour < 12 ? S.of(context).amLabel : S.of(context).pmLabel,
             style: TextStyle(
               color: _gold,
               fontSize: 14,
@@ -397,7 +397,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
                 value: _selectedHour == 0
                     ? 12
                     : (_selectedHour > 12 ? _selectedHour - 12 : _selectedHour),
-                label: 'Hour',
+                label: S.of(context).hourLabel,
                 onUp: () =>
                     setState(() => _selectedHour = (_selectedHour + 1) % 24),
                 onDown: () => setState(
@@ -417,7 +417,7 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
               ),
               _timeDigit(
                 value: _selectedMinute,
-                label: 'Min',
+                label: S.of(context).minLabel,
                 padZero: true,
                 onUp: () => setState(
                   () => _selectedMinute = (_selectedMinute + 5) % 60,
@@ -432,11 +432,11 @@ class _SchedulePickerSheetState extends State<SchedulePickerSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _amPmChip('AM', _selectedHour < 12, () {
+              _amPmChip(S.of(context).amLabel, _selectedHour < 12, () {
                 if (_selectedHour >= 12) setState(() => _selectedHour -= 12);
               }),
               const SizedBox(width: 12),
-              _amPmChip('PM', _selectedHour >= 12, () {
+              _amPmChip(S.of(context).pmLabel, _selectedHour >= 12, () {
                 if (_selectedHour < 12) setState(() => _selectedHour += 12);
               }),
             ],

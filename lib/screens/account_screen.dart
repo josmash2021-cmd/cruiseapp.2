@@ -146,7 +146,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         Icon(Icons.email_outlined, color: _gold, size: 24),
                         const SizedBox(width: 10),
                         Text(
-                          'Email Verification',
+                          S.of(context).emailVerificationTitle,
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -157,7 +157,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'We\'ll send a verification code to your email address.',
+                      S.of(context).emailVerificationDesc,
                       style: TextStyle(color: Colors.white60, fontSize: 13),
                     ),
                     const SizedBox(height: 20),
@@ -193,7 +193,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                     ] else ...[
                       Text(
-                        'Enter the code sent to your email:',
+                        S.of(context).enterCodeSentToEmail,
                         style: TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                       const SizedBox(height: 12),
@@ -246,7 +246,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                       }
                                     }
                                   } catch (e) {
-                                    setSheetState(() { errorMsg = 'Verification failed. Try again.'; verifying = false; });
+                                    setSheetState(() { errorMsg = S.of(context).verificationFailed; verifying = false; });
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
@@ -446,18 +446,18 @@ class _AccountScreenState extends State<AccountScreen> {
               _buildFavoriteItem(
                 c,
                 Icons.home_rounded,
-                'Home',
+                S.of(context).homeLabel,
                 _savedAddress('Home'),
               ),
               const SizedBox(height: 10),
               _buildFavoriteItem(
                 c,
                 Icons.work_rounded,
-                'Work',
+                S.of(context).workLabel,
                 _savedAddress('Work'),
               ),
               const SizedBox(height: 10),
-              _buildFavoriteItem(c, Icons.star_rounded, 'Place', null),
+              _buildFavoriteItem(c, Icons.star_rounded, S.of(context).placeLabel, null),
             ],
           ),
         ),
@@ -667,7 +667,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    hasSaved ? label : 'Add $label',
+                    hasSaved ? label : S.of(context).addLabel(label),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -1088,7 +1088,7 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
-                    'Set ${widget.label} address',
+                    S.of(context).setLabelAddress(widget.label),
                     style: TextStyle(
                       color: c.textPrimary,
                       fontSize: 20,
@@ -1114,7 +1114,7 @@ class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
                 autofocus: true,
                 style: TextStyle(color: c.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: 'Search address...',
+                  hintText: S.of(context).searchAddressHint,
                   hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
                   prefixIcon: Icon(
                     Icons.search_rounded,

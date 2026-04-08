@@ -1256,7 +1256,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('¿Necesitas ayuda de emergencia?',
+        title: Text(S.of(context).emergencyHelpTitle,
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
         actions: [
           TextButton(

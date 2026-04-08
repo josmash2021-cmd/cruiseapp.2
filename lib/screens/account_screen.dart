@@ -188,7 +188,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           ),
                           child: sending
                               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                              : const Text('Send Verification Code', style: TextStyle(fontWeight: FontWeight.w600)),
+                              : Text(S.of(context).sendVerificationCode, style: const TextStyle(fontWeight: FontWeight.w600)),
                         ),
                       ),
                     ] else ...[
@@ -239,7 +239,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                       if (mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
-                                            content: const Text('Email verified successfully!'),
+                                      content: Text(S.of(context).emailVerified),
                                             backgroundColor: Colors.green.shade700,
                                           ),
                                         );
@@ -257,7 +257,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           ),
                           child: verifying
                               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                              : const Text('Verify', style: TextStyle(fontWeight: FontWeight.w600)),
+                              : Text(S.of(context).verifyBtn, style: const TextStyle(fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -286,7 +286,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                   }
                                 },
                           child: Text(
-                            'Resend code',
+                            S.of(context).resendCode,
                             style: TextStyle(color: _gold.withValues(alpha: 0.8), fontSize: 13),
                           ),
                         ),
@@ -435,7 +435,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
               // ── Favorites section ──
               Text(
-                'Favorites',
+                S.of(context).favoritesLabel,
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -480,7 +480,7 @@ class _AccountScreenState extends State<AccountScreen> {
         S.of(context).scheduledRides,
       ),
       _MenuItem('promos', Icons.local_offer_rounded, S.of(context).promoCodes),
-      _MenuItem('referral', Icons.card_giftcard_rounded, 'Invite Friends'),
+      _MenuItem('referral', Icons.card_giftcard_rounded, S.of(context).inviteFriendsTitle),
       _MenuItem('safety', Icons.shield_outlined, S.of(context).safety),
       _MenuItem('inbox', Icons.mail_outline_rounded, S.of(context).inbox),
       _MenuItem('settings', Icons.settings_outlined, S.of(context).settings),
@@ -581,10 +581,10 @@ class _AccountScreenState extends State<AccountScreen> {
                         width: 100,
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         color: const Color(0xFFD4A843),
-                        child: const Text(
-                          'Coming Soon',
+                        child: Text(
+                          S.of(context).comingSoon,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.black,
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -626,7 +626,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$label address saved'),
+        content: Text(S.of(context).addressSaved),
         // Uses global snackBarTheme
       ),
     );
@@ -808,7 +808,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
               // ── Title ──
               Text(
-                'Settings',
+                S.of(context).settingsTitle,
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -956,14 +956,14 @@ class _SettingsScreenState extends State<_SettingsScreen> {
         backgroundColor: AppColors.of(context).surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Sign Out',
+          S.of(context).signOutTitle,
           style: TextStyle(
             color: AppColors.of(context).textPrimary,
             fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
-          'Are you sure you want to sign out?',
+          S.of(context).signOutConfirmation,
           style: TextStyle(color: AppColors.of(context).textSecondary),
         ),
         actions: [
@@ -976,9 +976,9 @@ class _SettingsScreenState extends State<_SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
-              'Sign Out',
-              style: TextStyle(
+            child: Text(
+              S.of(context).signOutButton,
+              style: const TextStyle(
                 color: Color(0xFFE8C547),
                 fontWeight: FontWeight.w700,
               ),

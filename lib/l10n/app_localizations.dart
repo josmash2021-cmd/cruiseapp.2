@@ -1490,7 +1490,6 @@ class S {
           : 'Your driver will wait for you at the arrival door';
   String get airlineLabel => _es ? 'Aerolínea' : 'Airline';
   String get arrivalDoorLabel => _es ? 'Puerta de Llegada' : 'Arrival Door';
-  String get dropoffLabel => _es ? 'Bajada' : 'Drop-off';
   String get stepDirection => _es ? 'Dirección' : 'Direction';
   String get stepAirport => _es ? 'Aeropuerto' : 'Airport';
   String get stepDetails => _es ? 'Detalles' : 'Details';

@@ -850,6 +850,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_saveTripStateToCache());
   }
 
+  /// Force the phase (used when SearchingDriverScreen pops and we need to
+  /// replay the Driver Found overlay from driverAssigned).
+  void forcePhase(RiderPhase phase) {
+    _state = _state.copyWith(phase: phase);
+    notifyListeners();
+  }
+
   /// Called by the UI after the "Driver Found" overlay finishes.
   void transitionToArriving() {
     if (_state.phase == RiderPhase.driverAssigned) {

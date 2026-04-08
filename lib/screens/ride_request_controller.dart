@@ -907,12 +907,19 @@ extension _RideRequestController on _RideRequestScreenState {
       // _onStateChange was blocked (flag was true). Handle navigation now.
       if (!mounted) return;
 
-      // Driver already assigned/arriving while animation was playing — navigate now
+      // Driver already assigned/arriving while searching screen was visible —
+      // show the "Driver Found" overlay first, THEN navigate to tracking.
       if ((_ctrl.state.phase == RiderPhase.driverArriving ||
               _ctrl.state.phase == RiderPhase.driverAssigned) &&
           !_navigatingToTracking) {
-        _navigatingToTracking = true;
-        _goToTracking();
+        // Ensure phase is driverAssigned so _onStateChange shows the overlay
+        if (_ctrl.state.phase == RiderPhase.driverArriving) {
+          // Reset to driverAssigned so the overlay flow runs from the start
+          _ctrl.forcePhase(RiderPhase.driverAssigned);
+        }
+        // Trigger the overlay flow (same as if Firestore just fired)
+        _driverFoundVisible = false; // reset so _onStateChange shows it fresh
+        _onStateChange();
         return;
       }
 

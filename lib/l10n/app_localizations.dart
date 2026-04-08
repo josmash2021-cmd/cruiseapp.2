@@ -2294,8 +2294,8 @@ class S {
       : 'Are you sure you want to sign out?';
   String get signOutButton => _es ? 'Cerrar sesión' : 'Sign Out';
   String get cruiseLevelTiers => _es
-      ? 'Verde → Oro → Platino → Diamante'
-      : 'Green → Gold → Platinum → Diamond';
+      ? 'Bronce → Plata → Oro → Platino → Diamante'
+      : 'Bronze → Silver → Gold → Platinum → Diamond';
 
   // ── Driver Login ──
   String get accountIsRider => _es

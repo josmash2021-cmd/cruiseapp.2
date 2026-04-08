@@ -49,6 +49,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   String _driverName = '';
   String _tierName = '';
   String _rating = '—';
+  int _completedTrips = 0;
+  int _totalTrips = 0;
+  double _avgRating = 0;
   String? _photoUrl;
   String? _dispatchPassword;
   bool _profileLoaded = false;
@@ -154,39 +157,44 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           if (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) {
             UserSession.savePhotoUrl(_photoUrl!);
           }
-          // Calculate tier from stats
-          final sat =
-              double.tryParse(me['satisfaction_rate']?.toString() ?? '') ?? 0;
-          final acc =
-              double.tryParse(me['acceptance_rate']?.toString() ?? '') ?? 0;
-          if (sat >= 95 && acc >= 85) {
-            _tierName = 'Diamond';
-          } else if (sat >= 90 && acc >= 50) {
-            _tierName = 'Platinum';
-          } else if (sat >= 85 && acc >= 30) {
-            _tierName = 'Gold';
-          } else {
-            _tierName = 'Green';
-          }
-          final r = me['acceptance_rate'] ?? me['rating'];
-          if (r != null) {
-            final rNum = double.tryParse(r.toString()) ?? 0;
-            // Star rating should be < 6, acceptance rate is typically > 10
-            if (rNum <= 5.0) {
-              _rating = rNum.toStringAsFixed(1);
-            } else {
-              _rating = '${rNum.toStringAsFixed(0)}%';
-            }
-          }
           _profileLoaded = true;
         });
+
+        // Fetch real driver stats for rating + tier from completed trips
+        final userId = me['id'] as int?;
+        if (userId != null) {
+          final stats = await ApiService.getDriverStats(userId);
+          if (mounted) {
+            final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
+            final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
+            final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
+            setState(() {
+              _completedTrips = completed;
+              _totalTrips = total;
+              _avgRating = avgRating;
+              _rating = avgRating.toStringAsFixed(1);
+              // Cruise Level: same logic as cruise_level_screen.dart
+              if (completed >= 500 && avgRating >= 4.9) {
+                _tierName = 'Diamond';
+              } else if (completed >= 300 && avgRating >= 4.8) {
+                _tierName = 'Platinum';
+              } else if (completed >= 150 && avgRating >= 4.7) {
+                _tierName = 'Gold';
+              } else if (completed >= 50 && avgRating >= 4.5) {
+                _tierName = 'Silver';
+              } else {
+                _tierName = 'Bronze';
+              }
+            });
+          }
+        }
       }
     } catch (_) {}
     // Mark loaded even on error so skeleton is replaced with fallback
     if (mounted && !_profileLoaded) {
       setState(() {
         if (_driverName.isEmpty) _driverName = 'Driver';
-        if (_tierName.isEmpty) _tierName = 'Green';
+        if (_tierName.isEmpty) _tierName = 'Bronze';
         _profileLoaded = true;
       });
     }
@@ -530,37 +538,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     children: [
                       // Tier badge
                       if (_profileLoaded)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_gold, _goldLight],
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.stars_rounded,
-                                color: Colors.black,
-                                size: 12,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                _tierName,
-                                style: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
+                        _tierBadgeWidget()
                       else
                         Container(
                           height: 20,
@@ -618,6 +596,35 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           size: 14,
         );
       }),
+    );
+  }
+
+  /// Cruise Level badge with per-tier gradient and icon.
+  Widget _tierBadgeWidget() {
+    final (List<Color> gradient, IconData icon, Color textColor) = switch (_tierName) {
+      'Diamond'  => (const [Color(0xFF80DEEA), Color(0xFF4DD0E1)], Icons.auto_awesome_rounded, Colors.black),
+      'Platinum' => (const [Color(0xFF90CAF9), Color(0xFF64B5F6)], Icons.diamond_rounded,      Colors.black),
+      'Gold'     => (const [Color(0xFFE8C547), Color(0xFFF5D990)], Icons.star_rounded,         Colors.black),
+      'Silver'   => (const [Color(0xFFB0BEC5), Color(0xFF90A4AE)], Icons.workspace_premium_rounded, Colors.black),
+      _          => (const [Color(0xFFCD7F32), Color(0xFFB8722E)], Icons.emoji_events_rounded, Colors.white),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: textColor, size: 12),
+          const SizedBox(width: 3),
+          Text(
+            _tierName,
+            style: TextStyle(color: textColor, fontSize: 11, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
     );
   }
 

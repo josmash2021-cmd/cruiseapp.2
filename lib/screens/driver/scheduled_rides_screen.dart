@@ -51,11 +51,15 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   int? _claimingId;
   final Set<int> _claimedIds = {};   // locally claimed — show cancel
   int? _cancellingClaimId;           // cancel in progress
+  DateTime? _lastAvailFetch;         // throttle: min 10 s between fetches
+  bool _fetchingAvail = false;       // guard concurrent calls
 
   // ── My Rides tab state ──
   List<Map<String, dynamic>> _myRides = [];
   bool _loadingMine  = true;
   String? _errorMine;
+  DateTime? _lastMineFetch;          // throttle: min 10 s between fetches
+  bool _fetchingMine = false;        // guard concurrent calls
 
   @override
   void initState() {
@@ -86,7 +90,14 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   static const _cacheKey = 'sched_avail_cache';
 
-  Future<void> _loadAvailable() async {
+  Future<void> _loadAvailable({bool force = false}) async {
+    // Throttle: skip if already fetching or fetched within 10 s
+    if (_fetchingAvail) return;
+    if (!force && _lastAvailFetch != null &&
+        DateTime.now().difference(_lastAvailFetch!).inSeconds < 10) {
+      return;
+    }
+    _fetchingAvail = true;
     // Show cached data instantly while fresh data loads in background
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -120,12 +131,22 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       } else {
         setState(() { _loadingAvail = false; }); // keep showing cache on error
       }
+    } finally {
+      _fetchingAvail = false;
+      _lastAvailFetch = DateTime.now();
     }
   }
 
   static const _myCacheKey = 'sched_mine_cache';
 
-  Future<void> _loadMyRides() async {
+  Future<void> _loadMyRides({bool force = false}) async {
+    // Throttle: skip if already fetching or fetched within 10 s
+    if (_fetchingMine) return;
+    if (!force && _lastMineFetch != null &&
+        DateTime.now().difference(_lastMineFetch!).inSeconds < 10) {
+      return;
+    }
+    _fetchingMine = true;
     // Show cached data instantly
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -154,6 +175,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       } else {
         setState(() { _loadingMine = false; });
       }
+    } finally {
+      _fetchingMine = false;
+      _lastMineFetch = DateTime.now();
     }
   }
 
@@ -173,7 +197,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
       setState(() => _claimedIds.add(tripId));
-      _loadMyRides();
+      _loadMyRides(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -200,7 +224,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
-      _loadMyRides();
+      _loadMyRides(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -270,8 +294,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             actions: [
               GestureDetector(
                 onTap: () {
-                  _loadAvailable();
-                  _loadMyRides();
+                  _loadAvailable(force: true);
+                  _loadMyRides(force: true);
                 },
                 child: Container(
                   margin: const EdgeInsets.only(right: 14),
@@ -343,14 +367,14 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
               loading: _loadingAvail,
               error: _errorAvail,
               trips: _available,
-              onRefresh: _loadAvailable,
+              onRefresh: () => _loadAvailable(force: true),
               isMyRides: false,
             ),
             _buildTabContent(
               loading: _loadingMine,
               error: _errorMine,
               trips: _myRides,
-              onRefresh: _loadMyRides,
+              onRefresh: () => _loadMyRides(force: true),
               isMyRides: true,
             ),
           ],

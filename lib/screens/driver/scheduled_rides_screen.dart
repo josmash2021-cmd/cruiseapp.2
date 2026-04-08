@@ -1038,14 +1038,11 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         _tripDuration = route.durationText;
         _routeLoaded  = true;
       });
-      final cappedPts = List<LatLng>.from(route.points);
-      if (cappedPts.length >= 2) {
-        cappedPts[0] = pickup;
-        cappedPts[cappedPts.length - 1] = dropoff;
-      }
-      await _fitCamera(cappedPts, pitch: 0);
+      // Use road-snapped route points directly — do NOT cap with raw coords
+      final routePts = route.points;
+      await _fitCamera(routePts, pitch: 0);
       await _placePins(pickup, dropoff);
-      await _animateRoute(cappedPts);
+      await _animateRoute(routePts);
       if (_mapCtrl != null && mounted) {
         final curCam = await _mapCtrl!.getCameraState();
         await _mapCtrl!.flyTo(
@@ -1834,10 +1831,8 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
         return;
       }
       _routeLoaded = true;
-      final cappedPts = List<LatLng>.from(route.points);
-      cappedPts[0] = pickup;
-      cappedPts[cappedPts.length - 1] = dropoff;
-      final coords = cappedPts
+      // Use road-snapped route points directly — do NOT cap with raw coords
+      final coords = route.points
           .map((p) => mapbox.Position(p.longitude, p.latitude))
           .toList();
       try {

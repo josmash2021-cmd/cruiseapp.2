@@ -520,18 +520,16 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         _tripDuration = route.durationText;
         _routeLoaded = true;
       });
-      // Cap route endpoints to exact pin coordinates
-      final cappedPts = List<LatLng>.from(route.points);
-      if (cappedPts.length >= 2) {
-        cappedPts[0] = pickup;
-        cappedPts[cappedPts.length - 1] = dropoff;
-      }
+      // Use road-snapped route points directly from the API.
+      // Do NOT override endpoints with raw user coordinates —
+      // that creates off-road straight-line segments.
+      final routePts = route.points;
       // Fit camera to full route (flat)
-      await _fitCamera(cappedPts, pitch: 0);
+      await _fitCamera(routePts, pitch: 0);
       // Place pins
       await _placePins(pickup, dropoff);
       // Animate golden route line
-      await _animateRoute(cappedPts);
+      await _animateRoute(routePts);
       // Cinematic tilt to 55°
       if (_mapCtrl != null && mounted) {
         final curCam = await _mapCtrl!.getCameraState();

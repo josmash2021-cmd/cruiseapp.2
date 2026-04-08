@@ -2613,19 +2613,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     );
     if (!mounted || ticket != _routeAnimationTicket) return;
     if (route != null) {
-      // Cap route endpoints to exact pin coordinates
-      final cappedPts = List<LatLng>.from(route.points);
-      if (cappedPts.length >= 2) {
-        cappedPts[0] = origin;
-        cappedPts[cappedPts.length - 1] = destination;
-      }
-      _activeRoutePoints = cappedPts;
+      // Use road-snapped route points directly — do NOT cap with raw coords
+      _activeRoutePoints = route.points;
       setState(() {
         _tripMiles = _formatMiles(route.distanceMeters);
         _tripDuration = route.durationText;
         _updateRidePricingFromDuration(_tripDuration);
       });
-      await _setRouteAnnotation(cappedPts);
+      await _setRouteAnnotation(_activeRoutePoints);
     }
   }
 

@@ -339,7 +339,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.storefront_rounded, size: 14),
+                          const Icon(Icons.people_alt_rounded, size: 14),
                           const SizedBox(width: 5),
                           Text(s.availableLabel),
                         ],

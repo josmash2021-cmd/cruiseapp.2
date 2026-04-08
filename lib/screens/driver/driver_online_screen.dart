@@ -183,7 +183,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // ── Scheduled rides badge ──
   int _scheduledAvailCount = 0;
+  int _prevScheduledCount = 0;
   Timer? _scheduledPollTimer;
+  AnimationController? _scheduledBounceCtrl;
+  Animation<double>? _scheduledBounceAnim;
+  bool _showScheduledToast = false;
   String? _animatingOfferId; // which card is pulsing
   bool _offerDetailsVisible = false;
 
@@ -416,6 +420,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       duration: const Duration(milliseconds: 300),
     );
 
+    // Scheduled badge bounce animation
+    _scheduledBounceCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _scheduledBounceAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25).chain(CurveTween(curve: Curves.easeOut)), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.1).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
+    ]).animate(_scheduledBounceCtrl!);
+
     // Show offer details immediately — no delay
     _offerDetailsVisible = true;
 
@@ -472,6 +488,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
     _rejectSlideCtrl?.dispose();
+    _scheduledBounceCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _pinPopTicker?.stop();
@@ -824,67 +841,153 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
-            // Scheduled rides badge (top-right, hidden during nav)
-            if (!isNav && _scheduledAvailCount > 0)
+            // ── Scheduled rides badge (top-right, always visible, hidden during nav) ──
+            if (!isNav)
               Positioned(
                 top: top + 10,
                 right: 16,
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    Navigator.push(
-                      context,
-                      slideFromRightRoute(
-                        const ScheduledRidesScreen(initialTab: 0),
+                child: ScaleTransition(
+                  scale: _scheduledBounceAnim ?? const AlwaysStoppedAnimation(1.0),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      _setState(() => _showScheduledToast = false);
+                      Navigator.push(
+                        context,
+                        slideFromRightRoute(
+                          const ScheduledRidesScreen(initialTab: 0),
+                        ),
+                      ).then((_) => _fetchScheduledCount());
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: fabBg,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _scheduledAvailCount > 0
+                              ? const Color(0xFFE8C547).withValues(alpha: 0.6)
+                              : fabBorder,
+                          width: 1,
+                        ),
+                        boxShadow: _scheduledAvailCount > 0
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+                                  blurRadius: 10,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
                       ),
-                    ).then((_) => _fetchScheduledCount());
-                  },
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: fabBg,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: fabBorder, width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        const Center(
-                          child: Icon(
-                            Icons.calendar_today_rounded,
-                            size: 22,
-                            color: Color(0xFFE8C547),
-                          ),
-                        ),
-                        Positioned(
-                          top: -4,
-                          right: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE8C547),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black, width: 1.5),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Center(
+                            child: Icon(
+                              Icons.calendar_today_rounded,
+                              size: 22,
+                              color: _scheduledAvailCount > 0
+                                  ? const Color(0xFFE8C547)
+                                  : Colors.white.withValues(alpha: 0.35),
                             ),
-                            child: Text(
-                              '$_scheduledAvailCount',
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
+                          ),
+                          if (_scheduledAvailCount > 0)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE8C547),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black, width: 1.5),
+                                ),
+                                child: Text(
+                                  '$_scheduledAvailCount',
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Scheduled rides toast notification ──
+            if (!isNav && _showScheduledToast && _scheduledAvailCount > 0)
+              Positioned(
+                top: top + 68,
+                right: 16,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutBack,
+                  builder: (context, value, child) => Transform.scale(
+                    scale: value,
+                    alignment: Alignment.topRight,
+                    child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+                  ),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      _setState(() => _showScheduledToast = false);
+                      Navigator.push(
+                        context,
+                        slideFromRightRoute(const ScheduledRidesScreen(initialTab: 0)),
+                      ).then((_) => _fetchScheduledCount());
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1D24),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.4),
+                          width: 1,
                         ),
-                      ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                            blurRadius: 12,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            color: Color(0xFFE8C547),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _scheduledAvailCount == 1
+                                ? '1 scheduled ride available'
+                                : '$_scheduledAvailCount scheduled rides available',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Color(0xFFE8C547),
+                            size: 16,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

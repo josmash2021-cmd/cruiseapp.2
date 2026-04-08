@@ -1015,7 +1015,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     try {
       final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
       if (!mounted) return;
-      _setState(() => _scheduledAvailCount = trips.length);
+      final newCount = trips.length;
+      final oldCount = _scheduledAvailCount;
+      _setState(() => _scheduledAvailCount = newCount);
+
+      // Trigger bounce + toast when new scheduled rides appear
+      if (newCount > oldCount && newCount > 0) {
+        _scheduledBounceCtrl?.forward(from: 0);
+        if (oldCount == 0 || newCount > _prevScheduledCount) {
+          _setState(() => _showScheduledToast = true);
+          Future.delayed(const Duration(seconds: 4), () {
+            if (mounted) _setState(() => _showScheduledToast = false);
+          });
+        }
+      }
+      _prevScheduledCount = newCount;
     } catch (_) {}
   }
 

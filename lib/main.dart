@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
@@ -54,57 +55,63 @@ final _navigatorKey = GlobalKey<NavigatorState>();
 /// killed or backgrounded. Shows a local offer notification with the distinct
 /// cruise_offer.wav sound so the driver is alerted even when not in the app.
 /// Fallback titles for push notifications when backend sends no title.
-String _riderNotifTitle(String type) => switch (type) {
-  // ── Rider notifications ──
-  'driver_assigned'    => 'Driver Assigned',
-  'driver_arriving'    => 'Driver Is Almost There',
-  'driver_arrived'     => 'Driver Has Arrived',
-  'driver_found'       => 'Driver Found',
-  'arrived_dropoff'    => 'You Have Arrived',
-  'fast_ride'          => 'Drivers Available Nearby',
-  'driver_cancelled' || 'ride_reassigned' => 'Ride Update',
-  'scheduled_claimed'  => 'Driver Accepted Your Ride',
-  'arrived'            => 'Driver Has Arrived',
-  'in_trip'            => 'Trip Started',
-  'completed'          => 'Trip Completed',
-  'scheduled_reminder' => 'Upcoming Ride Reminder',
-  // ── Driver notifications ──
-  'trip_offer' || 'new_offer' => 'New Ride Offer',
-  'rider_cancelled'    => 'Ride Cancelled',
-  'scheduled_cancelled' => 'Scheduled Ride Cancelled',
-  'tip_received'       => 'You Got a Tip!',
-  'level_up'           => 'Level Up!',
-  'level_down'         => 'Level Update',
-  'instant_cashout'    => 'Instant Cashout',
-  _ => 'Cruise',
-};
+String _riderNotifTitle(String type) {
+  final isEs = PlatformDispatcher.instance.locale.languageCode == 'es';
+  return switch (type) {
+    // ── Rider notifications ──
+    'driver_assigned'    => isEs ? 'Conductor Asignado' : 'Driver Assigned',
+    'driver_arriving'    => isEs ? 'Tu Conductor Está Cerca' : 'Driver Is Almost There',
+    'driver_arrived'     => isEs ? 'Tu Conductor Ha Llegado' : 'Driver Has Arrived',
+    'driver_found'       => isEs ? 'Conductor Encontrado' : 'Driver Found',
+    'arrived_dropoff'    => isEs ? 'Has Llegado' : 'You Have Arrived',
+    'fast_ride'          => isEs ? 'Conductores Disponibles Cerca' : 'Drivers Available Nearby',
+    'driver_cancelled' || 'ride_reassigned' => isEs ? 'Actualización de Viaje' : 'Ride Update',
+    'scheduled_claimed'  => isEs ? 'Conductor Aceptó Tu Viaje' : 'Driver Accepted Your Ride',
+    'arrived'            => isEs ? 'Tu Conductor Ha Llegado' : 'Driver Has Arrived',
+    'in_trip'            => isEs ? 'Viaje Iniciado' : 'Trip Started',
+    'completed'          => isEs ? 'Viaje Completado' : 'Trip Completed',
+    'scheduled_reminder' => isEs ? 'Recordatorio de Viaje Próximo' : 'Upcoming Ride Reminder',
+    // ── Driver notifications ──
+    'trip_offer' || 'new_offer' => isEs ? 'Nueva Oferta de Viaje' : 'New Ride Offer',
+    'rider_cancelled'    => isEs ? 'Viaje Cancelado' : 'Ride Cancelled',
+    'scheduled_cancelled' => isEs ? 'Viaje Programado Cancelado' : 'Scheduled Ride Cancelled',
+    'tip_received'       => isEs ? '¡Recibiste una Propina!' : 'You Got a Tip!',
+    'level_up'           => isEs ? '¡Subiste de Nivel!' : 'Level Up!',
+    'level_down'         => isEs ? 'Actualización de Nivel' : 'Level Update',
+    'instant_cashout'    => isEs ? 'Retiro Instantáneo' : 'Instant Cashout',
+    _ => 'Cruise',
+  };
+}
 
 /// Fallback bodies for push notifications when backend sends no body.
-String _riderNotifBody(String type) => switch (type) {
-  // ── Rider notifications ──
-  'driver_assigned'    => 'A driver has been assigned to your ride.',
-  'driver_arriving'    => 'Your driver is almost at the pickup location.',
-  'driver_arrived'     => 'Your driver is at the pickup location.',
-  'driver_found'       => 'We found a driver for your ride!',
-  'arrived_dropoff'    => 'You have arrived at your destination. Thanks for riding with Cruise!',
-  'fast_ride'          => 'There are drivers near you — request a ride now!',
-  'driver_cancelled'   => 'Your driver cancelled. We are assigning a new driver.',
-  'ride_reassigned'    => 'A new driver is being assigned to your ride.',
-  'scheduled_claimed'  => 'A driver has accepted your scheduled ride.',
-  'arrived'            => 'Your driver is waiting at the pickup location.',
-  'in_trip'            => 'You are on your way to your destination.',
-  'completed'          => 'You have arrived. Thanks for riding with Cruise!',
-  'scheduled_reminder' => 'Your scheduled ride is coming up soon.',
-  // ── Driver notifications ──
-  'trip_offer' || 'new_offer' => 'A rider needs a ride — open Cruise to accept.',
-  'rider_cancelled'    => 'The rider has cancelled the ride.',
-  'scheduled_cancelled' => 'A scheduled ride has been cancelled by the rider.',
-  'tip_received'       => 'A rider left you a tip. Keep up the great work!',
-  'level_up'           => 'Congratulations! You leveled up in Cruise.',
-  'level_down'         => 'Your driver level has changed. Check the app for details.',
-  'instant_cashout'    => 'Your instant cashout has been processed successfully.',
-  _ => '',
-};
+String _riderNotifBody(String type) {
+  final isEs = PlatformDispatcher.instance.locale.languageCode == 'es';
+  return switch (type) {
+    // ── Rider notifications ──
+    'driver_assigned'    => isEs ? 'Se ha asignado un conductor a tu viaje.' : 'A driver has been assigned to your ride.',
+    'driver_arriving'    => isEs ? 'Tu conductor está casi en el punto de recogida.' : 'Your driver is almost at the pickup location.',
+    'driver_arrived'     => isEs ? 'Tu conductor está en el punto de recogida.' : 'Your driver is at the pickup location.',
+    'driver_found'       => isEs ? '¡Encontramos un conductor para tu viaje!' : 'We found a driver for your ride!',
+    'arrived_dropoff'    => isEs ? 'Has llegado a tu destino. ¡Gracias por viajar con Cruise!' : 'You have arrived at your destination. Thanks for riding with Cruise!',
+    'fast_ride'          => isEs ? 'Hay conductores cerca — ¡pide un viaje ahora!' : 'There are drivers near you — request a ride now!',
+    'driver_cancelled'   => isEs ? 'Tu conductor canceló. Estamos asignando un nuevo conductor.' : 'Your driver cancelled. We are assigning a new driver.',
+    'ride_reassigned'    => isEs ? 'Se está asignando un nuevo conductor a tu viaje.' : 'A new driver is being assigned to your ride.',
+    'scheduled_claimed'  => isEs ? 'Un conductor ha aceptado tu viaje programado.' : 'A driver has accepted your scheduled ride.',
+    'arrived'            => isEs ? 'Tu conductor está esperando en el punto de recogida.' : 'Your driver is waiting at the pickup location.',
+    'in_trip'            => isEs ? 'Estás en camino a tu destino.' : 'You are on your way to your destination.',
+    'completed'          => isEs ? 'Has llegado. ¡Gracias por viajar con Cruise!' : 'You have arrived. Thanks for riding with Cruise!',
+    'scheduled_reminder' => isEs ? 'Tu viaje programado está por comenzar.' : 'Your scheduled ride is coming up soon.',
+    // ── Driver notifications ──
+    'trip_offer' || 'new_offer' => isEs ? 'Un pasajero necesita un viaje — abre Cruise para aceptar.' : 'A rider needs a ride — open Cruise to accept.',
+    'rider_cancelled'    => isEs ? 'El pasajero canceló el viaje.' : 'The rider has cancelled the ride.',
+    'scheduled_cancelled' => isEs ? 'Un viaje programado ha sido cancelado por el pasajero.' : 'A scheduled ride has been cancelled by the rider.',
+    'tip_received'       => isEs ? 'Un pasajero te dejó una propina. ¡Sigue así!' : 'A rider left you a tip. Keep up the great work!',
+    'level_up'           => isEs ? '¡Felicidades! Subiste de nivel en Cruise.' : 'Congratulations! You leveled up in Cruise.',
+    'level_down'         => isEs ? 'Tu nivel de conductor ha cambiado. Revisa la app.' : 'Your driver level has changed. Check the app for details.',
+    'instant_cashout'    => isEs ? 'Tu retiro instantáneo se procesó exitosamente.' : 'Your instant cashout has been processed successfully.',
+    _ => '',
+  };
+}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -119,8 +126,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   );
 
   if (type == 'trip_offer' || type == 'new_offer') {
-    final title = message.notification?.title ?? 'New Trip Request';
-    final body = message.notification?.body ?? 'A rider needs a ride — open Cruise to accept.';
+    final title = message.notification?.title ?? _riderNotifTitle(type);
+    final body = message.notification?.body ?? _riderNotifBody(type);
     await plugin.show(
       id: 9001,
       title: title,

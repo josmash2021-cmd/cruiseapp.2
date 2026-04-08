@@ -773,7 +773,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                       color: const Color(0xFF4285F4),
                     ),
                   const SizedBox(width: 6),
-                  _statusBadge(status, isPast),
+                  _statusBadge(context, status, isPast),
                   if (_hasCoords) ...[
                     const SizedBox(width: 6),
                     AnimatedRotation(
@@ -1203,38 +1203,39 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     );
   }
 
-  Widget _statusBadge(String status, bool isPast) {
+  Widget _statusBadge(BuildContext context, String status, bool isPast) {
+    final s = S.of(context);
     Color color;
     String label;
     IconData? icon;
     if (status == 'canceled') {
       color = const Color(0xFFFF5252);
-      label = 'Canceled';
+      label = s.cancelledFilter;
     } else if (status == 'completed') {
       color = Colors.white54;
-      label = 'Completed';
+      label = s.completedFilter;
     } else if (isPast) {
       color = Colors.white38;
-      label = 'Expired';
+      label = s.expired;
     } else if (status == 'driver_en_route' || status == 'arrived') {
       color = const Color(0xFF2ECC71);
-      label = 'Viaje Confirmado';
+      label = s.rideConfirmed;
       icon = Icons.directions_car_rounded;
     } else if (status == 'in_trip') {
       color = const Color(0xFFE8C547);
-      label = 'In Progress';
+      label = s.tripInProgress;
       icon = Icons.directions_car_rounded;
     } else if (status == 'scheduled_accepted') {
       color = const Color(0xFF22C55E); // green
-      label = 'Driver Asignado';
+      label = s.driverAssignedLabel;
       icon = Icons.directions_car_rounded;
     } else if (status == 'scheduled' || status == 'requested') {
       color = Colors.orange;
-      label = 'Pending Driver';
+      label = s.pendingDriver;
       icon = Icons.directions_car_rounded;
     } else {
       color = const Color(0xFF4CAF50);
-      label = 'Upcoming';
+      label = s.upcoming;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

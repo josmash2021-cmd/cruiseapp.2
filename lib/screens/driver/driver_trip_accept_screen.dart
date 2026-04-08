@@ -941,7 +941,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        _actionBtn(Icons.message_rounded, 'Message', _openChat),
+        _actionBtn(Icons.message_rounded, S.of(context).messageAction, _openChat),
         StreamBuilder<int>(
           stream: ChatService().unreadCountStream(
             rideId: widget.tripId.toString(),
@@ -1103,10 +1103,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           Navigator.pop(context);
           launchUrl(Uri.parse('tel:911'));
         }),
-        _SheetItem(Icons.report_problem_rounded, 'Report Safety Issue',
-            'Report a safety concern about this trip', () => Navigator.pop(context)),
-        _SheetItem(Icons.share_location_rounded, 'Share My Location',
-            'Share trip with a trusted contact', () => Navigator.pop(context)),
+        _SheetItem(Icons.report_problem_rounded, S.of(context).reportSafetyIssueTip,
+            S.of(context).reportSafetyIssueSubtitle, () => Navigator.pop(context)),
+        _SheetItem(Icons.share_location_rounded, S.of(context).shareMyLocationTip,
+            S.of(context).shareMyLocationSubtitle, () => Navigator.pop(context)),
       ],
     );
   }
@@ -1118,17 +1118,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       icon: Icons.help_rounded,
       iconColor: _gold,
       items: [
-        _SheetItem(Icons.location_on_rounded, 'Problem with pickup address',
-            'The pickup location is incorrect or unclear',
+        _SheetItem(Icons.location_on_rounded, S.of(context).problemWithPickup,
+            S.of(context).problemWithPickupSubtitle,
             () { Navigator.pop(context); _showPickupProblem(); }),
-        _SheetItem(Icons.flag_rounded, 'Problem with dropoff address',
-            'The dropoff location is incorrect or unclear',
+        _SheetItem(Icons.flag_rounded, S.of(context).problemWithDropoff,
+            S.of(context).problemWithDropoffSubtitle,
             () { Navigator.pop(context); _showDropoffProblem(); }),
-        _SheetItem(Icons.directions_car_rounded, 'Problem with trip',
-            'Other issue with this trip',
+        _SheetItem(Icons.directions_car_rounded, S.of(context).problemWithTrip,
+            S.of(context).problemWithTripSubtitle,
             () { Navigator.pop(context); _showTripProblem(); }),
-        _SheetItem(Icons.support_agent_rounded, 'Contact Support',
-            'Speak with a support agent',
+        _SheetItem(Icons.support_agent_rounded, S.of(context).contactSupportTip,
+            S.of(context).contactSupportSubtitle,
             () { Navigator.pop(context); _openSupportChat(); }),
       ],
     );
@@ -1139,12 +1139,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _showReportSheet(
       title: S.of(context).pickupAddressProblem,
       type: 'pickup_address_problem',
-      reasons: [
-        'La dirección es incorrecta',
-        'No puedo encontrar el lugar',
-        'El rider no está en la ubicación',
-        'Otra razón',
-      ],
+      reasons: S.of(context).pickupCancelReasons,
     );
   }
 
@@ -1153,12 +1148,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _showReportSheet(
       title: S.of(context).dropoffAddressProblem,
       type: 'dropoff_address_problem',
-      reasons: [
-        'La dirección es incorrecta',
-        'No puedo llegar a ese lugar',
-        'El destino no existe',
-        'Otra razón',
-      ],
+      reasons: S.of(context).dropoffCancelReasons,
     );
   }
 
@@ -1167,13 +1157,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _showReportSheet(
       title: S.of(context).tripProblem,
       type: 'trip_problem',
-      reasons: [
-        'El rider no aparece',
-        'El rider canceló de forma inapropiada',
-        'Problema de seguridad',
-        'El viaje fue modificado sin mi consentimiento',
-        'Otra razón',
-      ],
+      reasons: S.of(context).tripCancelReasons,
     );
   }
 
@@ -2073,7 +2057,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         ),
                       ),
                       SizedBox(width: Responsive.w(10)),
-                      _actionBtn(Icons.phone_rounded, 'Call', _call),
+                      _actionBtn(Icons.phone_rounded, S.of(context).callAction, _call),
                       SizedBox(width: Responsive.w(8)),
                       _msgBtnWithBadge(),
                     ],
@@ -2201,14 +2185,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: true),
-                onLongPress: () => _copyAddress('Pickup address', _pickupAddr),
+                onLongPress: () => _copyAddress(S.of(context).pickupAddressLabel, _pickupAddr),
                 child: _infoRow(
                   Icons.location_on_rounded,
                   _gold.withValues(alpha: 0.15),
                   _gold,
-                  'Pickup',
+                  S.of(context).pickupLabel,
                   _resolvingAddresses && _pickupAddr.isEmpty
-                      ? 'Obteniendo direcci\u00f3n...'
+                      ? S.of(context).fetchingAddress
                       : _pickupAddr,
                   showChevron: true,
                 ),
@@ -2226,14 +2210,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
                 onTap: () => _showNavigationSheet(isPickup: false),
-                onLongPress: () => _copyAddress('Dropoff address', _dropoffAddr),
+                onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
                 child: _infoRow(
                   Icons.flag_rounded,
                   _gold.withValues(alpha: 0.15),
                   _gold,
-                  'Dropoff',
+                  S.of(context).dropOffLabel,
                   _resolvingAddresses && _dropoffAddr.isEmpty
-                      ? 'Obteniendo direcci\u00f3n...'
+                      ? S.of(context).fetchingAddress
                       : _dropoffAddr,
                   showChevron: true,
                 ),
@@ -2256,7 +2240,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'El pasajero ha confirmado que está en tu vehículo',
+                        S.of(context).passengerConfirmedOnboard,
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -2294,7 +2278,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '$count new message${count > 1 ? "s" : ""} from rider',
+                            S.of(context).newMessagesFromRider(count),
                             style: const TextStyle(
                               color: _gold,
                               fontSize: 13,
@@ -2533,7 +2517,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           elevation: 0,
         ),
         child: Text(
-          _slid ? 'Starting...' : 'Start Trip',
+          _slid ? S.of(context).startingLabel : S.of(context).startTripLabel,
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
       ),
@@ -2698,10 +2682,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       children: [
         _LockedSlideButton(label: S.of(context).arrived),
         const SizedBox(height: 10),
-        const Text(
-          'El boton se activa cuando ya estes en la direccion de pickup',
+        Text(
+          S.of(context).arrivedButtonTooltip,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white54,
             fontSize: 12,
             fontWeight: FontWeight.w500,
@@ -2740,7 +2724,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           elevation: 0,
         ),
         child: Text(
-          _startRideSlidDone ? 'Starting...' : 'Start Ride',
+          _startRideSlidDone ? S.of(context).startingLabel : S.of(context).startRideLabel,
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
       ),
@@ -2858,10 +2842,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       children: [
         _LockedSlideButton(label: S.of(context).finishRide),
         const SizedBox(height: 10),
-        const Text(
-          'El boton se activa cuando ya estes en la direccion de destino',
+        Text(
+          S.of(context).finishButtonTooltip,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white54,
             fontSize: 12,
             fontWeight: FontWeight.w500,

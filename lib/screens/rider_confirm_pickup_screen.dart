@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../widgets/verified_avatar.dart';
+import '../l10n/app_localizations.dart';
 
 /// Full-screen confirmation shown to the rider when the driver arrives.
 /// The rider presses the big gold button to confirm they are with the driver,
@@ -677,7 +678,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                             children: [
                               const SizedBox(height: 14),
                               Text(
-                                isConfirmed ? '' : 'El viaje comenzará automáticamente\nsi no confirmas',
+                                isConfirmed ? '' : S.of(context).rideAutoStartWarning,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: _gold.withValues(alpha: 0.55),

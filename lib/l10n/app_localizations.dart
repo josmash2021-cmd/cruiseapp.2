@@ -3165,6 +3165,73 @@ class S {
   String get searchStatusMsg2 => _es ? 'Conectando con conductores cercanos…' : 'Connecting to nearby drivers…';
   String get searchStatusMsg3 => _es ? 'Casi listo…' : 'Almost there…';
   String get searchStatusMsg4 => _es ? 'Confirmando tu viaje…' : 'Confirming your ride…';
+
+  // ── Driver Trip Accept Screen — new localization keys ─────────────────────
+  String get fetchingAddress => _es ? 'Obteniendo dirección...' : 'Getting address...';
+  String get passengerConfirmedOnboard => _es
+      ? 'El pasajero ha confirmado que está en tu vehículo'
+      : 'Passenger confirmed they are in your vehicle';
+  String newMessagesFromRider(int count) => _es
+      ? '$count nuevo${count > 1 ? "s" : ""} mensaje${count > 1 ? "s" : ""} del pasajero'
+      : '$count new message${count > 1 ? "s" : ""} from rider';
+  // Safety sheet
+  String get reportSafetyIssueTip => _es ? 'Reportar problema de seguridad' : 'Report Safety Issue';
+  String get reportSafetyIssueSubtitle => _es
+      ? 'Reportar una preocupación de seguridad sobre este viaje'
+      : 'Report a safety concern about this trip';
+  String get shareMyLocationTip => _es ? 'Compartir mi ubicación' : 'Share My Location';
+  String get shareMyLocationSubtitle => _es
+      ? 'Compartir viaje con un contacto de confianza'
+      : 'Share trip with a trusted contact';
+  String get problemWithPickup => _es ? 'Problema con dirección de recogida' : 'Problem with pickup address';
+  String get problemWithPickupSubtitle => _es
+      ? 'La ubicación de recogida es incorrecta o poco clara'
+      : 'The pickup location is incorrect or unclear';
+  String get problemWithDropoff => _es ? 'Problema con dirección de destino' : 'Problem with dropoff address';
+  String get problemWithDropoffSubtitle => _es
+      ? 'La ubicación de destino es incorrecta o poco clara'
+      : 'The dropoff location is incorrect or unclear';
+  String get problemWithTrip => _es ? 'Problema con el viaje' : 'Problem with trip';
+  String get problemWithTripSubtitle => _es ? 'Otro problema con este viaje' : 'Other issue with this trip';
+  String get contactSupportTip => _es ? 'Contactar soporte' : 'Contact Support';
+  String get contactSupportSubtitle => _es ? 'Hablar con un agente de soporte' : 'Speak with a support agent';
+  // Cancellation reasons
+  List<String> get pickupCancelReasons => _es
+      ? ['La dirección es incorrecta', 'No puedo encontrar el lugar', 'El rider no está en la ubicación', 'Otra razón']
+      : ['The address is incorrect', "I can't find the place", 'Rider is not at the location', 'Other reason'];
+  List<String> get dropoffCancelReasons => _es
+      ? ['La dirección es incorrecta', 'No puedo llegar a ese lugar', 'El destino no existe', 'Otra razón']
+      : ['The address is incorrect', "I can't get to that place", 'The destination does not exist', 'Other reason'];
+  List<String> get tripCancelReasons => _es
+      ? ['El rider no aparece', 'El rider canceló de forma inapropiada', 'Problema de seguridad', 'El viaje fue modificado sin mi consentimiento', 'Otra razón']
+      : ['Rider did not show up', 'Rider cancelled inappropriately', 'Safety concern', 'The trip was modified without my consent', 'Other reason'];
+  // Tooltip strings
+  String get arrivedButtonTooltip => _es
+      ? 'El botón se activa cuando ya estés en la dirección de pickup'
+      : 'Button activates when you are at the pickup address';
+  String get finishButtonTooltip => _es
+      ? 'El botón se activa cuando ya estés en la dirección de destino'
+      : 'Button activates when you are at the destination address';
+  // Start trip button
+  String get startingLabel => _es ? 'Iniciando...' : 'Starting...';
+  String get startTripLabel => _es ? 'Iniciar Viaje' : 'Start Trip';
+  String get startRideLabel => _es ? 'Iniciar Viaje' : 'Start Ride';
+  // Message / Call action buttons
+  String get messageAction => _es ? 'Mensaje' : 'Message';
+  String get callAction => _es ? 'Llamar' : 'Call';
+
+  // ── Scheduled Rides status badge extras ──────────────────────────────────
+  String get rideConfirmed => _es ? 'Viaje Confirmado' : 'Ride Confirmed';
+  String get pendingDriver => _es ? 'Conductor Pendiente' : 'Pending Driver';
+  String get upcoming => _es ? 'Próximo' : 'Upcoming';
+
+  // ── Rider Confirm Pickup Screen ────────────────────────────────────────────
+  String get rideAutoStartWarning => _es
+      ? 'El viaje comenzará automáticamente\nsi no confirmas'
+      : 'The ride will start automatically\nif you do not confirm';
+
+  // ── Scheduled Rides Screen (rider) ────────────────────────────────────────
+  String get driverAssignedLabel => _es ? 'Conductor Asignado' : 'Driver Assigned';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

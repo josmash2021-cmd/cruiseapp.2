@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../config/map_theme.dart';
+import '../../config/mapbox_config.dart';
 import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
@@ -138,7 +142,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
     final riderName = trip['rider_name'] ?? '';
     final riderPhone = trip['rider_phone'] ?? '';
+    final riderPhoto = trip['rider_photo_url']?.toString() ?? '';
     final vehicleType = trip['vehicle_type'] ?? 'standard';
+    final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
+    final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
     final scheduledAt = trip['scheduled_at'] != null
         ? DateTime.tryParse(trip['scheduled_at'])
         : null;
@@ -150,7 +157,42 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
 
     return Scaffold(
       backgroundColor: _darkBg,
-      body: SafeArea(
+      body: Stack(
+        children: [
+          // ── Blurry map background ──
+          if (pickupLat != null && pickupLng != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: mapbox.MapWidget(
+                  styleUri: MapboxConfig.styleDark,
+                  cameraOptions: mapbox.CameraOptions(
+                    center: mapbox.Point(
+                      coordinates: mapbox.Position(pickupLng, pickupLat),
+                    ),
+                    zoom: 13.0,
+                    pitch: 0.0,
+                  ),
+                  onMapCreated: (ctrl) async {
+                    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                  },
+                  onStyleLoadedListener: (_) {},
+                ),
+              ),
+            ),
+          // ── Blur + dark tint overlay ──
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                color: _darkBg.withValues(alpha: 0.78),
+              ),
+            ),
+          ),
+          // ── Content ──
+          SafeArea(
         child: Column(
           children: [
             // Top bar
@@ -273,10 +315,15 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                             CircleAvatar(
                               backgroundColor: _gold.withValues(alpha:0.2),
                               radius: 22,
-                              child: Text(
-                                riderName.isNotEmpty ? riderName[0].toUpperCase() : '?',
-                                style: TextStyle(color: _gold, fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
+                              backgroundImage: riderPhoto.isNotEmpty
+                                  ? NetworkImage(riderPhoto)
+                                  : null,
+                              child: riderPhoto.isEmpty
+                                  ? Text(
+                                      riderName.isNotEmpty ? riderName[0].toUpperCase() : '?',
+                                      style: TextStyle(color: _gold, fontWeight: FontWeight.bold, fontSize: 18),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -427,6 +474,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           ],
         ),
       ),
+        ], // Stack children
+      ), // Stack
     );
   }
 

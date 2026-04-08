@@ -1894,11 +1894,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (hasTrip && isLocked && data['trip'] != null) {
         final minutesUntil = (data['minutes_until'] as num?)?.toDouble() ?? 30;
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ScheduledRideDetailsScreen(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => ScheduledRideDetailsScreen(
               trip: data['trip'] as Map<String, dynamic>,
               minutesUntil: minutesUntil,
             ),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 500),
+            reverseTransitionDuration: const Duration(milliseconds: 400),
           ),
         );
       }

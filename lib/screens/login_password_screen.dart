@@ -88,8 +88,8 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       setState(() {
         _socialLoading = false;
         _errorText = msg.contains('401') || msg.contains('Invalid credentials')
-            ? 'Invalid credentials. No account found with this email.'
-            : 'Google sign-in failed. Please try again.';
+            ? S.of(context).invalidCredentialsNoAccount
+            : S.of(context).googleSignInFailed;
       });
     }
   }
@@ -115,8 +115,8 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       setState(() {
         _socialLoading = false;
         _errorText = msg.contains('401') || msg.contains('Invalid credentials')
-            ? 'Invalid credentials. No account found with this email.'
-            : 'Apple sign-in failed. Please try again.';
+            ? S.of(context).invalidCredentialsNoAccount
+            : S.of(context).appleSignInFailed;
       });
     }
   }
@@ -220,7 +220,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       setState(() => _loading = false);
 
       if (result['ok'] != true) {
-        setState(() => _errorText = 'Could not send verification email. Please try again.');
+        setState(() => _errorText = S.of(context).couldNotSendVerificationEmail);
         return;
       }
 
@@ -285,7 +285,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               const SizedBox(height: 20),
 
               Text(
-                'Where should we send\nyour verification code?',
+                S.of(context).whereToSendCode,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 20,
@@ -299,7 +299,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               // ── Phone option ──
               _MethodTile(
                 icon: Icons.sms_outlined,
-                title: 'Text message (SMS)',
+                title: S.of(context).textMessageSms,
                 subtitle: maskPhone(phone),
                 gold: _gold,
                 colors: c,
@@ -318,7 +318,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               // ── Email option ──
               _MethodTile(
                 icon: Icons.email_outlined,
-                title: 'Email',
+                title: S.of(context).emailOption,
                 subtitle: maskEmail(email),
                 gold: _gold,
                 colors: c,
@@ -426,7 +426,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       } else {
         setState(() {
           _loading = false;
-          _errorText = 'No contact method available';
+          _errorText = S.of(context).noContactMethodAvailable;
         });
       }
     } on ApiException catch (e) {
@@ -437,19 +437,18 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
         if (detail.contains('timestamp') ||
             detail.contains('clock') ||
             detail.contains('expired')) {
-          msg =
-              'Device clock out of sync. Go to Settings → Date & Time and enable "Set Automatically".';
+          msg = S.of(context).deviceClockOutOfSync;
         } else {
-          msg = 'Invalid email/phone or password';
+          msg = S.of(context).invalidEmailPhoneOrPassword;
         }
       } else if (e.statusCode == 403) {
         final detail = e.message.toLowerCase();
         if (detail.contains('deleted')) {
-          msg = 'This account no longer exists';
+          msg = S.of(context).accountNoLongerExists;
         } else if (detail.contains('blocked')) {
-          msg = 'Your account has been blocked';
+          msg = S.of(context).accountBlocked;
         } else if (detail.contains('deactivated')) {
-          msg = 'Your account has been deactivated';
+          msg = S.of(context).accountDeactivated;
         } else {
           msg = e.message;
         }
@@ -503,7 +502,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorText = 'Connection error — is the server running?';
+        _errorText = S.of(context).connectionError;
       });
       HapticFeedback.mediumImpact();
     }
@@ -756,7 +755,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'or',
+                      S.of(context).orLower,
                       style: TextStyle(
                         color: c.textTertiary,
                         fontSize: 13,
@@ -795,9 +794,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                             fit: BoxFit.contain,
                           ),
                         ),
-                  label: const Text(
-                    'Sign in with Google',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  label: Text(
+                    S.of(context).signInWithGoogle,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -818,9 +817,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                     ),
                     onPressed: _socialLoading ? null : _signInWithApple,
                     icon: const Icon(Icons.apple, size: 24),
-                    label: const Text(
-                      'Sign in with Apple',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    label: Text(
+                      S.of(context).signInWithApple,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),

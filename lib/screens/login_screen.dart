@@ -68,13 +68,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (cred == null) {
         setState(() => _socialLoading = false);
-        _showSnack('Google Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
+        _showSnack(S.of(context).googleSignInCancelled, Colors.white.withValues(alpha: 0.6));
         return;
       }
       final email = cred['email'];
       if (email == null || email.isEmpty) {
         setState(() => _socialLoading = false);
-        _showSnack('Could not get email from Google. Please try again.', Colors.white.withValues(alpha: 0.6));
+        _showSnack(S.of(context).googleNoEmail, Colors.white.withValues(alpha: 0.6));
         return;
       }
       await _socialRegistrationFlow(
@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      _showSnack('Google Sign In error: $e', Colors.white.withValues(alpha: 0.6));
+      _showSnack(S.of(context).googleSignInError(e.toString()), Colors.white.withValues(alpha: 0.6));
     }
   }
 
@@ -102,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (cred == null) {
         setState(() => _socialLoading = false);
-        _showSnack('Apple Sign In was cancelled', Colors.white.withValues(alpha: 0.6));
+        _showSnack(S.of(context).appleSignInCancelled, Colors.white.withValues(alpha: 0.6));
         return;
       }
       final email = cred['email'];
@@ -126,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      _showSnack('Apple Sign In error: $e', Colors.white.withValues(alpha: 0.6));
+      _showSnack(S.of(context).appleSignInError(e.toString()), Colors.white.withValues(alpha: 0.6));
     }
   }
 
@@ -158,13 +158,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (otpResult['ok'] != true) {
         setState(() => _socialLoading = false);
-        _showSnack('Failed to send verification code. Please try again.', Colors.white.withValues(alpha: 0.6));
+        _showSnack(S.of(context).failedToSendVerificationCode, Colors.white.withValues(alpha: 0.6));
         return;
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _socialLoading = false);
-      _showSnack('Failed to send verification code: $e', Colors.white.withValues(alpha: 0.6));
+      _showSnack(S.of(context).failedToSendVerificationCodeError(e.toString()), Colors.white.withValues(alpha: 0.6));
       return;
     }
 
@@ -212,9 +212,9 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _socialLoading = false);
       final msg = e.toString();
       if (msg.contains('401') || msg.contains('Invalid')) {
-        _showSnack('$provider credentials rejected. Please try again.', Colors.red.shade400);
+        _showSnack(S.of(context).providerCredentialsRejected(provider), Colors.red.shade400);
       } else {
-        _showSnack('Registration failed: $e', Colors.red.shade400);
+        _showSnack(S.of(context).registrationFailed(e.toString()), Colors.red.shade400);
       }
     }
   }
@@ -234,14 +234,14 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: c.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Enter Your Email',
+          S.of(context).enterYourEmailTitle,
           style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Apple did not share your email this time. Please enter the email address linked to your Apple ID.',
+              S.of(context).appleEmailExplanation,
               style: TextStyle(color: c.textSecondary, fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -266,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            child: Text(S.of(context).cancelBtn, style: TextStyle(color: c.textTertiary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -286,7 +286,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 lastName: lastName,
               );
             },
-            child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text(S.of(context).continueBtn, style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -493,7 +493,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
         content: Text(
-          'An account with this ${_usePhone ? "phone number" : "email"} is already registered. Would you like to log in instead?',
+          S.of(context).accountAlreadyRegistered(_usePhone ? "phone number" : "email"),
           style: TextStyle(color: c.textSecondary, fontSize: 15, height: 1.4),
         ),
         actions: [
@@ -522,9 +522,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 slideFromRightRoute(const LoginPasswordScreen()),
               );
             },
-            child: const Text(
-              'Log In',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            child: Text(
+              S.of(context).logInBtn,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -583,7 +583,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // ── Title ──
               Text(
-                'Create account',
+                S.of(context).createAccountTitle,
                 style: GoogleFonts.poppins(
                   fontSize: 32,
                   fontWeight: FontWeight.w700,
@@ -594,8 +594,8 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 8),
               Text(
                 _usePhone
-                    ? 'Enter your phone number to sign up.'
-                    : 'Enter your email to sign up.',
+                    ? S.of(context).enterPhoneToSignUp
+                    : S.of(context).enterEmailToSignUp,
                 style: GoogleFonts.inter(fontSize: 15, color: c.textSecondary),
               ),
               const SizedBox(height: 28),
@@ -652,7 +652,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           border: InputBorder.none,
                           hintText: _usePhone
                               ? '(000) 000-0000'
-                              : 'Email address',
+                              : S.of(context).emailAddressHint,
                           hintStyle: TextStyle(
                             color: c.textTertiary,
                             fontSize: 16,
@@ -714,8 +714,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           )
                         : Text(
                             _usePhone
-                                ? 'Continue with Phone'
-                                : 'Continue with Email',
+                                ? S.of(context).continueWithPhone
+                                : S.of(context).continueWithEmail,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -733,7 +733,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'OR',
+                      S.of(context).orDivider,
                       style: TextStyle(
                         color: c.textTertiary,
                         fontSize: 13,
@@ -765,7 +765,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: c.textPrimary,
                   ),
                   label: Text(
-                    _usePhone ? 'Continue with Email' : 'Continue with Phone',
+                    _usePhone ? S.of(context).continueWithEmail : S.of(context).continueWithPhone,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -797,9 +797,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         fit: BoxFit.contain,
                       ),
                     ),
-                    label: const Text(
-                      'Continue with Google',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    label: Text(
+                      S.of(context).continueWithGoogle,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -821,9 +821,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     onPressed: _socialLoading ? null : _signUpWithApple,
                     icon: Icon(Icons.apple, size: 24, color: c.textPrimary),
-                    label: const Text(
-                      'Continue with Apple',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    label: Text(
+                      S.of(context).continueWithApple,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -838,7 +838,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'OR',
+                      S.of(context).orDivider,
                       style: TextStyle(
                         color: c.textTertiary,
                         fontSize: 13,
@@ -866,9 +866,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () => Navigator.of(context).push(
                     slideFromRightRoute(const LoginPasswordScreen()),
                   ),
-                  child: const Text(
-                    'Sign in',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  child: Text(
+                    S.of(context).signInBtn,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -883,16 +883,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     alignment: WrapAlignment.center,
                     children: [
                       Text(
-                        'By continuing, you agree to our ',
+                        S.of(context).byContinuingAgree,
                         style: TextStyle(fontSize: 13, color: c.textTertiary),
                       ),
                       GestureDetector(
                         onTap: () => Navigator.of(context).push(
                           slideUpFadeRoute(const TermsConditionsScreen()),
                         ),
-                        child: const Text(
-                          'Terms',
-                          style: TextStyle(
+                        child: Text(
+                          S.of(context).termsLink,
+                          style: const TextStyle(
                             fontSize: 13,
                             color: _gold,
                             fontWeight: FontWeight.w600,
@@ -902,16 +902,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       Text(
-                        ' and ',
+                        S.of(context).andConjunction,
                         style: TextStyle(fontSize: 13, color: c.textTertiary),
                       ),
                       GestureDetector(
                         onTap: () => Navigator.of(context).push(
                           slideUpFadeRoute(const TermsConditionsScreen()),
                         ),
-                        child: const Text(
-                          'Privacy Policy',
-                          style: TextStyle(
+                        child: Text(
+                          S.of(context).privacyPolicyLink,
+                          style: const TextStyle(
                             fontSize: 13,
                             color: _gold,
                             fontWeight: FontWeight.w600,

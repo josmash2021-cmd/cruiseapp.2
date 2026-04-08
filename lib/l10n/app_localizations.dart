@@ -1451,6 +1451,50 @@ class S {
   String get arrivalsRideshare => _es
       ? 'Llegadas - Recogida de viajes compartidos'
       : 'Arrivals - Rideshare Pickup';
+  String get airportRideTitle => _es ? 'Viaje al Aeropuerto' : 'Airport Ride';
+  String get takeMeToAirport =>
+      _es ? 'Llévame AL aeropuerto' : 'Take me TO the airport';
+  String get flyingOutSubtitle => _es ? 'Voy a tomar un vuelo' : 'I\'m flying out';
+  String get pickMeUpFromAirport =>
+      _es ? 'Recógeme EN el aeropuerto' : 'Pick me up FROM the airport';
+  String get justLandedSubtitle => _es ? 'Acabo de aterrizar' : 'I just landed';
+  String get selectYourAirline =>
+      _es ? 'Selecciona tu aerolínea' : 'Select Your Airline';
+  String get whichAirlineFlying =>
+      _es ? '¿Con qué aerolínea vuelas?' : 'Which airline are you flying?';
+  String get terminalAutoSelectedLabel =>
+      _es ? 'auto-seleccionada' : 'auto-selected';
+  String get selectTerminalAndDoor =>
+      _es ? 'Terminal y Puerta de Llegada' : 'Select Terminal & Door';
+  String get whichTerminalArrived =>
+      _es ? '¿En qué terminal llegaste?' : 'Which terminal did you arrive at?';
+  String get selectArrivalDoor =>
+      _es ? 'Selecciona tu puerta de llegada' : 'Select Your Arrival Door';
+  String get confirmAirportDropOff =>
+      _es ? 'Confirmar Bajada en Aeropuerto' : 'Confirm Airport Drop-Off';
+  String get confirmAirportPickupBtn =>
+      _es ? 'Confirmar Recogida en Aeropuerto' : 'Confirm Airport Pickup';
+  String get flightNumberRequiredLabel =>
+      _es ? 'Número de Vuelo (requerido)' : 'Flight Number (required)';
+  String get flightNumberRequiredError =>
+      _es
+          ? 'Número de vuelo requerido — el conductor rastreará retrasos'
+          : 'Flight number required — driver will track delays';
+  String get driverWillDropAtDepartures =>
+      _es
+          ? 'Tu conductor te dejará en el nivel de salidas'
+          : 'Your driver will drop you at the departures level';
+  String get driverWillWaitAtDoor =>
+      _es
+          ? 'Tu conductor te esperará en la puerta de llegadas'
+          : 'Your driver will wait for you at the arrival door';
+  String get airlineLabel => _es ? 'Aerolínea' : 'Airline';
+  String get arrivalDoorLabel => _es ? 'Puerta de Llegada' : 'Arrival Door';
+  String get dropoffLabel => _es ? 'Bajada' : 'Drop-off';
+  String get stepDirection => _es ? 'Dirección' : 'Direction';
+  String get stepAirport => _es ? 'Aeropuerto' : 'Airport';
+  String get stepDetails => _es ? 'Detalles' : 'Details';
+  String get stepConfirm => _es ? 'Confirmar' : 'Confirm';
 
   // ── Pickup/Dropoff Search Screen ───────────────────────────────────────────
   String get pickupLocationHint =>

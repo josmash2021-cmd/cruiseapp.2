@@ -1223,7 +1223,38 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
             "trip": _trip_dict(trip),
         }
     else:
-        response = {"status": trip.status, "driver": None, **rider_info, "trip": _trip_dict(trip)}
+        # Fallback: offer join returned null but trip.driver_id IS set (race condition
+        # or non-offer acceptance path).  Fetch the driver directly so rider gets info.
+        fallback_driver_info = {}
+        if trip.driver_id:
+            _fb_drv_r = await db.execute(select(User).where(User.id == trip.driver_id))
+            _fb_drv = _fb_drv_r.scalar_one_or_none()
+            _fb_veh_r = await db.execute(select(Vehicle).where(Vehicle.user_id == trip.driver_id))
+            _fb_veh = _fb_veh_r.scalar_one_or_none()
+            if _fb_drv:
+                _fb_stats_r = await db.execute(
+                    select(
+                        func.count(Rating.id).label("trip_count"),
+                        func.avg(Rating.stars).label("avg_rating"),
+                    ).where(Rating.to_user_id == trip.driver_id)
+                )
+                _fb_stats = _fb_stats_r.first()
+                _fb_trips = _fb_stats.trip_count if _fb_stats else 0
+                _fb_rating = round(float(_fb_stats.avg_rating or 5.0), 1) if _fb_stats else 5.0
+                fallback_driver_info = {
+                    "driver_id": _fb_drv.id,
+                    "driver_name": f"{_fb_drv.first_name} {_fb_drv.last_name}",
+                    "driver_phone": _fb_drv.phone or "",
+                    "driver_photo_url": _abs_photo_url(_fb_drv.photo_url) or "",
+                    "driver_rating": _fb_rating,
+                    "driver_trips": _fb_trips,
+                    "vehicle_make": _fb_veh.make if _fb_veh else "",
+                    "vehicle_model": _fb_veh.model if _fb_veh else "",
+                    "vehicle_color": _fb_veh.color if _fb_veh else "",
+                    "vehicle_plate": _fb_veh.plate if _fb_veh else "",
+                    "vehicle_year": str(_fb_veh.year) if _fb_veh else "",
+                }
+        response = {"status": trip.status, **fallback_driver_info, "driver": None, **rider_info, "trip": _trip_dict(trip)}
 
     _dispatch_status_cache[trip_id] = (response, _now)
     return response

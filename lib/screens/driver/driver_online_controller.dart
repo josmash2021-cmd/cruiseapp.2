@@ -1230,14 +1230,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final fsDocId = 'sql_$tripId';
       final driverUser = await UserSession.getUser();
       final driverFirstName = driverUser?['firstName']?.toString() ?? '';
+      final driverLastName = driverUser?['lastName']?.toString() ?? '';
+      final driverPhone = driverUser?['phone']?.toString() ?? '';
+      final fullName = '$driverFirstName $driverLastName'.trim();
       unawaited(
         FirebaseFirestore.instance
             .collection('trips')
             .doc(fsDocId)
             .set({
-          'status': 'accepted',
+          'status': 'driver_en_route',
+          'driver_id': _driverId ?? 0,
           'driverId': _driverId?.toString() ?? '',
-          'driverName': driverFirstName,
+          'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
+          'driverName': fullName.isNotEmpty ? fullName : 'Driver',
+          'driver_phone': driverPhone,
+          'driverPhone': driverPhone,
+          'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
           'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
           'acceptedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true)).catchError((_) {}),

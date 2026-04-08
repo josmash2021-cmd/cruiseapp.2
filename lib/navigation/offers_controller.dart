@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/lat_lng.dart';
 
 import '../models/ride_offer.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
+import '../services/user_session.dart';
 
 /// Controller that uses SSE (Server-Sent Events) for instant offer delivery
 /// with automatic fallback to HTTP polling if SSE is unavailable.
@@ -123,6 +125,35 @@ class OffersController {
       final int tripId = (tripData is Map && tripData['id'] != null)
           ? (tripData['id'] as num).toInt()
           : 0;
+
+      // Write accepted status to Firestore immediately so rider's listener fires
+      // without waiting for the backend's async Firestore sync (1-3s delay).
+      final resolvedTripId = tripId > 0 ? tripId : null;
+      if (resolvedTripId != null) {
+        try {
+          final driverUser = await UserSession.getUser();
+          final firstName = driverUser?['firstName']?.toString() ?? '';
+          final lastName = driverUser?['lastName']?.toString() ?? '';
+          final phone = driverUser?['phone']?.toString() ?? '';
+          final photo = driverUser?['photoUrl']?.toString() ?? '';
+          final fullName = '$firstName $lastName'.trim();
+          FirebaseFirestore.instance
+              .collection('trips')
+              .doc('sql_$resolvedTripId')
+              .set({
+            'status': 'driver_en_route',
+            'driver_id': id,
+            'driverId': id.toString(),
+            'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
+            'driverName': fullName.isNotEmpty ? fullName : 'Driver',
+            'driver_phone': phone,
+            'driverPhone': phone,
+            'driver_photo_url': photo,
+            'driverPhotoUrl': photo,
+            'acceptedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)).catchError((_) {});
+        } catch (_) {}
+      }
 
       // Find the offer in our local list to get its details
       final offer = offersNotifier.value.firstWhere(

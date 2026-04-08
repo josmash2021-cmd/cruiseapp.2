@@ -685,7 +685,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // Do NOT skip if the driver has already accepted (fast-accept race condition).
       if (fsFirstEvent) {
         fsFirstEvent = false;
-        if (status == 'searching' || status == 'pending' || status == 'cancelled' || status == 'canceled' || status.isEmpty) return;
+        if (status == 'searching' || status == 'pending' || status == 'requested' || status == 'cancelled' || status == 'canceled' || status.isEmpty) return;
         // status == 'accepted' or 'driver_en_route' on first event → fall through and process
       }
       // State machine: reject invalid status regressions (e.g. stale cancelled after match)
@@ -700,7 +700,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _pollTimer?.cancel();
         _timeoutTimer?.cancel();
         _isRequesting = false;
-        _onDriverMatched(data, tripId);
+        try {
+          _onDriverMatched(data, tripId);
+        } catch (e) {
+          debugPrint('⚠️ _onDriverMatched from Firestore threw: $e — restarting poll');
+          _driverMatched = false;
+          _startDispatchPolling(tripId);
+        }
       } else if (status == 'cancelled' || status == 'canceled') {
         // Guard A: ignore stale cancellation if driver was already matched
         if (_driverMatched) return;
@@ -753,7 +759,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           timer?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
-          _onDriverMatched(status, tripId);
+          try {
+            _onDriverMatched(status, tripId);
+          } catch (e) {
+            debugPrint('⚠️ _onDriverMatched from poll threw: $e — will retry next poll');
+            _driverMatched = false;
+            // Don't cancel timer — let next poll retry
+          }
         } else if (tripStatus == 'cancelled' || tripStatus == 'canceled') {
           // Guard D: ignore stale poll result if driver was already matched
           if (_driverMatched) { timer?.cancel(); return; }

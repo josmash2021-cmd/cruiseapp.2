@@ -606,7 +606,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startRideAnimationDone = false;
       _startStartRideAnimation();
     } else if (isCompletedStatus && _phase != _TrackPhase.completed) {
-      LocalDataService.clearActiveRide();
+      await LocalDataService.clearActiveRide();
       _setState(() => _phase = _TrackPhase.completed);
       _arrivedDotPulse.stop();
       // Save trip chat to inbox before navigating away

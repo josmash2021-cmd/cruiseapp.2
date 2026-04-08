@@ -339,7 +339,7 @@ extension _HomeScreenController on _HomeScreenState {
       if (!mounted) return;
       
       final status = tripSnap.data()?['status']?.toString() ?? '';
-      if (status == 'completed') {
+      if (status == 'completed' || status == 'cancelled' || status == 'canceled') {
         _onTripCompleted();
       }
     });

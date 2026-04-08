@@ -15,7 +15,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   Future<void> _executeCancelAndTransition() async {
-    LocalDataService.clearActiveRide();
+    await LocalDataService.clearActiveRide();
     if (widget.tripId != null) {
       try {
         await ApiService.cancelTrip(widget.tripId!);
@@ -246,13 +246,13 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   /// Shows a clear overlay when the driver (or backend) cancels the trip.
-  void _showDriverCancelledDialog({String? message}) {
+  Future<void> _showDriverCancelledDialog({String? message}) async {
     if (!mounted) return;
     _statusPollTimer?.cancel();
     _driverLocSub?.cancel();
     _tripStatusSub?.cancel();
     _rtdbDriverLocSub?.cancel();
-    LocalDataService.clearActiveRide();
+    await LocalDataService.clearActiveRide();
     showDialog(
       context: context,
       barrierDismissible: false,

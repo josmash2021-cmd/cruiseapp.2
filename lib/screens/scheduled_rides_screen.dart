@@ -16,7 +16,6 @@ import '../services/places_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
-import 'help_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'schedule_picker_sheet.dart';
@@ -675,13 +674,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     }
 
     final isPast = scheduledAt != null && scheduledAt.isBefore(DateTime.now());
-    final minutesUntil = scheduledAt != null
-        ? scheduledAt.difference(DateTime.now()).inMinutes
-        : 0;
     final cancelableStatus = status == 'scheduled' || status == 'scheduled_accepted' || status == 'driver_assigned' || status == 'requested';
-    final canCancel = cancelableStatus && !isPast && minutesUntil > 60;
-    final showContactSupport =
-        cancelableStatus && !isPast && minutesUntil <= 60 && minutesUntil > 0;
+    final canCancel = cancelableStatus && !isPast;
 
     return SizeTransition(
       sizeFactor: _removeSize,
@@ -1025,40 +1019,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                           style: TextStyle(
                             color: Color(0xFFFF5252),
                             fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            else if (showContactSupport)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const HelpScreen()),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          S.of(context).contactSupport,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w600,
                             fontSize: 14,
                           ),
                         ),

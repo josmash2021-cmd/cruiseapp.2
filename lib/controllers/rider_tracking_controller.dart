@@ -680,7 +680,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
       _rtdbFailCount++;
-      if (_pollFailCount >= 3 && mounted && !_connectionLost) {
+      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
         _setState(() => _connectionLost = true);
       }
       // Fix 3: auto-reconnect RTDB after errors with exponential back-off (max 30s)

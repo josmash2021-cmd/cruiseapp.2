@@ -762,6 +762,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     await _resolveDriverId();
     if (_driverId != null && mounted) {
       await _refreshActiveTripStatus();
+      // Auto-navigate to active trip on cold start (same as background resume)
+      if (_activeTripData != null && mounted) {
+        _resumeActiveTrip();
+      }
     }
   }
 
@@ -1859,8 +1863,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   /// Check backend for active trip (handles reinstall where Firestore cache
-  /// may be empty). Only sets _activeTripData so RESUME button appears —
-  /// does NOT auto-navigate. Driver taps RESUME to go to the trip.
+  /// may be empty). Auto-navigates to the trip screen on cold start.
   Future<void> _checkBackendActiveTrip() async {
     try {
       // Skip if Firestore already found an active trip
@@ -1874,12 +1877,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           'in_progress', 'rider_onboard', 'on_trip'};
       if (!activeStatuses.contains(status)) return;
 
-      // Store backend data so _resumeActiveTrip can use it via RESUME button
       if (!mounted) return;
       setState(() {
         _activeTripData = trip;
         _isStillOnline = true;
       });
+      // Auto-navigate to the active trip screen
+      if (mounted) _resumeActiveTrip();
     } catch (e) {
       debugPrint('[DriverHome] Backend active trip check failed: $e');
     }
@@ -1987,12 +1991,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // After trip screen pops, re-check if the trip is still active.
     // If completed/cancelled, clear state and resume polling for new trips.
+    // If still active, just refresh _activeTripData so RESUME button shows —
+    // do NOT auto-navigate back (driver chose to go home).
     if (!mounted) return;
     await _refreshActiveTripStatus();
-    if (_activeTripData != null) {
-      // Trip still active — go back immediately
-      _resumeActiveTrip();
-    } else if (_isStillOnline) {
+    if (_activeTripData == null && _isStillOnline) {
       _startTripPolling();
     }
   }

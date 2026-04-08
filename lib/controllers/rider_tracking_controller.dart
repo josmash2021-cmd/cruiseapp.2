@@ -955,26 +955,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
 
-    // Restore route
-    if (activeRide.routePoints.isNotEmpty) {
-      _routePts = activeRide.routePoints
-          .map((p) => LatLng(p[0], p[1]))
-          .toList();
-    } else if (widget.routePoints != null && widget.routePoints!.isNotEmpty) {
-      _routePts = List.from(widget.routePoints!);
-    }
-
-    if (_routePts.isEmpty) {
-      await _initRoute();
-      return;
-    }
-    // Do NOT force raw pin coordinates onto the route — Mapbox Directions API
-    // already snaps start/end to the nearest road. Replacing them with the
-    // user's raw tap coordinates creates off-road straight-line segments.
-
-    _buildSegDist();
-
-    // Restore phase from persistence
+    // Restore phase FIRST — _initRoute() uses _phase to decide arriving vs onTrip setup,
+    // so it must be set before the route emptiness check below.
     if (activeRide.phase != null) {
       switch (activeRide.phase) {
         case 'arriving':
@@ -1005,6 +987,25 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } else if (isBackendArrived && _phase == _TrackPhase.arriving) {
       _phase = _TrackPhase.arrived;
     }
+
+    // Restore route
+    if (activeRide.routePoints.isNotEmpty) {
+      _routePts = activeRide.routePoints
+          .map((p) => LatLng(p[0], p[1]))
+          .toList();
+    } else if (widget.routePoints != null && widget.routePoints!.isNotEmpty) {
+      _routePts = List.from(widget.routePoints!);
+    }
+
+    if (_routePts.isEmpty) {
+      await _initRoute();
+      return;
+    }
+    // Do NOT force raw pin coordinates onto the route — Mapbox Directions API
+    // already snaps start/end to the nearest road. Replacing them with the
+    // user's raw tap coordinates creates off-road straight-line segments.
+
+    _buildSegDist();
 
     // Restore traveled distance for ETA calculation
     if (activeRide.traveledMeters != null && activeRide.traveledMeters! > 0) {

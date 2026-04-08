@@ -1911,22 +1911,86 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final isLocked = data['is_locked'] == true;
       if (hasTrip && isLocked && data['trip'] != null) {
         final minutesUntil = (data['minutes_until'] as num?)?.toDouble() ?? 30;
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => ScheduledRideDetailsScreen(
-              trip: data['trip'] as Map<String, dynamic>,
-              minutesUntil: minutesUntil,
-            ),
-            transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 500),
-            reverseTransitionDuration: const Duration(milliseconds: 400),
-          ),
-        );
+        final trip = data['trip'] as Map<String, dynamic>;
+
+        // ── Auto-start: <=15 min → start trip + navigate to trip screen directly ──
+        if (minutesUntil <= 15) {
+          try {
+            final tripId = trip['id'] as int;
+            await ApiService.startScheduledTrip(tripId);
+            if (!mounted) return;
+            _navigateToScheduledTripScreen(trip);
+          } catch (e) {
+            debugPrint('[DriverHome] Auto-start scheduled trip failed: $e — showing countdown instead');
+            if (!mounted) return;
+            _showScheduledCountdown(trip, minutesUntil);
+          }
+          return;
+        }
+
+        // ── >15 min but locked → show countdown screen ──
+        _showScheduledCountdown(trip, minutesUntil);
       }
     } catch (e) {
       debugPrint('[DriverHome] Scheduled ride check failed: $e');
     }
+  }
+
+  void _showScheduledCountdown(Map<String, dynamic> trip, double minutesUntil) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => ScheduledRideDetailsScreen(
+          trip: trip,
+          minutesUntil: minutesUntil,
+        ),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 500),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
+  }
+
+  /// Navigate directly to DriverTripAcceptScreen for a scheduled trip.
+  void _navigateToScheduledTripScreen(Map<String, dynamic> trip) {
+    final pickupLat = _pickDouble(trip, ['pickup_lat']);
+    final pickupLng = _pickDouble(trip, ['pickup_lng']);
+    final dropoffLat = _pickDouble(trip, ['dropoff_lat']);
+    final dropoffLng = _pickDouble(trip, ['dropoff_lng']);
+    if (pickupLat == null || pickupLng == null ||
+        dropoffLat == null || dropoffLng == null) return;
+
+    final pickup = LatLng(pickupLat, pickupLng);
+    final dropoff = LatLng(dropoffLat, dropoffLng);
+    final driverPos = _currentLatLng ?? pickup;
+    final distKm = _haversineKm(driverPos, pickup);
+    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+    final tripId = (trip['id'] as num?)?.toInt() ?? 0;
+    final riderName = _pickString(trip, ['rider_name'], fallback: 'Rider');
+    final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
+
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        DriverTripAcceptScreen(
+          tripId: tripId,
+          riderName: riderName,
+          riderPhotoUrl: _normalizePhotoUrl(trip['rider_photo_url']?.toString() ?? ''),
+          riderRating: (trip['rider_rating'] as num?)?.toDouble() ?? 4.8,
+          riderId: riderId,
+          pickupLatLng: pickup,
+          dropoffLatLng: dropoff,
+          pickupAddress: _pickString(trip, ['pickup_address'], fallback: 'Pickup'),
+          dropoffAddress: _pickString(trip, ['dropoff_address'], fallback: 'Drop-off'),
+          fare: _pickDouble(trip, ['fare']) ?? 0,
+          vehicleType: _pickString(trip, ['vehicle_type'], fallback: 'Comfort'),
+          driverPos: driverPos,
+          distToPickupKm: distKm,
+          etaMinutes: etaMinutes,
+          riderPhone: _pickString(trip, ['rider_phone']),
+          tripAlreadyStarted: true,
+        ),
+      ),
+    );
   }
 
   Future<void> _resumeActiveTrip() async {

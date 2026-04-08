@@ -20,6 +20,7 @@ import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/tier_badge.dart';
+import 'scheduled_ride_details_screen.dart';
 
 /// Unified scheduled rides screen with two tabs:
 ///   0 = Available  (marketplace — claim a ride)
@@ -1547,26 +1548,22 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                 child: GestureDetector(
                   onTap: () async {
-                    final lat = _pickupLat;
-                    final lng = _pickupLng;
-                    if (lat == null || lng == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            S.of(context).pickupCoordinatesNotAvailable),
-                        backgroundColor: Colors.redAccent,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ));
-                      return;
-                    }
-                    final uri = Uri.parse(
-                      'https://www.google.com/maps/dir/?api=1'
-                      '&destination=$lat,$lng&travelmode=driving',
+                    // Open countdown / ride details screen
+                    final result = await Navigator.of(context).push<String>(
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) => ScheduledRideDetailsScreen(
+                          trip: widget.trip,
+                          minutesUntil: minutesUntil.toDouble(),
+                        ),
+                        transitionsBuilder: (_, anim, __, child) =>
+                            FadeTransition(opacity: anim, child: child),
+                        transitionDuration: const Duration(milliseconds: 400),
+                        reverseTransitionDuration: const Duration(milliseconds: 300),
+                      ),
                     );
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri,
-                          mode: LaunchMode.externalApplication);
+                    // If ride was started or cancelled, refresh parent
+                    if (result == 'started' || result == 'cancelled') {
+                      widget.onCancelled?.call();
                     }
                   },
                   child: Container(

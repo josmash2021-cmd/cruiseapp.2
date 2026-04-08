@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
@@ -9,8 +12,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/app_theme.dart';
+import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
+import 'driver_trip_accept_screen.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
 /// Shown when driver is "locked" (<=30 min before pickup).
@@ -39,17 +45,26 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   Timer? _countdownTimer;
   bool _starting = false;
   bool _cancelling = false;
+  bool _autoStarted = false;
   late final AnimationController _pulseCtrl;
 
   @override
   void initState() {
     super.initState();
     _secondsRemaining = (widget.minutesUntil * 60).round().clamp(0, 999999);
+    // If already <= 15 min, auto-redirect immediately
+    if (_secondsRemaining <= 900) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoStartRide());
+    }
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
         _secondsRemaining = (_secondsRemaining - 1).clamp(0, 999999);
       });
+      // Auto-redirect when countdown hits 15 minutes
+      if (_secondsRemaining <= 900 && !_autoStarted && !_starting) {
+        _autoStartRide();
+      }
     });
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -66,20 +81,103 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
 
   int get _tripId => widget.trip['id'] as int;
 
-  Future<void> _startRide() async {
+  /// Auto-start triggered by 15-min countdown or immediate if already <= 15 min.
+  Future<void> _autoStartRide() async {
+    if (_autoStarted) return;
+    _autoStarted = true;
+    await _startRideAndNavigate();
+  }
+
+  /// Start the ride via API, then navigate to the trip accept screen.
+  Future<void> _startRideAndNavigate() async {
     setState(() => _starting = true);
     try {
       await ApiService.startScheduledTrip(_tripId);
       if (!mounted) return;
-      Navigator.of(context).pop('started');
+      HapticFeedback.mediumImpact();
+      _navigateToTripScreen();
     } catch (e) {
       if (!mounted) return;
+      _autoStarted = false; // allow retry
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _starting = false);
     }
+  }
+
+  /// Navigate to DriverTripAcceptScreen with all trip data.
+  void _navigateToTripScreen() {
+    final trip = widget.trip;
+    final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
+    final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
+    final dropoffLat = (trip['dropoff_lat'] as num?)?.toDouble();
+    final dropoffLng = (trip['dropoff_lng'] as num?)?.toDouble();
+
+    if (pickupLat == null || pickupLng == null ||
+        dropoffLat == null || dropoffLng == null) {
+      Navigator.of(context).pop('started');
+      return;
+    }
+
+    final pickup = LatLng(pickupLat, pickupLng);
+    final dropoff = LatLng(dropoffLat, dropoffLng);
+    // Use pickup as fallback for driver position
+    final driverPos = pickup;
+    final distKm = _haversineKm(driverPos, pickup);
+    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+    final riderName = trip['rider_name']?.toString() ?? '';
+    final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
+
+    // Replace this screen with the trip screen
+    Navigator.of(context).pushReplacement(
+      slideFromRightRoute(
+        DriverTripAcceptScreen(
+          tripId: _tripId,
+          riderName: riderName,
+          riderPhotoUrl: _normalizePhotoUrl(trip['rider_photo_url']?.toString() ?? ''),
+          riderRating: (trip['rider_rating'] as num?)?.toDouble() ?? 4.8,
+          riderId: riderId,
+          pickupLatLng: pickup,
+          dropoffLatLng: dropoff,
+          pickupAddress: trip['pickup_address']?.toString() ?? '',
+          dropoffAddress: trip['dropoff_address']?.toString() ?? '',
+          fare: (trip['fare'] as num?)?.toDouble() ?? 0,
+          vehicleType: trip['vehicle_type']?.toString() ?? 'Comfort',
+          driverPos: driverPos,
+          distToPickupKm: distKm,
+          etaMinutes: etaMinutes,
+          riderPhone: trip['rider_phone']?.toString() ?? '',
+          tripAlreadyStarted: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRide() async {
+    await _startRideAndNavigate();
+  }
+
+  static String _normalizePhotoUrl(String rawUrl) {
+    final raw = rawUrl.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
+    return '${ApiService.publicBaseUrl}/$raw';
+  }
+
+  static double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final sa = math.sin(dLat / 2);
+    final sb = math.sin(dLng / 2);
+    final aa = sa * sa +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            sb * sb;
+    return r * 2 * math.atan2(math.sqrt(aa), math.sqrt(1 - aa));
   }
 
   Future<void> _cancelRide() async {
@@ -153,7 +251,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
         ? DateFormat('EEEE d MMMM, h:mm a').format(scheduledAt.toLocal())
         : '';
 
-    final canStart = _secondsRemaining <= 600; // Can start 10 min early
+    final canStart = _secondsRemaining <= 900; // Can start 15 min early
 
     return Scaffold(
       backgroundColor: _darkBg,
@@ -459,7 +557,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                             : Text(
                                 canStart
                                     ? loc.startRideButton
-                                    : '${loc.availableInLabel} ${(_secondsRemaining ~/ 60) - 10} MIN',
+                                    : '${loc.availableInLabel} ${(_secondsRemaining ~/ 60) - 15} MIN',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: canStart ? 16 : 12,

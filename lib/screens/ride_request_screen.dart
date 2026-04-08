@@ -520,6 +520,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   onStyleLoadedListener: (_) async {
                     if (_mapCtrl != null) {
                       await _applyDarkNavyGoldTheme(_mapCtrl!);
+                      if (_pointAnnotMgr != null) {
+                        try {
+                          final lid = _pointAnnotMgr!.id;
+                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
+                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
+                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
+                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+                        } catch (_) {}
+                      }
                       try {
                         const size = 24.0;
                         final recorder = ui.PictureRecorder();

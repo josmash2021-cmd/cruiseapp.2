@@ -1141,8 +1141,8 @@ class UnmatchedTripRetryAgent:
                     try:
                         _send_fcm_push(
                             assigned.fcm_token,
-                            title="\U0001F697 New Ride Offer",
-                            body=f"{rider_name} — {(trip.pickup_address or '')[:50]}",
+                            title="New Ride Offer",
+                            body="",
                             data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                         )
                     except Exception:

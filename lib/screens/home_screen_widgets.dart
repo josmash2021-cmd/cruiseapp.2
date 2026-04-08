@@ -39,21 +39,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
         ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
         _miniMapAnnotMgr =
             await ctrl.annotations.createPointAnnotationManager();
-        try { await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
-        // Enable native LocationPuck (gold, white border) — never drifts on zoom
         try {
-          final puckImg = await _buildGoldPuckImage();
-          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(
-            enabled: true,
-            pulsingEnabled: true,
-            pulsingColor: const Color(0xFFE8C547).toARGB32(),
-            pulsingMaxRadius: 20.0,
-            locationPuck: mapbox.LocationPuck(
-              locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
-            ),
-          ));
+          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
         } catch (_) {}
-        // GoldLocationDot PointAnnotation removed — LocationPuck replaces it
+        // LocationPuck disabled — GoldLocationDot annotation handles location display
         // Draw route if there's an active ride
         if (_activeRide != null) {
           _drawRouteOnMap();
@@ -62,18 +53,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
       onStyleLoadedListener: (_) async {
         if (_miniMapController != null) {
           await _applyDarkNavyGoldTheme(_miniMapController!);
-          try {
-            final puckImg = await _buildGoldPuckImage();
-            await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
-              enabled: true,
-              pulsingEnabled: true,
-              pulsingColor: const Color(0xFFE8C547).toARGB32(),
-              pulsingMaxRadius: 20.0,
-              locationPuck: mapbox.LocationPuck(
-                locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
-              ),
-            ));
-          } catch (_) {}
+          // Re-apply annotation manager layer properties after style reload
+          if (_miniMapAnnotMgr != null) {
+            try {
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
+            } catch (_) {}
+          }
         }
       },
     );

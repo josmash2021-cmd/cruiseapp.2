@@ -496,14 +496,11 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-allow-overlap', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-ignore-placement', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
+      await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
     } catch (_) {}
     _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
     if (_hasCoords && mounted) _loadRouteAndAnimate();
@@ -1098,7 +1095,17 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             ),
             onMapCreated: _onMapCreated,
             onStyleLoadedListener: (_) async {
-              if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
+              if (_mapCtrl != null) {
+                await MapTheme.applyNavyGold(_mapCtrl!);
+                if (_pointAnnotMgr != null) {
+                  try {
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+                  } catch (_) {}
+                }
+              }
             },
           ),
           if (_routeLoading)

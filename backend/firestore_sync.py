@@ -768,7 +768,8 @@ def sync_trip_status(trip_id: int, status: str,
                      cancellation_fee: float = None,
                      cancelled_by: str = None,
                      distance: float = None,
-                     duration: int = None):
+                     duration: int = None,
+                     payment_status: str = None):
     """Update only the trip status (and optionally driver info) in Firestore."""
     _ensure_init()
     if _db is None:
@@ -822,6 +823,8 @@ def sync_trip_status(trip_id: int, status: str,
         data["distance"] = distance
     if duration is not None:
         data["duration"] = duration
+    if payment_status:
+        data["payment_status"] = payment_status
     try:
         _db.collection("trips").document(doc_id).set(data, merge=True)
         log.info("🔄 Synced trip status sql_%d → %s", trip_id, status)

@@ -346,7 +346,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          iconSize: 1.0,
+          iconSize: 1.3,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: [0, 0],
         ));
@@ -1015,24 +1015,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         onMapCreated: (ctrl) async {
           _mapController = ctrl;
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+          try {
+            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+          } catch (_) {}
           setState(() => _mapReady = true);
         },
         onStyleLoadedListener: (_) async {
           if (_mapController != null) {
             await _applyNavyGoldTheme(_mapController!);
-            try {
-              final puckImg = await _buildGoldPuckImage();
-              await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(
-                enabled: true,
-                pulsingEnabled: true,
-                pulsingColor: const Color(0xFFE8C547).toARGB32(),
-                pulsingMaxRadius: 20.0,
-                locationPuck: mapbox.LocationPuck(
-                  locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
-                ),
-              ));
-            } catch (_) {}
+            if (_pointAnnotMgr != null) {
+              try {
+                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (_) {}
+            }
           }
         },
       ),

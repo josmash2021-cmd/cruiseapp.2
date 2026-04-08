@@ -281,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
           image: bytes,
-          iconSize: 1.0,
+          iconSize: 1.3,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));

@@ -670,16 +670,24 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     // ── Firestore real-time listener: instant detection when driver accepts ──
     // Fires within ~100ms of driver writing to Firestore, bypassing HTTP latency.
+    bool _fsFirstEvent = true;
     _fsMatchSub = FirebaseFirestore.instance
         .collection('trips')
         .doc('sql_$tripId')
         .snapshots()
-        .skip(1) // Skip locally-cached initial doc — prevents stale 'cancelled' from prior trip
         .listen((snap) {
       if (_driverMatched) return;
       final data = snap.data();
       if (data == null) return;
       final status = (data['status']?.toString() ?? '').toLowerCase();
+
+      // First snapshot guard: skip only pre-match baseline states.
+      // Do NOT skip if the driver has already accepted (fast-accept race condition).
+      if (_fsFirstEvent) {
+        _fsFirstEvent = false;
+        if (status == 'searching' || status == 'pending' || status.isEmpty) return;
+        // status == 'accepted' or 'driver_en_route' on first event → fall through and process
+      }
       // State machine: reject invalid status regressions (e.g. stale cancelled after match)
       if (!_isValidTransition(_currentStatus, status)) {
         debugPrint('[RiderTrip] Firestore: ignoring invalid transition $_currentStatus → $status');

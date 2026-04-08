@@ -616,7 +616,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             asyncio.create_task(_send_fcm_push_async(
                 assigned.fcm_token,
                 title="New Ride Offer",
-                body=_rn + " - " + (trip.pickup_address or "")[:50],
+                body="",
                 data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                 is_offer=True,
             ))
@@ -744,7 +744,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                             _send_fcm_push(
                                 next_driver.fcm_token,
                                 title="New Ride Offer",
-                                body=f"{rider_name} -- {(stale_trip.pickup_address or '')[:50]}",
+                                body="",
                                 data={"type": "new_offer", "trip_id": str(stale_trip.id), "offer_id": str(new_offer.id)},
                                 is_offer=True,
                             )
@@ -1124,8 +1124,8 @@ async def reject_offer(
             if next_driver.fcm_token:
                 _send_fcm_push(
                     next_driver.fcm_token,
-                    title="🚗 New Ride Offer",
-                    body=f"{rider_name} -- {(trip.pickup_address or '')[:50]}",
+                    title="New Ride Offer",
+                    body="",
                     data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
                     is_offer=True,
                 )

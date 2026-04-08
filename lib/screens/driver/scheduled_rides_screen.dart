@@ -831,6 +831,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   // ── Countdown timer ──
   Timer? _countdownTimer;
 
+  // ── Cancel state ──
+  bool _cancelling = false;
+
   double? get _pickupLat  => (widget.trip['pickup_lat']  as num?)?.toDouble();
   double? get _pickupLng  => (widget.trip['pickup_lng']  as num?)?.toDouble();
   double? get _dropoffLat => (widget.trip['dropoff_lat'] as num?)?.toDouble();
@@ -858,6 +861,57 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       _expanded = !_expanded;
       if (_expanded) _mapEverExpanded = true;
     });
+  }
+
+  Future<void> _cancelTrip() async {
+    final tripId = widget.trip['id'] as int?;
+    if (tripId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1D24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Cancel Ride', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: const Text(
+          'Are you sure you want to cancel this scheduled ride? The ride will go back to the marketplace.',
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancel Ride', style: TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _cancelling = true);
+    try {
+      await ApiService.cancelScheduledTrip(tripId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Ride cancelled', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+          backgroundColor: const Color(0xFFE8C547),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not cancel: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
+    }
   }
 
   // ── Mapbox callbacks ──
@@ -1072,6 +1126,10 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         : '';
     final countdownStr = _countdown(scheduledAt);
     final accentColor  = isAirport ? _airport : _gold;
+    final minutesUntil = scheduledAt != null
+        ? scheduledAt.difference(DateTime.now()).inMinutes
+        : 0;
+    final canCancel = minutesUntil > 60;
 
     return GestureDetector(
       onTap: _hasCoords ? _toggle : null,
@@ -1346,6 +1404,37 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                       : const SizedBox.shrink(),
                 ),
 
+              // ── Cancel button (only if more than 60 min before ride) ──
+              if (canCancel)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: GestureDetector(
+                    onTap: _cancelling ? null : _cancelTrip,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF5252).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: const Color(0xFFFF5252).withValues(alpha: 0.25)),
+                      ),
+                      child: _cancelling
+                          ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF5252))))
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 16),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Cancel Ride',
+                                  style: TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w700, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+
               // ── Navigate to Pickup button ──
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -1432,7 +1521,17 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
             ),
             onMapCreated: _onMapCreated,
             onStyleLoadedListener: (_) async {
-              if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
+              if (_mapCtrl != null) {
+                await MapTheme.applyNavyGold(_mapCtrl!);
+                if (_pointAnnotMgr != null) {
+                  try {
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+                  } catch (_) {}
+                }
+              }
             },
           ),
           if (_routeLoading)

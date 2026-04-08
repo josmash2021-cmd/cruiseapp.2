@@ -67,6 +67,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 mapbox.MapAnimationOptions(duration: 0),
               );
             }
+            // Re-apply pin layer properties after style reload —
+            // applyNavyGold resets them so they must be re-set here.
+            if (_pinAnnotMgr != null) {
+              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
+              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
+              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+            }
+            if (_pointAnnotMgr != null) {
+              try { await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map'); } catch (_) {}
+              try { await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+            }
           }
         },
         onScrollListener: (_) {

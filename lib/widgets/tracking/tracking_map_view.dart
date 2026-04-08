@@ -827,7 +827,25 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // Rider is identified by pickup pin — no location puck on tracking screen
             },
             onStyleLoadedListener: (_) async {
-              if (_map != null) await _applyDarkNavyGoldTheme(_map!);
+              if (_map != null) {
+                await _applyDarkNavyGoldTheme(_map!);
+                // Re-apply annotation manager layer properties after style reload
+                if (_pointAnnotMgr != null) {
+                  try {
+                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+                  } catch (_) {}
+                }
+                if (_carAnnotMgr != null) {
+                  try {
+                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
+                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
+                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
+                  } catch (_) {}
+                }
+              }
               // Car annotation survives style reload (managed by annotation manager)
               // Reset creation guard so car can be re-created if needed
               _carAnnotCreating = false;

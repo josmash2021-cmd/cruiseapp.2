@@ -127,6 +127,7 @@ extension _MapScreenMap on _MapScreenState {
     try {
       final lid = _pointAnnotMgr!.id;
       await controller.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
+      await controller.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
       await controller.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
       await controller.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
       await controller.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
@@ -139,7 +140,19 @@ extension _MapScreenMap on _MapScreenState {
   }
 
   void _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
-    if (_mapController != null) await _applyDarkNavyGoldTheme(_mapController!);
+    if (_mapController != null) {
+      await _applyDarkNavyGoldTheme(_mapController!);
+      if (_pointAnnotMgr != null) {
+        try {
+          final lid = _pointAnnotMgr!.id;
+          await _mapController!.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'map');
+          await _mapController!.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
+          await _mapController!.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
+          await _mapController!.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+          await _mapController!.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+        } catch (_) {}
+      }
+    }
   }
 
   /// Paints the map with a dark navy blue background and gold freeways/roads.

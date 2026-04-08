@@ -209,6 +209,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   bool _sseConnected = false; // true when SSE stream is active
   bool _driverMatched = false; // true once driver match is confirmed — blocks stale polls
   double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
+  String? _currentStatus; // Last confirmed backend status string for transition validation
   /// True while RiderTrackingScreen is on the navigation stack.
   /// Prevents _refreshActiveTripOnResume from falsely transitioning to cancelled.
   bool isOnTrackingScreen = false;
@@ -649,6 +650,20 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Returns true if transitioning from [from] status to [to] status is valid.
+  /// Prevents invalid status regressions caused by stale Firestore updates.
+  bool _isValidTransition(String? from, String to) {
+    // Terminal states cannot transition to anything else
+    if (from == 'completed' || from == 'cancelled' || from == 'canceled') return false;
+    // Ordered status progression
+    const order = ['searching', 'accepted', 'driver_en_route', 'driver_arrived', 'in_progress', 'completed'];
+    final fromIdx = order.indexOf(from ?? '');
+    final toIdx = order.indexOf(to);
+    // If either status is unknown (e.g. 'cancelled'), allow — other guards handle it
+    if (fromIdx == -1 || toIdx == -1) return true;
+    return toIdx >= fromIdx;
+  }
+
   void _startDispatchPolling(int tripId) {
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
@@ -669,8 +684,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       final data = snap.data();
       if (data == null) return;
       final status = (data['status']?.toString() ?? '').toLowerCase();
+      // State machine: reject invalid status regressions (e.g. stale cancelled after match)
+      if (!_isValidTransition(_currentStatus, status)) {
+        debugPrint('[RiderTrip] Firestore: ignoring invalid transition $_currentStatus → $status');
+        return;
+      }
       if (status == 'accepted' || status == 'driver_en_route') {
         debugPrint('🔴 Firestore trip doc: status=$status → driver matched!');
+        _currentStatus = status;
         _fsMatchSub?.cancel();
         _pollTimer?.cancel();
         _tripSseSub?.cancel();
@@ -685,6 +706,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _fsCancelDebounce = Timer(const Duration(milliseconds: 400), () {
           // Re-check after debounce — driver may have arrived in the meantime
           if (_driverMatched) return;
+          _currentStatus = status;
           _fsMatchSub?.cancel();
           _pollTimer?.cancel();
           _tripSseSub?.cancel();
@@ -725,7 +747,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         final status = event['status']?.toString() ?? '';
         debugPrint('🔴 SSE trip_update: status=$status');
 
+        // State machine: reject invalid status regressions
+        if (!_isValidTransition(_currentStatus, status)) {
+          debugPrint('[RiderTrip] SSE: ignoring invalid transition $_currentStatus → $status');
+          return;
+        }
+
         if (status == 'driver_en_route' || status == 'accepted') {
+          _currentStatus = status;
           _pollTimer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
@@ -734,6 +763,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         } else if (status == 'cancelled' || status == 'canceled') {
           // Guard C: ignore stale SSE cancel if driver was already matched
           if (_driverMatched) return;
+          _currentStatus = status;
           _pollTimer?.cancel();
           _tripSseSub?.cancel();
           _timeoutTimer?.cancel();
@@ -904,6 +934,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _fsMatchSub?.cancel();
     _sseConnected = false;
     _isRequesting = false;
+    _currentStatus = null;
 
     // Cancel on backend if we have a trip ID
     final tripId = _state.tripId;
@@ -930,6 +961,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _fsMatchSub?.cancel();
     _isRequesting = false;
     _driverMatched = false;
+    _currentStatus = null;
     _state = const RiderTripState();
     notifyListeners();
     

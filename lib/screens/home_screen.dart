@@ -3,6 +3,7 @@ import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -161,6 +162,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   String _lastName = '';
   String? _photoPath;
   String? _photoUrl;
+
+  // ── Preloaded sound players ──
+  final Map<String, AudioPlayer> _soundPlayers = {};
 
   // Mini-map state
   mapbox.MapboxMap? _miniMapController;
@@ -323,6 +327,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
     _loadSavedData();
     _loadPromoUsed();
+    _preloadSounds();
     _fetchCurrentLocation();
     // Eagerly load cached user name so greeting never shows "Rider"
     UserSession.getUser().then((user) {
@@ -444,7 +449,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _tripDocSub?.cancel();
     _tripStatusSub?.cancel();
     _verificationSub?.cancel();
+    for (final player in _soundPlayers.values) {
+      player.dispose();
+    }
     super.dispose();
+  }
+
+  /// Preload ride-related sounds during init so they play instantly later.
+  void _preloadSounds() {
+    const sounds = ['cruise_online', 'cruise_offer'];
+    for (final s in sounds) {
+      final player = AudioPlayer();
+      player.setSource(AssetSource('sounds/$s.wav')).catchError((_) {});
+      _soundPlayers[s] = player;
+    }
   }
 
   Future<void> _checkUserStateZone(LatLng position) async {

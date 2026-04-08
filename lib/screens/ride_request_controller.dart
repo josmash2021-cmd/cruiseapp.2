@@ -946,6 +946,7 @@ extension _RideRequestController on _RideRequestScreenState {
         );
         // Show dialog on home screen after a short delay
         Future.delayed(const Duration(milliseconds: 600), () {
+          if (!navRoot.mounted) return;
           showDialog(
             context: navRoot.context,
             barrierDismissible: true,

@@ -328,9 +328,8 @@ async def cancel_claimed_scheduled_trip(
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     # Enforce 60-minute cancellation window
     if trip.scheduled_at:
-        from datetime import timezone as _tz
-        now_utc = datetime.now(_tz.utc)
-        sched_utc = trip.scheduled_at.replace(tzinfo=_tz.utc) if trip.scheduled_at.tzinfo is None else trip.scheduled_at
+        now_utc = datetime.now(timezone.utc)
+        sched_utc = trip.scheduled_at.replace(tzinfo=timezone.utc) if trip.scheduled_at.tzinfo is None else trip.scheduled_at
         minutes_until = (sched_utc - now_utc).total_seconds() / 60
         if minutes_until <= 60:
             raise HTTPException(400, "Cancellation is only allowed more than 1 hour before the scheduled pickup")

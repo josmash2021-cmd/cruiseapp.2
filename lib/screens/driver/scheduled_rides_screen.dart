@@ -424,7 +424,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         itemCount: trips.length,
         itemBuilder: (ctx, i) => isMyRides
-            ? _DriverMyRideCard(trip: trips[i])
+            ? _DriverMyRideCard(trip: trips[i], onCancelled: onRefresh)
             : _buildAvailableCard(trips[i]),
       ),
     );
@@ -799,7 +799,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
 class _DriverMyRideCard extends StatefulWidget {
   final Map<String, dynamic> trip;
-  const _DriverMyRideCard({required this.trip});
+  final VoidCallback? onCancelled;
+  const _DriverMyRideCard({required this.trip, this.onCancelled});
 
   @override
   State<_DriverMyRideCard> createState() => _DriverMyRideCardState();
@@ -899,6 +900,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ));
+        widget.onCancelled?.call();
       }
     } catch (e) {
       if (mounted) {

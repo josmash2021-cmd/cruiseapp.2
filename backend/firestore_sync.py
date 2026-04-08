@@ -823,7 +823,7 @@ def sync_trip_status(trip_id: int, status: str,
         data["distance"] = distance
     if duration is not None:
         data["duration"] = duration
-    if payment_status:
+    if payment_status is not None:
         data["payment_status"] = payment_status
     try:
         _db.collection("trips").document(doc_id).set(data, merge=True)

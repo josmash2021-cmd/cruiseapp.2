@@ -1051,15 +1051,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (isNewFirstOffer) {
       HapticFeedback.heavyImpact();
       final firstOffer = filtered.first;
-      final pickup = firstOffer['pickup_address'] as String? ?? firstOffer['origin'] as String? ?? 'New pickup';
-      final fare = firstOffer['fare'] as num?;
-      final fareStr = fare != null ? ' — \$${fare.toStringAsFixed(2)}' : '';
       if (_appInForeground) {
         NotificationService.playOfferSound();
       }
       NotificationService.showOfferNotification(
-        title: '${S.of(context).newRideOffer}$fareStr',
-        body: 'Pickup: ${pickup.length > 50 ? '${pickup.substring(0, 50)}...' : pickup}',
+        title: S.of(context).newRideOffer,
+        body: '',
         offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
         payload: 'trip_offer',
         appInForeground: _appInForeground,

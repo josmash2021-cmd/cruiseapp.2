@@ -1177,12 +1177,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   /// Fetch count of available scheduled rides matching driver's vehicle type.
+  int _lastNotifiedScheduledCount = 0;
   Future<void> _refreshScheduledCount() async {
     if (!_isStillOnline || _activeTripData != null) return;
     try {
       final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
       if (!mounted) return;
-      setState(() => _scheduledAvailableCount = trips.length);
+      final newCount = trips.length;
+      // Notify driver when new scheduled trips appear
+      if (newCount > _lastNotifiedScheduledCount && newCount > 0) {
+        NotificationService.show(
+          id: 'scheduled_available'.hashCode,
+          title: 'Scheduled Rides Available',
+          body: newCount == 1
+              ? 'You have 1 reserved trip available'
+              : 'You have $newCount reserved trips available',
+          type: 'scheduled_available',
+        );
+      }
+      _lastNotifiedScheduledCount = newCount;
+      setState(() => _scheduledAvailableCount = newCount);
     } catch (_) {}
   }
 

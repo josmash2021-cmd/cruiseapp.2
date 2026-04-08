@@ -441,18 +441,61 @@ Future<void> heavyInit() async {
                     message.data['body'] ??
                     _riderNotifBody(type));
 
-            // Suppress chat notification if user is already in that chat
-            // or on the tracking screen (message will appear in chat stream)
+            // ── In-app notification policy ──
+            // By default ALL foreground notifications are suppressed.
+            // Only specific types are allowed through:
+            //
+            // RIDER (show in-app):
+            //   driver_arriving, driver_arrived, arrived, completed, arrived_dropoff
+            //
+            // DRIVER (show in-app):
+            //   chat_message (from rider), trip_offer, new_offer,
+            //   rider_cancelled, scheduled_cancelled, scheduled_available
+
+            const riderInAppTypes = {
+              'driver_arriving', 'driver_arrived', 'arrived',
+              'completed', 'arrived_dropoff',
+            };
+            const driverInAppTypes = {
+              'trip_offer', 'new_offer',
+              'rider_cancelled', 'scheduled_cancelled', 'scheduled_available',
+            };
+
+            // Chat messages: show in-app only for drivers, suppress for riders (badge shows)
             if (type == 'chat_message') {
               final tripId = int.tryParse(message.data['trip_id']?.toString() ?? '');
+              // Always suppress if user is in that chat screen
               if (tripId != null && ChatScreen.activeTripId == tripId) {
                 debugPrint('[FCM] suppressed chat notification — user is in chat');
                 return;
               }
-              // Suppress all chat notifications while app is in foreground —
-              // the unread badge on the tracking screen is sufficient.
-              debugPrint('[FCM] suppressed chat notification in foreground — badge will show');
-              // Still save to notification history
+              // For drivers: show the notification overlay in-app
+              UserSession.getMode().then((mode) {
+                if (mode == 'driver') {
+                  NotificationService.show(
+                    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                    title: title,
+                    body: body,
+                    type: type,
+                  );
+                }
+                // Always save to notification history
+                LocalDataService.addNotification(
+                  title: title,
+                  message: body,
+                  type: type,
+                );
+              });
+              return;
+            }
+
+            // Check if this notification type is allowed in-app
+            final isAllowedInApp = riderInAppTypes.contains(type) ||
+                driverInAppTypes.contains(type);
+
+            if (!isAllowedInApp) {
+              // Suppress — only save to notification history
+              debugPrint('[FCM] suppressed foreground notification type=$type');
               LocalDataService.addNotification(
                 title: title,
                 message: body,

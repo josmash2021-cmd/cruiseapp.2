@@ -2057,7 +2057,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                             const SizedBox(height: 4),
                             _stars(widget.riderRating),
                             const SizedBox(height: 3),
-                            Text('${widget.riderRating.toStringAsFixed(1)} rating',
+                            Text('${widget.riderRating.toStringAsFixed(1)} ${S.of(context).rating.toLowerCase()}',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.42),
                                 fontSize: Responsive.sp(11))),

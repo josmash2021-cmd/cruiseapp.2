@@ -874,7 +874,7 @@ class S {
       : 'Cannot schedule rides more than 30 days in advance';
 
   // ── Login Verify ──────────────────────────────────────────────────────────
-  String get connectionError => _es ? 'Error de conexión' : 'Connection error';
+  String get connectionError => _es ? 'Error de conexión — ¿está el servidor activo?' : 'Connection error — is the server running?';
   String get verifyAndSignIn =>
       _es ? 'Verificar e Iniciar Sesión' : 'Verify & Sign In';
   String enterCodeSentTo(String contact) => _es
@@ -894,7 +894,7 @@ class S {
   String get greatMusic => _es ? 'Buena música' : 'Great music';
   String get goodConversation =>
       _es ? 'Buena conversación' : 'Good conversation';
-  String get minLabel => _es ? 'MIN' : 'MIN';
+  String get minLabel => _es ? 'Min' : 'Min';
   String get yourDriverArrived =>
       _es ? 'Tu conductor ha llegado' : 'Your driver has arrived';
   String get yourDriverArrivedExcl =>
@@ -1552,6 +1552,7 @@ class S {
   String get currentPosition => _es ? 'Posición actual' : 'Current position';
   String get pickupLabel => _es ? 'Recogida' : 'Pickup';
   String get dropOffLabel => _es ? 'Destino' : 'Drop-off';
+  // dropoffLabel (camelCase variant) is at line ~2097
   String get reject => _es ? 'Rechazar' : 'Reject';
   String get acceptRide => _es ? 'Aceptar viaje' : 'Accept Ride';
   String pickingUp(String name) =>
@@ -1568,7 +1569,7 @@ class S {
   String get finishTrip => _es ? 'FINALIZAR VIAJE' : 'FINISH TRIP';
   String get startNavigation => _es ? 'Iniciar navegación' : 'Start Navigation';
   String get headToPickup =>
-      _es ? 'Dirígete al punto de recogida' : 'Head to pickup';
+      _es ? 'Hacia pickup' : 'To pickup';
   String get headToDropOff =>
       _es ? 'Dirígete al punto de entrega' : 'Head to drop-off';
   String get headToDestination =>
@@ -3104,7 +3105,6 @@ class S {
   String get emailVerified => _es ? '¡Email verificado exitosamente!' : 'Email verified successfully!';
   String get verifyBtn => _es ? 'Verificar' : 'Verify';
   String get codeResent => _es ? '¡Código reenviado!' : 'Code resent!';
-  String get textMessageSMS => _es ? 'Mensaje de texto (SMS)' : 'Text message (SMS)';
   String get emailOption => _es ? 'Email' : 'Email';
   String get takePhotoSubtitle => _es ? 'Usa la cámara para capturar el documento' : 'Use camera to capture document';
   String get chooseFromGallerySubtitle => _es ? 'Selecciona una foto existente' : 'Select an existing photo';
@@ -3134,7 +3134,6 @@ class S {
   String get reportSentSuccess => _es ? '✓ Reporte enviado. ¡Gracias!' : '✓ Report sent. Thank you!';
 
   // ── Navigation Panel ──
-  String get headToPickup => _es ? 'Hacia pickup' : 'To pickup';
   String get openInGoogleMaps => _es ? 'ABRIR EN GOOGLE MAPS' : 'OPEN IN GOOGLE MAPS';
   String get passengerFallback => _es ? 'Pasajero' : 'Rider';
   String exitNumberLabel(int n) => _es ? 'Salida $n' : 'Exit $n';
@@ -3428,7 +3427,6 @@ class S {
   String get chooseDateForRide => _es ? 'Elige una fecha para tu viaje' : 'Choose a date for your ride';
   String get airportTripLabel => _es ? 'Viaje al aeropuerto' : 'Airport trip';
   String get confirmAndBook => _es ? 'Confirmar y Reservar' : 'Confirm & Book';
-  String get minLabel => _es ? 'Min' : 'Min';
 
   // ── Login Screen ──────────────────────────────────────────────────────────
   String get googleSignInCancelled => _es ? 'Inicio de sesión con Google cancelado' : 'Google Sign In was cancelled';
@@ -3487,9 +3485,6 @@ class S {
       : 'Device clock out of sync. Go to Settings → Date & Time and enable "Set Automatically".';
   String get invalidEmailPhoneOrPassword => _es ? 'Email/teléfono o contraseña inválida' : 'Invalid email/phone or password';
   String get accountNoLongerExists => _es ? 'Esta cuenta ya no existe' : 'This account no longer exists';
-  String get accountBlocked => _es ? 'Tu cuenta ha sido bloqueada' : 'Your account has been blocked';
-  String get accountDeactivated => _es ? 'Tu cuenta ha sido desactivada' : 'Your account has been deactivated';
-  String get connectionError => _es ? 'Error de conexión — ¿está el servidor activo?' : 'Connection error — is the server running?';
   String get orLower => _es ? 'o' : 'or';
   String get signInWithGoogle => _es ? 'Iniciar sesión con Google' : 'Sign in with Google';
   String get signInWithApple => _es ? 'Iniciar sesión con Apple' : 'Sign in with Apple';

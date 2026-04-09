@@ -287,7 +287,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _isRequesting = false;
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'Tu viaje fue cancelado.',
+          cancelReason: 'Your trip was cancelled.',
         );
         notifyListeners();
         await CacheService.clearActiveTrip();
@@ -575,7 +575,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       if (!online) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'Sin conexión a internet. Verifica tu red e intenta de nuevo.',
+          cancelReason: 'No internet connection. Check your network and try again.',
         );
         notifyListeners();
         return;
@@ -583,7 +583,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       if (userId == null) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No se pudo verificar tu sesión. Intenta de nuevo.',
+          cancelReason: 'Could not verify your session. Please try again.',
         );
         notifyListeners();
         return;
@@ -623,7 +623,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       if (tripId == null) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No se pudo crear el viaje. Intenta de nuevo.',
+          cancelReason: 'Could not create the trip. Please try again.',
         );
         notifyListeners();
         return;
@@ -642,7 +642,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('dispatchRideRequest failed: $e');
       _state = _state.copyWith(
         phase: RiderPhase.cancelled,
-        cancelReason: 'Error de conexion. Verifica tu red e intenta de nuevo.',
+        cancelReason: 'Connection error. Check your network and try again.',
       );
       notifyListeners();
     } finally {
@@ -725,7 +725,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _isRequesting = false;
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason: 'Tu viaje fue cancelado.',
+            cancelReason: 'Your trip was cancelled.',
           );
           notifyListeners();
           unawaited(CacheService.clearActiveTrip());
@@ -743,7 +743,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _state.phase == RiderPhase.requesting) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No hay drivers disponibles cerca de tu zona en estos momentos.',
+          cancelReason: 'No drivers available in your area right now.',
         );
         notifyListeners();
         unawaited(CacheService.clearActiveTrip());
@@ -789,7 +789,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           final reason = tripData?['cancel_reason']?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason: reason ?? 'Tu viaje fue cancelado.',
+            cancelReason: reason ?? 'Your trip was cancelled.',
           );
           notifyListeners();
           await CacheService.clearActiveTrip();

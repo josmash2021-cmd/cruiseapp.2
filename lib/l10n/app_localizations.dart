@@ -3508,6 +3508,22 @@ class S {
 
   // ── Emergency Dialog (driver) ─────────────────────────────────────────────
   String get emergencyHelpTitle => _es ? '¿Necesitas ayuda de emergencia?' : 'Need emergency help?';
+
+  // ── Cancel / Confirm Overlay (rider tracking) ────────────────────────────
+  String get cancellingTrip => _es ? 'Cancelando viaje...' : 'Cancelling trip...';
+  String get findAnotherRide => _es ? 'Buscar otro ride' : 'Find another ride';
+
+  // ── Rider Confirm Pickup Screen (additional) ─────────────────────────────
+  String get tripConfirmedExclaim =>
+      _es ? '¡Viaje confirmado!' : 'Trip confirmed!';
+  String get yourDriverHasArrived =>
+      _es ? 'Tu conductor ha llegado' : 'Your driver has arrived';
+  String driverIsWaiting(String name) =>
+      _es ? '$name está esperando' : '$name is waiting';
+  String get pressWhenWithDriver =>
+      _es ? 'Presiona cuando\nestés con el driver' : 'Press when you\nare with the driver';
+  String get yourTripConfirmed =>
+      _es ? 'Tu viaje\nconfirmado' : 'Your trip\nconfirmed';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

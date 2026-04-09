@@ -705,7 +705,7 @@ async def _scheduled_ride_dispatcher():
                     # --------------------------------------------------
                     if minutes_until < -5:
                         trip.status = "canceled"
-                        trip.cancel_reason = "No se encontro conductor disponible para tu viaje reservado"
+                        trip.cancel_reason = "No driver found for your scheduled ride"
                         await db.commit()
                         logging.info(
                             "[Scheduler] Auto-cancelled expired scheduled trip %d (%.0f min past)",
@@ -720,8 +720,8 @@ async def _scheduled_ride_dispatcher():
                             if rider and rider.fcm_token:
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Viaje reservado cancelado",
-                                    body="Lamentamos informarte que no pudimos encontrar un conductor para tu viaje reservado. Por favor intenta solicitar un nuevo viaje.",
+                                    title="Scheduled ride cancelled",
+                                    body="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
                                     data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
                                 )
                         except Exception as _fcm_err:
@@ -988,7 +988,7 @@ async def _scheduled_ride_reminder_loop():
                     # --------------------------------------------------
                     if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
                         trip.status = "canceled"
-                        trip.cancel_reason = "No se encontro conductor disponible para tu viaje reservado"
+                        trip.cancel_reason = "No driver found for your scheduled ride"
                         await db.commit()
                         logging.info(
                             "[Reminder] Auto-cancelled past-due trip %d (%.0f min past)",
@@ -1003,8 +1003,8 @@ async def _scheduled_ride_reminder_loop():
                             if rider and rider.fcm_token:
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Viaje reservado cancelado",
-                                    body="Lamentamos informarte que no pudimos encontrar un conductor para tu viaje reservado. Por favor intenta solicitar un nuevo viaje.",
+                                    title="Scheduled ride cancelled",
+                                    body="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
                                     data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
                                 )
                         except Exception as _fcm_err:
@@ -1074,11 +1074,11 @@ async def _scheduled_ride_reminder_loop():
                             )
                             rider = rider_r.scalar_one_or_none()
                             if rider and rider.fcm_token:
-                                rider_name = (rider.first_name or "").strip() or "Cliente"
+                                rider_name = (rider.first_name or "").strip() or "Rider"
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Tu viaje reservado comienza pronto",
-                                    body=f"{rider_name}, tu viaje comienza en 30 minutos. Tu conductor esta en camino.",
+                                    title="Your scheduled ride starts soon",
+                                    body=f"{rider_name}, your ride starts in 30 minutes. Your driver is on the way.",
                                     data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "rider_30m"},
                                 )
                                 trip_reminders.add("rider_30m")
@@ -1092,8 +1092,8 @@ async def _scheduled_ride_reminder_loop():
                     if 10 <= minutes_until <= 18 and "15m" not in trip_reminders:
                         _send_fcm_push(
                             token=driver.fcm_token,
-                            title="Dirigete al punto de recogida ahora",
-                            body=f"{driver_name}, tu viaje reservado comienza en 15 minutos. Dirigete a {pickup} ahora para llegar a tiempo.",
+                            title="Head to the pickup point now",
+                            body=f"{driver_name}, your scheduled ride starts in 15 minutes. Head to {pickup} now to arrive on time.",
                             data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "15m"},
                         )
                         trip_reminders.add("15m")
@@ -1107,11 +1107,11 @@ async def _scheduled_ride_reminder_loop():
                             )
                             rider2 = rider_r2.scalar_one_or_none()
                             if rider2 and rider2.fcm_token:
-                                rider_name2 = (rider2.first_name or "").strip() or "Cliente"
+                                rider_name2 = (rider2.first_name or "").strip() or "Rider"
                                 _send_fcm_push(
                                     token=rider2.fcm_token,
-                                    title="Tu viaje comienza en 15 minutos",
-                                    body=f"{rider_name2}, tu conductor {driver_name} esta en camino. Tu viaje reservado comienza en 15 minutos.",
+                                    title="Your ride starts in 15 minutes",
+                                    body=f"{rider_name2}, your driver {driver_name} is on the way. Your scheduled ride starts in 15 minutes.",
                                     data={
                                         "type": "scheduled_trip_starting",
                                         "trip_id": str(trip.id),

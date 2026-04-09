@@ -68,9 +68,9 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Cancelando viaje...',
-                  style: TextStyle(
+                Text(
+                  S.of(context).cancellingTrip,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -94,9 +94,9 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Viaje cancelado',
-                  style: TextStyle(
+                Text(
+                  S.of(context).tripCancelled,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -308,9 +308,9 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                       (_) => false,
                     );
                   },
-                  child: const Text(
-                    'Buscar otro ride',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  child: Text(
+                    S.of(context).findAnotherRide,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                   ),
                 ),
               ),

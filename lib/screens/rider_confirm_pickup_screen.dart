@@ -323,7 +323,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           duration: const Duration(milliseconds: 400),
                           child: isConfirmed
                               ? Text(
-                                  '¡Viaje confirmado!',
+                                  S.of(context).tripConfirmedExclaim,
                                   key: const ValueKey('title_confirmed'),
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
@@ -333,11 +333,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                     height: 1.3,
                                   ),
                                 )
-                              : const Text(
-                                  'Tu conductor ha llegado',
-                                  key: ValueKey('title_arrived'),
+                              : Text(
+                                  S.of(context).yourDriverHasArrived,
+                                  key: const ValueKey('title_arrived'),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 22,
                                     fontWeight: FontWeight.w700,
@@ -358,7 +358,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                               children: [
                                 const SizedBox(height: 6),
                                 Text(
-                                  '$firstName está esperando',
+                                  S.of(context).driverIsWaiting(firstName),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.40),
@@ -449,10 +449,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                                             size: 52,
                                                           ),
                                                           const SizedBox(height: 10),
-                                                          const Text(
-                                                            'Tu viaje\nconfirmado',
+                                                          Text(
+                                                            S.of(context).yourTripConfirmed,
                                                             textAlign: TextAlign.center,
-                                                            style: TextStyle(
+                                                            style: const TextStyle(
                                                               color: _gold,
                                                               fontSize: 16,
                                                               fontWeight: FontWeight.w700,
@@ -472,7 +472,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                                           ),
                                                           const SizedBox(height: 12),
                                                           Text(
-                                                            'Presiona cuando\nestés con el driver',
+                                                            S.of(context).pressWhenWithDriver,
                                                             textAlign: TextAlign.center,
                                                             style: TextStyle(
                                                               color: Colors.white.withValues(alpha: 0.60),

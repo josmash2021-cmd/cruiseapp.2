@@ -162,6 +162,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Animation<double>? _camPitchAnim;
   Animation<double>? _camBearingAnim;
 
+  // ── Continuous GPS → GpsService (keeps RTDB live for rider tracking) ──
+  StreamSubscription<Position>? _liveGpsSub;
+  final GpsService _gpsService = GpsService();
+
   // ── Arrived at pickup detection ──
   bool _nearPickup = false;
   StreamSubscription<Position>? _gpsSub;
@@ -318,6 +322,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Listen for rider confirming pickup in Firestore
     _listenForRiderConfirmation();
+
+    // Start continuous GPS → GpsService so RTDB stays fresh for rider tracking.
+    // The online screen's stream may not reliably feed GpsService while this
+    // screen is on top, so we ensure the driver's live location is always
+    // uploaded during the entire trip lifecycle.
+    _startLiveGpsForRider();
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -383,6 +393,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   @override
   void dispose() {
+    _liveGpsSub?.cancel();
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
     _riderConfirmSub?.cancel();
@@ -401,6 +412,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _routePoints = [];
     _pinAnnots.clear();
     super.dispose();
+  }
+
+  // ── Continuous GPS → GpsService (rider can track driver in real-time) ────
+  void _startLiveGpsForRider() async {
+    // Ensure GpsService knows our identity
+    try {
+      final driverId = await ApiService.getCurrentUserId();
+      if (driverId != null && mounted) {
+        _gpsService.startTracking(driverId.toString());
+        _gpsService.setActiveTrip(widget.tripId.toString());
+      }
+    } catch (_) {}
+
+    _liveGpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+      ),
+    ).listen((pos) {
+      if (!mounted) return;
+      _gpsService.updatePosition(
+        LatLng(pos.latitude, pos.longitude),
+        pos.heading,
+        pos.speed,
+      );
+    });
   }
 
   // ── Resolve generic / placeholder addresses via reverse geocoding ────────

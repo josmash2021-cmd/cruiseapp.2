@@ -267,6 +267,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // race condition where backend poll resets phase/traveledM to 0.
     _initFromPersistence().then((_) {
       if (mounted) _startRealTimeTracking();
+    }).catchError((e) {
+      debugPrint('[RiderTracking] _initFromPersistence failed: $e');
+      if (mounted) _startRealTimeTracking();
     });
     _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
     // Only send notifications on FRESH trip — not on app resume

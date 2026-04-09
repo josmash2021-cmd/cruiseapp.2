@@ -36,7 +36,7 @@ class ScheduledRideDetailsScreen extends StatefulWidget {
 }
 
 class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _darkBg = Color(0xFF0A0E21);
   static const _cardBg = Color(0xFF1A1A2E);
@@ -51,6 +51,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _secondsRemaining = (widget.minutesUntil * 60).round().clamp(0, 999999);
     // If already <= 15 min, auto-redirect immediately
     if (_secondsRemaining <= 900) {
@@ -74,9 +75,50 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     _pulseCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshTripStatus();
+    }
+  }
+
+  /// Re-fetch trip status from backend when app resumes.
+  Future<void> _refreshTripStatus() async {
+    try {
+      final data = await ApiService.getActiveScheduledTrip();
+      if (!mounted) return;
+      final hasTrip = data['has_scheduled_trip'] == true;
+      if (!hasTrip) {
+        // Trip was cancelled or completed while away
+        Navigator.of(context).pop('refreshed');
+        return;
+      }
+      final trip = data['trip'] as Map<String, dynamic>?;
+      if (trip == null) return;
+      final status = (trip['status'] ?? '').toString();
+      // If trip already started (driver_en_route or beyond), navigate to trip screen
+      final activeStatuses = {'driver_en_route', 'en_route_to_pickup', 'arrived',
+          'driver_arrived', 'in_trip', 'in_progress'};
+      if (activeStatuses.contains(status) && !_starting) {
+        _navigateToTripScreen();
+        return;
+      }
+      // Update countdown from fresh server data
+      final minutesUntil = (data['minutes_until'] as num?)?.toDouble();
+      if (minutesUntil != null) {
+        setState(() {
+          _secondsRemaining = (minutesUntil * 60).round().clamp(0, 999999);
+        });
+      }
+    } catch (e) {
+      debugPrint('[ScheduledRide] Refresh failed: $e');
+    }
   }
 
   int get _tripId => widget.trip['id'] as int;
@@ -89,22 +131,34 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   }
 
   /// Start the ride via API, then navigate to the trip accept screen.
+  /// Retries once on failure before showing an error.
   Future<void> _startRideAndNavigate() async {
     setState(() => _starting = true);
-    try {
-      await ApiService.startScheduledTrip(_tripId);
-      if (!mounted) return;
-      HapticFeedback.mediumImpact();
-      _navigateToTripScreen();
-    } catch (e) {
-      if (!mounted) return;
-      _autoStarted = false; // allow retry
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${S.of(context).error}: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      if (mounted) setState(() => _starting = false);
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await ApiService.startScheduledTrip(_tripId);
+        if (!mounted) return;
+        HapticFeedback.mediumImpact();
+        _navigateToTripScreen();
+        return;
+      } catch (e) {
+        if (!mounted) return;
+        if (attempt < 2) {
+          debugPrint('[ScheduledRide] Start attempt $attempt failed: $e — retrying…');
+          await Future.delayed(const Duration(seconds: 2));
+          if (!mounted) return;
+          continue;
+        }
+        _autoStarted = false; // allow retry
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).connectionError),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
+    if (mounted) setState(() => _starting = false);
   }
 
   /// Navigate to DriverTripAcceptScreen with all trip data.
@@ -559,7 +613,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 children: [
-                  // Cancel button
+                  // Cancel button — only show when > 1 hour remains
+                  if (_secondsRemaining > 3600) ...[
                   Expanded(
                     flex: 1,
                     child: SizedBox(
@@ -587,9 +642,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
+                  ],
                   // Start ride button
                   Expanded(
-                    flex: 2,
+                    flex: _secondsRemaining > 3600 ? 2 : 1,
                     child: SizedBox(
                       height: 52,
                       child: ElevatedButton(

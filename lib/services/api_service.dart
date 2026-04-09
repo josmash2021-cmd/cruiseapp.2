@@ -1390,7 +1390,7 @@ class ApiService {
     final h = await _authHeaders();
     final res = await _client
         .post(Uri.parse('$_baseUrl/scheduled-trips/$tripId/start'), headers: h)
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 20));
     return _parse(res);
   }
 
@@ -1399,7 +1399,7 @@ class ApiService {
     final h = await _authHeaders();
     final res = await _client
         .post(Uri.parse('$_baseUrl/scheduled-trips/$tripId/cancel'), headers: h)
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
 

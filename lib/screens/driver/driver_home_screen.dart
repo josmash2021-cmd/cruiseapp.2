@@ -307,6 +307,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (state == AppLifecycleState.resumed && mounted) {
       // Always re-check vehicle doc approval when app comes back
       if (!_vehicleDocsApproved) _checkVehicleDocStatus();
+      // Re-check scheduled ride lockout (driver may return from background)
+      _checkScheduledRideLockout();
     }
     if (state == AppLifecycleState.resumed && _isStillOnline && mounted) {
       // App returned from background — refresh trip status then restart polling

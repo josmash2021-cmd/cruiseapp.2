@@ -421,7 +421,7 @@ Future<void> _initFirebase() async {
     );
     firestore.FirebaseFirestore.instance.settings = const firestore.Settings(
       persistenceEnabled: true,
-      cacheSizeBytes: firestore.Settings.CACHE_SIZE_UNLIMITED,
+      cacheSizeBytes: 100 * 1024 * 1024, // 100 MB cap — prevents OOM on low-end devices
     );
     // Enable RTDB disk persistence so messages survive restarts & work offline
     FirebaseDatabase.instance.setPersistenceEnabled(true);

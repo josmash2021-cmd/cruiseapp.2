@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -63,65 +65,53 @@ class PhotoRecoveryService {
       debugPrint('[PhotoRecovery] Firebase Auth lookup failed: $e');
     }
 
-    // ─── SOURCE 3: Firestore users collection (network — permanent) ─────────
-    try {
-      final firestore = FirebaseFirestore.instance;
-      // Try both possible paths: users/{uid} and users/sql_{uid}
-      // Note: Firestore .get() does NOT throw on missing docs — it returns
-      // exists==false. So we must check .exists and fall through, not catch.
-      DocumentSnapshot userDoc = await firestore.collection('users').doc(uid).get();
-      if (!userDoc.exists) {
-        userDoc = await firestore.collection('users').doc('sql_$uid').get();
-      }
+    // ─── SOURCES 3+4+5: Run in parallel for speed ───────────────────────────
+    // Firestore, Storage, and Backend API are independent — run concurrently
+    // and use the first valid result.
+    final results = await Future.wait<String?>([
+      // SOURCE 3: Firestore
+      () async {
+        try {
+          final fs = FirebaseFirestore.instance;
+          DocumentSnapshot doc = await fs.collection('users').doc(uid).get();
+          if (!doc.exists) doc = await fs.collection('users').doc('sql_$uid').get();
+          if (doc.exists) {
+            final data = doc.data() as Map<String, dynamic>?;
+            final url = data?['photoUrl'] as String?;
+            if (url != null && url.isNotEmpty && url.startsWith('https')) return url;
+          }
+        } catch (_) {}
+        return null;
+      }(),
+      // SOURCE 4: Firebase Storage
+      () async {
+        try {
+          final ref = FirebaseStorage.instance.ref('photos/${role}s/$uid/profile.jpg');
+          final url = await ref.getDownloadURL();
+          if (url.isNotEmpty && url.startsWith('https')) return url;
+        } catch (_) {}
+        return null;
+      }(),
+      // SOURCE 5: Backend API
+      () async {
+        try {
+          final userId = int.tryParse(uid);
+          if (userId != null) {
+            final url = await ApiService.getUserPhotoUrl(userId);
+            if (url != null && url.isNotEmpty && url.startsWith('http')) return url;
+          }
+        } catch (_) {}
+        return null;
+      }(),
+    ]);
 
-      if (userDoc.exists) {
-        final data = userDoc.data() as Map<String, dynamic>?;
-        final firestoreUrl = data?['photoUrl'] as String?;
-        if (firestoreUrl != null && firestoreUrl.isNotEmpty && firestoreUrl.startsWith('https')) {
-          debugPrint('[PhotoRecovery] ✅ Found in Firestore: $firestoreUrl');
-          // Backfill to faster tiers
-          await _cachePhotoUrl(uid, role, firestoreUrl);
-          await _updateFirebaseAuthPhotoUrl(firestoreUrl);
-          return firestoreUrl;
-        }
-      }
-    } catch (e) {
-      debugPrint('[PhotoRecovery] Firestore lookup failed (non-critical): $e');
-    }
-
-    // ─── SOURCE 4: Firebase Storage direct URL construction ─────────────────
-    try {
-      final storage = FirebaseStorage.instance;
-      // Role-specific storage path: riders/ or drivers/
-      final storagePath = 'photos/${role}s/$uid/profile.jpg';
-      final ref = storage.ref(storagePath);
-      final url = await ref.getDownloadURL();
-      if (url.isNotEmpty && url.startsWith('https')) {
-        debugPrint('[PhotoRecovery] ✅ Found in Firebase Storage: $url');
-        // Backfill to all faster tiers
-        await _cachePhotoUrl(uid, role, url);
-        await _updateFirebaseAuthPhotoUrl(url);
-        await _updateFirestorePhotoUrl(uid, url);
+    // Use first valid result (Firestore > Storage > Backend priority)
+    for (final url in results) {
+      if (url != null && url.isNotEmpty) {
+        debugPrint('[PhotoRecovery] ✅ Found photo (parallel): $url');
+        unawaited(_cachePhotoUrl(uid, role, url));
         return url;
       }
-    } catch (e) {
-      debugPrint('[PhotoRecovery] Firebase Storage lookup failed (non-critical): $e');
-    }
-
-    // ─── SOURCE 5: Backend API (nuclear fallback — covers Google/Apple photos) ──
-    try {
-      final userId = int.tryParse(uid);
-      if (userId != null) {
-        final backendUrl = await ApiService.getUserPhotoUrl(userId);
-        if (backendUrl != null && backendUrl.isNotEmpty && backendUrl.startsWith('http')) {
-          debugPrint('[PhotoRecovery] ✅ Found in Backend API: $backendUrl');
-          // Backfill to all faster tiers
-          await _cachePhotoUrl(uid, role, backendUrl);
-          return backendUrl;
-        }
-      }
-    } catch (e) {
-      debugPrint('[PhotoRecovery] Backend API lookup failed (non-critical): $e');
     }
 
     // ─── NO PHOTO FOUND ──────────────────────────────────────────────────────

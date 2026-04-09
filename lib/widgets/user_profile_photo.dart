@@ -122,20 +122,21 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
 
   @override
   Widget build(BuildContext context) {
+    final d = widget.radius * 2;
     if (widget.noBorder) {
-      return SizedBox(
-        width: widget.radius * 2,
-        height: widget.radius * 2,
-        child: _buildContent(),
+      return ClipOval(
+        child: SizedBox.square(
+          dimension: d,
+          child: _buildContent(),
+        ),
       );
     }
     return CircleAvatar(
       radius: widget.radius,
       backgroundColor: const Color(0xFF1A1A1A),
       child: ClipOval(
-        child: SizedBox(
-          width: widget.radius * 2,
-          height: widget.radius * 2,
+        child: SizedBox.square(
+          dimension: d,
           child: _buildContent(),
         ),
       ),
@@ -224,6 +225,21 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
 
   Widget _initials() {
     final text = _deriveInitials();
+    // No name available — show a person icon instead of "?"
+    if (text.isEmpty) {
+      return Container(
+        width: widget.radius * 2,
+        height: widget.radius * 2,
+        color: const Color(0xFF1A1A1A),
+        child: Center(
+          child: Icon(
+            Icons.person,
+            color: const Color(0xFFFFD700),
+            size: widget.radius * 0.9,
+          ),
+        ),
+      );
+    }
     return Container(
       width: widget.radius * 2,
       height: widget.radius * 2,
@@ -242,7 +258,7 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
   }
 
   String _deriveInitials() {
-    if (widget.fallbackName == null || widget.fallbackName!.trim().isEmpty) return '?';
+    if (widget.fallbackName == null || widget.fallbackName!.trim().isEmpty) return '';
     return widget.fallbackName!
         .trim()
         .split(' ')

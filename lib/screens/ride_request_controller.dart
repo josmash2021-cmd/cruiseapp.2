@@ -920,6 +920,9 @@ extension _RideRequestController on _RideRequestScreenState {
       // stale Firestore event set driverAssigned during the 300ms window.
       if (_riderInitiatedCancel) {
         _riderInitiatedCancel = false;
+        // Prevent _onStateChange from showing a "trip cancelled" dialog —
+        // the rider already knows they cancelled.
+        _cancelDialogShown = true;
         if (phase != RiderPhase.cancelled) {
           _ctrl.forcePhase(RiderPhase.cancelled);
         }

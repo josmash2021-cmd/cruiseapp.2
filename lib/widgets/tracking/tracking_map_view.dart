@@ -422,17 +422,23 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _tripRoutePts = tripRoute;
 
     if (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) {
-      // ── Uber-style: DON'T draw pickup→dropoff yet.
-      // The approach route (driver→pickup) is fetched on first driver GPS.
+      // Show trip route (pickup→dropoff) as dimmed background so the rider
+      // can see the full trip plan while the driver is approaching/at pickup.
+      // The approach route (driver→pickup) overlays as the gold line on first GPS.
       _pickupIdx = 0;
-      _routePts = [];
-      _segDist = [];
+      _routePts = tripRoute; // keep trip route visible (drawn dimmed)
+      _buildSegDist();
       _traveledM = 0;
       _tgtTraveledM = 0;
       _driverPos = const LatLng(0, 0); // Car hidden until first GPS
       _animPos = _driverPos;
-      _distanceMiles = 0;
-      _etaMinutes = 1;
+      // Compute trip distance for display
+      double acc = 0;
+      for (int i = 0; i + 1 < tripRoute.length; i++) {
+        acc += _hav(tripRoute[i], tripRoute[i + 1]);
+      }
+      _distanceMiles = acc;
+      _etaMinutes = (acc / 0.4).ceil().clamp(1, 99);
     } else {
       // onTrip / nearDestination: use trip route (pickup→dropoff)
       _pickupIdx = 0;
@@ -467,7 +473,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// During onTrip: adaptive zoom — short routes show full remaining route,
   /// long routes show driver + enough ahead to see well (not zoomed out too far).
   void _fitRouteBounds() {
-    if (_map == null || _routePts.isEmpty) return;
+    if (_map == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
     
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -515,10 +521,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         }
       }
     } else if (_phase == _TrackPhase.arriving) {
-      // Arriving: show driver → pickup approach route (no dropoff until trip)
+      // Arriving: show driver + pickup + dropoff so rider sees full trip plan
       pts.add(widget.pickupLatLng);
+      pts.add(widget.dropoffLatLng);
       if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
       if (_routePts.isNotEmpty) pts.addAll(_routePts);
+      if (_tripRoutePts.isNotEmpty) pts.addAll(_tripRoutePts);
     } else {
       // Arrived / overview: show full route
       pts.add(widget.pickupLatLng);
@@ -949,13 +957,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
     if (_pickupPinBytes == null || _dropoffPinBytes == null) return;
-    // During arriving: allow pins even before approach route arrives
-    if (_routePts.length < 2 && _phase != _TrackPhase.arriving) return;
+    // During arriving/arrived: allow pins even when route is minimal (trip route is dimmed background)
+    if (_routePts.length < 2 && _tripRoutePts.length < 2 && _phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) return;
     _staticAnnotsDone = true; // mark before await to prevent double-creation
 
-    // ── Draw dimmed route (only when route points available) ──
-    if (_routePts.length >= 2) {
-      final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    // ── Draw dimmed trip route (pickup→dropoff) — visible in all phases ──
+    // During arriving/arrived, this shows the rider where the trip will go.
+    final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
+    if (dimmedPts.length >= 2) {
+      final allCoords = dimmedPts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
       try {
         _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
           geometry: mapbox.LineString(coordinates: allCoords),
@@ -977,8 +987,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ));
     } catch (_) {}
 
-    // Dropoff pin — show when trip starts, not during arriving
-    if (_phase != _TrackPhase.arriving) _addDropoffPin();
+    // Dropoff pin — always show so rider can see full trip plan
+    _addDropoffPin();
 
     // Cinematic intro: fit camera
     _startCinematicIntro();
@@ -1334,56 +1344,40 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_arrivedStateInitialized || _map == null) return;
     _arrivedStateInitialized = true;
 
-    // STEP 1: Fade out the route polyline over 600ms
+    // Remove approach route (driver→pickup) — driver is at pickup now.
     _routeFadeTimer?.cancel();
-    const fadeDuration = 600;
-    final startTime = DateTime.now();
-    _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
-      if (!mounted) { timer.cancel(); _routeFadeTimer = null; return; }
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
-      _routeOpacity = 1.0 - t;
-
-      if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
-        try {
-          _polylineAnnotMgr!.update(
-            _remainingRouteAnnot!..lineOpacity = _routeOpacity,
-          );
-        } catch (_) {}
-      }
-
-      if (t >= 1.0) {
-        timer.cancel();
-        _routeFadeTimer = null;
-        if (!mounted) return;
-        if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
-          try {
-            await _polylineAnnotMgr!.delete(_remainingRouteAnnot!);
-          } catch (_) {}
-          _remainingRouteAnnot = null;
-        }
-        // Remove destination pin as well
-        if (_dropoffAnnot != null && _pointAnnotMgr != null) {
-          try { 
-            await _pointAnnotMgr!.delete(_dropoffAnnot!); 
-          } catch (_) {}
-          _dropoffAnnot = null;
-          _dropoffPinAdded = false;
-        }
-      }
-    });
-
-    // STEP 2: Center map on driver in the visible area between top and bottom cards.
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_map == null || !mounted) return;
-      _centerDriverOnArrival();
-    });
-
-    // Remove approach line if it exists
     if (_approachAnnot != null && _polylineAnnotMgr != null) {
       try { await _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
       _approachAnnot = null;
     }
+
+    // Remove the old approach/remaining route annotation
+    if (_remainingRouteAnnot != null && _polylineAnnotMgr != null) {
+      try { await _polylineAnnotMgr!.delete(_remainingRouteAnnot!); } catch (_) {}
+      _remainingRouteAnnot = null;
+    }
+
+    // Draw the trip route (pickup→dropoff) so rider can see where they're going.
+    if (_tripRoutePts.isNotEmpty) {
+      _routePts = _tripRoutePts;
+      _buildSegDist();
+      _traveledM = 0;
+      _tgtTraveledM = 0;
+      _routeDrawDone = false;
+      _startAnimatedRouteDraw();
+    }
+
+    // Ensure dropoff pin is visible
+    if (_dropoffAnnot == null) {
+      _dropoffPinAdded = false;
+      _addDropoffPin();
+    }
+
+    // Fit camera to show pickup, dropoff, and driver
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_map == null || !mounted) return;
+      _fitRouteBounds();
+    });
   }
 
   Future<void> _centerDriverOnArrival() async {

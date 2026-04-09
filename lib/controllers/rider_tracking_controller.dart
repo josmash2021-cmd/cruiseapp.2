@@ -139,6 +139,43 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _rideSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted && _phase != _TrackPhase.completed) _saveRideState();
     });
+
+    // Fallback: if no RTDB GPS arrives within 5s during arriving phase,
+    // fetch approach route using the driver's last known Firestore position.
+    if (_phase == _TrackPhase.arriving && !_approachRouteFetched) {
+      _gpsFallbackTimer?.cancel();
+      _gpsFallbackTimer = Timer(const Duration(seconds: 5), () {
+        if (!mounted || _phase != _TrackPhase.arriving) return;
+        if (_approachRouteFetched || _approachRouteFetching) return;
+        // Use persisted driver position if available
+        if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
+          debugPrint('[RiderTracking] No RTDB GPS in 5s — using persisted driver pos for approach route');
+          _onRealDriverLocation(_driverPos);
+        } else {
+          // Last resort: fetch driver position from backend
+          _fetchDriverPositionFallback();
+        }
+      });
+    }
+  }
+
+  /// Fetch driver position from backend as a last resort when RTDB has no data.
+  Future<void> _fetchDriverPositionFallback() async {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    try {
+      final data = await ApiService.getDispatchStatus(tripId);
+      final tripData = data['trip'] as Map<String, dynamic>?;
+      if (tripData == null) return;
+      final driverLat = (tripData['driver_lat'] as num?)?.toDouble();
+      final driverLng = (tripData['driver_lng'] as num?)?.toDouble();
+      if (driverLat != null && driverLng != null && driverLat != 0 && driverLng != 0) {
+        debugPrint('[RiderTracking] Fallback: got driver pos from backend ($driverLat, $driverLng)');
+        if (mounted) _onRealDriverLocation(LatLng(driverLat, driverLng));
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] Fallback driver pos fetch failed: $e');
+    }
   }
 
   /// Process real-time driver location from RTDB.
@@ -379,7 +416,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _approachRouteFetched = true;
       _approachRouteFetching = false;
 
-      // Set approach route as the active route
+      // Keep trip route as dimmed background (already drawn in _updateStaticAnnotationsOnce).
+      // Set approach route as the active route for car tracking.
       _routePts = result.points;
       _buildSegDist();
       _traveledM = 0;
@@ -388,22 +426,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _directTargetPos = null;
       _directTargetBearing = null;
 
-      // Initial ETA from route distance
+      // Initial ETA from approach route distance
       _distanceMiles = result.distanceMeters / 1609.34;
       _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
 
       _setState(() {});
 
-      // Draw dimmed background route (driver→pickup)
+      // The trip route (pickup→dropoff) stays as the dimmed background.
+      // Draw the approach route (driver→pickup) as a second dimmed line,
+      // then animate the gold route on top.
       final polyMgr = _polylineAnnotMgr;
       if (polyMgr != null) {
         final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+        // Don't remove the existing dimmed route (it's the trip route pickup→dropoff).
+        // Create approach dimmed line separately.
         try {
-          if (_dimmedRouteAnnot != null) {
-            try { polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
-            _dimmedRouteAnnot = null;
+          if (_approachAnnot != null) {
+            try { polyMgr.delete(_approachAnnot!); } catch (_) {}
+            _approachAnnot = null;
           }
-          _dimmedRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+          _approachAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
             geometry: mapbox.LineString(coordinates: allCoords),
             lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
             lineWidth: 5.0,
@@ -412,17 +454,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         } catch (_) {}
       }
 
-      // Remove straight-line approach annotation (replaced by road route)
-      if (_approachAnnot != null && _polylineAnnotMgr != null) {
-        try { _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
-        _approachAnnot = null;
-      }
-
-      // Animate the gold route draw
+      // Animate the gold route draw (approach route)
       _routeDrawDone = false;
       _startAnimatedRouteDraw();
 
-      // Fit camera to show driver + pickup
+      // Fit camera to show driver + pickup + dropoff
       Future.delayed(const Duration(milliseconds: 200), () {
         if (mounted) _fitRouteBounds();
       });
@@ -979,15 +1015,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _distanceMiles = remainingM / 1609.34;
     _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
 
-    // Arriving phase: the persisted route is pickup→dropoff (trip route).
-    // Store it for later and clear current route; the approach route
-    // (driver→pickup) will be fetched on first RTDB GPS update.
+    // Arriving phase: keep trip route visible as dimmed background.
+    // The approach route (driver→pickup) will overlay on first RTDB GPS update.
     if (_phase == _TrackPhase.arriving) {
       if (_tripRoutePts.isEmpty && _routePts.isNotEmpty) {
         _tripRoutePts = List.from(_routePts);
       }
-      _routePts = [];
-      _segDist = [];
+      // Keep _routePts as the trip route so it shows on the map (dimmed)
       _traveledM = 0;
       _tgtTraveledM = 0;
       if (activeRide.driverLat != null && activeRide.driverLng != null &&
@@ -995,8 +1029,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _driverPos = LatLng(activeRide.driverLat!, activeRide.driverLng!);
         _animPos = _driverPos;
       }
-      _distanceMiles = 0;
-      _etaMinutes = 1;
+      // Compute distance from trip route
+      if (_routePts.length >= 2) {
+        _buildSegDist();
+        _distanceMiles = _segDist.isNotEmpty ? _segDist.last / 1609.34 : 0;
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      } else {
+        _distanceMiles = 0;
+        _etaMinutes = 1;
+      }
     }
 
     if (!mounted) return;

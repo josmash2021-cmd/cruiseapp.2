@@ -360,12 +360,14 @@ class DataGuardian:
                 self._trips_checked += len(orphaned) + len(stuck)
 
                 # Check for ghost trips: driver_en_route/arrived/in_trip with no
-                # location update for 60+ minutes — driver app likely crashed.
+                # DB update for 180+ minutes — driver app likely crashed.
+                # 180 min (not 60) because driver location goes to Firebase RTDB,
+                # so SQL updated_at only changes on status transitions.
                 ghost_result = await session.execute(text("""
                     SELECT t.id, t.status, t.driver_id, t.updated_at
                     FROM trips t
                     WHERE t.status IN ('driver_en_route', 'arrived', 'in_trip')
-                    AND t.updated_at < NOW() - INTERVAL '60 minutes'
+                    AND t.updated_at < NOW() - INTERVAL '180 minutes'
                 """))
                 ghosts = ghost_result.fetchall()
 

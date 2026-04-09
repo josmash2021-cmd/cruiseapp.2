@@ -307,6 +307,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _tripStartedTimer?.cancel();
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
+    _gpsFallbackTimer?.cancel();
     _labelAnimTimer?.cancel();
     _dropoffPopTimer?.cancel();
     _pickupPopOutTimer?.cancel();
@@ -374,6 +375,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // RTDB auto-reconnect: retry when stream errors out
   Timer? _rtdbReconnectTimer;
   int _rtdbFailCount = 0;
+
+  // Fallback: fetch approach route from backend if no RTDB GPS in 5s
+  Timer? _gpsFallbackTimer;
 
   @override
   Widget build(BuildContext context) {

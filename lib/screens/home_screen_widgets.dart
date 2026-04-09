@@ -384,7 +384,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, child: child)),
                   child: _nextScheduledRide != null
                       ? Padding(
-                          key: const ValueKey('scheduled_indicator'),
+                          key: ValueKey('sched_${((_nextScheduledRide!['status'] as String?) ?? 'scheduled').toLowerCase()}'),
                           padding: const EdgeInsets.only(left: 24, right: 24, top: 16),
                           child: _buildScheduledRideIndicator(context),
                         )
@@ -2739,8 +2739,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
         status == 'driver_en_route' || status == 'arriving' || status == 'arrived' ||
         status == 'driver_arrived' || status == 'in_trip' || status == 'in_progress';
 
+    final driverName = (ride['driver_name'] as String?)?.split(' ').first ?? '';
     final label = hasDriver
-        ? (isEs ? 'Ya tienes un conductor para tu viaje reservado' : 'You have a driver for your scheduled ride')
+        ? (isEs
+            ? '${driverName.isNotEmpty ? '$driverName está' : 'Tu conductor está'} confirmado para tu viaje'
+            : '${driverName.isNotEmpty ? '$driverName is' : 'Your driver is'} confirmed for your ride')
         : (isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride');
     final dateStr = dt != null
         ? DateFormat(isEs ? "d 'de' MMM, h:mm a" : 'MMM d, h:mm a',

@@ -40,9 +40,10 @@ _action_reminder_tasks: dict[int, asyncio.Task] = {}
 # Track running cascade tasks per trip so we don't double-cascade
 _cascade_tasks: dict[int, asyncio.Task] = {}
 
-# Cascade configuration
+# Cascade configuration — wait must match OFFER_TIMEOUT_SECONDS (45s)
+# so the driver's UI countdown and the server-side expiry are in sync.
 _CASCADE_MAX_DRIVERS = 10      # try up to 10 drivers before giving up
-_CASCADE_WAIT_SECONDS = 20     # wait 20s for each driver to respond (was 8s — too aggressive)
+_CASCADE_WAIT_SECONDS = OFFER_TIMEOUT_SECONDS  # 45s — matches the driver UI countdown
 
 # In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
 _route_cache: dict = {}

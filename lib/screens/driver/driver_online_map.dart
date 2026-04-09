@@ -28,67 +28,37 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _phase == _Phase.routeSummary;
 
     if (!isNav) {
-      // ── Searching mode: 3D car icon (same as rider tracking) ──
-      final carBytes = _searchingCarBytes;
-      if (carBytes == null) return;
-
-      // Remove nav car annotation if switching from nav to searching
+      // ── Searching mode: golden dot ──
+      final dotBytes = _goldDot.currentBytes;
+      if (dotBytes == null) return;
+      // Remove car annotation if switching to gold dot
       if (_carAnnot != null) {
         try { await pointMgr.delete(_carAnnot!); } catch (_) {}
         _carAnnot = null;
       }
-      // Remove legacy gold dot if it exists
       if (_goldDotAnnot != null) {
-        try { await pointMgr.delete(_goldDotAnnot!); } catch (_) {}
-        _goldDotAnnot = null;
-      }
-
-      if (_searchingCarAnnot != null) {
         try {
-          _searchingCarAnnot!.geometry = mapbox.Point(
-            coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude),
-          );
-          _searchingCarAnnot!.iconRotate = _heading;
-          await pointMgr.update(_searchingCarAnnot!);
-        } catch (_) {
-          _searchingCarAnnot = null;
-          _searchingCarCreating = false;
-        }
+          _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
+          _goldDotAnnot!.image = dotBytes;
+          _goldDotAnnot!.iconSize = _dotPopScale;
+          await pointMgr.update(_goldDotAnnot!);
+        } catch (_) { _goldDotAnnot = null; }
       }
-      if (_searchingCarAnnot == null && !_searchingCarCreating) {
-        _searchingCarCreating = true;
-        try {
-          _searchingCarAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(
-              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude),
-            ),
-            image: carBytes,
-            iconSize: 0.7,
-            iconRotate: _heading,
-            iconAnchor: mapbox.IconAnchor.CENTER,
-            iconOffset: [0, 0],
-          ));
-          // Car rotates relative to map north
-          try {
-            await _map?.style.setStyleLayerProperty(
-              pointMgr.id, 'icon-rotation-alignment', 'map');
-            await _map?.style.setStyleLayerProperty(
-              pointMgr.id, 'icon-allow-overlap', true);
-            await _map?.style.setStyleLayerProperty(
-              pointMgr.id, 'icon-ignore-placement', true);
-          } catch (_) {}
-        } catch (_) {}
-        _searchingCarCreating = false;
+      if (_pos == null) return;
+      if (_goldDotAnnot == null) {
+        _goldDotAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          image: dotBytes,
+          iconSize: _dotPopScale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconOffset: [0, 0],
+        ));
+        // Trigger fade+pop on first creation
+        if (!_dotPopDone) _animateDotPop();
       }
-    } else {
+    } else if (isNav) {
       // ── Navigation mode: nav car icon ──
-      // Remove searching car annotation if switching to nav
-      if (_searchingCarAnnot != null) {
-        try { await pointMgr.delete(_searchingCarAnnot!); } catch (_) {}
-        _searchingCarAnnot = null;
-        _searchingCarCreating = false;
-      }
-      // Remove legacy gold dot if it exists
+      // Remove dot annotation if switching to car
       if (_goldDotAnnot != null) {
         try { await pointMgr.delete(_goldDotAnnot!); } catch (_) {}
         _goldDotAnnot = null;

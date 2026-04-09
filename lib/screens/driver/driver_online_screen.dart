@@ -280,12 +280,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _sedanIconBytes;
   final String _activeVehicleAsset = 'suburban';
 
-  // -- 3D car icon for searching mode (replaces flat golden dot) --
-  Uint8List? _searchingCarBytes;
-  mapbox.PointAnnotation? _searchingCarAnnot;
-  bool _searchingCarCreating = false;
-
-  // -- Golden animated dot (legacy — kept for dispose safety) --
+  // -- Golden animated dot --
   final GoldLocationDot _goldDot = GoldLocationDot();
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false;   // true after first-appearance pop completes
@@ -524,8 +519,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   double _targetHeading = 0;
   int _lastUiRebuildMs = 0; // throttle: only rebuild widget tree at ~15fps
-  double? _lastCamLat;  // for gentle camera follow in searching mode
-  double? _lastCamLng;
 
   /// Pre-fetch routes for incoming offers so they are cached before card tap.
   void _preFetchOfferRoutes(List<Map<String, dynamic>> offers) {

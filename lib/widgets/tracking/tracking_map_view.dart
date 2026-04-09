@@ -494,36 +494,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     
     if (isOnTrip && _animPos.latitude != 0) {
-      // Adaptive: compute remaining distance to dropoff
-      final remainMiles = _distanceMiles;
-      
-      if (remainMiles <= 2.5) {
-        // Short routes (< 2.5 mi): show full remaining route (driver → dropoff)
-        pts.add(_animPos);
-        pts.add(widget.dropoffLatLng);
-        if (_segDist.isNotEmpty) {
-          for (int i = 0; i < _routePts.length; i++) {
-            if (_segDist[i] >= _traveledM) {
-              pts.add(_routePts[i]);
-            }
+      // Always show driver + dropoff + remaining route so the rider
+      // always sees the full picture of where they're going.
+      pts.add(_animPos);
+      pts.add(widget.dropoffLatLng);
+      if (_segDist.isNotEmpty) {
+        // Add route points ahead of the driver for smooth line visibility
+        for (int i = 0; i < _routePts.length; i++) {
+          if (_segDist[i] >= _traveledM) {
+            pts.add(_routePts[i]);
           }
-        }
-      } else {
-        // Long routes (> 2.5 mi): show driver + next ~2 miles of route ahead
-        // This keeps the view readable instead of zooming way out
-        pts.add(_animPos);
-        final targetAheadM = _traveledM + 3200; // ~2 miles ahead
-        final capM = _segDist.isNotEmpty ? _segDist.last : double.infinity;
-        if (_segDist.isNotEmpty) {
-          for (int i = 0; i < _routePts.length; i++) {
-            if (_segDist[i] >= _traveledM && _segDist[i] <= targetAheadM.clamp(0, capM)) {
-              pts.add(_routePts[i]);
-            }
-          }
-        }
-        // Always include a point toward dropoff direction for context
-        if (pts.length < 2) {
-          pts.add(widget.dropoffLatLng);
         }
       }
     } else if (_phase == _TrackPhase.arriving) {
@@ -580,14 +560,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       );
       // Lock camera during animation to prevent overlapping animations
       _cameraAnimating = true;
-      final dur = isOnTrip ? 1200 : 800;
-      _cameraAnimEnd = DateTime.now().add(Duration(milliseconds: dur - 100));
-      if (isOnTrip) {
-        _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
-      } else {
-        _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
-      }
-      Future.delayed(Duration(milliseconds: dur), () {
+      // Always use easeTo for buttery smooth transitions (flyTo jumps/bounces)
+      const dur = 2000;
+      _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 100));
+      _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
+      Future.delayed(const Duration(milliseconds: dur), () {
         _cameraAnimating = false;
       });
     });

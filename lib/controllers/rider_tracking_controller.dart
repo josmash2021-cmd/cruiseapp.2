@@ -1358,64 +1358,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
   }
 
-  /// Smooth chase camera: follows driver with adaptive zoom based on distance
-  /// to dropoff. Zooms in gently as driver approaches — never too extreme.
+  /// Camera follows the route — always keeps driver + route ahead + destination
+  /// visible so the rider never loses sight of where they're going.
   void _followDriver(LatLng position, double bearing) {
     if (_map == null || !mounted) return;
     // Skip if another camera animation is still running
     if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-    final mq = MediaQuery.of(context).padding;
-    final topInset = mq.top + 10 + _topCardHeight + 48;
-    final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
+    if (position.latitude == 0 && position.longitude == 0) return;
 
-    // Adaptive zoom: 14.5 when far (>2mi) → 16.0 max when very close (<0.1mi)
-    double zoom;
-    double camBearing;
-    double camPitch;
-    final isTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-
-    if (isTrip) {
-      if (_distanceMiles > 2.0) {
-        zoom = 14.5;
-      } else if (_distanceMiles < 0.1) {
-        zoom = 16.0;
-      } else {
-        final t = (2.0 - _distanceMiles) / 1.9;
-        zoom = 14.5 + t * 1.5;
-      }
-      // Chase-style: camera rotates with driver bearing, subtle 3D tilt
-      camBearing = bearing;
-      camPitch = 25;
-    } else {
-      zoom = 15.5;
-      // Arriving phase: north-up so rider sees driver relative to themselves
-      camBearing = 0;
-      camPitch = 0;
-    }
-
-    // Lock camera during animation to prevent overlapping flyTo/easeTo
-    _cameraAnimating = true;
-    _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: 2400));
-    _map!.easeTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(position.longitude, position.latitude),
-        ),
-        zoom: zoom,
-        bearing: camBearing,
-        pitch: camPitch,
-        padding: mapbox.MbxEdgeInsets(
-          top: topInset,
-          bottom: bottomInset,
-          left: 40,
-          right: 40,
-        ),
-      ),
-      mapbox.MapAnimationOptions(duration: 2500),
-    );
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      _cameraAnimating = false;
-    });
+    // Always use fitRouteBounds — it shows driver + route + destination
+    // instead of centering on just the driver (which loses the route).
+    _fitRouteBounds();
   }
 
   void _navigateToHome() {

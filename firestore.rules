@@ -6,10 +6,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwnDoc(docId) {
-      return request.auth != null && request.auth.uid == docId;
-    }
-
     function isAdmin() {
       return request.auth != null && request.auth.token.admin == true;
     }
@@ -21,26 +17,23 @@ service cloud.firestore {
     }
 
     match /verifications/{docId} {
-      allow read: if isOwnDoc(docId) || isAdmin();
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isOwnDoc(docId) || isAdmin();
+      allow update: if isAuthenticated();
     }
 
     match /clients/{docId} {
-      allow read: if isOwnDoc(docId) || isAdmin();
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isOwnDoc(docId) || isAdmin();
+      allow update: if isAuthenticated();
     }
 
     match /drivers/{docId} {
-      // Drivers can read their own doc; riders can read assigned driver during trip
-      allow read: if isOwnDoc(docId) || isAdmin() || isAuthenticated();
-      allow write: if isOwnDoc(docId) || isAdmin();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /trips/{docId} {
-      // Authenticated users can read/write trips (app uses anonymous auth
-      // with Supabase IDs, not Firebase UIDs for ownership)
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();
@@ -48,21 +41,20 @@ service cloud.firestore {
     }
 
     match /users/{docId} {
-      // Users can only read their own profile
-      allow read: if isOwnDoc(docId) || isAdmin();
-      allow create: if isAuthenticated() || isAdmin();
-      allow update: if isOwnDoc(docId) || isAdmin();
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
       allow delete: if isAdmin();
 
-      // Subcollections: only the account owner may read/write.
+      // Subcollections (inbox_chats, etc.)
       match /{subcollection}/{docId2} {
-        allow read: if isOwnDoc(docId) || isAdmin();
-        allow write: if isOwnDoc(docId) || isAdmin();
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
       }
     }
 
     match /riders/{docId} {
-      allow read: if isOwnDoc(docId) || isAdmin();
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
@@ -76,6 +68,14 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow update: if isAdmin();
       allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Driver bug reports / feedback
+    match /driver_reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
   }

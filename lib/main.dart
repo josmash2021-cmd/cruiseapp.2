@@ -440,6 +440,17 @@ Future<void> _initFirebase() async {
         }
       }
     }
+    // Auto-reauthenticate if anonymous session expires mid-use
+    FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (user == null) {
+        debugPrint('[Firebase] auth lost — re-signing in anonymously…');
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+        } catch (e) {
+          debugPrint('[Firebase] re-auth failed: $e');
+        }
+      }
+    });
   } catch (e) {
     debugPrint('[Firebase] early init error: $e');
   }

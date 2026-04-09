@@ -1572,7 +1572,7 @@ class S {
   String get headToDropOff =>
       _es ? 'Dirígete al punto de entrega' : 'Head to drop-off';
   String get headToDestination =>
-      _es ? 'Dirígete al destino' : 'Head to destination';
+      _es ? 'Hacia destino' : 'To destination';
   String get tripNoLongerAvailable =>
       _es ? 'Viaje ya no disponible' : 'Trip no longer available';
 
@@ -2313,7 +2313,7 @@ class S {
       ? 'Inicia sesión para empezar a ganar con Cruise'
       : 'Sign in to start earning with Cruise';
   String get passwordLabel => _es ? 'Contraseña' : 'Password';
-  String get orDivider => _es ? 'o' : 'or';
+  String get orDivider => _es ? 'O' : 'OR';
   String get signUpToDrive =>
       _es ? 'Regístrate para conducir' : 'Sign up to drive';
   String get lookingToRide => _es ? '¿Buscas un viaje? ' : 'Looking to ride? ';
@@ -3135,7 +3135,6 @@ class S {
 
   // ── Navigation Panel ──
   String get headToPickup => _es ? 'Hacia pickup' : 'To pickup';
-  String get headToDestination => _es ? 'Hacia destino' : 'To destination';
   String get openInGoogleMaps => _es ? 'ABRIR EN GOOGLE MAPS' : 'OPEN IN GOOGLE MAPS';
   String get passengerFallback => _es ? 'Pasajero' : 'Rider';
   String exitNumberLabel(int n) => _es ? 'Salida $n' : 'Exit $n';
@@ -3419,6 +3418,7 @@ class S {
       ? 'Ingresa el código enviado a tu email:'
       : 'Enter the code sent to your email:';
   String get verificationFailed => _es ? 'Verificación fallida. Intenta de nuevo.' : 'Verification failed. Try again.';
+  String get placeLabel => _es ? 'Lugar' : 'Place';
   String addLabelFor(String label) => _es ? 'Agregar $label' : 'Add $label';
   String setLabelAddress(String label) => _es ? 'Establecer dirección de $label' : 'Set $label address';
 
@@ -3460,7 +3460,6 @@ class S {
   String get emailAddressHint => _es ? 'Dirección de email' : 'Email address';
   String get continueWithPhone => _es ? 'Continuar con Teléfono' : 'Continue with Phone';
   String get continueWithEmail => _es ? 'Continuar con Email' : 'Continue with Email';
-  String get orDivider => _es ? 'O' : 'OR';
   String get continueWithGoogle => _es ? 'Continuar con Google' : 'Continue with Google';
   String get continueWithApple => _es ? 'Continuar con Apple' : 'Continue with Apple';
   String get signInBtn => _es ? 'Iniciar sesión' : 'Sign in';
@@ -3499,15 +3498,12 @@ class S {
   String receiptSentToEmail(String email) => _es ? 'Recibo enviado a $email' : 'Receipt sent to $email';
   String completedOnDate(String date) => _es ? 'Completado · $date' : 'Completed · $date';
   String get tripDetailsHeader => _es ? 'Detalles del Viaje' : 'Trip Details';
-  String get paymentLabel => _es ? 'Pago' : 'Payment';
   String get fareBreakdownHeader => _es ? 'Desglose de Tarifa' : 'Fare Breakdown';
   String get baseFareLabel => _es ? 'Tarifa base' : 'Base fare';
   String mileageLabel(String dist) => _es ? 'Distancia ($dist)' : 'Mileage ($dist)';
   String timeFareLabel(String time) => _es ? 'Tiempo ($time)' : 'Time ($time)';
   String surgeLabel(String mult) => _es ? 'Recargo ($mult)' : 'Surge ($mult)';
   String waitTimeLabel(String time) => _es ? 'Tiempo de espera ($time)' : 'Wait time ($time)';
-  String get tipLabel => _es ? 'Propina' : 'Tip';
-  String get totalLabel => _es ? 'Total' : 'Total';
   String get routeHeader => _es ? 'Ruta' : 'Route';
   String get pickupTagLabel => _es ? 'RECOGIDA' : 'PICKUP';
   String get dropoffTagLabel => _es ? 'DESTINO' : 'DROP-OFF';

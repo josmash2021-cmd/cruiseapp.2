@@ -175,8 +175,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           if (dtSec > 0.05 && dtSec < 5.0) {
             final distDelta = newTarget - _tgtTraveledM;
             if (distDelta > 0) {
-              // Smooth velocity with exponential average (avoid spikes)
-              final newVel = distDelta / dtSec;
+              // Smooth velocity with exponential average — cap to prevent spikes
+              final newVel = (distDelta / dtSec).clamp(0.0, 35.0); // ~78 mph max
               _velocityMps = _velocityMps * 0.4 + newVel * 0.6;
             }
           }
@@ -425,67 +425,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } catch (e) {
       debugPrint('[RiderTracking] Approach route fetch error: $e');
       _approachRouteFetching = false;
-    }
-  }
-
-  /// FIX 4: Smooth animate driver marker from current position to new position
-  /// Uses Ticker (vsync‑synced 60fps) for buttery smooth car movement.
-  void _startSmoothMarkerAnimation(LatLng targetPos, double? targetBearing) {
-    if (_map == null || !mounted) return;
-    
-    _markerLastPos = _animPos; // Current interpolated position
-    _markerTargetPos = targetPos;
-    _markAnimatingToTarget = true;
-
-    // Store target bearing for interpolation inside tick
-    _markerTargetBearing = targetBearing;
-
-    // Reuse ticker, just reset start time
-    if (_markerAnimTicker != null && _markerAnimTicker!.isActive) {
-      _markerAnimNeedsRestart = true;
-    } else {
-      _markerAnimNeedsRestart = true;
-      _markerAnimTicker?.dispose();
-      _markerAnimTicker = createTicker(_onMarkerAnimTickWrapper);
-      _markerAnimTicker!.start();
-    }
-  }
-
-  void _onMarkerAnimTickWrapper(Duration elapsed) {
-    if (_markerAnimNeedsRestart) {
-      _markerAnimStart = elapsed;
-      _markerAnimNeedsRestart = false;
-    }
-    _onMarkerAnimTick(elapsed);
-  }
-
-  void _onMarkerAnimTick(Duration elapsed) {
-    final dt = (elapsed - _markerAnimStart).inMilliseconds;
-    final t = (dt / _RiderTrackingScreenState._markerAnimDurationMs).clamp(0.0, 1.0);
-
-    // Smooth ease-in-out: 3t² - 2t³
-    final easedT = t * t * (3.0 - 2.0 * t);
-
-    // Interpolate position
-    final lat = _markerLastPos.latitude +
-        (_markerTargetPos.latitude - _markerLastPos.latitude) * easedT;
-    final lng = _markerLastPos.longitude +
-        (_markerTargetPos.longitude - _markerLastPos.longitude) * easedT;
-
-    _animPos = LatLng(lat, lng);
-
-    // Interpolate bearing if available
-    if (_markerTargetBearing != null) {
-      double diff = (_markerTargetBearing! - _animBearing) % 360;
-      if (diff > 180) diff -= 360;
-      if (diff < -180) diff += 360;
-      _animBearing += diff * easedT.clamp(0.0, 1.0);
-    }
-
-    _setState(() {}); // Trigger map marker update
-
-    if (t >= 1.0) {
-      _markAnimatingToTarget = false;
     }
   }
 

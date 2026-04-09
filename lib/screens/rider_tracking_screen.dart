@@ -303,7 +303,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _arrivedDotPulse.dispose();
     _routeFadeTimer?.cancel();
     _startRidePhaseTimer?.cancel();
-    _markerAnimTicker?.dispose();
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
     _rtdbReconnectTimer?.cancel();
@@ -356,16 +355,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _startRidePhaseTimer;
   int _startRidePhase = 0; // 0 = no animation, 1 = draw, 2 = zoom out, 3 = pause, 4 = zoom in, 5+ = follow mode
   bool _startRideAnimationDone = false;
-
-  // Smooth car marker animation (Ticker-based for vsync 60fps)
-  LatLng _markerLastPos = const LatLng(0, 0);
-  LatLng _markerTargetPos = const LatLng(0, 0);
-  Ticker? _markerAnimTicker;
-  Duration _markerAnimStart = Duration.zero;
-  bool _markerAnimNeedsRestart = false;
-  bool _markAnimatingToTarget = false;
-  double? _markerTargetBearing;
-  static const int _markerAnimDurationMs = 1000; // 1s smooth glide between updates
 
   // Periodic state save timer
   Timer? _saveStateTimer;

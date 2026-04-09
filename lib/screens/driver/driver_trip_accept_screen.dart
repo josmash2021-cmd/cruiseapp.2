@@ -655,10 +655,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Fire-and-forget cleanup/status updates so UI never hangs.
     unawaited(() async {
-      try {
-        await ApiService.updateTripStatus(tripId: widget.tripId, status: 'completed')
-            .timeout(const Duration(seconds: 6));
-      } catch (_) {}
+      // Retry trip completion up to 3 times — if backend never marks it
+      // 'completed', dispatch will still consider driver busy.
+      bool apiOk = false;
+      for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
+        try {
+          await ApiService.updateTripStatus(tripId: widget.tripId, status: 'completed')
+              .timeout(const Duration(seconds: 6));
+          apiOk = true;
+        } catch (e) {
+          debugPrint('[Driver] completeTrip API attempt ${attempt + 1} failed: $e');
+          if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+      if (!apiOk) {
+        debugPrint('[Driver] completeTrip API FAILED after 3 attempts — trip may be stuck');
+      }
       try {
         await FirebaseFirestore.instance
             .collection('trips')

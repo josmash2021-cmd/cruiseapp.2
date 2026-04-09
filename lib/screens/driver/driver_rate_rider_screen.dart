@@ -143,7 +143,12 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     final top = MediaQuery.of(context).padding.top;
     final bot = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goOnline(); // Back button → go online instead of getting stuck
+      },
+      child: Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
@@ -269,6 +274,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           ),
         ],
       ),
+    ),
     );
   }
 

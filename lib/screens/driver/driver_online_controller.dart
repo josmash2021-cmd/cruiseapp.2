@@ -695,6 +695,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         })
         .catchError((e) {
           debugPrint('âŒ Failed to go online: $e');
+          // Retry after 5s so driver doesn't stay silently offline
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted && _phase == _Phase.searching) {
+              debugPrint('[DriverOnline] Retrying _goOnlineBackend after failure');
+              _goOnlineBackend();
+            }
+          });
         });
   }
 

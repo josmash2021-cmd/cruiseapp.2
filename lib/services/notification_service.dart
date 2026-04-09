@@ -390,8 +390,10 @@ class NotificationService {
           _onlineSoundPlaying = false;
           return;
         }
-        await _onlinePlayer.seek(Duration.zero);
-        await _onlinePlayer.resume();
+        // Fire-and-forget — don't await platform channel calls
+        // to avoid blocking the UI thread during screen transitions.
+        _onlinePlayer.seek(Duration.zero);
+        _onlinePlayer.resume();
         // Reset guard after sound finishes (~2s)
         Future.delayed(const Duration(seconds: 2), () => _onlineSoundPlaying = false);
       } catch (e) {

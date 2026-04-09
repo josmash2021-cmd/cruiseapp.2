@@ -31,7 +31,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('⚠️ getCurrentUserId failed: $e');
     }
 
-    // Start ALL non-blocking tasks immediately — zero delay
+    // Start ALL non-blocking tasks after a short delay so the
+    // page transition animation + online sound don't compete
+    // for the main-thread platform-channel dispatcher.
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
     _startClock();
     _startPolling();
     _startPosStream();

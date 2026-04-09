@@ -101,6 +101,10 @@ MIGRATIONS = [
     ("rider_payment_methods", "bank_name", "VARCHAR(255)"),
     ("rider_payment_methods", "is_default", "BOOLEAN DEFAULT FALSE"),
     ("rider_payment_methods", "created_at", "TIMESTAMP WITH TIME ZONE"),
+    # ── Cruise Level ──
+    ("users", "cruise_level", "VARCHAR(20) DEFAULT 'bronze'"),
+    # ── Active session ──
+    ("users", "active_session_id", "VARCHAR(64)"),
 ]
 
 

@@ -36,7 +36,13 @@ service cloud.firestore {
     match /trips/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.riderId ||
+        request.auth.uid == resource.data.driverId ||
+        request.auth.uid == resource.data.rider_id ||
+        request.auth.uid == resource.data.driver_id ||
+        request.auth.token.admin == true
+      );
       allow delete: if isAdmin();
     }
 

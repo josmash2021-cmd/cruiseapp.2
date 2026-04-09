@@ -744,13 +744,13 @@ def sync_scheduled_ride(trip_id: int, rider_id: int, rider_name: str = "",
         "airport_code": airport_code or "",
         "terminal": terminal or "",
         "meet_inside": meet_inside,
-        "createdAt": _server_ts(),
+        "createdAt": _ts(),
     }
     if driver_id:
         data["driverId"] = driver_id
         data["driverName"] = driver_name or ""
         data["driverPhone"] = driver_phone or ""
-        data["assignedAt"] = _server_ts()
+        data["assignedAt"] = _ts()
     try:
         _db.collection("scheduled_rides").document(doc_id).set(data, merge=True)
         log.info("Synced scheduled ride sql_%d to Firestore", trip_id)

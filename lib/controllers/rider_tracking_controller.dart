@@ -1143,32 +1143,36 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_segDist.isEmpty) {
       final tgt = _directTargetPos;
       if (tgt != null) {
-        final posFactor = tf(0.22);
+        final prevPos = _animPos;
+        final posFactor = tf(0.35);
         final dLat = tgt.latitude - _animPos.latitude;
         final dLng = tgt.longitude - _animPos.longitude;
         final newLat = _animPos.latitude + dLat * posFactor;
         final newLng = _animPos.longitude + dLng * posFactor;
         _animPos = LatLng(newLat, newLng);
         _driverPos = _animPos;
-        final tgtBrg = _directTargetBearing;
-        if (tgtBrg != null) {
-          double d = tgtBrg - _animBearing;
-          if (d > 180) d -= 360;
-          if (d < -180) d += 360;
-          final brgFactor = tf(0.30);
-          _animBearing = (_animBearing + d * brgFactor) % 360;
-          _driverBearing = _animBearing;
-          if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
-            _interpIdle = true;
-            _interpTicker?.stop();
-            return;
-          }
+        // Calculate bearing from movement direction (prev→current)
+        // instead of raw GPS bearing — car always faces where it's going
+        final movedEnough = (newLat - prevPos.latitude).abs() > 0.000002 ||
+                            (newLng - prevPos.longitude).abs() > 0.000002;
+        double targetBrg;
+        if (movedEnough) {
+          targetBrg = _bearing(prevPos, _animPos);
         } else {
-          if (dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005) {
-            _interpIdle = true;
-            _interpTicker?.stop();
-            return;
-          }
+          targetBrg = _directTargetBearing ?? _animBearing;
+        }
+        double d = targetBrg - _animBearing;
+        if (d > 180) d -= 360;
+        if (d < -180) d += 360;
+        final brgFactor = tf(0.30);
+        _animBearing = (_animBearing + d * brgFactor) % 360;
+        _driverBearing = _animBearing;
+        // Only idle when trip is completed — never stop during active phases
+        final isActive = _phase != _TrackPhase.completed;
+        if (!isActive && dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
+          _interpIdle = true;
+          _interpTicker?.stop();
+          return;
         }
         _updateCarSmooth();
       }

@@ -269,13 +269,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (mounted) _startRealTimeTracking();
     });
     _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
-    // Send greeting notification after 3 seconds
-    Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
-    // Notify rider that a driver was assigned
-    _sendRideNotification(
-      'Driver Assigned',
-      '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
-    );
+    // Only send notifications on FRESH trip — not on app resume
+    final _isFreshTrip = widget.initialStatus == null || widget.initialStatus!.isEmpty;
+    if (_isFreshTrip) {
+      Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
+      _sendRideNotification(
+        'Driver Assigned',
+        '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
+      );
+    }
     // Save state periodically for resume support
     _saveStateTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveRideState());
   }

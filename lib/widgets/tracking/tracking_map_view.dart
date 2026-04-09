@@ -472,8 +472,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Fit route bounds applying precise padding for top and bottom cards.
   /// During onTrip: adaptive zoom — short routes show full remaining route,
   /// long routes show driver + enough ahead to see well (not zoomed out too far).
+  /// During arrived: no-op — camera is locked via _fitArrivedBounds().
   void _fitRouteBounds() {
     if (_map == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
+    // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
+    if (_phase == _TrackPhase.arrived) return;
     
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -607,6 +610,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Update camera target bounds (called from sim tick) ──
   void _throttleCam() {
+    // During arrived phase, camera is stable — no animations at all.
+    if (_phase == _TrackPhase.arrived) return;
+
     final now = DateTime.now();
     // Chase mode: follow driver — throttle at 2.5s to match camera follow timer
     // and avoid overlapping easeTo animations that cause camera jitter.
@@ -1339,10 +1345,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// FIX 2: DRIVER ARRIVED STATE
   /// ──────────────────────────────────────────────────────────────────────────
   
-  /// Handle driver arrival: fade route, zoom camera to driver location
+  /// Handle driver arrival: draw trip route, fit camera to pickup+dropoff, then STOP.
+  /// Camera must be stable during arrived phase — no further animations.
   Future<void> _handleDriverArrived() async {
     if (_arrivedStateInitialized || _map == null) return;
     _arrivedStateInitialized = true;
+
+    // ── Stop all camera movement ──
+    _shouldFollowDriver = false;
+    _cameraFollowTimer?.cancel();
+    _cameraFollowTimer = null;
 
     // Remove approach route (driver→pickup) — driver is at pickup now.
     _routeFadeTimer?.cancel();
@@ -1373,10 +1385,66 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _addDropoffPin();
     }
 
-    // Fit camera to show pickup, dropoff, and driver
+    // Fit camera to show pickup + dropoff ONCE, then stop — no more camera moves.
     Future.delayed(const Duration(milliseconds: 300), () {
       if (_map == null || !mounted) return;
-      _fitRouteBounds();
+      _fitArrivedBounds();
+    });
+  }
+
+  /// Fit camera to pickup + dropoff only (arrived phase).
+  /// Produces a stable view showing the full trip route without including
+  /// the driver's jittery GPS position or approach route points.
+  void _fitArrivedBounds() {
+    if (_map == null) return;
+
+    final mq = MediaQuery.of(context).padding;
+    final topPad = mq.top;
+    final bottomPad = mq.bottom;
+
+    // Only include pickup, dropoff, and the trip route points between them.
+    final pts = <LatLng>[
+      widget.pickupLatLng,
+      widget.dropoffLatLng,
+    ];
+    // Add trip route points so the camera fits the actual route path.
+    if (_tripRoutePts.isNotEmpty) {
+      pts.addAll(_tripRoutePts);
+    }
+
+    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
+    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+
+    _map!.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
+      mapbox.MbxEdgeInsets(
+        top: topPad + 10 + _topCardHeight + 48,
+        bottom: bottomPad + 16 + _bottomCardHeight + 48,
+        left: 44,
+        right: 44,
+      ),
+      null, null,
+    ).then((cam) {
+      if (!mounted || _map == null) return;
+      final zoom = (cam.zoom ?? 14.0).clamp(13.0, 16.0);
+      final clampedCam = mapbox.CameraOptions(
+        center: cam.center,
+        zoom: zoom,
+        bearing: cam.bearing,
+        pitch: cam.pitch,
+        padding: cam.padding,
+        anchor: cam.anchor,
+      );
+      // Single flyTo — no further camera animations after this.
+      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
     });
   }
 

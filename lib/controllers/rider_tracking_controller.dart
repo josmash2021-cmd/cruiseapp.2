@@ -568,6 +568,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _phase = _TrackPhase.onTrip;
         _tripJustStarted = true;
       });
+      // Re-enable camera tracking (disabled during arrived phase)
+      _shouldFollowDriver = true;
+      _startCameraFollowTracking();
       _saveRideState();
       _tripStartedTimer?.cancel();
       _tripStartedTimer = Timer(const Duration(seconds: 2), () {
@@ -1313,13 +1316,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every 2s
+  /// Start real-time camera tracking - follows driver every 2.5s.
+  /// Skips during arrived phase — driver is stationary, camera should be stable.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
     // Follow every 2.5s — longer interval prevents overlapping easeTo animations
     // which cause camera jitter when a new flyTo starts mid-animation.
     _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
+      // During arrived phase the driver is at the pickup — no camera movement.
+      if (_phase == _TrackPhase.arrived) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
       _followDriver(_animPos, _animBearing);
     });

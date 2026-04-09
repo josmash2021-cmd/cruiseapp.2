@@ -540,6 +540,15 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     )
     busy_driver_ids = {row[0] for row in busy_driver_result.all()}
 
+    # Bounding-box pre-filter: only load drivers within radius_km of pickup
+    _dispatch_radius_km = 30.0  # max search radius in km
+    _delta_lat = _dispatch_radius_km / 111.0
+    _delta_lng = _dispatch_radius_km / (111.0 * math.cos(math.radians(trip.pickup_lat or 0)))
+    _min_lat = (trip.pickup_lat or 0) - _delta_lat
+    _max_lat = (trip.pickup_lat or 0) + _delta_lat
+    _min_lng = (trip.pickup_lng or 0) - _delta_lng
+    _max_lng = (trip.pickup_lng or 0) + _delta_lng
+
     result = await db.execute(
         select(User).where(
             and_(
@@ -547,6 +556,10 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 User.is_online == True,
                 User.lat.isnot(None),
                 User.lng.isnot(None),
+                User.lat >= _min_lat,
+                User.lat <= _max_lat,
+                User.lng >= _min_lng,
+                User.lng <= _max_lng,
                 User.last_active_at.isnot(None),
                 User.last_active_at >= active_cutoff,
                 ~User.id.in_(busy_driver_ids) if busy_driver_ids else True,
@@ -902,11 +915,22 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         raise HTTPException(409, "Offer already accepted or expired")
     if offer.driver_id != driver_id:
         raise HTTPException(403, "This offer is not assigned to you")
+    # Check no other driver already accepted an offer for this trip
+    existing_accepted = await db.execute(
+        select(DispatchOffer).where(
+            DispatchOffer.trip_id == offer.trip_id,
+            DispatchOffer.status == "accepted",
+            DispatchOffer.id != offer_id,
+        )
+    )
+    if existing_accepted.scalar_one_or_none():
+        raise HTTPException(409, "Trip already accepted by another driver")
+
     offer.status = "accepted"
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
 
-    trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
+    trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id).with_for_update())
     trip = trip_result.scalar_one_or_none()
     if trip:
         # Guard: do not accept if trip was already canceled

@@ -35,8 +35,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Vehicle-type-dependent commission rates (must match trips.py _COMMISSION_BY_TYPE)
+_COMMISSION_BY_TYPE = {
+    "sedan":    (0.40, 0.60),  # (platform_rate, driver_rate)
+    "comfort":  (0.40, 0.60),
+    "premium":  (0.35, 0.65),
+    "vip":      (0.30, 0.70),
+}
+_DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
+
 PLATFORM_COMMISSION_RATE = 0.40
 DRIVER_SHARE_RATE = 0.60
+
+
+def _get_driver_rate(vehicle_type: str | None) -> float:
+    """Return the driver share rate for the given vehicle type."""
+    return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)[1]
 
 
 def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
@@ -46,7 +60,9 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
         total = round(float(trip.driver_earnings), 2)
         base = round(max(total - tip, 0.0), 2)
         return base, total
-    base = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+    # Use vehicle-type-dependent rate instead of flat DRIVER_SHARE_RATE
+    driver_rate = _get_driver_rate(getattr(trip, "vehicle_type", None))
+    base = round(float(trip.fare or 0.0) * driver_rate, 2)
     return base, round(base + tip, 2)
 
 

@@ -332,6 +332,9 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Charge the rider's default Stripe payment method for a completed trip.
     If a payment hold (authorization) exists, capture it instead of creating a new charge.
     Returns a dict with status and payment_intent_id."""
+    if trip.payment_status == "paid":
+        return {"status": "already_paid", "message": "Trip already charged"}
+
     if not _HAS_STRIPE:
         trip.payment_status = "paid"
         await db.commit()

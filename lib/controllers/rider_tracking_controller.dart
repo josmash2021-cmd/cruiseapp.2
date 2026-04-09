@@ -263,23 +263,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
       }
-      if (dist < 0.05 && _phase == _TrackPhase.arriving) {
-        _setState(() {
-          _phase = _TrackPhase.arrived;
-          _etaMinutes = 0;
-          _distanceMiles = 0;
-        });
-        _arrivedDotPulse.repeat(reverse: true);
-        _handleDriverArrived();
-        _showRiderConfirmPickup();
-        if (!_arrivedNotifSent) {
-          _arrivedNotifSent = true;
-          _sendRideNotification(
-            'Your driver has arrived',
-            '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
-          );
-        }
-      }
+      // Phase transitions (arriving→arrived, arrived→onTrip) are ONLY driven
+      // by backend status updates in _onTripStatusUpdate(). Never auto-transition
+      // based on GPS proximity — that caused false "driver arrived" triggers.
     } else if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
       final dist = _hav(ll, widget.dropoffLatLng);
       // Use remaining route distance (road) when available, fallback to haversine

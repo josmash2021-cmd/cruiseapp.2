@@ -9,7 +9,7 @@ Each document uses the SQLite row ID as the Firestore document ID (prefixed
 with "sql_" to avoid collisions with any Firestore-native docs).
 """
 
-import os, logging, asyncio
+import os, logging, asyncio, time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -642,6 +642,26 @@ def get_account_status(user_id: int, collection: str = "clients") -> str:
     return None
 
 
+# ── Retry helper for critical Firestore writes ────────────
+
+def _retry_sync(fn, max_retries=2):
+    """Call *fn* up to *max_retries+1* times with back-off.
+
+    Uses synchronous sleep because the Firebase Admin SDK calls here are
+    synchronous (they block on gRPC internally).
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            fn()
+            return
+        except Exception as e:
+            if attempt == max_retries:
+                log.error("Firestore sync failed after %d attempts: %s", max_retries + 1, e)
+                raise
+            else:
+                time.sleep(0.5 * (attempt + 1))
+
+
 # ═══════════════════════════════════════════════════════════
 #  TRIP sync
 # ═══════════════════════════════════════════════════════════
@@ -699,7 +719,7 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
     if driver_photo_url:
         data["driverPhotoUrl"] = driver_photo_url
     try:
-        _db.collection("trips").document(doc_id).set(data, merge=True)
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
         log.info("🔄 Synced trip sql_%d → Firestore (status=%s)", trip_id, status)
     except Exception as e:
         log.error("❌ Trip sync failed for %d: %s", trip_id, e)
@@ -838,7 +858,7 @@ def sync_trip_status(trip_id: int, status: str,
     if payment_status is not None:
         data["payment_status"] = payment_status
     try:
-        _db.collection("trips").document(doc_id).set(data, merge=True)
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
         log.info("🔄 Synced trip status sql_%d → %s", trip_id, status)
     except Exception as e:
         log.error("❌ Trip status sync failed for %d: %s", trip_id, e)

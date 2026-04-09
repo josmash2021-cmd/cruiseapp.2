@@ -570,22 +570,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
-    // Notify rider + update backend status to 'arrived' (parallel)
-    await Future.wait([
-      ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived')
-          .catchError((_) => <String, dynamic>{}),
-      FirebaseFirestore.instance
-          .collection('trips')
-          .doc(_fsDocId)
-          .update({
-        'status': 'arrived',
-        'arrivedAt': FieldValue.serverTimestamp(),
-      }).then((_) {
-        debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
-      }).catchError((e) {
-        debugPrint('[Driver] Firestore arrived write FAILED: $e');
-      }),
-    ]);
+    // Await backend API first; only then fire Firestore sync as backup.
+    try {
+      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived');
+    } catch (e) {
+      debugPrint('[Driver] arrived API call failed: $e');
+    }
+    // Fire-and-forget Firestore sync as backup (backend already syncs on success)
+    FirebaseFirestore.instance
+        .collection('trips')
+        .doc(_fsDocId)
+        .update({
+      'status': 'arrived',
+      'arrivedAt': FieldValue.serverTimestamp(),
+    }).then((_) {
+      debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
+    }).catchError((e) {
+      debugPrint('[Driver] Firestore arrived write FAILED: $e');
+    });
   }
 
   // ── Listen for rider confirming they are with the driver ────────────────
@@ -664,21 +666,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
-    await Future.wait([
-      ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip')
-          .catchError((_) => <String, dynamic>{}),
-      FirebaseFirestore.instance
-          .collection('trips')
-          .doc(_fsDocId)
-          .update({
-        'status': 'in_trip',
-        'rideStartedAt': FieldValue.serverTimestamp(),
-      }).then((_) {
-        debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
-      }).catchError((e) {
-        debugPrint('[Driver] Firestore in_trip write FAILED: $e');
-      }),
-    ]);
+    // Await backend API first; only then fire Firestore sync as backup.
+    try {
+      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip');
+    } catch (e) {
+      debugPrint('[Driver] in_trip API call failed: $e');
+    }
+    // Fire-and-forget Firestore sync as backup (backend already syncs on success)
+    FirebaseFirestore.instance
+        .collection('trips')
+        .doc(_fsDocId)
+        .update({
+      'status': 'in_trip',
+      'rideStartedAt': FieldValue.serverTimestamp(),
+    }).then((_) {
+      debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
+    }).catchError((e) {
+      debugPrint('[Driver] Firestore in_trip write FAILED: $e');
+    });
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────

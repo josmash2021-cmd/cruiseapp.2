@@ -104,7 +104,7 @@ class TripFirestoreService {
         'driverPhone': driverPhone,
         'acceptedAt': FieldValue.serverTimestamp(),
       });
-      unawaited(batch.commit());
+      await batch.commit();
       debugPrint('🔄 Firestore synced: accepted (driver: $driverName)');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (accepted) failed: $e');
@@ -114,10 +114,10 @@ class TripFirestoreService {
   /// Sync status: driver arrived at pickup.
   static Future<void> syncDriverArrived(String tripId) async {
     try {
-      unawaited(_trips.doc(tripId).update({
+      await _trips.doc(tripId).update({
         'status': 'driver_arrived',
         'driverArrivedAt': FieldValue.serverTimestamp(),
-      }));
+      });
       debugPrint('🔄 Firestore synced: driver_arrived');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (driver_arrived) failed: $e');
@@ -127,10 +127,10 @@ class TripFirestoreService {
   /// Sync status: trip in progress (passenger picked up).
   static Future<void> syncTripStarted(String tripId) async {
     try {
-      unawaited(_trips.doc(tripId).update({
+      await _trips.doc(tripId).update({
         'status': 'in_progress',
         'startedAt': FieldValue.serverTimestamp(),
-      }));
+      });
       debugPrint('🔄 Firestore synced: in_progress');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (in_progress) failed: $e');
@@ -140,10 +140,10 @@ class TripFirestoreService {
   /// Sync status: trip completed.
   static Future<void> syncTripCompleted(String tripId) async {
     try {
-      unawaited(_trips.doc(tripId).update({
+      await _trips.doc(tripId).update({
         'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
-      }));
+      });
       debugPrint('🔄 Firestore synced: completed');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (completed) failed: $e');
@@ -158,13 +158,13 @@ class TripFirestoreService {
     String reason = 'Cancelled',
   }) async {
     try {
-      unawaited(_trips.doc(tripId).update({
+      await _trips.doc(tripId).update({
         'status': 'cancelled',
         'cancelledBy': cancelledBy,
         'cancellationReason': cancellationReason,
         'cancelReason': reason,
         'cancelledAt': FieldValue.serverTimestamp(),
-      }));
+      });
       debugPrint('🔄 Firestore synced: cancelled');
     } catch (e) {
       debugPrint('⚠️ Firestore sync (cancelled) failed: $e');

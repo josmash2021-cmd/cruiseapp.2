@@ -319,6 +319,8 @@ extension _RideRequestController on _RideRequestScreenState {
         }
         break;
       case RiderPhase.driverAssigned:
+        // If rider already cancelled, ignore stale driver assignment
+        if (_riderInitiatedCancel) break;
         // Signal SearchingDriverScreen to pop immediately if still visible
         _driverMatchedNotifier.value = true;
         // Show premium "Driver Found" overlay, then auto-navigate quickly
@@ -913,6 +915,17 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // Handle all states that may have arrived while SearchingDriverScreen was visible.
       final phase = _ctrl.state.phase;
+
+      // If rider initiated cancel, do NOT navigate to tracking even if a
+      // stale Firestore event set driverAssigned during the 300ms window.
+      if (_riderInitiatedCancel) {
+        _riderInitiatedCancel = false;
+        if (phase != RiderPhase.cancelled) {
+          _ctrl.forcePhase(RiderPhase.cancelled);
+        }
+        _ctrl.reset();
+        return;
+      }
 
       // Driver assigned/arriving → show "Driver Found" overlay first, THEN tracking.
       if ((phase == RiderPhase.driverArriving || phase == RiderPhase.driverAssigned) &&

@@ -916,22 +916,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       Future.delayed(const Duration(milliseconds: 300), () async {
         if (_driverMatched) {
           debugPrint('[RiderTrip] cancelRide() backend call skipped — driver matched during delay');
-          // Revert to driverAssigned so the rider sees the Driver Found overlay
-          _state = _state.copyWith(phase: RiderPhase.driverAssigned);
-          notifyListeners();
           return;
         }
         try {
           await ApiService.cancelTrip(tripId);
         } catch (e) {
           debugPrint('[RiderTrip] cancelTrip failed: $e');
-          final msg = e.toString();
-          // 409 = driver already assigned — revert UI so rider sees Driver Found
-          if (msg.contains('409') || msg.contains('already been assigned')) {
-            debugPrint('[RiderTrip] 409 on cancel — driver was assigned, reverting phase');
-            _state = _state.copyWith(phase: RiderPhase.driverAssigned);
-            notifyListeners();
-          }
+          // 409 = driver already assigned — rider still chose to cancel,
+          // so keep phase as cancelled (do not revert to driverAssigned).
         }
       });
     }

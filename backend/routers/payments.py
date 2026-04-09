@@ -128,9 +128,20 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
 
 
 @router.post("/payments/cancel/{intent_id}", dependencies=[Depends(_verify_api_key)])
-async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
+async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Cancel a held PaymentIntent when a rider cancels before trip starts.
     Releasing the hold immediately so the rider's funds are freed."""
+    # SECURITY: verify the caller owns this PaymentIntent (or is admin/dispatch)
+    if user.role not in ("admin", "dispatch"):
+        trip_r = await db.execute(
+            select(Trip).where(Trip.stripe_payment_intent_id == intent_id)
+        )
+        trip = trip_r.scalar_one_or_none()
+        if not trip:
+            raise HTTPException(404, "No trip found for this payment intent")
+        if trip.rider_id != user.id:
+            logging.warning("[Payment] Unauthorized cancel attempt on %s by user %s", intent_id, user.id)
+            raise HTTPException(403, "You are not authorized to cancel this payment")
     if not _HAS_STRIPE:
         return {"payment_intent_id": intent_id, "status": "canceled", "cancelled": True}
     try:
@@ -148,9 +159,20 @@ async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_curren
 
 
 @router.post("/payments/capture/{intent_id}", dependencies=[Depends(_verify_api_key)])
-async def capture_payment_intent(intent_id: str, user: User = Depends(_get_current_user)):
+async def capture_payment_intent(intent_id: str, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Capture a previously authorized (held) PaymentIntent.
     Called when a trip is completed to finalize the charge."""
+    # SECURITY: verify the caller owns this PaymentIntent (or is admin/dispatch)
+    if user.role not in ("admin", "dispatch"):
+        trip_r = await db.execute(
+            select(Trip).where(Trip.stripe_payment_intent_id == intent_id)
+        )
+        trip = trip_r.scalar_one_or_none()
+        if not trip:
+            raise HTTPException(404, "No trip found for this payment intent")
+        if trip.rider_id != user.id:
+            logging.warning("[Payment] Unauthorized capture attempt on %s by user %s", intent_id, user.id)
+            raise HTTPException(403, "You are not authorized to capture this payment")
     if not _HAS_STRIPE:
         return {"payment_intent_id": intent_id, "status": "succeeded", "captured": True}
     try:

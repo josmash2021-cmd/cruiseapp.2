@@ -281,7 +281,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
     if (mounted) _setState(() {});
   }
-  }
 
   /// Download and decode the driver's profile photo for the map marker.
   Future<void> _loadDriverPhoto() async {

@@ -1003,10 +1003,12 @@ class UnmatchedTripRetryAgent:
     When a rider requests a trip and no drivers are available at that instant,
     the trip gets created but no offer is sent. This agent periodically finds
     those orphaned trips and retries dispatch with any newly available drivers.
-    Runs every 15 seconds for fast matching. Gives up after 5 minutes."""
+    Runs every 15 seconds for fast matching.  Keeps retrying for up to 25 min
+    (the DataGuardian stuck-trip timeout cancels at 30 min, so this covers
+    the whole window)."""
 
-    INTERVAL = 15     # retry every 15 seconds
-    MAX_AGE_SECS = 300  # give up after 5 minutes
+    INTERVAL = 15       # retry every 15 seconds
+    MAX_AGE_SECS = 1500  # keep retrying for 25 minutes (was 300s = 5 min)
 
     def __init__(self):
         self._db_session_maker = None

@@ -228,8 +228,10 @@ async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = D
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    if trip.status in ("completed", "cancelled", "canceled"):
+        raise HTTPException(400, f"Trip already in terminal state '{trip.status}'")
     trip.status = "cancelled"
-    trip.cancel_reason = reason
+    trip.cancel_reason = reason or "admin_cancel"
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:

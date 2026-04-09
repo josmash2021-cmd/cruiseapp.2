@@ -41,8 +41,8 @@ _action_reminder_tasks: dict[int, asyncio.Task] = {}
 _cascade_tasks: dict[int, asyncio.Task] = {}
 
 # Cascade configuration
-_CASCADE_MAX_DRIVERS = 5       # try up to 5 drivers before giving up
-_CASCADE_WAIT_SECONDS = 8      # wait 8s for each driver to respond
+_CASCADE_MAX_DRIVERS = 10      # try up to 10 drivers before giving up
+_CASCADE_WAIT_SECONDS = 20     # wait 20s for each driver to respond (was 8s — too aggressive)
 
 # In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
 _route_cache: dict = {}
@@ -314,44 +314,26 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
             trip = trip_result.scalar_one_or_none()
 
             if offer and offer.status == "pending" and trip and trip.status == "requested":
-                # Last offer also not accepted -- expire it and cancel trip
+                # Last offer also not accepted -- expire it but KEEP trip in
+                # 'requested' so UnmatchedTripRetryAgent can keep looking for
+                # newly available drivers.  The DataGuardian stuck-trip timeout
+                # (30 min) will eventually cancel if nobody picks it up.
                 offer.status = "expired"
-                trip.status = "cancelled"
-                trip.cancel_reason = "no_driver"
                 await db.commit()
 
                 logging.warning(
-                    "[Cascade] Trip %d: all %d drivers exhausted, trip cancelled (no_driver)",
+                    "[Cascade] Trip %d: all %d drivers exhausted, trip stays in 'requested' for retry",
                     trip_id, _CASCADE_MAX_DRIVERS,
                 )
 
-                # Notify rider that no drivers are available
+                # Tell rider we're still searching (NOT cancelled)
                 try:
                     await event_bus.push_trip_update(trip_id, {
-                        "status": "cancelled",
-                        "cancel_reason": "no_driver",
-                        "message": "No drivers available right now. Please try again shortly.",
+                        "status": "no_drivers",
+                        "message": "Still searching for a driver. Please wait...",
                     })
                 except Exception:
                     pass
-
-                # Notify rider via FCM too
-                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_result.scalar_one_or_none()
-                if rider and rider.fcm_token:
-                    asyncio.create_task(_send_fcm_push_async(
-                        rider.fcm_token,
-                        title="No Drivers Available",
-                        body="We could not find a driver for your ride. Please try again.",
-                        data={"type": "trip_cancelled", "trip_id": str(trip_id), "reason": "no_driver"},
-                    ))
-
-                # Sync to Firestore
-                if _HAS_FIRESTORE:
-                    try:
-                        firestore_sync.update_trip_status(trip_id, "cancelled")
-                    except Exception:
-                        pass
             elif trip and trip.status == "requested" and offer and offer.status == "pending":
                 # Should not happen, but guard
                 pass

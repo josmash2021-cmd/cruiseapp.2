@@ -969,7 +969,11 @@ async def _scheduled_ride_reminder_loop():
                         and_(
                             Trip.scheduled_at.isnot(None),
                             Trip.driver_id.isnot(None),
-                            Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested", "driver_en_route"]),
+                            # ONLY scheduled-ride statuses — "requested" and
+                            # "driver_en_route" are shared with on-demand trips
+                            # and must NOT be cancelled by the scheduled-ride
+                            # reminder loop (was causing phantom cancellations).
+                            Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active"]),
                         )
                     )
                 )

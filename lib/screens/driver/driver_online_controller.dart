@@ -20,34 +20,41 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   //  BOOT
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _boot() async {
-    // Get driver ID — single fast attempt, retry later if needed
-    try {
-      final id = await ApiService.getCurrentUserId();
-      if (id != null) {
-        _driverId = id;
-        debugPrint('✅ Got driverId=$_driverId');
+    // Fire driver-ID resolution in background — don't block boot.
+    // _verifyAndGoOnline retries if this hasn't resolved yet.
+    unawaited(Future.microtask(() async {
+      try {
+        final id = await ApiService.getCurrentUserId();
+        if (id != null) {
+          _driverId = id;
+          debugPrint('Got driverId=$_driverId');
+        }
+      } catch (e) {
+        debugPrint('getCurrentUserId failed: $e');
       }
-    } catch (e) {
-      debugPrint('⚠️ getCurrentUserId failed: $e');
-    }
+    }));
 
-    // Start ALL non-blocking tasks after a short delay so the
-    // page transition animation + online sound don't compete
-    // for the main-thread platform-channel dispatcher.
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    _startClock();
-    _startPolling();
-    _startPosStream();
-    _loadAllEarnings();
-    _startEarningsRefresh();
-    _startScheduledPoll();
-    unawaited(_locate());
+    // Let the page transition animation settle before starting
+    // background services (400ms transition + small buffer).
+    // Use addPostFrameCallback so we don't block the first build frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        _startClock();
+        _startPolling();
+        _startPosStream();
+        _loadAllEarnings();
+        _startEarningsRefresh();
+        _startScheduledPoll();
+        unawaited(_locate());
 
-    // Verification + go-online in background — don't block the UI.
-    // Driver already passed the home-screen gate (_ensureVerified +
-    // _checkVehicleDocStatus) so this is a background safety net.
-    unawaited(_verifyAndGoOnline());
+        // Verification + go-online in background — don't block the UI.
+        // Driver already passed the home-screen gate (_ensureVerified +
+        // _checkVehicleDocStatus) so this is a background safety net.
+        unawaited(_verifyAndGoOnline());
+      });
+    });
 
     // Build vehicle icons well after the transition settles (700ms)
     // to avoid jank during the 400ms fade+scale entrance animation.
@@ -57,14 +64,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // Pre-cache map tiles in background (fire-and-forget)
     if (_pos != null) {
-      MapCacheService().precacheArea(
+      unawaited(MapCacheService().precacheArea(
         regionId: 'driver_area_${_driverId ?? 0}',
         lat: _pos!.latitude,
         lng: _pos!.longitude,
         minZoom: 10,
         maxZoom: 16,
         radiusKm: 5.0,
-      );
+      ));
     }
   }
 
@@ -1364,7 +1371,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       });
       _syncSearchPulse();
       _cacheEarnings();
-      _doneCtrl.forward(from: 0);
+      _doneCtrl?.forward(from: 0);
     } else {
       // Cancelled or back-pressed — return to searching
       _cancel();
@@ -1679,7 +1686,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
     _syncSearchPulse();
     _cacheEarnings();
-    _doneCtrl.forward(from: 0);
+    _doneCtrl?.forward(from: 0);
   }
 
   void _afterComplete() {
@@ -1692,7 +1699,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Clean up RTDB chat node
       ChatService().deleteChat(_tripId.toString());
     }
-    _doneCtrl.reverse();
+    _doneCtrl?.reverse();
     // INSTANT reset — no delay
     _setState(() {
       _phase = _Phase.searching;

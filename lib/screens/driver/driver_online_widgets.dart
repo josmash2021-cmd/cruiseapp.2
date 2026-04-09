@@ -2839,7 +2839,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         color: overlayBg,
         child: Center(
           child: FadeTransition(
-            opacity: _doneScale,
+            opacity: _doneScale ?? const AlwaysStoppedAnimation(0.0),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 24),
               padding: const EdgeInsets.all(24),

@@ -295,10 +295,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _rerouteCount = 0;
   DateTime? _lastRerouteTime;
   // â”€â”€ UI animations â”€â”€
-  late AnimationController _reqCtrl;
-  late Animation<Offset> _reqSlide; // ignore: unused_field
-  late AnimationController _doneCtrl;
-  late Animation<double> _doneScale;
+  // Deferred to post-frame callback — nullable to guard early dispose.
+  AnimationController? _reqCtrl;
+  Animation<Offset>? _reqSlide; // ignore: unused_field
+  AnimationController? _doneCtrl;
+  Animation<double>? _doneScale;
   late AnimationController _searchPulse;
   late Animation<double> _searchPulseVal;
 
@@ -368,6 +369,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _heading = widget.initialHeading;
     }
 
+    // ── Essential controllers needed for the first build frame ──
     _driverAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -376,24 +378,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Started lazily on first GPS update (_smoothMoveTo) to avoid burning CPU
     // before any position is available.
     _smoothTicker = createTicker(_onSmoothTick);
-
-    _reqCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 450),
-    );
-    _reqSlide = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _reqCtrl, curve: Curves.easeOutCubic));
-
-    _doneCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _doneScale = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _doneCtrl, curve: Curves.elasticOut));
 
     _searchPulse = AnimationController(
       vsync: this,
@@ -405,35 +389,60 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );
 
-    // Pulse + ripple for offer card tap (tap-down scale)
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 100),
-    );
-    _pulseAnim = Tween<double>(begin: 1.0, end: 0.97).animate(
-      CurvedAnimation(parent: _pulseCtrl!, curve: Curves.easeOut),
-    );
-
-    // Reject slide-down animation
-    _rejectSlideCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    // Scheduled badge bounce animation
-    _scheduledBounceCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _scheduledBounceAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25).chain(CurveTween(curve: Curves.easeOut)), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.1).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
-    ]).animate(_scheduledBounceCtrl!);
-
     // Show offer details immediately — no delay
     _offerDetailsVisible = true;
+
+    // ── Deferred controllers — not needed until an offer arrives ──
+    // Creating these after the first frame avoids jank during the
+    // 400ms fade+scale transition animation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      _reqCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 450),
+      );
+      _reqSlide = Tween<Offset>(
+        begin: const Offset(0, 1),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: _reqCtrl!, curve: Curves.easeOutCubic));
+
+      _doneCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 600),
+      );
+      _doneScale = Tween<double>(
+        begin: 0.0,
+        end: 1.0,
+      ).animate(CurvedAnimation(parent: _doneCtrl!, curve: Curves.elasticOut));
+
+      // Pulse + ripple for offer card tap (tap-down scale)
+      _pulseCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 100),
+      );
+      _pulseAnim = Tween<double>(begin: 1.0, end: 0.97).animate(
+        CurvedAnimation(parent: _pulseCtrl!, curve: Curves.easeOut),
+      );
+
+      // Reject slide-down animation
+      _rejectSlideCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 300),
+      );
+
+      // Scheduled badge bounce animation
+      _scheduledBounceCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 600),
+      );
+      _scheduledBounceAnim = TweenSequence<double>([
+        TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25).chain(CurveTween(curve: Curves.easeOut)), weight: 30),
+        TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
+        TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.1).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
+        TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
+      ]).animate(_scheduledBounceCtrl!);
+    });
 
     _boot();
   }
@@ -468,8 +477,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _smoothTicker?.stop();
     _smoothTicker?.dispose();
     _driverAnim.dispose();
-    _reqCtrl.dispose();
-    _doneCtrl.dispose();
+    _reqCtrl?.dispose();
+    _doneCtrl?.dispose();
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();

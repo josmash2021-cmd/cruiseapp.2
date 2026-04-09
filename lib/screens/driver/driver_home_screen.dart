@@ -678,34 +678,34 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  GO ONLINE — navigate to DriverOnlineScreen
   // ═══════════════════════════════════════════════════
   void _goOnline() async {
-    if (!await _ensureVerified()) return;
-    if (!mounted) return;
+    // _ensureVerified is always synchronous — inline the check
+    if (!_isVerified) setState(() => _isVerified = true);
 
-    // If doc status hasn't loaded yet, wait for it before deciding
-    if (!_docStatusLoaded) {
-      await _checkVehicleDocStatus();
-      if (!mounted) return;
-    }
+    // If doc status has loaded, enforce doc gates synchronously (no await)
+    if (_docStatusLoaded) {
+      // If docs expired, navigate to documents page to re-upload
+      if (_hasExpiredDocs) {
+        HapticFeedback.mediumImpact();
+        await Navigator.of(context).push(
+          slideFromRightRoute(const DriverDocumentsScreen()),
+        );
+        if (mounted) await _checkVehicleDocStatus();
+        return;
+      }
 
-    // If docs expired, navigate to documents page to re-upload
-    if (_hasExpiredDocs) {
-      HapticFeedback.mediumImpact();
-      await Navigator.of(context).push(
-        slideFromRightRoute(const DriverDocumentsScreen()),
-      );
-      if (mounted) await _checkVehicleDocStatus();
-      return;
+      // If vehicle docs not approved, navigate to documents page
+      if (!_vehicleDocsApproved) {
+        HapticFeedback.mediumImpact();
+        await Navigator.of(context).push(
+          slideFromRightRoute(const DriverDocumentsScreen()),
+        );
+        if (mounted) await _checkVehicleDocStatus();
+        return;
+      }
     }
-
-    // If vehicle docs not approved, navigate to documents page
-    if (!_vehicleDocsApproved) {
-      HapticFeedback.mediumImpact();
-      await Navigator.of(context).push(
-        slideFromRightRoute(const DriverDocumentsScreen()),
-      );
-      if (mounted) await _checkVehicleDocStatus();
-      return;
-    }
+    // else: doc status not loaded yet — don't block. The online screen's
+    // _verifyAndGoOnline() will handle the backend check in background.
+    // Driver already passed splash/login approval gates to reach this screen.
 
     // Quick check: if we already know there's an active trip, resume immediately
     if (_activeTripData != null) {

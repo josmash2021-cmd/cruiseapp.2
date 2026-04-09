@@ -1372,6 +1372,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _syncSearchPulse();
       _cacheEarnings();
       _doneCtrl?.forward(from: 0);
+    } else if (result == 'back_to_home') {
+      // Driver pressed back to go home — trip is still active.
+      // Navigate to DriverHomeScreen with returnFromTrip so the Resume
+      // button appears.  Do NOT call _cancel() — the trip must survive.
+      _goBackToHomeWithTrip();
     } else {
       // Cancelled or back-pressed — return to searching
       _cancel();
@@ -1855,6 +1860,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       smoothFadeRoute(const DriverHomeScreen(returnFromTrip: true)),
       (_) => false,
     );
+  }
+
+  /// Driver pressed back from the active trip screen.
+  /// Navigate to home while keeping the trip alive so the Resume button works.
+  void _goBackToHomeWithTrip() {
+    // Stop navigation but do NOT cancel the trip.
+    _navService.stopNavigation();
+    _navState = null;
+    _currentNavRoute = null;
+    _navTimer?.cancel();
+
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      // Pop back to DriverHomeScreen with stillOnline = true so it shows
+      // the Resume button and keeps polling for active trip updates.
+      nav.pop<Map<String, dynamic>>(<String, dynamic>{
+        'earnings': _earnings,
+        'trips': _trips,
+        'hours': _online.inMinutes / 60.0,
+        'stillOnline': true,
+      });
+    } else {
+      nav.pushAndRemoveUntil(
+        smoothFadeRoute(const DriverHomeScreen(returnFromTrip: true)),
+        (_) => false,
+      );
+    }
   }
 
   Future<void> _cancel() async {

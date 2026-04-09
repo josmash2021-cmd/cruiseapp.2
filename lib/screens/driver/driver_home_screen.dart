@@ -748,6 +748,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();
+      // Immediately check for an active trip so the Resume button appears
+      // without waiting for the 15-second poll interval.
+      unawaited(_refreshActiveTripStatus());
     } else {
       _stopTripPolling();
     }
@@ -854,6 +857,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();
+      // Immediately check for an active trip so the Resume button appears
+      // without waiting for the 15-second poll interval.
+      unawaited(_refreshActiveTripStatus());
     } else {
       _stopTripPolling();
     }

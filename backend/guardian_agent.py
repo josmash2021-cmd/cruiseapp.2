@@ -1142,7 +1142,7 @@ class UnmatchedTripRetryAgent:
                         _send_fcm_push(
                             assigned.fcm_token,
                             title="New Ride Offer",
-                            body="",
+                            body="A rider needs a ride \u2014 open Cruise to accept.",
                             data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                         )
                     except Exception:

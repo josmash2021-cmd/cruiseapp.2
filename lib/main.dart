@@ -128,7 +128,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (type == 'trip_offer' || type == 'new_offer') {
     // Always show clean title/body — never expose price or address to driver
     const title = 'New Ride Offer';
-    const body = '';
+    const body = 'A rider needs a ride \u2014 open Cruise to accept.';
     await plugin.show(
       id: 9001,
       title: title,
@@ -436,7 +436,7 @@ Future<void> heavyInit() async {
                     message.data['title'] ??
                     _riderNotifTitle(type));
             final body = isOffer
-                ? ''
+                ? 'A rider needs a ride \u2014 open Cruise to accept.'
                 : (message.notification?.body ??
                     message.data['body'] ??
                     _riderNotifBody(type));

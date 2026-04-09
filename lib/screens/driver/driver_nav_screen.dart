@@ -581,9 +581,8 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   Future<void> _updateTripStatus(String status, {Map<String, dynamic>? extra}) async {
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: status);
-    } catch (_) {}
+    // Write Firestore FIRST — rider listens via .snapshots() so this is the
+    // fastest path (~50ms). Backend API call runs in parallel.
     try {
       final data = <String, dynamic>{'status': _normalizedFirestoreStatus(status)};
       if (extra != null) data.addAll(extra);
@@ -591,6 +590,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           .collection('trips')
           .doc('sql_${widget.tripId}')
           .update(data);
+    } catch (_) {}
+    // Backend API in background — don't block on network latency
+    try {
+      unawaited(ApiService.updateTripStatus(tripId: widget.tripId, status: status));
     } catch (_) {}
   }
 

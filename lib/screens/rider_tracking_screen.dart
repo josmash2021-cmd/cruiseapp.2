@@ -152,6 +152,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _cinematicBearing = 0;
   bool _cinematicDone = false;
 
+  // ── Camera animation lock: prevents overlapping flyTo/easeTo ──
+  bool _cameraAnimating = false;
+  DateTime _cameraAnimEnd = DateTime(2000);
+
   // ── Car marker using PointAnnotation (reliable, same as pins) ──
   Uint8List? _carPngBytes;       // PNG bytes for PointAnnotation image
   mapbox.PointAnnotation? _carAnnot;  // The car annotation on the map

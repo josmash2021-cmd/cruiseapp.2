@@ -478,6 +478,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_map == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
     // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
     if (_phase == _TrackPhase.arrived) return;
+    // Skip if another camera animation is still running
+    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
     
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -576,12 +578,18 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         padding: cam.padding,
         anchor: cam.anchor,
       );
-      // Use easeTo for smooth continuous updates during trip
+      // Lock camera during animation to prevent overlapping animations
+      _cameraAnimating = true;
+      final dur = isOnTrip ? 1200 : 800;
+      _cameraAnimEnd = DateTime.now().add(Duration(milliseconds: dur - 100));
       if (isOnTrip) {
-        _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: 1200));
+        _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
       } else {
-        _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
+        _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
       }
+      Future.delayed(Duration(milliseconds: dur), () {
+        _cameraAnimating = false;
+      });
     });
   }
 

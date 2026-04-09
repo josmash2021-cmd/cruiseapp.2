@@ -1362,6 +1362,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// to dropoff. Zooms in gently as driver approaches — never too extreme.
   void _followDriver(LatLng position, double bearing) {
     if (_map == null || !mounted) return;
+    // Skip if another camera animation is still running
+    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
@@ -1391,8 +1393,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       camPitch = 0;
     }
 
-    // 2.5s animation matches the camera follow interval so each new animation
-    // begins exactly as the previous completes — no overlap, no jitter.
+    // Lock camera during animation to prevent overlapping flyTo/easeTo
+    _cameraAnimating = true;
+    _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: 2400));
     _map!.easeTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -1410,6 +1413,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       ),
       mapbox.MapAnimationOptions(duration: 2500),
     );
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      _cameraAnimating = false;
+    });
   }
 
   void _navigateToHome() {

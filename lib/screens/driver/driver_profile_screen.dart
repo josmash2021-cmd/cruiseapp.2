@@ -151,20 +151,33 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
         _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
 
-        // Determine tier
-        if (_satisfactionRate >= 95 && _acceptanceRate >= 85) {
-          _tierLabel = 'Diamond';
-          _tierColor = const Color(0xFF90A4AE);
-        } else if (_satisfactionRate >= 90 && _acceptanceRate >= 50) {
-          _tierLabel = 'Platinum';
-          _tierColor = const Color(0xFFB0BEC5);
-        } else if (_satisfactionRate >= 85 && _acceptanceRate >= 30) {
-          _tierLabel = 'Gold';
-          _tierColor = _gold;
+        // Determine cruise level tier — use backend authoritative value,
+        // fall back to client-side computation matching cruise_level_screen.dart
+        final backendLevel = stats['cruise_level'] as String?;
+        final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
+        String tierName;
+        if (backendLevel != null && backendLevel.isNotEmpty) {
+          tierName = backendLevel.toLowerCase();
+        } else if (completed >= 500 && avgRating >= 4.9) {
+          tierName = 'diamond';
+        } else if (completed >= 300 && avgRating >= 4.8) {
+          tierName = 'platinum';
+        } else if (completed >= 150 && avgRating >= 4.7) {
+          tierName = 'gold';
+        } else if (completed >= 50 && avgRating >= 4.5) {
+          tierName = 'silver';
         } else {
-          _tierLabel = 'Green';
-          _tierColor = const Color(0xFF4CAF50);
+          tierName = 'bronze';
         }
+        const tierColors = {
+          'diamond':  Color(0xFF80DEEA),
+          'platinum': Color(0xFF90CAF9),
+          'gold':     Color(0xFFE8C547),
+          'silver':   Color(0xFFB0BEC5),
+          'bronze':   Color(0xFFCD7F32),
+        };
+        _tierLabel = tierName[0].toUpperCase() + tierName.substring(1);
+        _tierColor = tierColors[tierName] ?? const Color(0xFFCD7F32);
 
         // Journey duration
         if (me != null && me['created_at'] != null) {

@@ -31,6 +31,8 @@ from config import (
 )
 from services.event_bus import event_bus
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 PLATFORM_COMMISSION_RATE = 0.40
@@ -736,10 +738,25 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
     acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
     on_time_rate = round(((completed / total_trips) * 100), 1) if total_trips > 0 else 100.0
 
-    # Fetch stored cruise level from the database
+    # Recompute cruise level from live stats (self-healing: fixes stale DB values)
+    from cruise_level_agent import compute_tier
+    effective_rating = round(avg_rating, 2) if avg_rating else 5.0
+    correct_level = compute_tier(completed, float(effective_rating))
+
+    # Fetch stored cruise level and update DB if it drifted
     driver_r = await db.execute(select(User).where(User.id == driver_id))
     driver_obj = driver_r.scalar_one_or_none()
-    cruise_level = getattr(driver_obj, "cruise_level", "bronze") or "bronze" if driver_obj else "bronze"
+    stored_level = (getattr(driver_obj, "cruise_level", None) or "bronze") if driver_obj else "bronze"
+    if driver_obj and correct_level != stored_level:
+        try:
+            driver_obj.cruise_level = correct_level
+            await db.commit()
+            logger.info(
+                "get_driver_stats self-healed cruise_level for driver %d: %s -> %s (%d trips, %.2f rating)",
+                driver_id, stored_level, correct_level, completed, float(effective_rating),
+            )
+        except Exception as e:
+            logger.warning("get_driver_stats failed to persist cruise_level for driver %d: %s", driver_id, e)
 
     return {
         "total_offers": total_offers,
@@ -750,8 +767,8 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
         "completed_trips": completed,
         "canceled_trips": canceled,
         "on_time_rate": on_time_rate,
-        "avg_rating": round(avg_rating, 2) if avg_rating else 5.0,
-        "cruise_level": cruise_level,
+        "avg_rating": effective_rating,
+        "cruise_level": correct_level,
     }
 
 

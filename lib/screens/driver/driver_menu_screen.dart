@@ -173,8 +173,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               _totalTrips = total;
               _avgRating = avgRating;
               _rating = avgRating.toStringAsFixed(1);
-              // Cruise Level: same logic as cruise_level_screen.dart
-              if (completed >= 500 && avgRating >= 4.9) {
+              // Use backend authoritative cruise_level, fall back to client-side
+              final backendLevel = stats['cruise_level'] as String?;
+              if (backendLevel != null && backendLevel.isNotEmpty) {
+                _tierName = backendLevel[0].toUpperCase() + backendLevel.substring(1);
+              } else if (completed >= 500 && avgRating >= 4.9) {
                 _tierName = 'Diamond';
               } else if (completed >= 300 && avgRating >= 4.8) {
                 _tierName = 'Platinum';

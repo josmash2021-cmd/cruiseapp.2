@@ -1333,9 +1333,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildHeroUpcomingRide() {
     final mins = _minutesUntilRide;
     final isEs = Localizations.localeOf(context).languageCode == 'es';
+    final timeStr = mins < 60 ? '$mins min' : '${mins ~/ 60}h ${mins % 60}m';
     final title = isEs
-        ? 'Tu viaje empieza en $mins min'
-        : 'Your ride starts in $mins min';
+        ? 'Tu viaje empieza en $timeStr'
+        : 'Your ride starts in $timeStr';
     final subtitle = isEs ? 'Toca para ver detalles' : 'Tap for details';
 
     return Column(

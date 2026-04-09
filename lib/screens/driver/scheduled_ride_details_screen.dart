@@ -223,6 +223,15 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     }
   }
 
+  static String _formatMinutesAsTime(int totalMinutes) {
+    if (totalMinutes <= 0) return '0 min';
+    if (totalMinutes < 60) return '$totalMinutes min';
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}m';
+  }
+
   String get _countdownText {
     final h = _secondsRemaining ~/ 3600;
     final m = (_secondsRemaining % 3600) ~/ 60;
@@ -283,9 +292,9 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           // ── Semi-transparent dark tint (map visible behind) ──
           Positioned.fill(
             child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
               child: Container(
-                color: Colors.black.withValues(alpha: 0.55),
+                color: const Color(0xFF0A0E21).withValues(alpha: 0.75),
               ),
             ),
           ),
@@ -402,10 +411,13 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: _gold.withValues(alpha: 0.15)),
                 ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                       // Pickup
                       _addressRow(
                         icon: Icons.circle,
@@ -426,16 +438,29 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                       ),
 
                       // ── Fare below addresses ──
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       Center(
-                        child: Text(
-                          '\$${fare.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
+                        child: Column(
+                          children: [
+                            Text(
+                              '\$${fare.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '+ Tips',
+                              style: TextStyle(
+                                color: _gold.withValues(alpha: 0.5),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
@@ -493,32 +518,35 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         ),
                       ],
 
-                      const SizedBox(height: 16),
-
-                      // No more offers banner
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.block, color: Colors.orange, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                loc.noNewRidesUntilComplete,
-                                style: const TextStyle(color: Colors.orange, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
+                ),
+                // No more offers banner pinned at bottom of card
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.orange.withValues(alpha: 0.7), size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            loc.noNewRidesUntilComplete,
+                            style: TextStyle(color: Colors.orange.withValues(alpha: 0.8), fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                  ],
                 ),
               ),
             ),
@@ -580,7 +608,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                             : Text(
                                 canStart
                                     ? loc.startRideButton
-                                    : '${loc.availableInLabel} ${(_secondsRemaining ~/ 60) - 15} MIN',
+                                    : '${loc.availableInLabel} ${_formatMinutesAsTime((_secondsRemaining ~/ 60) - 15)}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: canStart ? 16 : 12,

@@ -38,15 +38,31 @@ _COMMISSION_BY_TYPE = {
 }
 _DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
 
+# Alias map: Flutter driver app sends variant status names that must be
+# normalised to canonical values before transition checks or DB storage.
+_STATUS_ALIASES = {
+    "arrived_pickup": "arrived",
+    "arrived_at_pickup": "arrived",
+    "driver_arrived": "arrived",
+    "rider_onboard": "in_trip",
+    "on_trip": "in_trip",
+    "trip_started": "in_trip",
+    "in_progress": "in_trip",
+    "rider_no_show": "cancelled",
+    "canceled": "cancelled",
+    "driver_arriving": "driver_en_route",
+}
+
 # Valid trip status transitions -- enforce lifecycle integrity
+# Keys and values use CANONICAL status names only.
 _VALID_TRANSITIONS = {
-    "requested": {"accepted", "driver_en_route", "cancelled", "canceled"},
-    "accepted": {"driver_en_route", "cancelled", "canceled"},
-    "driver_en_route": {"arrived", "driver_arrived", "driver_arriving", "cancelled", "canceled"},
-    "driver_arriving": {"arrived", "driver_arrived", "cancelled", "canceled"},
-    "arrived": {"in_trip", "in_progress", "cancelled", "canceled"},
-    "in_trip": {"completed", "cancelled", "canceled"},
-    "in_progress": {"completed", "cancelled", "canceled"},
+    "requested": {"accepted", "driver_en_route", "cancelled"},
+    "accepted": {"driver_en_route", "cancelled"},
+    "driver_en_route": {"arrived", "cancelled"},
+    "arrived": {"in_trip", "cancelled"},
+    "in_trip": {"completed", "cancelled"},
+    "completed": set(),
+    "cancelled": set(),
 }
 
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
@@ -591,23 +607,28 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if user.id not in (trip.rider_id, trip.driver_id) and user_role not in ("admin", "dispatch"):
         raise HTTPException(403, "Not authorized to update this trip")
 
-    if trip.status == status:
-        # Same status -- skip processing to avoid duplicate events
+    # Normalise both current and incoming status through alias map
+    new_status_lower = status.lower().strip()
+    canonical_new = _STATUS_ALIASES.get(new_status_lower, new_status_lower)
+    canonical_current = _STATUS_ALIASES.get((trip.status or "").lower().strip(),
+                                            (trip.status or "").lower().strip())
+
+    if canonical_current == canonical_new:
+        # Same canonical status -- skip processing to avoid duplicate events
         return _trip_dict_for_user(trip, user)
 
-    # Validate status transition
-    current = (trip.status or "").lower().strip()
-    new_status_lower = status.lower().strip()
-    allowed = _VALID_TRANSITIONS.get(current, set())
-    if new_status_lower not in allowed:
+    # Validate status transition using canonical names
+    allowed = _VALID_TRANSITIONS.get(canonical_current, set())
+    if canonical_new not in allowed:
         raise HTTPException(409, f"Invalid status transition from '{trip.status}' to '{status}'")
 
-    trip.status = status
+    # Store the CANONICAL status, not the raw client input
+    trip.status = canonical_new
     trip.updated_at = datetime.now(timezone.utc)
     # Record ride start/end timestamps for duration calculation
-    if status == "in_trip" and not trip.started_at:
+    if canonical_new == "in_trip" and not trip.started_at:
         trip.started_at = datetime.now(timezone.utc)
-    if status == "completed":
+    if canonical_new == "completed":
         trip.completed_at = datetime.now(timezone.utc)
         # Auto-calculate distance (haversine) if not already set
         if not trip.distance and trip.pickup_lat and trip.dropoff_lat:
@@ -621,7 +642,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         elif not trip.duration and trip.distance:
             trip.duration = max(1, int(trip.distance * 2))
     # Auto-calculate earnings split (vehicle-type-dependent commission)
-    if status == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
+    if canonical_new == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
         platform_rate, driver_rate = _get_commission(trip.vehicle_type)
         tip = trip.tip_amount or 0.0
         trip.platform_fee = round(trip.fare * platform_rate, 2)
@@ -636,7 +657,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # --- SSE instant push to riders watching this trip (sub-second) ===
     await event_bus.push_trip_update(trip.id, {
-        "status": status,
+        "status": canonical_new,
         "trip_id": trip.id,
         "driver_id": trip.driver_id,
         "fare": float(trip.fare or 0),
@@ -646,10 +667,11 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if _HAS_FIRESTORE:
         _fs_dist = trip.distance
         _fs_dur = trip.duration
+        _fs_status = canonical_new
         def _sync_fs():
             try:
                 firestore_sync.sync_trip_status(
-                    trip_id=trip.id, status=status,
+                    trip_id=trip.id, status=_fs_status,
                     distance=_fs_dist, duration=_fs_dur,
                 )
             except Exception as e:
@@ -658,7 +680,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # Auto-charge rider when trip is completed
     charge_result = None
-    if status == "completed" and trip.payment_status == "unpaid":
+    if canonical_new == "completed" and trip.payment_status == "unpaid":
         try:
             charge_result = await _charge_trip(trip, db)
         except Exception as e:
@@ -669,23 +691,19 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
-            if status == "driver_en_route":
+            if canonical_new == "driver_en_route":
                 _send_fcm_push(rider.fcm_token, title="Driver On The Way",
                     body="Your driver is heading to your pickup location.",
                     data={"type": "driver_en_route", "trip_id": str(trip_id)})
-            elif status == "driver_arriving":
-                _send_fcm_push(rider.fcm_token, title="Driver Almost There",
-                    body="Your driver is about 5 minutes away!",
-                    data={"type": "driver_arriving", "trip_id": str(trip_id)})
-            elif status == "arrived":
+            elif canonical_new == "arrived":
                 _send_fcm_push(rider.fcm_token, title="Driver Arrived",
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
-            elif status == "in_trip":
+            elif canonical_new == "in_trip":
                 _send_fcm_push(rider.fcm_token, title="Trip Started",
                     body="Your trip has started. Enjoy your ride!",
                     data={"type": "trip_started", "trip_id": str(trip_id)})
-            elif status == "completed":
+            elif canonical_new == "completed":
                 # Fix H7: differentiate notification based on actual charge outcome
                 if trip.payment_status == "paid":
                     fare_str = f"${trip.fare:.2f}" if trip.fare else ""
@@ -696,7 +714,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                     _send_fcm_push(rider.fcm_token, title="Payment Failed",
                         body="Your trip is complete but we couldn't charge your card. Please update your payment method.",
                         data={"type": "payment_failed", "trip_id": str(trip_id)})
-            elif status == "canceled":
+            elif canonical_new == "cancelled":
                 _send_fcm_push(rider.fcm_token, title="Trip Canceled",
                     body="Your trip has been canceled.",
                     data={"type": "trip_canceled", "trip_id": str(trip_id)})
@@ -704,7 +722,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         logging.warning("[FCM] Rider push failed: %s", _fcm_err)
 
     # --- n8n webhook triggers ===
-    if status == "completed":
+    if canonical_new == "completed":
         asyncio.ensure_future(_n8n_fire("trip-completed", {
             "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
             "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
@@ -728,7 +746,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             }))
 
     # --- Evaluate driver cruise level after trip completion ---
-    if status == "completed" and trip.driver_id:
+    if canonical_new == "completed" and trip.driver_id:
         try:
             await evaluate_driver_level(db, trip.driver_id)
         except Exception as e:
@@ -792,11 +810,13 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         pass
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
     cancellation_fee = 0.0
-    if trip.status in ("driver_en_route", "arrived"):
+    if trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
         minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
-    trip.status = "canceled"
+    # Capture previous status BEFORE overwriting (needed for webhook payload)
+    previous_status = trip.status
+    trip.status = "cancelled"
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
     trip.updated_at = datetime.now(timezone.utc)
@@ -814,18 +834,17 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
     # ---"= REFUND LOGIC ==="=
     # If rider was charged, issue refund (full or less cancellation fee)
-    if trip.payment_status == "paid" and trip.stripe_payment_intent_id:
+    if trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
         try:
-            from services.stripe_helpers import stripe
             # Attempt refund through Stripe API
-            refund_amount_cents = int((trip.fare - cancellation_fee) * 100)
-            refund = stripe.Refund.create(
+            refund_amount_cents = int(((trip.fare or 0) - cancellation_fee) * 100)
+            refund = _stripe_mod.Refund.create(
                 payment_intent=trip.stripe_payment_intent_id,
                 amount=refund_amount_cents if refund_amount_cents > 0 else None,
-                reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_customer"
+                reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_merchant"
             )
             trip.payment_status = "refunded"
-            logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, trip.fare - cancellation_fee, cancellation_fee)
+            logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, (trip.fare or 0) - cancellation_fee, cancellation_fee)
         except Exception as e:
             logging.warning("[Refund] Failed to refund trip %d: %s -- marking for manual refund", trip_id, e)
             trip.payment_status = "pending_refund"  # Manual refund needed
@@ -836,7 +855,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         try:
             cancelled_by = "driver" if user.id == trip.driver_id else "rider"
             firestore_sync.sync_trip_status(
-                trip_id=trip.id, status="canceled",
+                trip_id=trip.id, status="cancelled",
                 cancel_reason=reason,
                 cancellation_fee=cancellation_fee,
                 cancelled_by=cancelled_by,
@@ -852,7 +871,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         "cancel_reason": reason or "", "cancelled_by": _cancelled_by,
         "cancellation_fee": cancellation_fee,
         "payment_status": trip.payment_status,
-        "previous_status": trip.status,
+        "previous_status": previous_status,
         "pickup_address": trip.pickup_address or "",
         "dropoff_address": trip.dropoff_address or "",
     }))

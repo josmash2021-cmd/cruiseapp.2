@@ -1092,6 +1092,37 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
         except Exception as e:
             logging.warning("[CruiseLevel] Post-rating evaluation failed for driver %s: %s", trip.driver_id, e)
 
+        # Update driver's average_rating in users table and sync to Firestore
+        try:
+            avg_result = await db.execute(
+                select(func.avg(Rating.stars)).where(Rating.to_user_id == trip.driver_id)
+            )
+            avg_rating = avg_result.scalar() or 5.0
+            driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
+            driver = driver_result.scalar_one_or_none()
+            if driver:
+                driver.average_rating = round(float(avg_rating), 2)
+                await db.commit()
+                # Sync updated rating + cruise level to Firestore
+                if _HAS_FIRESTORE:
+                    try:
+                        firestore_sync.sync_driver(
+                            user_id=driver.id,
+                            first_name=driver.first_name,
+                            last_name=driver.last_name,
+                            phone=driver.phone or "",
+                            photo_url=_abs_photo_url(driver.photo_url) or "",
+                            is_online=driver.is_online,
+                            lat=driver.lat, lng=driver.lng,
+                            status=driver.status,
+                            cruise_level=driver.cruise_level or "bronze",
+                            average_rating=driver.average_rating,
+                        )
+                    except Exception as fs_err:
+                        logging.warning("[Rating] Firestore sync after rating failed: %s", fs_err)
+        except Exception as e:
+            logging.warning("[Rating] avg_rating update failed for driver %s: %s", trip.driver_id, e)
+
     return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount}
 
 @router.get("/users/{user_id}/ratings", dependencies=[Depends(_verify_api_key)])

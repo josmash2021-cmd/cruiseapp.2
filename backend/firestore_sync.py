@@ -217,7 +217,8 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
                 license_front_url: str = None, license_back_url: str = None,
                 insurance_url: str = None, video_url: str = None,
                 verification_status: str = "none", verification_reason: str = None,
-                status: str = "active"):
+                status: str = "active",
+                cruise_level: str = None, average_rating: float = None):
     """Upsert a driver into the Firestore `drivers` collection."""
     _ensure_init()
     if _db is None:
@@ -249,6 +250,12 @@ def sync_driver(user_id: int, first_name: str, last_name: str,
         data["lat"] = lat
     if lng is not None:
         data["lng"] = lng
+    if cruise_level is not None:
+        data["cruiseLevel"] = cruise_level
+        data["cruise_level"] = cruise_level
+    if average_rating is not None:
+        data["averageRating"] = round(float(average_rating), 2)
+        data["average_rating"] = round(float(average_rating), 2)
     if license_front_url:
         data["licenseFrontUrl"] = license_front_url
     if license_back_url:

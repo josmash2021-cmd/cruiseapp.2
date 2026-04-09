@@ -131,6 +131,7 @@ class User(Base):
     background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
+    average_rating = Column(Float, default=5.0)
 
 
 class ConsentLog(Base):
@@ -644,6 +645,7 @@ async def migrate_postgres(conn):
         ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),
         ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "active_session_id", "VARCHAR(64)"),
+        ("users", "average_rating", "FLOAT DEFAULT 5.0"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),

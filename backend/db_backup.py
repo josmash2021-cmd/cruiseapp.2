@@ -26,8 +26,25 @@ _last_backup_size_kb: float = 0.0
 
 
 def _get_pg_url() -> str | None:
-    """Get the PostgreSQL connection URL from environment."""
-    return resolve_database_url(default=None, async_driver=False) or None
+    """Get the PostgreSQL connection URL for pg_dump.
+    Prefer direct host over pooler — pooler has strict max-client limits
+    that pg_dump easily hits (MaxClientsInSessionMode).
+    """
+    import re
+    url = resolve_database_url(default=None, async_driver=False) or None
+    if not url:
+        return None
+    # If URL uses Supabase pooler, swap to direct host (port 5432 → direct)
+    # pooler: aws-0-us-east-2.pooler.supabase.com:5432
+    # direct: db.<project-ref>.supabase.co:5432
+    if '.pooler.supabase.com' in url:
+        direct = os.getenv('DATABASE_DIRECT_URL', '').strip() or os.getenv('SUPABASE_DB_URL', '').strip()
+        if direct:
+            # Normalize to postgresql://
+            direct = re.sub(r'^postgres://', 'postgresql://', direct)
+            return direct
+        logger.warning('[Backup] Using pooler URL — set DATABASE_DIRECT_URL for reliable backups')
+    return url
 
 
 def _pg_url_to_env(pg_url: str) -> dict:

@@ -166,8 +166,6 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
         cacheKey: widget.uid != null ? 'photo_${widget.uid}' : null,
         width: widget.radius * 2,
         height: widget.radius * 2,
-        memCacheWidth: (widget.radius * 2 * MediaQuery.devicePixelRatioOf(context)).round(),
-        memCacheHeight: (widget.radius * 2 * MediaQuery.devicePixelRatioOf(context)).round(),
         fit: BoxFit.cover,
         cacheManager: UserProfilePhoto._cacheManager,
         placeholder: (_, __) => _localOrInitials(),

@@ -30,8 +30,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   static const _surface = Color(0xFF141414);
 
   String _name = 'Driver';
-  String _tierLabel = 'Green';
-  Color _tierColor = const Color(0xFF4CAF50);
+  String _tierLabel = 'Bronze';
+  Color _tierColor = const Color(0xFFCD7F32);
   String? _photoUrl;
   String? _dispatchPassword;
   bool _showPassword = false;
@@ -280,7 +280,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         _buildProfileHeader(),
                         const SizedBox(height: 16),
 
-                        // ── Your mode ──
+                        // ── Cruise Level ──
                         _buildModeCard(),
                         const SizedBox(height: 28),
 
@@ -616,7 +616,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   }
 
   // ═══════════════════════════════════════════════════
-  //  YOUR MODE CARD
+  //  CRUISE LEVEL CARD
   // ═══════════════════════════════════════════════════
   Widget _buildModeCard() {
     return GestureDetector(
@@ -636,8 +636,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       child: Row(
         children: [
           Icon(
-            Icons.flash_on_rounded,
-            color: Colors.white.withValues(alpha: 0.6),
+            Icons.emoji_events_rounded,
+            color: _tierColor,
             size: 24,
           ),
           const SizedBox(width: 14),
@@ -646,7 +646,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  S.of(context).yourMode,
+                  S.of(context).cruiseLevel,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 12,
@@ -654,9 +654,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '$_tierLabel Mode',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  '$_tierLabel Level',
+                  style: TextStyle(
+                    color: _tierColor,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),

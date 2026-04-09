@@ -964,23 +964,34 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            Container(
+            SizedBox(
               width: 80,
               height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: _tierColor, width: 3),
-                color: _gold.withValues(alpha: 0.2),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Border ring (decoration only — no implicit padding)
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _tierColor, width: 3),
+                      color: _gold.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  // Photo fills the full 80 px circle
+                  _resolvedPhotoUrl != null
+                      ? UserProfilePhoto(
+                          photoUrl: _resolvedPhotoUrl,
+                          photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                          radius: 37,
+                          fallbackName: _name,
+                          uid: UserSession.currentUid,
+                        )
+                      : const Icon(Icons.person_rounded, color: _gold, size: 40),
+                ],
               ),
-              child: _resolvedPhotoUrl != null
-                  ? UserProfilePhoto(
-                      photoUrl: _resolvedPhotoUrl,
-                      photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                      radius: 40,
-                      fallbackName: _name,
-                      uid: UserSession.currentUid,
-                    )
-                  : const Icon(Icons.person_rounded, color: _gold, size: 40),
             ),
             const SizedBox(height: 16),
             Text(

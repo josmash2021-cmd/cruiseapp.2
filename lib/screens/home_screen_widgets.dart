@@ -616,8 +616,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           ? Image.file(
                               File(_photoPath!),
                               fit: BoxFit.cover,
-                              width: 44,
-                              height: 44,
+                              width: Responsive.w(44),
+                              height: Responsive.w(44),
                               cacheWidth: 200,
                               gaplessPlayback: true,
                               key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
@@ -638,8 +638,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                                   ? 'avatar_${UserSession.currentUid}'
                                   : null,
                               fit: BoxFit.cover,
-                              width: 44,
-                              height: 44,
+                              width: Responsive.w(44),
+                              height: Responsive.w(44),
                               fadeInDuration: const Duration(milliseconds: 200),
                               key: ValueKey('${remoteUrl}_${UserSession.currentUid}'),
                               placeholder: (_, __) => Container(

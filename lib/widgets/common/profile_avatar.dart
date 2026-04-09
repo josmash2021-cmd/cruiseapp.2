@@ -60,6 +60,10 @@ class ProfileAvatar extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           // ── Circle + 3-layer gold shadow ──
+          // Decoration container is separate from the photo so the
+          // border never steals padding from the image (Container treats
+          // BoxDecoration.border as implicit padding, which shrinks the
+          // child and could cause a slight oval clip).
           Container(
             width: size,
             height: size,
@@ -84,16 +88,20 @@ class ProfileAvatar extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipOval(
-              child: UserProfilePhoto(
-                photoUrl: imageUrl,
-                photoPath: imagePath,
-                radius: size / 2,
-                fallbackName: name,
-                uid: uid,
-                role: role,
-                noBorder: true,
-              ),
+          ),
+          // Photo — sized identically, centred on the same spot.
+          // UserProfilePhoto already clips to a circle when noBorder is
+          // true, so no additional ClipOval is needed here.
+          SizedBox.square(
+            dimension: size,
+            child: UserProfilePhoto(
+              photoUrl: imageUrl,
+              photoPath: imagePath,
+              radius: size / 2,
+              fallbackName: name,
+              uid: uid,
+              role: role,
+              noBorder: true,
             ),
           ),
 

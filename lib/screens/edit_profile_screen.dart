@@ -345,33 +345,47 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       onTap: _pickPhoto,
                       child: Stack(
                         children: [
-                          Container(
+                          SizedBox(
                             width: 100,
                             height: 100,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: c.surface,
-                              border: Border.all(
-                                color: _gold.withValues(alpha: 0.4),
-                                width: 2,
-                              ),
-                            ),
-                            child: _pendingPhotoPath != null
-                                ? ClipOval(
-                                    child: Image.file(
-                                      File(_pendingPhotoPath!),
-                                      width: 100,
-                                      height: 100,
-                                      fit: BoxFit.cover,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                // Border ring — decoration only, no implicit padding
+                                Container(
+                                  width: 100,
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: c.surface,
+                                    border: Border.all(
+                                      color: _gold.withValues(alpha: 0.4),
+                                      width: 2,
                                     ),
-                                  )
-                                : UserProfilePhoto(
-                                    photoUrl: _photoUrl,
-                                    photoPath: _photoPath,
-                                    radius: 50,
-                                    fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
-                                    uid: UserSession.currentUid,
                                   ),
+                                ),
+                                // Photo fills the circle (inset by border width)
+                                SizedBox.square(
+                                  dimension: 96,
+                                  child: _pendingPhotoPath != null
+                                      ? ClipOval(
+                                          child: Image.file(
+                                            File(_pendingPhotoPath!),
+                                            width: 96,
+                                            height: 96,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      : UserProfilePhoto(
+                                          photoUrl: _photoUrl,
+                                          photoPath: _photoPath,
+                                          radius: 48,
+                                          fallbackName: '${_firstNameCtrl.text} ${_lastNameCtrl.text}',
+                                          uid: UserSession.currentUid,
+                                        ),
+                                ),
+                              ],
+                            ),
                           ),
                           Positioned(
                             bottom: 0,

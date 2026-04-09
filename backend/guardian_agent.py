@@ -950,6 +950,13 @@ class DispatchTimeoutAgent:
         except ImportError:
             return
 
+        # Import cascade tracker -- if a cascade is actively running for a trip,
+        # skip expiring its offers (the cascade handles its own 8s timeouts).
+        try:
+            from routers.dispatch import _cascade_tasks
+        except ImportError:
+            _cascade_tasks = {}
+
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.TIMEOUT_SECS)
         async with self._db_session_maker() as db:
             result = await db.execute(
@@ -960,10 +967,18 @@ class DispatchTimeoutAgent:
             )
             stale_offers = result.scalars().all()
             for offer in stale_offers:
+                # Skip if auto-cascade is actively managing this trip
+                cascade_task = _cascade_tasks.get(offer.trip_id)
+                if cascade_task and not cascade_task.done():
+                    logger.debug(
+                        "[DispatchTimeoutAgent] Skipping offer %d (trip %d) -- cascade task active",
+                        offer.id, offer.trip_id,
+                    )
+                    continue
                 offer.status = "expired"
                 self._timed_out += 1
                 logger.info(
-                    "[DispatchTimeoutAgent] Offer %d expired (trip %d) — no driver accepted in %ds",
+                    "[DispatchTimeoutAgent] Offer %d expired (trip %d) -- no driver accepted in %ds",
                     offer.id, offer.trip_id, self.TIMEOUT_SECS
                 )
                 # Notify the rider via SSE if possible
@@ -1024,6 +1039,12 @@ class UnmatchedTripRetryAgent:
         except ImportError:
             return
 
+        # Import cascade tracker -- skip trips with active cascade
+        try:
+            from routers.dispatch import _cascade_tasks
+        except ImportError:
+            _cascade_tasks = {}
+
         now = utc_now()
         min_age = now - timedelta(seconds=self.MAX_AGE_SECS)
         active_cutoff = now - timedelta(minutes=15)
@@ -1044,6 +1065,11 @@ class UnmatchedTripRetryAgent:
                 return
 
             for trip in stuck_trips:
+                # Skip if auto-cascade is actively managing this trip
+                cascade_task = _cascade_tasks.get(trip.id)
+                if cascade_task and not cascade_task.done():
+                    continue
+
                 # Check if there are any pending offers for this trip already
                 existing = await db.execute(
                     select(func.count()).select_from(DispatchOffer).where(

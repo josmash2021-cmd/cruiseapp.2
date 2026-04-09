@@ -33,22 +33,9 @@ async def create_setup_intent(user: User = Depends(_get_current_user)):
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  STRIPE PAYMENT ENDPOINTS
-# ═══════════════════════════════════════════════════════
-STRIPE_SECRET = os.getenv("STRIPE_SECRET_KEY", "")
-_HAS_STRIPE = False
-try:
-    import stripe as _stripe_mod
-    if STRIPE_SECRET:
-        _stripe_mod.api_key = STRIPE_SECRET
-        _HAS_STRIPE = True
-        logging.info("[Stripe] Initialized with secret key")
-    else:
-        logging.warning("[Stripe] No STRIPE_SECRET_KEY in .env � payment endpoints will return mock data")
-except ImportError:
-    logging.warning("[Stripe] stripe package not installed � pip install stripe")
-
+# -------------------------------------------------------
 
 @router.post("/payments/create-intent", dependencies=[Depends(_verify_api_key)])
 async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -187,11 +174,7 @@ async def capture_payment_intent(intent_id: str, user: User = Depends(_get_curre
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
-# -- PayPal token exchange (proxied through backend — never expose secret to client) --
-PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
-PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
-PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "true").lower() == "true"
-
+# -- PayPal token exchange (proxied through backend -- never expose secret to client) --
 
 @router.post("/payments/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_current_user)):
@@ -266,30 +249,35 @@ async def paypal_capture_order(body: PayPalCaptureIn, user: User = Depends(_get_
 #  STRIPE WEBHOOK
 # -------------------------------------------------------
 
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
 # Idempotency: track processed Stripe event IDs to prevent double-processing
 _processed_stripe_events: collections.OrderedDict = collections.OrderedDict()
 _MAX_PROCESSED_EVENTS = 5000
 
 
-@router.post("/payments/stripe/webhook")
+@router.post("/payments/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Handle Stripe webhook events (payment confirmations, refunds, etc.)."""
+    """Handle Stripe webhook events (payment confirmations, refunds, etc.).
+    No auth required -- Stripe calls this directly; signature verification is the auth."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
 
-    if not _HAS_STRIPE or not STRIPE_WEBHOOK_SECRET:
-        logging.warning("[Stripe Webhook] Not configured � ignoring event")
-        return {"status": "ignored"}
+    # Verify signature when STRIPE_WEBHOOK_SECRET is configured; skip check if not set
+    if STRIPE_WEBHOOK_SECRET and _HAS_STRIPE:
+        try:
+            event = _stripe_mod.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+        except (ValueError, _stripe_mod.error.SignatureVerificationError) as e:
+            logging.warning("[Stripe Webhook] Signature verification failed: %s", e)
+            raise HTTPException(400, "Invalid signature")
+    else:
+        # No webhook secret configured -- parse payload directly (dev/test mode)
+        try:
+            event = json.loads(payload)
+        except (ValueError, json.JSONDecodeError) as e:
+            logging.warning("[Stripe Webhook] Invalid JSON payload: %s", e)
+            raise HTTPException(400, "Invalid payload")
+        logging.warning("[Stripe Webhook] Processing without signature verification (STRIPE_WEBHOOK_SECRET not set)")
 
-    try:
-        event = _stripe_mod.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-    except (ValueError, _stripe_mod.error.SignatureVerificationError) as e:
-        logging.warning("[Stripe Webhook] Signature verification failed: %s", e)
-        raise HTTPException(400, "Invalid signature")
-
-    event_type = event["type"]
+    event_type = event.get("type", "")
     event_id = event.get("id", "")
     logging.info("[Stripe Webhook] Received event: %s (id=%s)", event_type, event_id)
 
@@ -306,30 +294,76 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if event_type == "payment_intent.succeeded":
         intent = event["data"]["object"]
         trip_id = intent.get("metadata", {}).get("trip_id")
+        payment_intent_id = intent.get("id", "")
         if trip_id:
-            trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
-            trip = trip_r.scalar_one_or_none()
-            if trip and trip.status == "completed":
-                logging.info("[Stripe Webhook] Payment confirmed for trip %s", trip_id)
+            try:
+                trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
+                trip = trip_r.scalar_one_or_none()
+                if trip and trip.payment_status != "paid":
+                    trip.payment_status = "paid"
+                    if payment_intent_id:
+                        trip.stripe_payment_intent_id = payment_intent_id
+                    await db.commit()
+                    logging.info(
+                        "[Stripe Webhook] Trip %s payment confirmed via webhook (pi=%s)",
+                        trip_id, payment_intent_id,
+                    )
+                elif trip:
+                    logging.info("[Stripe Webhook] Trip %s already marked as paid, skipping", trip_id)
+            except Exception as e:
+                logging.error("[Stripe Webhook] Failed to update trip %s on payment_intent.succeeded: %s", trip_id, e)
 
     elif event_type == "payment_intent.payment_failed":
         intent = event["data"]["object"]
         trip_id = intent.get("metadata", {}).get("trip_id")
-        logging.warning("[Stripe Webhook] Payment failed for trip %s: %s",
-                        trip_id, intent.get("last_payment_error", {}).get("message"))
+        error_msg = (intent.get("last_payment_error") or {}).get("message", "Payment failed")
+        logging.warning("[Stripe Webhook] Payment failed for trip %s: %s", trip_id, error_msg)
+        if trip_id:
+            try:
+                trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
+                trip = trip_r.scalar_one_or_none()
+                if trip:
+                    trip.payment_status = "failed"
+                    await db.commit()
+                    logging.info("[Stripe Webhook] Trip %s marked as payment failed", trip_id)
+                    # Notify rider via FCM if token available
+                    try:
+                        from models.database import User
+                        rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+                        rider = rider_r.scalar_one_or_none()
+                        if rider and rider.fcm_token:
+                            from services.fcm_service import _send_fcm_push
+                            _send_fcm_push(
+                                rider.fcm_token,
+                                "Payment Failed",
+                                f"Your payment for trip #{trip_id} failed. Please update your payment method.",
+                                {"type": "payment_failed", "trip_id": str(trip_id)},
+                            )
+                    except Exception as fcm_err:
+                        logging.warning("[Stripe Webhook] FCM notify failed for trip %s: %s", trip_id, fcm_err)
+            except Exception as e:
+                logging.error("[Stripe Webhook] Failed to update trip %s on payment_failed: %s", trip_id, e)
 
     elif event_type == "charge.refunded":
         charge = event["data"]["object"]
         pi_id = charge.get("payment_intent")
         if pi_id:
-            trip_r = await db.execute(select(Trip).where(Trip.stripe_payment_intent_id == pi_id))
-            trip = trip_r.scalar_one_or_none()
-            if trip:
-                refunded_cents = charge.get("amount_refunded", 0)
-                trip.refund_amount = round(refunded_cents / 100, 2)
-                trip.refund_status = "full" if refunded_cents >= (charge.get("amount", 0)) else "partial"
-                await db.commit()
-                logging.info("[Stripe Webhook] Refund recorded for trip %s: $%.2f", trip.id, trip.refund_amount)
+            try:
+                trip_r = await db.execute(select(Trip).where(Trip.stripe_payment_intent_id == pi_id))
+                trip = trip_r.scalar_one_or_none()
+                if trip:
+                    refunded_cents = charge.get("amount_refunded", 0)
+                    total_cents = charge.get("amount", 0)
+                    trip.refund_amount = round(refunded_cents / 100, 2)
+                    trip.refund_status = "full" if refunded_cents >= total_cents else "partial"
+                    trip.payment_status = "refunded"
+                    await db.commit()
+                    logging.info(
+                        "[Stripe Webhook] Refund recorded for trip %s: $%.2f (%s)",
+                        trip.id, trip.refund_amount, trip.refund_status,
+                    )
+            except Exception as e:
+                logging.error("[Stripe Webhook] Failed to process refund for pi=%s: %s", pi_id, e)
 
     return {"status": "ok"}
 
@@ -392,13 +426,9 @@ async def get_trip_payment_details(trip_id: int, db: AsyncSession = Depends(get_
     }
 
 
-# ═══════════════════════════════════════════════════════
+# -------------------------------------------------------
 #  PAYPAL PAYMENTS
-# ═══════════════════════════════════════════════════════
-
-PAYPAL_CLIENT_ID     = os.getenv("PAYPAL_CLIENT_ID", "")
-PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
-PAYPAL_MODE          = os.getenv("PAYPAL_MODE", "sandbox")  # "sandbox" or "live"
+# -------------------------------------------------------
 
 def _paypal_base_url() -> str:
     return (

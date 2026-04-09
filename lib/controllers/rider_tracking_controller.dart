@@ -16,7 +16,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (data == null) {
           _pollFailCount++;
           debugPrint('[RiderTracking] Trip data null for $docId ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
+          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
             _setState(() => _connectionLost = true);
           }
           return;
@@ -33,7 +33,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       onError: (error) {
         debugPrint('[RiderTracking] Trip status listener error for $docId: $error');
         _pollFailCount++;
-        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
+        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
           _setState(() => _connectionLost = true);
         }
         // Fix 4: Firestore down → poll backend every 3s (instead of 8s) until recovered
@@ -256,10 +256,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      // Use real driver velocity when available
+      // Use real driver velocity when available, then traffic-aware route duration, then distance fallback
       if (_velocityMps > 3.0) {
         final remainM = _distanceMiles * 1609.34;
         _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+      } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
+        // Scale route duration by fraction of distance remaining
+        final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
+        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
       } else {
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
       }
@@ -275,10 +279,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      // Use real driver velocity for ETA when available (> 3 m/s ≈ walking speed)
+      // Use real driver velocity for ETA when available (> 3 m/s ≈ walking speed),
+      // then traffic-aware route duration, then distance-based fallback
       if (_velocityMps > 3.0) {
         final remainM = _distanceMiles * 1609.34;
         _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+      } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
+        final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
+        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
       } else {
         // Fallback: 0.4 mi/min ≈ 24 mph average urban
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
@@ -314,6 +322,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         destination: widget.dropoffLatLng,
       );
       if (result == null || result.points.length < 2 || !mounted) return;
+
+      // Update traffic-aware route duration for ETA calculation
+      _routeDurationSec = result.durationSeconds;
 
       // Fade out old route, then draw new one
       await _fadeAndRedrawRoute(result.points, driverPos);
@@ -412,9 +423,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _directTargetPos = null;
       _directTargetBearing = null;
 
-      // Initial ETA from approach route distance
+      // Initial ETA from approach route — prefer traffic-aware duration from API
       _distanceMiles = result.distanceMeters / 1609.34;
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      _routeDurationSec = result.durationSeconds;
+      if (_routeDurationSec != null && _routeDurationSec! > 0) {
+        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 99);
+      } else {
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      }
 
       _setState(() {});
 
@@ -545,6 +561,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _tgtTraveledM = 0;
       _velocityMps = 0;
       _approachRouteFetched = false;
+      // Reset route duration — will be set on next route fetch
+      _routeDurationSec = null;
       if (_segDist.isNotEmpty) {
         final totalRouteM = _segDist.last;
         _distanceMiles = totalRouteM / 1609.34;
@@ -736,7 +754,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
       _rtdbFailCount++;
-      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost && !NetworkService().isOnline) {
+      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
         _setState(() => _connectionLost = true);
       }
       // Fix 3: auto-reconnect RTDB after errors with exponential back-off (max 30s)
@@ -978,6 +996,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     _buildSegDist();
 
+    // Restore traffic-aware route duration for ETA calculation
+    _routeDurationSec = activeRide.routeDurationSec;
+
     // Restore traveled distance for ETA calculation
     if (activeRide.traveledMeters != null && activeRide.traveledMeters! > 0) {
       _traveledM = activeRide.traveledMeters!;
@@ -999,10 +1020,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _animPos = _driverPos;
     }
 
-    // Calculate remaining distance
+    // Calculate remaining distance — use route duration when available
     double remainingM = _segDist.isNotEmpty ? _segDist.last - _traveledM : 0;
     _distanceMiles = remainingM / 1609.34;
-    _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+    if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
+      final fraction = (remainingM / _segDist.last).clamp(0.0, 1.0);
+      _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
+    } else {
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+    }
 
     // Arriving phase: keep trip route visible as dimmed background.
     // The approach route (driver→pickup) will overlay on first RTDB GPS update.
@@ -1024,7 +1050,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = 0;
       }
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      // Prefer persisted traffic-aware ETA; fall back to distance-based estimate
+      final storedEta = activeRide.etaMinutes;
+      if (storedEta != null && storedEta > 0) {
+        _etaMinutes = storedEta.clamp(1, 99);
+      } else if (_routeDurationSec != null && _routeDurationSec! > 0) {
+        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 99);
+      } else {
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      }
     }
 
     if (_phase == _TrackPhase.arrived) {
@@ -1105,6 +1139,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       driverPhotoUrl: _driverPhotoUrl ?? activeRide.driverPhotoUrl,
       driverId: activeRide.driverId,
       etaMinutes: _etaMinutes,
+      routeDurationSec: _routeDurationSec,
     );
 
     await LocalDataService.setActiveRide(updatedRide);

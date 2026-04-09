@@ -110,6 +110,9 @@ from config import (
     STRIPE_SECRET, PHOTOS_DIR, UPLOADS_DIR, sweep_caches,
 )
 
+# ── Tiered rate limiter (auth vs general API) ─────────────────
+from middleware.rate_limit import rate_limiter as _tiered_rate_limiter
+
 def _next_tuesday_2am() -> datetime:
     """Return the next Tuesday at 02:00 UTC (or today if it's Tuesday and before 2 AM)."""
     now = datetime.now(timezone.utc)
@@ -445,9 +448,27 @@ async def rate_limit_middleware(request: Request, call_next):
     if client_ip in _ip_blacklist:
         return JSONResponse({"detail": "Access denied"}, status_code=403)
     _path = request.url.path
-    # Skip rate limiting for SSE streams and hot paths (they're high-frequency)
+    # Skip rate limiting for SSE streams, hot paths, and health checks
     if _path.endswith("/stream") or _is_hot_path(_path):
         return await call_next(request)
+    # Skip tiered limits for health/docs/static (they don't need per-endpoint throttling)
+    if _path not in ("/ping", "/docs", "/openapi.json"):
+        # ── Tiered rate limiting (stricter for auth, moderate for general API) ──
+        # This runs BEFORE the global DDoS cap below and provides per-category limits.
+        try:
+            if "/auth/" in _path:
+                # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
+                _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
+            elif "/payments/" in _path or "/webhooks/" in _path:
+                # Payment endpoints: 30 req/min per IP (prevents charge spam)
+                _tiered_rate_limiter.check(f"pay:{client_ip}", max_requests=30, window_seconds=60)
+            else:
+                # General API: 100 req/min per IP
+                _tiered_rate_limiter.check(f"api:{client_ip}", max_requests=100, window_seconds=60)
+        except HTTPException:
+            # Re-raise 429 from tiered limiter as a JSONResponse
+            return JSONResponse({"detail": "Too many requests. Please try again later."}, status_code=429)
+    # ── Global DDoS cap (Layer 3 — all endpoints, high ceiling) ──
     now = time.monotonic()
     bucket = _rate_buckets.setdefault(client_ip, collections.deque())
     while bucket and bucket[0] < now - _RATE_WINDOW:

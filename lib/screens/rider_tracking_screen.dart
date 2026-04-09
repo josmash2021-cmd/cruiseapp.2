@@ -108,7 +108,7 @@ enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
 const double _kCarAnnotScale = 0.75;  // PointAnnotation icon scale
-const int _maxPollFailsBeforeBanner = 15;
+const int _maxPollFailsBeforeBanner = 5;
 
 String? _normalizeRemotePhotoUrl(String? rawUrl) {
   var raw = (rawUrl ?? '').trim();
@@ -218,6 +218,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double _velocityMps = 0; // meters per second along route
   DateTime _lastGpsTime = DateTime.now();
 
+  /// Route duration in seconds from the directions API (traffic-aware).
+  /// Used for ETA when driver velocity is unavailable.
+  int? _routeDurationSec;
+
   /// Delta-time tracking for frame-rate independent interpolation
   Duration _lastInterpElapsed = Duration.zero;
 
@@ -236,6 +240,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
   Timer? _rideSaveTimer;
+  VoidCallback? _networkListener; // proactive reconnect on network recovery
 
   // ── Rider own location dot (uses Mapbox native location puck — no drift on zoom) ──
   StreamSubscription<Position>? _riderLocSub;
@@ -282,10 +287,32 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       );
     }
     // Save state is handled by _rideSaveTimer in the controller
+
+    // Proactively reconnect RTDB + clear banner when network returns
+    _networkListener = () {
+      if (!mounted) return;
+      final online = NetworkService().isOnline;
+      if (online && _connectionLost) {
+        debugPrint('[RiderTracking] Network recovered — clearing banner + reconnecting RTDB');
+        setState(() {
+          _connectionLost = false;
+          _pollFailCount = 0;
+        });
+        // Reconnect RTDB driver listener if we have a driver ID
+        if (_rtdbDriverId != null && _phase != _TrackPhase.completed) {
+          _startRtdbDriverListener(_rtdbDriverId!);
+        }
+      }
+    };
+    NetworkService().onlineNotifier.addListener(_networkListener!);
   }
 
   @override
   void dispose() {
+    if (_networkListener != null) {
+      NetworkService().onlineNotifier.removeListener(_networkListener!);
+      _networkListener = null;
+    }
     _interpTicker?.dispose();
     _camTimer?.cancel();
     // car annotation cleaned up with pointAnnotMgr

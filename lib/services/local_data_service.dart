@@ -702,6 +702,7 @@ class ActiveRideInfo {
   final String? driverPhotoUrl;
   final String? driverId;
   final int? etaMinutes;
+  final int? routeDurationSec;
 
   const ActiveRideInfo({
     required this.pickupLat,
@@ -729,6 +730,7 @@ class ActiveRideInfo {
     this.driverPhotoUrl,
     this.driverId,
     this.etaMinutes,
+    this.routeDurationSec,
   });
 
   Map<String, dynamic> toJson() => {
@@ -757,6 +759,7 @@ class ActiveRideInfo {
     'driverPhotoUrl': driverPhotoUrl,
     'driverId': driverId,
     'etaMinutes': etaMinutes,
+    'routeDurationSec': routeDurationSec,
   };
 
   static ActiveRideInfo fromJson(Map<String, dynamic> j) => ActiveRideInfo(
@@ -789,5 +792,6 @@ class ActiveRideInfo {
     driverPhotoUrl: j['driverPhotoUrl'] as String?,
     driverId: j['driverId'] as String?,
     etaMinutes: j['etaMinutes'] as int?,
+    routeDurationSec: j['routeDurationSec'] as int?,
   );
 }

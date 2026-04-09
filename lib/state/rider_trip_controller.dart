@@ -434,9 +434,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   List<RideOption> _generateRideOptions(RouteResult route) {
-    // Base: ~$1.50/mi + $0.25/min, with multiplier per type
+    // Prefer traffic-aware durationSeconds from the API; fall back to parsing durationText
+    final mins = route.durationSeconds != null && route.durationSeconds! > 0
+        ? (route.durationSeconds! / 60.0).ceil()
+        : _parseDurationMinutes(route.durationText);
     final miles = route.distanceMeters / 1609.344;
-    final mins = _parseDurationMinutes(route.durationText);
     double baseFare = 2.50 + (miles * 1.50) + (mins * 0.25);
 
     // Airport surcharge: +$8 flat + 15% uplift
@@ -451,9 +453,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final surge = _surgeMultiplier;
     final surgedBase = baseFare * surge;
 
-    // Use real route duration — parse "12 min" or "1 h 5 min" from Mapbox.
+    // Use real route duration from API (traffic-aware seconds) when available,
+    // otherwise parse "12 min" or "1 h 5 min" text from durationText.
     // Add small category offsets (VIP vehicles take slightly longer to arrive).
-    final baseDuration = _parseDurationMinutes(route.durationText).clamp(1, 120);
+    final baseDuration = mins.clamp(1, 120);
 
     return [
       RideOption(

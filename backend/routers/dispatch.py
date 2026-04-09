@@ -37,9 +37,338 @@ DRIVER_SHARE_RATE = 0.60
 # Local dict to track action-request reminder tasks (avoids cross-router import)
 _action_reminder_tasks: dict[int, asyncio.Task] = {}
 
+# Track running cascade tasks per trip so we don't double-cascade
+_cascade_tasks: dict[int, asyncio.Task] = {}
+
+# Cascade configuration
+_CASCADE_MAX_DRIVERS = 5       # try up to 5 drivers before giving up
+_CASCADE_WAIT_SECONDS = 8      # wait 8s for each driver to respond
+
 # In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
 _route_cache: dict = {}
 _ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Shared helper: find nearest eligible drivers using SQL haversine sort
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _find_nearest_drivers(
+    db: AsyncSession,
+    pickup_lat: float,
+    pickup_lng: float,
+    exclude_driver_ids: set[int] | None = None,
+    vehicle_type: str = "comfort",
+    radius_km: float = 30.0,
+    limit: int = 10,
+) -> list:
+    """Find the nearest online drivers using a bounding-box pre-filter and
+    SQL-side haversine ORDER BY so the database does the heavy lifting.
+
+    Returns a list of User ORM objects sorted by distance (closest first).
+    """
+    if exclude_driver_ids is None:
+        exclude_driver_ids = set()
+
+    active_cutoff = utc_now() - timedelta(minutes=15)
+
+    # Bounding-box pre-filter
+    delta_lat = radius_km / 111.0
+    cos_lat = math.cos(math.radians(pickup_lat)) if pickup_lat else 1.0
+    delta_lng = radius_km / (111.0 * cos_lat) if cos_lat != 0 else radius_km / 111.0
+    min_lat = pickup_lat - delta_lat
+    max_lat = pickup_lat + delta_lat
+    min_lng = pickup_lng - delta_lng
+    max_lng = pickup_lng + delta_lng
+
+    # Exclude drivers with active trips
+    active_trip_statuses = [
+        "accepted", "driver_en_route", "driver_arriving",
+        "arrived", "in_trip", "in_progress",
+    ]
+    busy_result = await db.execute(
+        select(Trip.driver_id).where(
+            and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
+        )
+    )
+    busy_ids = {r[0] for r in busy_result.all()}
+    all_excluded = exclude_driver_ids | busy_ids
+
+    # Build WHERE conditions
+    conditions = [
+        User.role == "driver",
+        User.is_online == True,
+        User.lat.isnot(None),
+        User.lng.isnot(None),
+        User.lat >= min_lat,
+        User.lat <= max_lat,
+        User.lng >= min_lng,
+        User.lng <= max_lng,
+        User.last_active_at.isnot(None),
+        User.last_active_at >= active_cutoff,
+    ]
+    if all_excluded:
+        conditions.append(~User.id.in_(all_excluded))
+
+    # Haversine distance expression computed in SQL
+    # 6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng))
+    #        + sin(radians(:lat)) * sin(radians(lat)))
+    lat_rad = math.radians(pickup_lat)
+    lng_rad = math.radians(pickup_lng)
+    haversine_expr = (
+        6371.0 * func.acos(
+            func.least(1.0, func.greatest(-1.0,  # clamp to [-1,1] to avoid domain errors
+                math.cos(lat_rad) * func.cos(func.radians(User.lat))
+                * func.cos(func.radians(User.lng) - lng_rad)
+                + math.sin(lat_rad) * func.sin(func.radians(User.lat))
+            ))
+        )
+    )
+
+    result = await db.execute(
+        select(User)
+        .where(and_(*conditions))
+        .order_by(haversine_expr.asc())
+        .limit(limit)
+    )
+    drivers = list(result.scalars().all())
+
+    # Filter by vehicle tier if VIP/Premium requested
+    requested_type = (vehicle_type or "comfort").lower()
+    if requested_type in ("vip", "premium") and drivers:
+        all_ids = [d.id for d in drivers]
+        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, requested_type)
+        tier_matched = [d for d in drivers if d.id in eligible_ids]
+        if tier_matched:
+            drivers = tier_matched
+            logging.info(
+                "[NearbySearch] Filtered to %d %s-tier drivers out of %d",
+                len(tier_matched), requested_type, len(all_ids),
+            )
+        else:
+            logging.warning(
+                "[NearbySearch] No %s-tier drivers available, using closest driver",
+                requested_type,
+            )
+
+    return drivers
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Auto-cascade: background task that tries up to N drivers with 8s timeout
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _send_offer_to_driver(
+    db: AsyncSession,
+    trip: Trip,
+    driver: User,
+    rider_name: str,
+    rider_phone: str,
+    rider_photo: str,
+) -> DispatchOffer:
+    """Create a DispatchOffer for the given driver and push via SSE + FCM.
+    Returns the newly created offer."""
+    offer = DispatchOffer(trip_id=trip.id, driver_id=driver.id)
+    db.add(offer)
+    await db.commit()
+    await db.refresh(offer)
+
+    _pending_cache.pop(driver.id, None)
+    estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+
+    asyncio.create_task(event_bus.push_driver_offer(driver.id, [{
+        "offer_id": offer.id,
+        "rider_name": rider_name,
+        "rider_phone": rider_phone,
+        "rider_photo_url": rider_photo,
+        "created_at": offer.created_at.isoformat() if offer.created_at else None,
+        "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+        **_trip_dict(trip),
+        "fare": estimated_driver_fare,
+        "driver_earnings": estimated_driver_fare,
+    }]))
+
+    if driver.fcm_token:
+        asyncio.create_task(_send_fcm_push_async(
+            driver.fcm_token,
+            title="New Ride Offer",
+            body="A rider needs a ride -- open Cruise to accept.",
+            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+            is_offer=True,
+        ))
+
+    return offer
+
+
+async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int) -> None:
+    """Auto-cascade to next drivers if the current offer is not accepted within 8s.
+
+    Tries up to _CASCADE_MAX_DRIVERS total (including the first).
+    After all attempts fail, marks the trip as cancelled with reason 'no_driver'.
+    """
+    tried_driver_ids: set[int] = {first_driver_id}
+    current_offer_id = first_offer_id
+    attempt = 1  # first driver already got the offer
+
+    try:
+        while attempt < _CASCADE_MAX_DRIVERS:
+            await asyncio.sleep(_CASCADE_WAIT_SECONDS)
+
+            async with SessionLocal() as db:
+                # Check if the current offer was accepted or the trip moved on
+                offer_result = await db.execute(
+                    select(DispatchOffer).where(DispatchOffer.id == current_offer_id)
+                )
+                offer = offer_result.scalar_one_or_none()
+                if not offer or offer.status != "pending":
+                    # Offer was accepted/rejected/expired by another path -- stop cascading
+                    logging.info(
+                        "[Cascade] Trip %d: offer %d status=%s, stopping cascade",
+                        trip_id, current_offer_id, offer.status if offer else "missing",
+                    )
+                    return
+
+                # Also check if the trip is still in 'requested' state
+                trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+                trip = trip_result.scalar_one_or_none()
+                if not trip or trip.status != "requested":
+                    logging.info(
+                        "[Cascade] Trip %d status=%s, stopping cascade",
+                        trip_id, trip.status if trip else "missing",
+                    )
+                    return
+
+                # Expire the current offer
+                offer.status = "expired"
+                await db.commit()
+                logging.info(
+                    "[Cascade] Trip %d: offer %d expired after %ds, trying driver #%d",
+                    trip_id, current_offer_id, _CASCADE_WAIT_SECONDS, attempt + 1,
+                )
+
+                # Notify the timed-out driver
+                timed_out_driver_result = await db.execute(
+                    select(User).where(User.id == offer.driver_id)
+                )
+                timed_out_driver = timed_out_driver_result.scalar_one_or_none()
+                if timed_out_driver and timed_out_driver.fcm_token:
+                    asyncio.create_task(_send_fcm_push_async(
+                        timed_out_driver.fcm_token,
+                        title="Offer Expired",
+                        body="The ride offer was not accepted in time and has been reassigned.",
+                        data={
+                            "type": "offer_expired",
+                            "offer_id": str(offer.id),
+                            "trip_id": str(trip_id),
+                        },
+                    ))
+
+                # Find next closest driver, excluding all tried drivers
+                next_drivers = await _find_nearest_drivers(
+                    db,
+                    pickup_lat=trip.pickup_lat,
+                    pickup_lng=trip.pickup_lng,
+                    exclude_driver_ids=tried_driver_ids,
+                    vehicle_type=trip.vehicle_type or "comfort",
+                    limit=5,
+                )
+                if not next_drivers:
+                    logging.warning(
+                        "[Cascade] Trip %d: no more drivers available after %d attempts",
+                        trip_id, attempt,
+                    )
+                    break
+
+                next_driver = next_drivers[0]
+                tried_driver_ids.add(next_driver.id)
+
+                # Get rider info
+                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_result.scalar_one_or_none()
+                rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
+                rider_phone = (rider.phone or "") if rider else ""
+                rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+
+                new_offer = await _send_offer_to_driver(
+                    db, trip, next_driver, rider_name, rider_phone, rider_photo,
+                )
+                current_offer_id = new_offer.id
+                attempt += 1
+
+                logging.info(
+                    "[Cascade] Trip %d: offer %d sent to driver %d (attempt %d/%d, %.2f km away)",
+                    trip_id, new_offer.id, next_driver.id, attempt, _CASCADE_MAX_DRIVERS,
+                    _haversine(trip.pickup_lat, trip.pickup_lng, next_driver.lat or 0, next_driver.lng or 0),
+                )
+
+        # Final check: wait for the last offer before giving up
+        await asyncio.sleep(_CASCADE_WAIT_SECONDS)
+
+        async with SessionLocal() as db:
+            offer_result = await db.execute(
+                select(DispatchOffer).where(DispatchOffer.id == current_offer_id)
+            )
+            offer = offer_result.scalar_one_or_none()
+
+            trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+            trip = trip_result.scalar_one_or_none()
+
+            if offer and offer.status == "pending" and trip and trip.status == "requested":
+                # Last offer also not accepted -- expire it and cancel trip
+                offer.status = "expired"
+                trip.status = "cancelled"
+                trip.cancel_reason = "no_driver"
+                await db.commit()
+
+                logging.warning(
+                    "[Cascade] Trip %d: all %d drivers exhausted, trip cancelled (no_driver)",
+                    trip_id, _CASCADE_MAX_DRIVERS,
+                )
+
+                # Notify rider that no drivers are available
+                try:
+                    await event_bus.push_trip_update(trip_id, {
+                        "status": "cancelled",
+                        "cancel_reason": "no_driver",
+                        "message": "No drivers available right now. Please try again shortly.",
+                    })
+                except Exception:
+                    pass
+
+                # Notify rider via FCM too
+                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_result.scalar_one_or_none()
+                if rider and rider.fcm_token:
+                    asyncio.create_task(_send_fcm_push_async(
+                        rider.fcm_token,
+                        title="No Drivers Available",
+                        body="We could not find a driver for your ride. Please try again.",
+                        data={"type": "trip_cancelled", "trip_id": str(trip_id), "reason": "no_driver"},
+                    ))
+
+                # Sync to Firestore
+                if _HAS_FIRESTORE:
+                    try:
+                        firestore_sync.update_trip_status(trip_id, "cancelled")
+                    except Exception:
+                        pass
+            elif trip and trip.status == "requested" and offer and offer.status == "pending":
+                # Should not happen, but guard
+                pass
+            else:
+                logging.info(
+                    "[Cascade] Trip %d: resolved before final timeout (offer=%s, trip=%s)",
+                    trip_id,
+                    offer.status if offer else "missing",
+                    trip.status if trip else "missing",
+                )
+
+    except asyncio.CancelledError:
+        logging.info("[Cascade] Trip %d: cascade task cancelled", trip_id)
+    except Exception as e:
+        logging.error("[Cascade] Trip %d: cascade failed: %s", trip_id, e)
+    finally:
+        _cascade_tasks.pop(trip_id, None)
 
 
 async def _fetch_route_for_offer(
@@ -523,116 +852,55 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         except Exception as e:
             logging.error("Firestore sync on dispatch_request failed: %s", e)
 
-    # Find nearby online drivers with fresh heartbeat to avoid assigning offers
-    # to stale "ghost" drivers left online after app/network crashes.
-    # 15-min window: drivers idle between trips shouldn't be filtered out.
-    active_cutoff = utc_now() - timedelta(minutes=15)
-
-    # Exclude drivers who currently have an active trip
-    active_trip_statuses = ['accepted', 'driver_en_route', 'driver_arriving', 'arrived', 'in_trip', 'in_progress']
-    busy_driver_result = await db.execute(
-        select(Trip.driver_id).where(
-            and_(
-                Trip.driver_id.isnot(None),
-                Trip.status.in_(active_trip_statuses),
-            )
-        )
+    # Find nearby online drivers using shared helper (SQL haversine sort)
+    drivers_sorted = await _find_nearest_drivers(
+        db,
+        pickup_lat=trip.pickup_lat or 0,
+        pickup_lng=trip.pickup_lng or 0,
+        vehicle_type=trip.vehicle_type or "comfort",
+        radius_km=30.0,
+        limit=10,
     )
-    busy_driver_ids = {row[0] for row in busy_driver_result.all()}
-
-    # Bounding-box pre-filter: only load drivers within radius_km of pickup
-    _dispatch_radius_km = 30.0  # max search radius in km
-    _delta_lat = _dispatch_radius_km / 111.0
-    _delta_lng = _dispatch_radius_km / (111.0 * math.cos(math.radians(trip.pickup_lat or 0)))
-    _min_lat = (trip.pickup_lat or 0) - _delta_lat
-    _max_lat = (trip.pickup_lat or 0) + _delta_lat
-    _min_lng = (trip.pickup_lng or 0) - _delta_lng
-    _max_lng = (trip.pickup_lng or 0) + _delta_lng
-
-    result = await db.execute(
-        select(User).where(
-            and_(
-                User.role == "driver",
-                User.is_online == True,
-                User.lat.isnot(None),
-                User.lng.isnot(None),
-                User.lat >= _min_lat,
-                User.lat <= _max_lat,
-                User.lng >= _min_lng,
-                User.lng <= _max_lng,
-                User.last_active_at.isnot(None),
-                User.last_active_at >= active_cutoff,
-                ~User.id.in_(busy_driver_ids) if busy_driver_ids else True,
-            )
-        )
-    )
-    drivers = result.scalars().all()
-    drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
-
-    # Filter by vehicle tier: VIP/Premium requests only go to matching drivers
-    requested_type = (trip.vehicle_type or "comfort").lower()
-    if requested_type in ("vip", "premium") and drivers_sorted:
-        all_ids = [d.id for d in drivers_sorted]
-        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, requested_type)
-        tier_matched = [d for d in drivers_sorted if d.id in eligible_ids]
-        if tier_matched:
-            drivers_sorted = tier_matched
-            logging.info("[Dispatch] Trip %d: filtered to %d %s-tier drivers", trip.id, len(tier_matched), requested_type)
-        else:
-            logging.warning("[Dispatch] Trip %d: no %s-tier drivers available, using closest driver", trip.id, requested_type)
 
     # -- Debug logging: always log dispatch result for Railway visibility --
     if drivers_sorted:
         logging.info(
-            "[Dispatch] Trip %d: found %d eligible drivers. Assigning to driver %d (%.2f km away). cutoff=%s",
+            "[Dispatch] Trip %d: found %d eligible drivers. Assigning to driver %d (%.2f km away)",
             trip.id, len(drivers_sorted), drivers_sorted[0].id,
             _haversine(trip.pickup_lat, trip.pickup_lng, drivers_sorted[0].lat or 0, drivers_sorted[0].lng or 0),
-            active_cutoff.isoformat(),
         )
     else:
         # Log ALL online drivers to understand WHY zero matched
         all_online = await db.execute(select(User).where(and_(User.role == "driver", User.is_online == True)))
         all_online_drivers = all_online.scalars().all()
         logging.warning(
-            "[Dispatch] Trip %d: 0 eligible drivers! online_drivers=%d, cutoff=%s. Details: %s",
-            trip.id, len(all_online_drivers), active_cutoff.isoformat(),
+            "[Dispatch] Trip %d: 0 eligible drivers! online_drivers=%d. Details: %s",
+            trip.id, len(all_online_drivers),
             "; ".join(
                 f"id={d.id} lat={d.lat} lng={d.lng} last_active={d.last_active_at}"
                 for d in all_online_drivers[:5]
             ) or "none online",
         )
 
-    # Create offer for closest driver
+    # Create offer for closest driver and start auto-cascade
     if drivers_sorted:
         assigned = drivers_sorted[0]
-        offer = DispatchOffer(trip_id=trip.id, driver_id=assigned.id)
-        db.add(offer)
-        await db.commit()
-        await db.refresh(offer)
-        # -- SSE instant push to driver — no blocking calls before this --
-        _pending_cache.pop(assigned.id, None)
-        estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
-        asyncio.create_task(event_bus.push_driver_offer(assigned.id, [{
-            "offer_id": offer.id,
-            "rider_name": user.first_name + " " + user.last_name,
-            "rider_phone": user.phone or "",
-            "rider_photo_url": _abs_photo_url(user.photo_url) or "",
-            "created_at": offer.created_at.isoformat() if offer.created_at else None,
-            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
-            **_trip_dict(trip),
-            "fare": estimated_driver_fare,
-            "driver_earnings": estimated_driver_fare,
-        }]))
-        # -- FCM push to assigned driver (non-blocking background task) --
-        if assigned.fcm_token:
-            _rn = user.first_name + " " + user.last_name
-            asyncio.create_task(_send_fcm_push_async(
-                assigned.fcm_token,
-                title="New Ride Offer",
-                body="A rider needs a ride — open Cruise to accept.",
-                data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
-                is_offer=True,
-            ))
+        rider_name = user.first_name + " " + user.last_name
+        rider_phone = user.phone or ""
+        rider_photo = _abs_photo_url(user.photo_url) or ""
+
+        offer = await _send_offer_to_driver(
+            db, trip, assigned, rider_name, rider_phone, rider_photo,
+        )
+
+        # Launch auto-cascade background task: will try next drivers every 8s
+        # if the first driver does not respond.
+        old_task = _cascade_tasks.pop(trip.id, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+        task = asyncio.create_task(_auto_cascade(trip.id, offer.id, assigned.id))
+        _cascade_tasks[trip.id] = task
+
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
@@ -653,6 +921,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
 
     # -- Stale offer cleanup: expire offers older than 5 minutes --
     # This catches offers that were never explicitly rejected (e.g. app crash, no response).
+    # Note: the auto-cascade handles fast 8s timeouts; this is the safety-net for truly stale offers.
     _OFFER_MAX_AGE_SECONDS = 300  # 5 minutes
     stale_cutoff = utc_now() - timedelta(seconds=_OFFER_MAX_AGE_SECONDS)
     try:
@@ -691,76 +960,41 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                 if stale_trip.status != "requested":
                     continue
                 try:
-                    rejected_ids_result = await db.execute(
+                    # Collect all drivers already tried for this trip
+                    prev_result = await db.execute(
                         select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == stale_trip.id)
                     )
-                    rejected_ids = {r[0] for r in rejected_ids_result.all()}
-                    active_trip_statuses = ["accepted", "driver_en_route", "driver_arriving", "arrived", "in_trip", "in_progress"]
-                    busy_result = await db.execute(
-                        select(Trip.driver_id).where(
-                            and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
-                        )
+                    tried_ids = {r[0] for r in prev_result.all()}
+
+                    next_drivers = await _find_nearest_drivers(
+                        db,
+                        pickup_lat=stale_trip.pickup_lat or 0,
+                        pickup_lng=stale_trip.pickup_lng or 0,
+                        exclude_driver_ids=tried_ids,
+                        vehicle_type=stale_trip.vehicle_type or "comfort",
+                        limit=5,
                     )
-                    busy_ids = {r[0] for r in busy_result.all()}
-                    exclude_ids = rejected_ids | busy_ids
-                    active_cutoff = utc_now() - timedelta(minutes=15)
-                    next_drivers_result = await db.execute(
-                        select(User).where(
-                            and_(
-                                User.role == "driver",
-                                User.is_online == True,
-                                User.lat.isnot(None),
-                                User.lng.isnot(None),
-                                User.last_active_at.isnot(None),
-                                User.last_active_at >= active_cutoff,
-                                ~User.id.in_(exclude_ids) if exclude_ids else True,
-                            )
-                        )
-                    )
-                    next_drivers = next_drivers_result.scalars().all()
-                    next_drivers_sorted = sorted(
-                        next_drivers,
-                        key=lambda d: _haversine(stale_trip.pickup_lat, stale_trip.pickup_lng, d.lat or 0, d.lng or 0),
-                    )
-                    req_type = (stale_trip.vehicle_type or "comfort").lower()
-                    if req_type in ("vip", "premium") and next_drivers_sorted:
-                        all_ids = [d.id for d in next_drivers_sorted]
-                        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, req_type)
-                        tier_matched = [d for d in next_drivers_sorted if d.id in eligible_ids]
-                        if tier_matched:
-                            next_drivers_sorted = tier_matched
-                    if next_drivers_sorted:
-                        next_driver = next_drivers_sorted[0]
-                        new_offer = DispatchOffer(trip_id=stale_trip.id, driver_id=next_driver.id)
-                        db.add(new_offer)
-                        await db.commit()
-                        await db.refresh(new_offer)
-                        _pending_cache.pop(next_driver.id, None)
-                        estimated_driver_fare = round(float(stale_trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+                    if next_drivers:
+                        next_driver = next_drivers[0]
                         rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
                         rider = rider_result.scalar_one_or_none()
                         rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
                         rider_phone = (rider.phone or "") if rider else ""
                         rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-                        asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
-                            "offer_id": new_offer.id,
-                            "rider_name": rider_name,
-                            "rider_phone": rider_phone,
-                            "rider_photo_url": rider_photo,
-                            "created_at": new_offer.created_at.isoformat() if new_offer.created_at else None,
-                            "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
-                            **_trip_dict(stale_trip),
-                            "fare": estimated_driver_fare,
-                            "driver_earnings": estimated_driver_fare,
-                        }]))
-                        if next_driver.fcm_token:
-                            _send_fcm_push(
-                                next_driver.fcm_token,
-                                title="New Ride Offer",
-                                body="A rider needs a ride \u2014 open Cruise to accept.",
-                                data={"type": "new_offer", "trip_id": str(stale_trip.id), "offer_id": str(new_offer.id)},
-                                is_offer=True,
-                            )
+
+                        new_offer = await _send_offer_to_driver(
+                            db, stale_trip, next_driver, rider_name, rider_phone, rider_photo,
+                        )
+
+                        # Start cascade for the new offer
+                        old_task = _cascade_tasks.pop(stale_trip.id, None)
+                        if old_task and not old_task.done():
+                            old_task.cancel()
+                        task = asyncio.create_task(
+                            _auto_cascade(stale_trip.id, new_offer.id, next_driver.id)
+                        )
+                        _cascade_tasks[stale_trip.id] = task
+
                         logging.info(
                             "[Dispatch] Expired offer %d (trip %d) reassigned to driver %d",
                             stale_offer.id, stale_trip.id, next_driver.id,
@@ -930,12 +1164,17 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
 
+    # Cancel any running auto-cascade for this trip -- a driver accepted
+    cascade_task = _cascade_tasks.pop(offer.trip_id, None)
+    if cascade_task and not cascade_task.done():
+        cascade_task.cancel()
+
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id).with_for_update())
     trip = trip_result.scalar_one_or_none()
     if trip:
         # Guard: do not accept if trip was already canceled
         if trip.status in ("canceled", "cancelled", "completed"):
-            raise HTTPException(status_code=409, detail="Trip is no longer available — it was canceled or completed")
+            raise HTTPException(status_code=409, detail="Trip is no longer available -- it was canceled or completed")
         trip.driver_id = driver_id
         trip.status = "driver_en_route"
     await db.commit()
@@ -1075,84 +1314,46 @@ async def reject_offer(
     await db.commit()
     _pending_cache.pop(driver_id, None)  # Invalidate cache so next poll is fresh
 
-    # Cascade: find next available driver (exclude busy and rejected)
+    # Cascade: find next available driver using shared helper (exclude already-tried)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
     if trip and trip.status == "requested":
-        rejected_ids_result = await db.execute(
+        # Cancel any running auto-cascade for this trip since we handle it here
+        old_task = _cascade_tasks.pop(trip.id, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+
+        # Collect all drivers already offered for this trip
+        prev_result = await db.execute(
             select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
         )
-        rejected_ids = {r[0] for r in rejected_ids_result.all()}
+        tried_ids = {r[0] for r in prev_result.all()}
 
-        # Exclude drivers with active trips
-        active_trip_statuses = ['accepted', 'driver_en_route', 'driver_arriving', 'arrived', 'in_trip', 'in_progress']
-        busy_result = await db.execute(
-            select(Trip.driver_id).where(
-                and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
-            )
+        drivers_sorted = await _find_nearest_drivers(
+            db,
+            pickup_lat=trip.pickup_lat or 0,
+            pickup_lng=trip.pickup_lng or 0,
+            exclude_driver_ids=tried_ids,
+            vehicle_type=trip.vehicle_type or "comfort",
+            limit=5,
         )
-        busy_ids = {r[0] for r in busy_result.all()}
-        exclude_ids = rejected_ids | busy_ids
-
-        active_cutoff = utc_now() - timedelta(minutes=15)
-        drivers_result = await db.execute(
-            select(User).where(
-                and_(
-                    User.role == "driver",
-                    User.is_online == True,
-                    User.lat.isnot(None),
-                    User.lng.isnot(None),
-                    User.last_active_at.isnot(None),
-                    User.last_active_at >= active_cutoff,
-                    ~User.id.in_(exclude_ids) if exclude_ids else True,
-                )
-            )
-        )
-        drivers = drivers_result.scalars().all()
-        drivers_sorted = sorted(drivers, key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0))
-        # Filter by vehicle tier on reassign too
-        req_type = (trip.vehicle_type or "comfort").lower()
-        if req_type in ("vip", "premium") and drivers_sorted:
-            all_ids = [d.id for d in drivers_sorted]
-            eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, req_type)
-            tier_matched = [d for d in drivers_sorted if d.id in eligible_ids]
-            if tier_matched:
-                drivers_sorted = tier_matched
         if drivers_sorted:
             next_driver = drivers_sorted[0]
-            new_offer = DispatchOffer(trip_id=trip.id, driver_id=next_driver.id)
-            db.add(new_offer)
-            await db.commit()
-            await db.refresh(new_offer)
-            # -- SSE instant push to next driver --
-            _pending_cache.pop(next_driver.id, None)
-            estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
-            # Fetch rider info for the push payload
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
             rider = rider_result.scalar_one_or_none()
             rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
             rider_phone = (rider.phone or "") if rider else ""
             rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-            asyncio.create_task(event_bus.push_driver_offer(next_driver.id, [{
-                "offer_id": new_offer.id,
-                "rider_name": rider_name,
-                "rider_phone": rider_phone,
-                "rider_photo_url": rider_photo,
-                "created_at": new_offer.created_at.isoformat() if new_offer.created_at else None,
-                "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
-                **_trip_dict(trip),
-                "fare": estimated_driver_fare,
-                "driver_earnings": estimated_driver_fare,
-            }]))
-            # -- FCM push to next driver --
-            if next_driver.fcm_token:
-                _send_fcm_push(
-                    next_driver.fcm_token,
-                    title="New Ride Offer",
-                    body="A rider needs a ride \u2014 open Cruise to accept.",
-                    data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(new_offer.id)},
-                    is_offer=True,
-                )
+
+            new_offer = await _send_offer_to_driver(
+                db, trip, next_driver, rider_name, rider_phone, rider_photo,
+            )
+
+            # Restart cascade for the new offer
+            task = asyncio.create_task(
+                _auto_cascade(trip.id, new_offer.id, next_driver.id)
+            )
+            _cascade_tasks[trip.id] = task
 
     return {"status": "rejected", "reason_stored": reason is not None}
 

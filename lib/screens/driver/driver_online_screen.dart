@@ -51,6 +51,7 @@ import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_screen.dart';
 import 'scheduled_rides_screen.dart';
+import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/tier_badge.dart';
@@ -227,6 +228,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
   Timer? _sseReconnectTimer; // retries SSE after drop
   bool _sseActive = false;
+  VoidCallback? _networkListener; // NetworkService online/offline callback
   String _riderName = '';
   String _riderInit = '';
   String _riderPhotoUrl = '';
@@ -474,6 +476,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_networkListener != null) {
+      NetworkService().onlineNotifier.removeListener(_networkListener!);
+      _networkListener = null;
+    }
     _smoothTicker?.stop();
     _smoothTicker?.dispose();
     _driverAnim.dispose();
@@ -798,12 +804,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         body: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Offline connectivity banner
-            const Positioned(
-              top: 0, left: 0, right: 0,
-              child: SafeArea(child: OfflineBanner()),
-            ),
-
             // Offline connectivity banner
             const Positioned(
               top: 0, left: 0, right: 0,

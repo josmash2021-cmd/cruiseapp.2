@@ -56,6 +56,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       });
     });
 
+    // Listen for network recovery — proactively reconnect SSE + re-register
+    // online status when connectivity returns after a drop.
+    _networkListener = () {
+      if (!mounted) return;
+      final online = NetworkService().isOnline;
+      if (online && _phase == _Phase.searching && !_sseActive) {
+        debugPrint('[DriverOnline] Network recovered — reconnecting SSE + re-registering online');
+        _connectSse();
+        _goOnlineBackend();
+      }
+    };
+    NetworkService().onlineNotifier.addListener(_networkListener!);
+
     // Build vehicle icons well after the transition settles (700ms)
     // to avoid jank during the 400ms fade+scale entrance animation.
     Future.delayed(const Duration(milliseconds: 700), () {
@@ -1037,11 +1050,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _connectSse();
 
-    // Polling fallback — only used when SSE is DOWN to save battery
+    // Polling fallback — only fires when SSE is DOWN to save battery.
+    // Polls /dispatch/driver/pending every 5s; skipped entirely while SSE is active.
     _poll();
-    _pollT = Timer.periodic(const Duration(seconds: 4), (_) {
+    _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       if (_sseActive) return; // SSE handles it — skip polling entirely
+      debugPrint('[DriverOnline] SSE down — polling /dispatch/driver/pending');
       _poll();
     });
   }
@@ -1085,7 +1100,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (_driverId == null || !mounted) return;
 
     void scheduleReconnect(String reason) {
-      debugPrint('SSE $reason — reconnecting in 2s');
+      debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 2s');
       _sseActive = false;
       if (mounted && _phase == _Phase.searching) {
         _sseReconnectTimer = Timer(const Duration(seconds: 2), _connectSse);
@@ -1094,6 +1109,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
       (offers) {
+        if (!_sseActive) {
+          debugPrint('[DriverOnline] SSE reconnected — stopping polling fallback');
+        }
         _sseActive = true;
         debugPrint('SSE offers: ${offers.length}');
         if (!mounted || _phase != _Phase.searching) return;

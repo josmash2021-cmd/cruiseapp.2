@@ -14,6 +14,10 @@ class RouteResult {
   final String startAddress;
   final String endAddress;
 
+  /// Route duration in seconds from the directions API (includes traffic when
+  /// available). Null when the provider did not return a usable value.
+  final int? durationSeconds;
+
   const RouteResult({
     required this.points,
     required this.distanceText,
@@ -21,6 +25,7 @@ class RouteResult {
     required this.durationText,
     required this.startAddress,
     required this.endAddress,
+    this.durationSeconds,
   });
 }
 
@@ -36,21 +41,26 @@ class DirectionsService {
   DirectionsService(this.apiKey);
 
   // In-memory route cache: same origin+destination = instant hit
+  // LRU eviction: max 50 entries; oldest accessed entry is removed when full.
+  static const _cacheMaxSize = 50;
   static final Map<String, RouteResult> _routeCache = {};
   static final Map<String, Map<String, DistanceEstimate>> _distanceCache = {};
   static const _cacheMaxAge = Duration(minutes: 5);
   static final Map<String, DateTime> _cacheTimes = {};
+  /// Tracks last-access time for LRU eviction.
+  static final Map<String, DateTime> _cacheAccessTimes = {};
 
   /// Clear all cached routes (call on logout or location change)
   static void clearCache() {
     _routeCache.clear();
     _distanceCache.clear();
     _cacheTimes.clear();
+    _cacheAccessTimes.clear();
   }
 
   String _cacheKey(LatLng a, LatLng b) =>
-      '${a.latitude.toStringAsFixed(4)},${a.longitude.toStringAsFixed(4)}->'
-      '${b.latitude.toStringAsFixed(4)},${b.longitude.toStringAsFixed(4)}';
+      '${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
+      '${b.latitude.toStringAsFixed(3)},${b.longitude.toStringAsFixed(3)}';
 
   bool _isCacheValid(String key) {
     final t = _cacheTimes[key];
@@ -172,6 +182,7 @@ class DirectionsService {
     final key = _cacheKey(origin, destination);
     if (_routeCache.containsKey(key) && _isCacheValid(key)) {
       debugPrint('[Route] Cache hit for $key');
+      _cacheAccessTimes[key] = DateTime.now(); // LRU: mark as recently used
       return _routeCache[key]!;
     }
 
@@ -225,8 +236,13 @@ class DirectionsService {
 
       if (result != null) {
         debugPrint('[Route] Got route with ${result.points.length} points (attempt ${attempt + 1})');
+        // LRU eviction: remove oldest entry when cache exceeds max size
+        if (_routeCache.length >= _cacheMaxSize && !_routeCache.containsKey(key)) {
+          _evictOldestCacheEntry();
+        }
         _routeCache[key] = result;
         _cacheTimes[key] = DateTime.now();
+        _cacheAccessTimes[key] = DateTime.now();
         return result;
       }
     }
@@ -311,6 +327,7 @@ class DirectionsService {
         durationText: durationText,
         startAddress: startAddress,
         endAddress: endAddress,
+        durationSeconds: totalDurationSeconds > 0 ? totalDurationSeconds : null,
       );
     }
 
@@ -330,6 +347,7 @@ class DirectionsService {
       durationText: durationText,
       startAddress: startAddress,
       endAddress: endAddress,
+      durationSeconds: totalDurationSeconds > 0 ? totalDurationSeconds : null,
     );
   }
 
@@ -407,6 +425,7 @@ class DirectionsService {
         durationText: _durationTextFromSeconds(durationSeconds),
         startAddress: '',
         endAddress: '',
+        durationSeconds: durationSeconds > 0 ? durationSeconds : null,
       );
     } catch (_) {
       return null;
@@ -476,6 +495,7 @@ class DirectionsService {
         durationText: _durationTextFromSeconds(durationSeconds),
         startAddress: '',
         endAddress: '',
+        durationSeconds: durationSeconds > 0 ? durationSeconds : null,
       );
     } catch (_) {
       return null;
@@ -669,23 +689,55 @@ class DirectionsService {
       durationText: durationText,
       startAddress: 'Origin',
       endAddress: 'Destination',
+      durationSeconds: estimatedSeconds > 0 ? estimatedSeconds : null,
     );
+  }
+
+  /// Evict the least-recently-accessed cache entry (LRU).
+  static void _evictOldestCacheEntry() {
+    if (_cacheAccessTimes.isEmpty) {
+      // Fallback: remove the first key in insertion order
+      if (_routeCache.isNotEmpty) {
+        final oldest = _routeCache.keys.first;
+        _routeCache.remove(oldest);
+        _cacheTimes.remove(oldest);
+        _cacheAccessTimes.remove(oldest);
+        debugPrint('[Route] LRU evicted (fallback): $oldest');
+      }
+      return;
+    }
+    // Find the key with the earliest access time
+    String? oldestKey;
+    DateTime? oldestTime;
+    _cacheAccessTimes.forEach((key, time) {
+      if (oldestTime == null || time.isBefore(oldestTime!)) {
+        oldestKey = key;
+        oldestTime = time;
+      }
+    });
+    if (oldestKey != null) {
+      _routeCache.remove(oldestKey);
+      _cacheTimes.remove(oldestKey);
+      _cacheAccessTimes.remove(oldestKey);
+      debugPrint('[Route] LRU evicted: $oldestKey');
+    }
   }
 
   /// Clean up old cache entries to prevent memory bloat
   static void cleanupOldCache() {
     final now = DateTime.now();
     final keysToRemove = <String>[];
-    
+
     _cacheTimes.forEach((key, time) {
       if (now.difference(time) > _cacheMaxAge) {
         keysToRemove.add(key);
       }
     });
-    
+
     for (final key in keysToRemove) {
       _routeCache.remove(key);
       _cacheTimes.remove(key);
+      _cacheAccessTimes.remove(key);
       debugPrint('[Route] Cleaned up old cache entry: $key');
     }
   }

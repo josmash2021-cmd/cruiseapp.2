@@ -270,6 +270,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       CarIconLoader.loadUberBytes(),
       _loadDriverPhoto(),
       renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
+      _loadSearchingCarIcon(),
     ]);
     _suvIconBytes = results[0] as Uint8List?;
     _sedanIconBytes = results[1] as Uint8List?;
@@ -278,8 +279,45 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navCarIconBytes = results[2] as Uint8List?;
     // results[3] is void (_loadDriverPhoto sets _driverPhotoImage internally)
     _goldPinBytes = results[4] as Uint8List?;
+    _searchingCarBytes = results[5] as Uint8List?;
     await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
     if (mounted) _setState(() {});
+  }
+
+  /// Load 3D car PNG for the searching-mode map icon (replaces flat dot).
+  Future<Uint8List?> _loadSearchingCarIcon() async {
+    try {
+      final raw = await rootBundle.load('assets/images/car_sedan.png');
+      return _resizePngForMap(raw.buffer.asUint8List(), maxDim: 200);
+    } catch (e) {
+      debugPrint('[DriverOnline] Failed to load searching car icon: $e');
+      return null;
+    }
+  }
+
+  /// Resize PNG to target dimension (returns PNG bytes).
+  Future<Uint8List> _resizePngForMap(Uint8List pngBytes, {int maxDim = 200}) async {
+    final codec = await ui.instantiateImageCodec(pngBytes);
+    final frame = await codec.getNextFrame();
+    final img = frame.image;
+    final scale = maxDim / math.max(img.width, img.height);
+    final newW = (img.width * scale).round().clamp(1, maxDim);
+    final newH = (img.height * scale).round().clamp(1, maxDim);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()));
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()),
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    final picture = recorder.endRecording();
+    final resized = await picture.toImage(newW, newH);
+    final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+    resized.dispose();
+    picture.dispose();
+    img.dispose();
+    return byteData!.buffer.asUint8List();
   }
 
   /// Download and decode the driver's profile photo for the map marker.
@@ -968,15 +1006,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     final offerActive = _isCardAnimating || _previewingOffer != null;
     if (_phase == _Phase.searching && !offerActive) {
-      _map?.setCamera(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 15.5,
-          bearing: 0,
-          pitch: 0,
-        ),
-      );
+      // Gentle camera follow — car moves ON the map instead of map sliding around.
+      // Only re-center when driver drifts >30% from screen center (≈ lat/lng gap).
+      final latDrift = (_pos!.latitude - (_lastCamLat ?? _pos!.latitude)).abs();
+      final lngDrift = (_pos!.longitude - (_lastCamLng ?? _pos!.longitude)).abs();
+      if (_lastCamLat == null || latDrift > 0.0008 || lngDrift > 0.0012) {
+        _lastCamLat = _pos!.latitude;
+        _lastCamLng = _pos!.longitude;
+        _map?.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+            zoom: 15.5,
+            bearing: 0,
+            pitch: 20,
+          ),
+          mapbox.MapAnimationOptions(duration: 1200),
+        );
+      }
     } else if (isNav && _cameraFollowing) {
       _cameraBearing = _heading;
       _map?.setCamera(

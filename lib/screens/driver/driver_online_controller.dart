@@ -969,17 +969,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     final offerActive = _isCardAnimating || _previewingOffer != null;
     if (_phase == _Phase.searching && !offerActive) {
-      // Smooth camera follow — easeTo every frame so camera glides with the dot.
-      _map?.easeTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 15.5,
-          bearing: 0,
-          pitch: 0,
-        ),
-        mapbox.MapAnimationOptions(duration: 1000),
-      );
+      // Smooth camera follow — throttled easeTo every 500ms to prevent animation stacking.
+      // Each easeTo glides 800ms, so there's slight overlap = continuous smooth motion.
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (nowMs - _lastSearchCamMs >= 500) {
+        _lastSearchCamMs = nowMs;
+        _map?.easeTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+            zoom: 15.5,
+            bearing: 0,
+            pitch: 0,
+          ),
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
     } else if (isNav && _cameraFollowing) {
       _cameraBearing = _heading;
       _map?.setCamera(

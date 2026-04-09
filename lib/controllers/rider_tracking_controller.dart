@@ -142,10 +142,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Process real-time driver location from RTDB.
-  void _onRealDriverLocation(LatLng ll, {double? bearing}) {
+  void _onRealDriverLocation(LatLng ll, {double? bearing, double? speed}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
+    if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;
     // Always wake up the ticker on new GPS data — restarts if idle or stopped.
     _interpIdle = false;
     if (_interpTicker != null && !_interpTicker!.isActive) {
@@ -169,14 +170,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         final clampedM = projectedM.clamp(0.0, _segDist.last);
         if (clampedM >= _traveledM - 5) {
           final newTarget = math.max(clampedM, _traveledM);
-          // Track velocity for smooth prediction between GPS updates
+          // Use real driver speed from RTDB when available (most accurate).
+          // Fall back to calculated velocity from GPS deltas.
           final now = DateTime.now();
           final dtSec = now.difference(_lastGpsTime).inMilliseconds / 1000.0;
-          if (dtSec > 0.05 && dtSec < 5.0) {
+          if (speed != null && speed > 0.1) {
+            // Real driver speed — smooth with 30/70 blend for stability
+            final realVel = speed.clamp(0.0, 35.0);
+            _velocityMps = _velocityMps * 0.3 + realVel * 0.7;
+          } else if (dtSec > 0.05 && dtSec < 5.0) {
             final distDelta = newTarget - _tgtTraveledM;
             if (distDelta > 0) {
-              // Smooth velocity with exponential average — cap to prevent spikes
-              final newVel = (distDelta / dtSec).clamp(0.0, 35.0); // ~78 mph max
+              // Calculated velocity — cap to prevent spikes
+              final newVel = (distDelta / dtSec).clamp(0.0, 35.0);
               _velocityMps = _velocityMps * 0.4 + newVel * 0.6;
             }
           }
@@ -687,6 +693,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
       final bearing = (data['bearing'] as num?)?.toDouble();
+      final speed = (data['speed'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
       _pollFailCount = 0;
       // Fix 3: successful update — reset fail count and restore normal 8s polling
@@ -699,7 +706,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         });
       }
       if (_connectionLost) _setState(() => _connectionLost = false);
-      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing);
+      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
     }, onError: (e) {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
@@ -1083,7 +1090,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final tgt = _directTargetPos;
       if (tgt != null) {
         final prevPos = _animPos;
-        final posFactor = tf(0.35);
+        final posFactor = tf(0.18); // smooth glide toward target
         final dLat = tgt.latitude - _animPos.latitude;
         final dLng = tgt.longitude - _animPos.longitude;
         final newLat = _animPos.latitude + dLat * posFactor;
@@ -1119,8 +1126,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // ── CONSTANT-VELOCITY advance (glass-smooth, ZERO jumps) ──
-    // Predict modestly ahead so the car doesn't overshoot.
-    final predicted = _tgtTraveledM + _velocityMps * 0.8;
+    // Predict ahead using driver's real speed so car glides at same pace.
+    final predicted = _tgtTraveledM + _velocityMps * 0.6;
     final effectiveTarget = math.min(predicted, _segDist.last);
     final diff = effectiveTarget - _traveledM;
 
@@ -1128,19 +1135,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // This distributes movement EVENLY across ALL frames between GPS updates
     // instead of proportional catch-up which reaches target in 200ms then stalls.
     final velStep = _velocityMps * dt;
-    // Fallback: very gentle proportional correction (< 4%/frame at 60fps)
-    // for when the car is stopped or accumulated drift needs fixing.
-    final corrStep = diff * tf(0.04);
+    // Fallback: gentle proportional correction (5%/frame at 60fps)
+    // for catching up when stopped or accumulated drift.
+    final corrStep = diff * tf(0.05);
     // Use whichever produces more forward movement — velocity dominates while
     // driving, correction dominates when stopped.
     if (diff > 0.05) {
-      final step2 = math.max(velStep, corrStep).clamp(0.0, 15.0);
+      final step2 = math.max(velStep, corrStep).clamp(0.0, 12.0);
       _traveledM = math.min(_traveledM + step2, effectiveTarget);
     } else if (diff.abs() <= 0.05) {
       _traveledM = _tgtTraveledM;
     }
-    // Velocity decay: retain ~98% per second — sustains glide for 3+ sec gaps
-    _velocityMps *= math.pow(0.98, dt);
+    // Velocity decay: retain ~99% per second — sustains glide for 5+ sec GPS gaps
+    // Real driver speed is refreshed every ~1-2s from RTDB, so barely decays in practice
+    _velocityMps *= math.pow(0.99, dt);
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 

@@ -81,8 +81,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (_driverId == null) {
       for (int attempt = 1; attempt <= 2; attempt++) {
         await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
         try {
           final id = await ApiService.getCurrentUserId();
+          if (!mounted) return;
           if (id != null) {
             _driverId = id;
             debugPrint('✅ Got driverId=$_driverId on retry $attempt');
@@ -94,7 +96,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         } catch (_) {}
       }
     }
+    if (!mounted) return;
     await _verifyDriverApproval();
+    if (!mounted) return;
     _goOnlineBackend();
   }
 
@@ -1865,6 +1869,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Driver pressed back from the active trip screen.
   /// Navigate to home while keeping the trip alive so the Resume button works.
   void _goBackToHomeWithTrip() {
+    _pollT?.cancel();
+    _offerSseSub?.cancel();
+    _clock?.cancel();
+    _earningsRefreshTimer?.cancel();
+
     // Stop navigation but do NOT cancel the trip.
     _navService.stopNavigation();
     _navState = null;

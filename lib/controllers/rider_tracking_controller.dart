@@ -1018,15 +1018,21 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _driverPos = LatLng(activeRide.driverLat!, activeRide.driverLng!);
         _animPos = _driverPos;
       }
-      // Compute distance from trip route
-      if (_routePts.length >= 2) {
-        _buildSegDist();
-        _distanceMiles = _segDist.isNotEmpty ? _segDist.last / 1609.34 : 0;
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      // Show distance from driver to pickup, not full trip distance
+      if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
+        _distanceMiles = _hav(_driverPos, widget.pickupLatLng);
       } else {
         _distanceMiles = 0;
-        _etaMinutes = 1;
       }
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+    }
+
+    if (_phase == _TrackPhase.arrived) {
+      _arrivedDotPulse.repeat(reverse: true);
+      _shouldFollowDriver = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handleDriverArrived();
+      });
     }
 
     if (!mounted) return;

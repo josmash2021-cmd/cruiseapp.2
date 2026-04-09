@@ -458,6 +458,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
     }
 
+    if (!mounted) return;
     _setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1113,7 +1114,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     // Delete any existing route annotation so we draw fresh
     if (_remainingRouteAnnot != null) {
-      try { polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
+      try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
       _remainingRouteAnnot = null;
     }
 

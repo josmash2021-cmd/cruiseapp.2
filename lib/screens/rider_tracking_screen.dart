@@ -281,8 +281,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
       );
     }
-    // Save state periodically for resume support
-    _saveStateTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveRideState());
+    // Save state is handled by _rideSaveTimer in the controller
   }
 
   @override
@@ -297,7 +296,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _fallbackTripStatusSub?.cancel();
     _statusPollTimer?.cancel();
     _rideSaveTimer?.cancel();
-    _saveStateTimer?.cancel();
     _riderLocSub?.cancel();
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
@@ -357,8 +355,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _startRidePhase = 0; // 0 = no animation, 1 = draw, 2 = zoom out, 3 = pause, 4 = zoom in, 5+ = follow mode
   bool _startRideAnimationDone = false;
 
-  // Periodic state save timer
-  Timer? _saveStateTimer;
+  // Periodic state save handled by _rideSaveTimer in the controller
 
   // Smooth camera follow (for real-time tracking after animation)
   bool _shouldFollowDriver = true;

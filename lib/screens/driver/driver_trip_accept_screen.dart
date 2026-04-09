@@ -419,12 +419,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Ensure GpsService knows our identity
     try {
       final driverId = await ApiService.getCurrentUserId();
-      if (driverId != null && mounted) {
+      if (!mounted) return;
+      if (driverId != null) {
         _gpsService.startTracking(driverId.toString());
         _gpsService.setActiveTrip(widget.tripId.toString());
       }
     } catch (_) {}
 
+    if (!mounted) return;
     _liveGpsSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,

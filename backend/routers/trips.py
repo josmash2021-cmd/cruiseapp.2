@@ -38,6 +38,17 @@ _COMMISSION_BY_TYPE = {
 }
 _DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
 
+# Valid trip status transitions -- enforce lifecycle integrity
+_VALID_TRANSITIONS = {
+    "requested": {"accepted", "driver_en_route", "cancelled", "canceled"},
+    "accepted": {"driver_en_route", "cancelled", "canceled"},
+    "driver_en_route": {"arrived", "driver_arrived", "driver_arriving", "cancelled", "canceled"},
+    "driver_arriving": {"arrived", "driver_arrived", "cancelled", "canceled"},
+    "arrived": {"in_trip", "in_progress", "cancelled", "canceled"},
+    "in_trip": {"completed", "cancelled", "canceled"},
+    "in_progress": {"completed", "cancelled", "canceled"},
+}
+
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
     """Return (platform_rate, driver_rate) for the given vehicle type."""
     return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)
@@ -256,10 +267,14 @@ async def get_available_trips(
 async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if user.id != body.driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to accept trips for another driver")
-    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    if trip.status != "requested":
+        raise HTTPException(409, "Trip is no longer available")
+    if trip.driver_id is not None:
+        raise HTTPException(409, "Trip already has a driver")
     trip.driver_id = body.driver_id
     trip.status = "driver_en_route"
     await db.commit()
@@ -567,9 +582,23 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+
+    # Ownership check: only trip participants or admins/dispatch can update
+    user_role = getattr(user, "role", None) or ""
+    if user.id not in (trip.rider_id, trip.driver_id) and user_role not in ("admin", "dispatch"):
+        raise HTTPException(403, "Not authorized to update this trip")
+
     if trip.status == status:
-        # Same status — skip processing to avoid duplicate events
+        # Same status -- skip processing to avoid duplicate events
         return _trip_dict_for_user(trip, user)
+
+    # Validate status transition
+    current = (trip.status or "").lower().strip()
+    new_status_lower = status.lower().strip()
+    allowed = _VALID_TRANSITIONS.get(current, set())
+    if new_status_lower not in allowed:
+        raise HTTPException(409, f"Invalid status transition from '{trip.status}' to '{status}'")
+
     trip.status = status
     trip.updated_at = datetime.now(timezone.utc)
     # Record ride start/end timestamps for duration calculation
@@ -746,9 +775,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # IDOR protection: only rider, assigned driver, or admin can cancel
     if user.id != trip.rider_id and user.id != trip.driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to cancel this trip")
-    # Fix 6: If a driver was already assigned (race condition), block cancellation
-    if trip.status in ("driver_en_route", "arrived", "in_trip", "in_progress"):
-        raise HTTPException(409, "A driver has already been assigned to this trip and is on the way")
+    # Block cancellation for trips that are actively in progress (rider is in vehicle)
+    if trip.status in ("in_trip", "in_progress"):
+        raise HTTPException(409, "Cannot cancel a trip that is currently in progress")
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     # Accept optional cancel_reason from body
@@ -782,13 +811,13 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
     # ---"= REFUND LOGIC ==="=
     # If rider was charged, issue refund (full or less cancellation fee)
-    if trip.payment_status == "paid" and trip.payment_intent_id:
+    if trip.payment_status == "paid" and trip.stripe_payment_intent_id:
         try:
             from services.stripe_helpers import stripe
             # Attempt refund through Stripe API
             refund_amount_cents = int((trip.fare - cancellation_fee) * 100)
             refund = stripe.Refund.create(
-                charge=trip.payment_intent_id[:15],  # Use first 15 chars as charge ID
+                payment_intent=trip.stripe_payment_intent_id,
                 amount=refund_amount_cents if refund_amount_cents > 0 else None,
                 reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_customer"
             )

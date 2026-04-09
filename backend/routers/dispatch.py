@@ -318,7 +318,7 @@ async def backfill_approved_drivers(db: AsyncSession = Depends(get_db)):
     return {"ok": True, "fixed": len(fixed), "details": fixed}
 
 
-@router.post("/admin/resync-all-drivers", dependencies=[Depends(_verify_api_key)])
+@router.post("/admin/resync-all-drivers", dependencies=[Depends(_require_dispatch_auth)])
 async def resync_all_drivers(db: AsyncSession = Depends(get_db)):
     """Re-sync ALL drivers to Firestore with sqliteId field. One-time fix."""
     if not _HAS_FIRESTORE:

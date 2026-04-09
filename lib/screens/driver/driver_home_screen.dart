@@ -679,6 +679,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
+    // If doc status hasn't loaded yet, wait for it before deciding
+    if (!_docStatusLoaded) {
+      await _checkVehicleDocStatus();
+      if (!mounted) return;
+    }
+
     // If docs expired, navigate to documents page to re-upload
     if (_hasExpiredDocs) {
       HapticFeedback.mediumImpact();

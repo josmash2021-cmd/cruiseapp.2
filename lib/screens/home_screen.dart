@@ -64,6 +64,10 @@ class HomeScreen extends StatefulWidget {
   final bool forceExpandPanel;
   const HomeScreen({super.key, this.forceExpandPanel = false});
 
+  /// Bumped by main.dart FCM handler when a scheduled ride status changes
+  /// (driver claimed, driver cancelled). HomeScreen listens and refreshes.
+  static final scheduledRideRefresh = ValueNotifier<int>(0);
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -365,6 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
     UserSession.photoNotifier.addListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
+    HomeScreen.scheduledRideRefresh.addListener(_onScheduledRideRefresh);
 
     // If returning from tracking screen, lock panel open
     if (widget.forceExpandPanel) {
@@ -430,11 +435,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
   }
 
+  void _onScheduledRideRefresh() {
+    _loadNextScheduledRide().then((ride) {
+      if (!mounted) return;
+      setState(() => _nextScheduledRide = ride);
+      _updateImminentRide();
+    });
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
+    HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
     _sheetController.dispose();
     _miniDot.dispose();
     _locTicker?.dispose();

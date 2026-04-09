@@ -37,6 +37,9 @@ import 'services/analytics_service.dart';
 import 'services/prefs_cache.dart';
 import 'screens/chat_screen.dart';
 import 'screens/ride_request_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/rider_tracking_screen.dart';
+import 'models/lat_lng.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -67,6 +70,7 @@ String _riderNotifTitle(String type) {
     'fast_ride'          => isEs ? 'Conductores Disponibles Cerca' : 'Drivers Available Nearby',
     'driver_cancelled' || 'ride_reassigned' => isEs ? 'Actualización de Viaje' : 'Ride Update',
     'scheduled_claimed'  => isEs ? 'Conductor Aceptó Tu Viaje' : 'Driver Accepted Your Ride',
+    'scheduled_driver_cancelled' => isEs ? 'Conductor Canceló Tu Viaje' : 'Driver Cancelled Your Ride',
     'arrived'            => isEs ? 'Tu Conductor Ha Llegado' : 'Driver Has Arrived',
     'in_trip'            => isEs ? 'Viaje Iniciado' : 'Trip Started',
     'completed'          => isEs ? 'Viaje Completado' : 'Trip Completed',
@@ -97,6 +101,7 @@ String _riderNotifBody(String type) {
     'driver_cancelled'   => isEs ? 'Tu conductor canceló. Estamos asignando un nuevo conductor.' : 'Your driver cancelled. We are assigning a new driver.',
     'ride_reassigned'    => isEs ? 'Se está asignando un nuevo conductor a tu viaje.' : 'A new driver is being assigned to your ride.',
     'scheduled_claimed'  => isEs ? 'Un conductor ha aceptado tu viaje programado.' : 'A driver has accepted your scheduled ride.',
+    'scheduled_driver_cancelled' => isEs ? 'Tu conductor canceló el viaje reservado. Estamos buscando otro.' : 'Your driver cancelled the scheduled ride. We are looking for another.',
     'arrived'            => isEs ? 'Tu conductor está esperando en el punto de recogida.' : 'Your driver is waiting at the pickup location.',
     'in_trip'            => isEs ? 'Estás en camino a tu destino.' : 'You are on your way to your destination.',
     'completed'          => isEs ? 'Has llegado. ¡Gracias por viajar con Cruise!' : 'You have arrived. Thanks for riding with Cruise!',
@@ -172,6 +177,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     'driver_cancelled',
     'ride_reassigned',
     'scheduled_claimed',
+    'scheduled_driver_cancelled',
     'arrived',
     'in_trip',
     'completed',
@@ -235,6 +241,84 @@ void _handleDriverRideOffer(RemoteMessage message) {
         child: child,
       ),
     ));
+  });
+}
+
+/// Unified notification tap handler — routes to correct screen by FCM type.
+void _handleNotificationTap(RemoteMessage message) {
+  final type = message.data['type'] as String? ?? '';
+
+  // Driver: ride offer → DriverOnlineScreen
+  if (type == 'new_offer') {
+    _handleDriverRideOffer(message);
+    return;
+  }
+
+  // Rider: scheduled ride starting → fetch trip and open tracking
+  if (type == 'scheduled_trip_starting' || type == 'scheduled_claimed') {
+    final tripId = int.tryParse(message.data['trip_id'] ?? '');
+    if (tripId != null) {
+      _navigateToScheduledTracking(tripId);
+    }
+    return;
+  }
+
+  // Rider: driver cancelled scheduled → refresh home card
+  if (type == 'scheduled_driver_cancelled') {
+    HomeScreen.scheduledRideRefresh.value++;
+    return;
+  }
+}
+
+/// Fetch scheduled trip from backend and navigate to RiderTrackingScreen.
+void _navigateToScheduledTracking(int tripId) {
+  ApiService.getTrip(tripId).then((fresh) {
+    final status = (fresh['status'] ?? '').toString().toLowerCase();
+    const activeStatuses = {
+      'scheduled_accepted', 'scheduled_active', 'driver_assigned',
+      'accepted', 'en_route', 'en_route_to_pickup', 'driver_en_route',
+      'arriving', 'arrived', 'driver_arrived', 'in_trip', 'in_progress',
+    };
+    if (!activeStatuses.contains(status) || fresh['driver_id'] == null) return;
+
+    final pickupLat = (fresh['pickup_lat'] as num?)?.toDouble();
+    final pickupLng = (fresh['pickup_lng'] as num?)?.toDouble();
+    final dropoffLat = (fresh['dropoff_lat'] as num?)?.toDouble();
+    final dropoffLng = (fresh['dropoff_lng'] as num?)?.toDouble();
+    if (pickupLat == null || pickupLng == null ||
+        dropoffLat == null || dropoffLng == null) {
+      return;
+    }
+
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(MaterialPageRoute(
+      builder: (_) => RiderTrackingScreen(
+        pickupLatLng: LatLng(pickupLat, pickupLng),
+        dropoffLatLng: LatLng(dropoffLat, dropoffLng),
+        driverName: (fresh['driver_name'] ?? 'Driver').toString(),
+        driverPhone: (fresh['driver_phone'] ?? '').toString().isNotEmpty
+            ? fresh['driver_phone'].toString()
+            : null,
+        driverRating: (fresh['driver_rating'] as num?)?.toDouble() ?? 4.9,
+        vehicleMake: (fresh['vehicle_make'] ?? '').toString(),
+        vehicleModel: (fresh['vehicle_model'] ?? '').toString(),
+        vehicleColor: (fresh['vehicle_color'] ?? '').toString(),
+        vehiclePlate: (fresh['vehicle_plate'] ?? '').toString(),
+        vehicleYear: (fresh['vehicle_year'] ?? '').toString(),
+        rideName: (fresh['vehicle_type'] ?? 'Ride').toString(),
+        price: (fresh['fare'] as num?)?.toDouble() ?? 0,
+        pickupLabel: (fresh['pickup_address'] ?? '').toString(),
+        dropoffLabel: (fresh['dropoff_address'] ?? '').toString(),
+        tripId: tripId,
+        firestoreTripId: 'sql_$tripId',
+        driverPhotoUrl: (fresh['driver_photo_url'] ?? '').toString(),
+        driverId: (fresh['driver_id'] ?? '').toString(),
+        initialStatus: status,
+      ),
+    ));
+  }).catchError((e) {
+    debugPrint('[FCM] Failed to fetch scheduled trip $tripId: $e');
   });
 }
 
@@ -455,6 +539,7 @@ Future<void> heavyInit() async {
             const riderInAppTypes = {
               'driver_arriving', 'driver_arrived', 'arrived',
               'completed', 'arrived_dropoff',
+              'scheduled_claimed', 'scheduled_driver_cancelled',
             };
             const driverInAppTypes = {
               'trip_offer', 'new_offer',
@@ -523,28 +608,28 @@ Future<void> heavyInit() async {
 
             // Scheduled ride reminder — navigate to ride request if 15-min alert
             if (type == 'scheduled_reminder' || type == 'scheduled_trip_starting') {
-              // 15-min rider reminder — navigate to ride request to load trip
+              // 15-min rider reminder — fetch trip and navigate to tracking
               if (type == 'scheduled_trip_starting') {
                 final tripId = int.tryParse(message.data['trip_id'] ?? '');
                 if (tripId != null) {
-                  final nav = _navigatorKey.currentState;
-                  if (nav != null) {
-                    nav.push(MaterialPageRoute(
-                      builder: (_) => RideRequestScreen(initialRideId: tripId.toString()),
-                    ));
-                  }
+                  _navigateToScheduledTracking(tripId);
                 }
               }
             }
+
+            // Scheduled ride status changed — refresh home screen card
+            if (type == 'scheduled_claimed' || type == 'scheduled_driver_cancelled') {
+              HomeScreen.scheduledRideRefresh.value++;
+            }
           });
           // Handle notification tap when app is backgrounded
-          FirebaseMessaging.onMessageOpenedApp.listen(_handleDriverRideOffer);
+          FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
           // Handle notification tap when app was fully terminated
           FirebaseMessaging.instance.getInitialMessage().then((msg) {
             if (msg != null) {
               // Use post-frame callback instead of artificial delay
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                _handleDriverRideOffer(msg);
+                _handleNotificationTap(msg);
               });
             }
           });

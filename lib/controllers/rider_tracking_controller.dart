@@ -968,7 +968,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _animBearing = brg;
       _driverBearing = brg;
     } else {
-      _driverPos = widget.pickupLatLng;
+      // No persisted position — hide car until first real RTDB GPS.
+      // The car IS the driver; it must appear at the driver's actual location.
+      _driverPos = const LatLng(0, 0);
       _animPos = _driverPos;
     }
 
@@ -1089,6 +1091,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_segDist.isEmpty) {
       final tgt = _directTargetPos;
       if (tgt != null) {
+        // First GPS: teleport car instantly to driver's real position.
+        // Without this, the car would slide from (0,0) to the real location.
+        if (_animPos.latitude == 0 && _animPos.longitude == 0) {
+          _animPos = tgt;
+          _driverPos = tgt;
+          _animBearing = _directTargetBearing ?? 0;
+          _driverBearing = _animBearing;
+          _updateCarSmooth();
+          return;
+        }
         final prevPos = _animPos;
         final posFactor = tf(0.18); // smooth glide toward target
         final dLat = tgt.latitude - _animPos.latitude;
@@ -1126,6 +1138,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // ── CONSTANT-VELOCITY advance (glass-smooth, ZERO jumps) ──
+    // First GPS with a route: teleport to projected position on route.
+    if (_animPos.latitude == 0 && _animPos.longitude == 0 && _tgtTraveledM > 0) {
+      _traveledM = _tgtTraveledM;
+      final (p, b) = _posAtDistUltraSmooth(_traveledM);
+      _animPos = p;
+      _animBearing = b;
+      _driverPos = p;
+      _driverBearing = b;
+      _updateCarSmooth();
+      return;
+    }
     // Predict ahead using driver's real speed so car glides at same pace.
     final predicted = _tgtTraveledM + _velocityMps * 0.6;
     final effectiveTarget = math.min(predicted, _segDist.last);
@@ -1187,8 +1210,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // ── Idle detection: pause ticker only when car is truly stationary ──
     // With constant-velocity interpolation the ticker must stay running
     // as long as there is ANY predicted velocity remaining.
+    // NEVER idle during active phases — the ticker must be awake to process
+    // the next RTDB GPS update instantly (no 1-frame delay on restart).
+    final isActivePhase = _phase != _TrackPhase.completed;
     final diff2 = (_tgtTraveledM - _traveledM).abs();
-    if (diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
+    if (!isActivePhase && diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
       _interpIdle = true;
       _interpTicker?.stop();
     }

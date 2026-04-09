@@ -440,7 +440,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _buildSegDist();
       _traveledM = 0;
       _tgtTraveledM = 0;
-      _driverPos = widget.pickupLatLng;
+      // Car hidden until first real RTDB GPS — never show at pickup.
+      // The car IS the driver; it must appear where the driver actually is.
+      _driverPos = const LatLng(0, 0);
       _animPos = _driverPos;
       double acc = 0;
       for (int i = 0; i + 1 < _routePts.length; i++) {

@@ -572,11 +572,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
-    // Await backend API first; only then fire Firestore sync as backup.
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived');
-    } catch (e) {
-      debugPrint('[Driver] arrived API call failed: $e');
+    // Retry backend API up to 3 times; only then fire Firestore sync as backup.
+    bool apiOk = false;
+    for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
+      try {
+        await ApiService.updateTripStatus(tripId: widget.tripId, status: 'arrived')
+            .timeout(const Duration(seconds: 6));
+        apiOk = true;
+      } catch (e) {
+        debugPrint('[Driver] arrived API attempt ${attempt + 1} failed: $e');
+        if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (!apiOk) {
+      debugPrint('[Driver] arrived API FAILED after 3 attempts');
     }
     // Fire-and-forget Firestore sync as backup (backend already syncs on success)
     FirebaseFirestore.instance
@@ -668,11 +677,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
-    // Await backend API first; only then fire Firestore sync as backup.
-    try {
-      await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip');
-    } catch (e) {
-      debugPrint('[Driver] in_trip API call failed: $e');
+    // Retry backend API up to 3 times; only then fire Firestore sync as backup.
+    bool apiOk = false;
+    for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
+      try {
+        await ApiService.updateTripStatus(tripId: widget.tripId, status: 'in_trip')
+            .timeout(const Duration(seconds: 6));
+        apiOk = true;
+      } catch (e) {
+        debugPrint('[Driver] in_trip API attempt ${attempt + 1} failed: $e');
+        if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (!apiOk) {
+      debugPrint('[Driver] in_trip API FAILED after 3 attempts');
     }
     // Fire-and-forget Firestore sync as backup (backend already syncs on success)
     FirebaseFirestore.instance

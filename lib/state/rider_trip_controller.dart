@@ -848,6 +848,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       phase: RiderPhase.driverAssigned,
       driver: driver,
       tripId: tripId,
+      firestoreTripId: 'sql_$tripId',
       etaMinutes: _state.selectedOption?.etaMinutes ?? 5,
     );
     notifyListeners();

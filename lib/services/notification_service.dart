@@ -415,12 +415,15 @@ class NotificationService {
           _offerSoundPlaying = false;
           return;
         }
+        // Fire-and-forget seek+resume — never await platform channel calls
+        // to avoid blocking the UI thread / causing 1-second freezes.
         for (int i = 0; i < 3; i++) {
-          await _offerPlayer.seek(Duration.zero);
-          await _offerPlayer.resume();
+          _offerPlayer.seek(Duration.zero);
+          _offerPlayer.resume();
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
-        _offerSoundPlaying = false;
+        // Reset guard after last sound finishes (~2s)
+        Future.delayed(const Duration(seconds: 2), () => _offerSoundPlaying = false);
       } catch (e) {
         _offerSoundPlaying = false;
         debugPrint('[NotificationService] playOfferSound error: $e');

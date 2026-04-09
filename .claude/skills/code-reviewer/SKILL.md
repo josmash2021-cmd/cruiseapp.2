@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Comprehensive code review skill for TypeScript, JavaScript, Python, Swift, Kotlin, Go. Includes automated code analysis, best practice checking, security scanning, and review checklist generation. Use when reviewing pull requests, providing code feedback, identifying issues, or ensuring code quality standards.
+description: "CruiseApp code review skill for Flutter/Dart and Python/FastAPI. Use when: reviewing code changes, auditing security on auth/payment/trip flows, checking null safety and dispose patterns, validating Supabase query safety, or generating review checklists. Covers OWASP checks, widget lifecycle, async patterns, and ride-sharing domain logic."
 ---
 
 # Code Reviewer

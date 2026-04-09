@@ -1,6 +1,6 @@
 ---
 name: senior-backend
-description: Comprehensive backend development skill for building scalable backend systems using NodeJS, Express, Go, Python, Postgres, GraphQL, REST APIs. Includes API scaffolding, database optimization, security implementation, and performance tuning. Use when designing APIs, optimizing database queries, implementing business logic, handling authentication/authorization, or reviewing backend code.
+description: "CruiseApp backend development skill for Python/FastAPI + Supabase (PostgreSQL). Use when: scaffolding new API endpoints, optimizing Supabase queries, implementing business logic for trips/payments/dispatch, writing migrations, or tuning backend performance. Covers async FastAPI patterns, Pydantic validation, Supabase client methods, and Railway deployment."
 ---
 
 # Senior Backend

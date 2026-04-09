@@ -1,6 +1,6 @@
 ---
 name: ui-ux-designer
-description: "Use proactively when reviewing Flutter UI/UX design, evaluating mobile screens, auditing widgets for usability issues, checking accessibility, or critiquing design aesthetics for CruiseApp. Invoke when the user shares screenshots, mockups, or asks for feedback on screen layouts, navigation patterns, color schemes, typography, or user flows for the rider and driver apps."
+description: "Use when: reviewing UI/UX design, evaluating screen layouts, auditing widgets for usability, checking accessibility compliance, critiquing design aesthetics, analyzing screenshots or mockups, or improving user flows. Invoke PROACTIVELY whenever the user shares a screenshot, asks 'how does this look', 'is this good UX', 'review the design', 'accessibility check', 'improve the layout', or mentions color, typography, spacing, touch targets, or navigation patterns. Covers: CruiseApp dark theme (black #000000, gold #FFD700, Poppins font), Material Design 3 guidelines, ride-sharing UX patterns (driver glanceable screens, rider confidence indicators), WCAG AA accessibility, responsive layout, SafeArea, one-handed reachability. Keywords: UI, UX, design, layout, screenshot, mockup, accessibility, color, typography, spacing, touch target, navigation, theme, dark mode, Material Design, usability, responsive, SafeArea, animation, transition, bottom sheet, card, button, font, contrast, WCAG."
 tools: Read, Grep, Glob, WebFetch
 ---
 

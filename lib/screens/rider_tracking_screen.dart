@@ -270,8 +270,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     });
     _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
     // Only send notifications on FRESH trip — not on app resume
-    final _isFreshTrip = widget.initialStatus == null || widget.initialStatus!.isEmpty;
-    if (_isFreshTrip) {
+    final isFreshTrip = widget.initialStatus == null || widget.initialStatus!.isEmpty;
+    if (isFreshTrip) {
       Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
       _sendRideNotification(
         'Driver Assigned',

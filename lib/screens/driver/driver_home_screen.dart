@@ -1964,7 +1964,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dropoffLat = _pickDouble(trip, ['dropoff_lat']);
     final dropoffLng = _pickDouble(trip, ['dropoff_lng']);
     if (pickupLat == null || pickupLng == null ||
-        dropoffLat == null || dropoffLng == null) return;
+        dropoffLat == null || dropoffLng == null) {
+      return;
+    }
 
     final pickup = LatLng(pickupLat, pickupLng);
     final dropoff = LatLng(dropoffLat, dropoffLng);

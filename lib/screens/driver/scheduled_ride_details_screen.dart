@@ -521,6 +521,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                     ],
                   ),
                 ),
+              ),
                 // No more offers banner pinned at bottom of card
                 Padding(
                   padding: const EdgeInsets.only(top: 12),

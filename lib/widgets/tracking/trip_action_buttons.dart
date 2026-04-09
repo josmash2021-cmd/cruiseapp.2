@@ -253,6 +253,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     _tripStatusSub?.cancel();
     _rtdbDriverLocSub?.cancel();
     await LocalDataService.clearActiveRide();
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,

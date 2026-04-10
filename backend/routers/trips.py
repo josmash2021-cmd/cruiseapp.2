@@ -613,7 +613,9 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
 
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    # Use FOR UPDATE to prevent race condition where driver accepts while
+    # a stale cancel request overwrites the trip status concurrently.
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
@@ -632,6 +634,19 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     if canonical_current == canonical_new:
         # Same canonical status -- skip processing to avoid duplicate events
         return _trip_dict_for_user(trip, user)
+
+    # Guard: prevent rider (or stale client request) from cancelling a trip
+    # that already has a driver assigned.  Only the assigned driver or an
+    # admin/dispatch user may cancel after acceptance.
+    if canonical_new == "cancelled" and trip.driver_id is not None:
+        is_assigned_driver = (user.id == trip.driver_id)
+        is_privileged = user_role in ("admin", "dispatch")
+        if not is_assigned_driver and not is_privileged:
+            logging.warning(
+                "[Guard] Blocked stale cancel on trip %d by user %d (role=%s) -- driver %d already assigned",
+                trip_id, user.id, user_role, trip.driver_id,
+            )
+            raise HTTPException(409, "Cannot cancel -- driver already assigned")
 
     # Validate status transition using canonical names
     allowed = _VALID_TRANSITIONS.get(canonical_current, set())
@@ -817,6 +832,14 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         raise HTTPException(409, "Cannot cancel a trip that is currently in progress")
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
+    # Guard: prevent rider from cancelling a trip that already has a driver assigned.
+    # Only the assigned driver or an admin may cancel after acceptance.
+    if trip.driver_id is not None and user.id != trip.driver_id and user.role != "admin":
+        logging.warning(
+            "[Guard] Blocked cancel_trip on trip %d by user %d (role=%s) -- driver %d already assigned",
+            trip_id, user.id, user.role, trip.driver_id,
+        )
+        raise HTTPException(409, "Cannot cancel -- driver already assigned")
     # Accept optional cancel_reason from body
     reason = None
     try:

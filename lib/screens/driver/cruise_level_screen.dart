@@ -32,6 +32,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   double _cancellationRate = 0;
   double _satisfactionRate = 0;
   double _onTimeRate = 0;
+  int _completedTrips = 0;
   int _totalTrips = 0;
 
   // Current tier
@@ -164,6 +165,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
         final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
 
+        _completedTrips = completed;
         _totalTrips = total;
         _avgRating = avgRating;
         _satisfactionRate = total > 0 ? (completed / total * 100) : 0;
@@ -429,7 +431,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         ? _buildTiers()[_currentTierIndex + 1]
         : null;
     final progress = nextTier != null && nextTier.minTrips > 0
-        ? (_totalTrips / nextTier.minTrips).clamp(0.0, 1.0)
+        ? (_completedTrips / nextTier.minTrips).clamp(0.0, 1.0)
         : 1.0;
 
     return Container(
@@ -485,7 +487,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
               const Icon(Icons.directions_car_rounded, color: _gold, size: 18),
               const SizedBox(width: 6),
               Text(
-                '$_totalTrips trips',
+                '$_completedTrips trips',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -544,9 +546,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _totalTrips >= nextTier.minTrips
+                  _completedTrips >= nextTier.minTrips
                       ? 'Trips requirement met — keep your rating up!'
-                      : '${nextTier.minTrips - _totalTrips} more trips to ${nextTier.name}',
+                      : '${nextTier.minTrips - _completedTrips} more trips to ${nextTier.name}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.4),
                     fontSize: 12,
@@ -579,9 +581,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         const SizedBox(height: 14),
         _requirementRow(
           'Completed Trips',
-          '$_totalTrips',
+          '$_completedTrips',
           '≥ ${nextTier.minTrips}',
-          _totalTrips >= nextTier.minTrips,
+          _completedTrips >= nextTier.minTrips,
         ),
         if (nextTier.minRating > 0)
           _requirementRow(
@@ -590,7 +592,56 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
             '≥ ${nextTier.minRating.toStringAsFixed(1)}',
             _avgRating >= nextTier.minRating,
           ),
+        const SizedBox(height: 16),
+        Text(
+          'Performance Metrics',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _metricRow(Icons.thumb_up_outlined, 'Satisfaction Rate', '${_satisfactionRate.toStringAsFixed(0)}%'),
+        _metricRow(Icons.cancel_outlined, 'Cancellation Rate', '${_cancellationRate.toStringAsFixed(0)}%'),
+        _metricRow(Icons.check_circle_outline, 'Acceptance Rate', '${_acceptanceRate.toStringAsFixed(0)}%'),
+        _metricRow(Icons.access_time_rounded, 'On-Time Rate', '${_onTimeRate.toStringAsFixed(0)}%'),
       ],
+    );
+  }
+
+  Widget _metricRow(IconData icon, String label, String value) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white.withValues(alpha: 0.3), size: 20),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

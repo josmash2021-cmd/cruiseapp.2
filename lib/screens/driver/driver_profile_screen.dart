@@ -328,7 +328,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: _statTapCard(
                                 '${_satisfactionRate.toStringAsFixed(0)}%',
                                 S.of(context).satisfactionRate,
-                                S.of(context).cruiseProLabel,
+                                _tierLabel,
                                 _tierColor,
                                 Icons.thumb_up_outlined,
                                 () => _openStatDetail('satisfaction'),
@@ -339,7 +339,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: _statTapCard(
                                 '${_cancellationRate.toStringAsFixed(0)}%',
                                 S.of(context).cancellationRate,
-                                S.of(context).cruiseProLabel,
+                                _tierLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('cancellation'),
@@ -354,7 +354,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: _statTapCard(
                                 '${_acceptanceRate.toStringAsFixed(0)}%',
                                 S.of(context).acceptanceRate,
-                                S.of(context).cruiseProLabel,
+                                _tierLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('acceptance'),
@@ -365,7 +365,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: _statTapCard(
                                 '${_onTimeRate.toStringAsFixed(0)}%',
                                 S.of(context).onTimeRate,
-                                S.of(context).cruiseProLabel,
+                                _tierLabel,
                                 _tierColor,
                                 null,
                                 () => _openStatDetail('ontime'),

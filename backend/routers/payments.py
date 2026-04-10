@@ -246,6 +246,69 @@ async def paypal_capture_order(body: PayPalCaptureIn, user: User = Depends(_get_
 
 
 # -------------------------------------------------------
+#  WEB CHECKOUT — Stripe Checkout Session (for website)
+# -------------------------------------------------------
+
+WEB_CHECKOUT_KEY = os.getenv("WEB_CHECKOUT_KEY", "")
+
+@router.post("/payments/web/checkout")
+async def create_web_checkout(request: Request):
+    """Create a Stripe Checkout Session for website payments.
+    No HMAC required — uses a simple bearer token (WEB_CHECKOUT_KEY).
+    Body: {"amount": cents, "currency": "usd", "description": "...",
+           "success_url": "https://...", "cancel_url": "https://...",
+           "customer_email": "optional@email.com", "metadata": {}}
+    """
+    # Auth: simple bearer token check
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid web checkout key")
+
+    if not _HAS_STRIPE or not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured")
+
+    body = await request.json()
+    amount = body.get("amount", 0)
+    currency = body.get("currency", "usd")
+    description = body.get("description", "Cruise Ride")
+    success_url = body.get("success_url", "https://ridecruise.app/success")
+    cancel_url = body.get("cancel_url", "https://ridecruise.app/cancel")
+    customer_email = body.get("customer_email")
+    metadata = body.get("metadata", {})
+
+    if amount <= 0 or amount > 100000:
+        raise HTTPException(400, "Invalid amount")
+
+    try:
+        session_params = {
+            "payment_method_types": ["card"],
+            "line_items": [{
+                "price_data": {
+                    "currency": currency,
+                    "unit_amount": amount,
+                    "product_data": {"name": description},
+                },
+                "quantity": 1,
+            }],
+            "mode": "payment",
+            "success_url": success_url + "?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": cancel_url,
+            "metadata": metadata,
+        }
+        if customer_email:
+            session_params["customer_email"] = customer_email
+
+        session = _stripe_mod.checkout.Session.create(**session_params)
+        logging.info("[WebCheckout] Session created: %s (amount=%d %s)", session.id, amount, currency)
+        return {"session_id": session.id, "url": session.url}
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[WebCheckout] Stripe error: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+# -------------------------------------------------------
 #  STRIPE WEBHOOK
 # -------------------------------------------------------
 

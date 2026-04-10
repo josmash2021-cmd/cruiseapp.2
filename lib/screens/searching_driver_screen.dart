@@ -5,7 +5,7 @@ import '../l10n/app_localizations.dart';
 
 /// Spectacular "Confirming your ride." screen with radar pulse rings,
 /// orbiting dots, floating particles, shimmer text, and a gleaming
-/// progress bar.  Auto-pops after exactly 4 seconds.
+/// progress bar.  Stays open until a driver is found or user cancels.
 class SearchingDriverScreen extends StatefulWidget {
   const SearchingDriverScreen({
     super.key,
@@ -48,7 +48,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   late final AnimationController _radarCtrl;    // 2400 ms – radar pulse rings
   late final AnimationController _glowCtrl;     // 1200 ms – car glow + scale
   late final AnimationController _particleCtrl; // 4000 ms – floating particles
-  late final AnimationController _progressCtrl; // 4000 ms – progress bar (finite)
+  late final AnimationController _progressCtrl; // 4000 ms – progress bar (repeating)
   late final AnimationController _shimmerCtrl;  // 2000 ms – text shimmer
   late final AnimationController _barGleamCtrl; // 1200 ms – progress bar gleam
 
@@ -112,17 +112,11 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       )..repeat(reverse: true);
     });
 
-    // ── 5. Progress bar (finite — exactly 4 s) ──
+    // ── 5. Progress bar (repeating — loops while searching) ──
     _progressCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4000),
-    );
-    _progressCtrl.forward();
-    _progressCtrl.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        Navigator.of(context).pop();
-      }
-    });
+    )..repeat();
 
     // ── 6. Text shimmer ──
     _shimmerCtrl = AnimationController(
@@ -168,7 +162,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
             widget.onCancel?.call();
             Navigator.of(context).pop(true);
           }
-          // success — let progress bar auto-pop at 4 s
+          // success — search continues, screen stays until driver found
         } catch (_) {
           if (mounted) _handleDeclined();
         }

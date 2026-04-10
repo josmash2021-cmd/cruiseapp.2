@@ -290,9 +290,17 @@ async def create_web_checkout(request: Request):
     if amount <= 0 or amount > 100000:
         raise HTTPException(400, "Invalid amount")
 
+    # Determine payment methods based on what the client selected
+    requested_method = metadata.get("payment_method", "card")
+    pm_types = ["card"]
+    if requested_method == "paypal":
+        pm_types = ["paypal"]
+    elif requested_method == "card":
+        pm_types = ["card", "link"]
+
     try:
         session_params = {
-            "payment_method_types": ["card"],
+            "payment_method_types": pm_types,
             "line_items": [{
                 "price_data": {
                     "currency": currency,

@@ -16,7 +16,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (data == null) {
           _pollFailCount++;
           debugPrint('[RiderTracking] Trip data null for $docId ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
             _setState(() => _connectionLost = true);
           }
           return;

@@ -108,7 +108,7 @@ enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
 const double _kCarAnnotScale = 0.75;  // PointAnnotation icon scale
-const int _maxPollFailsBeforeBanner = 5;
+const int _maxPollFailsBeforeBanner = 15;
 
 String? _normalizeRemotePhotoUrl(String? rawUrl) {
   var raw = (rawUrl ?? '').trim();

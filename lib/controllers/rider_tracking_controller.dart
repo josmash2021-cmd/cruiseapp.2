@@ -583,6 +583,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       });
       _arrivedDotPulse.stop();
       _popOutPickupPin();
+      // Dismiss confirm pickup overlay if it was showing
+      if (_showPickupOverlay) {
+        _confirmPickupShown = false;
+        _setState(() => _showPickupOverlay = false);
+      }
       // Reset guard so animation always runs fresh on arriving→onTrip transition
       _startRideAnimationDone = false;
       _startStartRideAnimation();
@@ -596,7 +601,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startStartRideAnimation();
     } else if (isCompletedStatus && _phase != _TrackPhase.completed) {
       unawaited(LocalDataService.clearActiveRide());
-      _setState(() => _phase = _TrackPhase.completed);
+      _setState(() {
+        _phase = _TrackPhase.completed;
+        _showPickupOverlay = false; // dismiss confirm pickup if showing
+      });
+      _confirmPickupShown = false;
       _arrivedDotPulse.stop();
       // Save trip chat to inbox before navigating away
       _saveChatToInbox();
@@ -661,34 +670,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Show the rider confirmation pickup overlay when driver has arrived.
+  /// Uses inline Stack overlay (not Navigator.push) so it always appears,
+  /// even during route transitions or when the Navigator is busy.
   void _showRiderConfirmPickup() {
     if (!mounted || _confirmPickupShown) return;
     _confirmPickupShown = true;
-    final vehicleDesc =
-        '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        pageBuilder: (_, __, ___) => RiderConfirmPickupScreen(
-          driverName: widget.driverName,
-          vehicleDesc: vehicleDesc,
-          firestoreTripId: widget.firestoreTripId,
-          tripId: widget.tripId,
-          driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
-          driverId: widget.driverId,
-          driverRating: widget.driverRating,
-          vehiclePlate: widget.vehiclePlate,
-          onConfirmed: () {
-            _confirmPickupShown = false;
-            if (mounted) Navigator.of(context).pop();
-          },
-        ),
-        transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut), child: child),
-        transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 600),
-      ),
-    );
+    _setState(() => _showPickupOverlay = true);
   }
 
   /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.

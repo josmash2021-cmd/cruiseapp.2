@@ -1390,14 +1390,17 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     # Fetch rider info so driver screens can display the rider's photo
     rider_info = {}
     if trip.rider_id:
-        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-        rider = rider_result.scalar_one_or_none()
-        if rider:
-            rider_info = {
-                "rider_id": rider.id,
-                "rider_name": f"{rider.first_name} {rider.last_name}",
-                "rider_photo_url": _abs_photo_url(rider.photo_url) or "",
-            }
+        try:
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_result.scalar_one_or_none()
+            if rider:
+                rider_info = {
+                    "rider_id": rider.id,
+                    "rider_name": f"{rider.first_name} {rider.last_name}",
+                    "rider_photo_url": _abs_photo_url(rider.photo_url) or "",
+                }
+        except Exception as _e:
+            logging.warning("[dispatch/status] rider info fetch failed (non-fatal): %s", _e)
 
     if accepted and driver:
         # Fetch actual driver stats from ratings

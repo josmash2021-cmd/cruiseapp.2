@@ -188,6 +188,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _pollFailCount = 0;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
   bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
+  bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
 
   // ── More-menu dropdown & cancel overlay ──
   bool _showMoreMenu = false;
@@ -480,9 +481,35 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               ],
               // CANCEL overlay (blur + spinner / checkmark)
               if (_cancelOverlayPhase > 0) _buildCancelOverlay(),
+              // CONFIRM PICKUP overlay — shown inline when driver arrives
+              // (avoids Navigator.push fragility during animation transitions)
+              if (_showPickupOverlay) _buildInlinePickupOverlay(),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Full-screen confirm pickup overlay rendered inline in the Stack so it
+  /// always appears — no Navigator.push fragility.
+  Widget _buildInlinePickupOverlay() {
+    final vehicleDesc =
+        '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
+    return Positioned.fill(
+      child: RiderConfirmPickupScreen(
+        driverName: widget.driverName,
+        vehicleDesc: vehicleDesc,
+        firestoreTripId: widget.firestoreTripId,
+        tripId: widget.tripId,
+        driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
+        driverId: widget.driverId,
+        driverRating: widget.driverRating,
+        vehiclePlate: widget.vehiclePlate,
+        onConfirmed: () {
+          _confirmPickupShown = false;
+          if (mounted) setState(() => _showPickupOverlay = false);
+        },
       ),
     );
   }

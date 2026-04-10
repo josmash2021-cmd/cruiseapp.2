@@ -462,8 +462,29 @@ async def _get_current_user(
         return user
 
     # Slow path: DB lookup + cache
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    # Use raw SQL to avoid ORM failing on missing columns (e.g. new migrations
+    # not yet applied). Only the columns that were present at launch are safe.
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+    except Exception as _col_err:
+        # Likely a missing column — fall back to a minimal raw SQL query
+        _err_str = str(_col_err).lower()
+        if "column" in _err_str or "does not exist" in _err_str or "undefined column" in _err_str:
+            logging.warning("[Auth] ORM query failed (%s) — falling back to raw SQL", _col_err)
+            _raw = await db.execute(
+                text("SELECT id, email, role, status, active_session_id FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )
+            row = _raw.fetchone()
+            if not row:
+                raise HTTPException(401, "User not found")
+            # Build a minimal User-like object from the raw row
+            user = User(id=row.id, email=row.email, role=row.role, status=row.status)
+            setattr(user, "active_session_id", row.active_session_id)
+            setattr(user, "fcm_token", None)
+        else:
+            raise
     if not user:
         raise HTTPException(401, "User not found")
     if (user.status or "active") in ("deleted", "blocked"):

@@ -490,7 +490,8 @@ _processed_stripe_events: collections.OrderedDict = collections.OrderedDict()
 _MAX_PROCESSED_EVENTS = 5000
 
 
-@router.post("/payments/webhook")
+@router.post("/payments/stripe/webhook")
+@router.post("/payments/webhook")  # legacy alias
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle Stripe webhook events (payment confirmations, refunds, etc.).
     No auth required -- Stripe calls this directly; signature verification is the auth."""

@@ -663,30 +663,8 @@ def _verify_dispatch_key(
         raise HTTPException(403, "Admin access required")
 
 
-# -- Config --
-API_KEY = os.getenv("API_KEY", "")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "")
-DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")
-
-# Validate secrets at import time â€” refuse to start with empty/default keys
-if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
-    _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
-    if _is_railway:
-        raise RuntimeError(
-            "FATAL: API_KEY, HMAC_SECRET, and JWT_SECRET must be set in production. "
-            "Configure them in Railway Variables."
-        )
-    else:
-        # Local dev fallback â€” generate random secrets per session
-        import secrets as _sec
-        API_KEY = API_KEY or _sec.token_hex(32)
-        HMAC_SECRET = HMAC_SECRET or _sec.token_hex(32)
-        JWT_SECRET = JWT_SECRET or _sec.token_hex(32)
-        logging.warning("[SECURITY] Using auto-generated secrets for LOCAL dev. Set env vars for production.")
-
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24
+# NOTE: API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY are defined at the top of this file (lines 24-43).
+# Do NOT re-declare them here — it would overwrite the auto-generated dev secrets.
 JWT_REFRESH_HOURS = 168
 
 

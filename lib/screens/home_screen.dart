@@ -80,7 +80,7 @@ const double _kMaxSheet = 1.0; // Full screen when expanded
 const int _locAnimDurationMs = 1200; // smooth glide between updates
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
-  void _setState(VoidCallback fn) { setState(fn); }
+  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 
   late AnimationController _shimmerController;

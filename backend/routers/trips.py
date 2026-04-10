@@ -245,15 +245,17 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
     return _trip_dict(trip)
 
 @router.get("/trips/{trip_id}/poll", dependencies=[Depends(_verify_api_key)])
-async def poll_trip_status(trip_id: int, db: AsyncSession = Depends(get_db)):
+async def poll_trip_status(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Ultra-lightweight trip status poll — raw SQL only, no ORM User joins.
     Primary status channel for rider tracking screen (called every 3s)."""
     row = await db.execute(
-        text("SELECT id, status, driver_id, completed_at FROM trips WHERE id = :tid"),
+        text("SELECT id, status, driver_id, rider_id, completed_at FROM trips WHERE id = :tid"),
         {"tid": trip_id},
     )
     r = row.fetchone()
     if not r:
+        return {"status": "not_found"}
+    if user.id not in (r.rider_id, r.driver_id) and user.role not in ("admin", "dispatch"):
         return {"status": "not_found"}
     return {"status": r.status or "unknown", "trip_id": r.id, "driver_id": r.driver_id}
 

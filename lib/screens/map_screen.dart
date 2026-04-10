@@ -110,7 +110,7 @@ const double _zoomOutLevel = 10.5; // ignore: unused_field
 const double _carHeight = 28.0;
 
 class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
-  void _setState(VoidCallback fn) { setState(fn); }
+  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Theme-aware colors – _c is set at the top of build()
   late AppColors _c;
   bool? _lastIsDark; // tracks theme so we can re-style the map
@@ -180,6 +180,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Timer? _liveLocationTimer;
   StreamSubscription<Position>? _livePositionSub;
+  StreamSubscription<String>? _fcmTokenRefreshSub;
   Timer? _searchDebounce;
   Timer? _cameraIdleDebounce;
   LatLng? _lastReverseGeocodedTarget;
@@ -362,7 +363,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       await messaging.requestPermission(alert: true, badge: true, sound: true);
       final token = await messaging.getToken();
       if (token != null) ApiService.saveFcmToken(token);
-      messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
+      _fcmTokenRefreshSub?.cancel();
+      _fcmTokenRefreshSub = messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
     } catch (_) {}
   }
 
@@ -451,6 +453,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _fcmTokenRefreshSub?.cancel();
     _goldDot.dispose();
     _liveLocationTimer?.cancel();
     _livePositionSub?.cancel();

@@ -101,7 +101,7 @@ const _navyGlow  = Color(0x405BA3F5);
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  void _setState(VoidCallback fn) { setState(fn); }
+  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
 
   /// Sync the search-pulse animation to the current phase.
   /// Call this immediately after any setState block that changes _phase.

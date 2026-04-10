@@ -6,10 +6,12 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
-    get_db, SessionLocal, User, Trip, RiderPaymentMethod,
+    get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn
 from utils.security import _get_current_user, _verify_api_key, _require_dispatch_auth
+from utils.helpers import _haversine, _abs_photo_url
+from services.fcm_service import _send_fcm_push
 from config import (
     STRIPE_SECRET, _HAS_STRIPE, _stripe_mod, STRIPE_WEBHOOK_SECRET,
     PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_SANDBOX,
@@ -736,4 +738,224 @@ async def create_paypal_order(body: PayPalOrderIn):
     except Exception as e:
         logging.error("[PayPal] create_paypal_order failed: %s", e)
         raise HTTPException(502, f"PayPal error: {str(e)}")
+
+
+# -------------------------------------------------------
+#  WEB BOOKING — Create trip from Shopify & dispatch to drivers
+# -------------------------------------------------------
+
+WEB_SYSTEM_USER_ID = int(os.getenv("WEB_SYSTEM_USER_ID", "0"))
+
+
+def _web_key_check(request: Request):
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid web checkout key")
+
+
+@router.post("/bookings/web/create")
+async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db)):
+    """Create a trip from the Shopify booking widget and dispatch to nearby drivers."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+
+    body = await request.json()
+    pickup_address = body.get("pickup_address", "")
+    pickup_lat = float(body.get("pickup_lat", 0))
+    pickup_lng = float(body.get("pickup_lng", 0))
+    dropoff_address = body.get("dropoff_address", "")
+    dropoff_lat = float(body.get("dropoff_lat", 0))
+    dropoff_lng = float(body.get("dropoff_lng", 0))
+    vehicle_type = (body.get("vehicle_type") or "comfort").lower()
+    fare_cents = int(body.get("amount_cents", 0))
+    payment_intent_id = body.get("payment_intent_id")
+    scheduled_date = body.get("scheduled_date")
+    scheduled_time = body.get("scheduled_time")
+    contact_name = body.get("contact_name") or "Web Booking"
+    contact_phone = body.get("contact_phone") or ""
+
+    if not pickup_address or not dropoff_address:
+        raise HTTPException(400, "pickup_address and dropoff_address are required")
+
+    # Resolve system rider account
+    rider_id = WEB_SYSTEM_USER_ID
+    if rider_id:
+        r = await db.execute(select(User).where(User.id == rider_id))
+        if not r.scalar_one_or_none():
+            rider_id = 0
+
+    if not rider_id:
+        # Fallback: look for web system account by email
+        r = await db.execute(select(User).where(User.email == "web@cruiseinride.com"))
+        sys_user = r.scalar_one_or_none()
+        if sys_user:
+            rider_id = sys_user.id
+
+    if not rider_id:
+        raise HTTPException(
+            503,
+            "Web booking system user not configured. "
+            "Set WEB_SYSTEM_USER_ID in Railway env vars (ID of an existing user), "
+            "or create a user with email web@cruiseinride.com."
+        )
+
+    scheduled_at = None
+    if scheduled_date and scheduled_time:
+        try:
+            scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}:00+00:00")
+        except Exception:
+            pass
+
+    fare = fare_cents / 100.0 if fare_cents else None
+    notes_text = f"Web booking \u2014 {contact_name}"
+    if contact_phone:
+        notes_text += f" \u00b7 {contact_phone}"
+
+    try:
+        trip = Trip(
+            rider_id=rider_id,
+            pickup_address=pickup_address,
+            pickup_lat=pickup_lat,
+            pickup_lng=pickup_lng,
+            dropoff_address=dropoff_address,
+            dropoff_lat=dropoff_lat,
+            dropoff_lng=dropoff_lng,
+            vehicle_type=vehicle_type,
+            fare=fare,
+            status="requested",
+            stripe_payment_intent_id=payment_intent_id,
+            scheduled_at=scheduled_at,
+            notes=notes_text,
+            payment_status="held" if payment_intent_id else "unpaid",
+        )
+        db.add(trip)
+        await db.commit()
+        await db.refresh(trip)
+    except Exception as e:
+        await db.rollback()
+        logging.error("[WebBooking] Create trip failed: %s", e)
+        raise HTTPException(500, f"Failed to create booking: {e}")
+
+    # Dispatch to nearby drivers (non-blocking background task)
+    asyncio.create_task(_web_dispatch_to_drivers(trip.id, pickup_lat, pickup_lng, vehicle_type, fare))
+
+    logging.info("[WebBooking] Created trip %d (%.2f %s) → dispatching", trip.id, fare or 0, vehicle_type)
+    return {"booking_id": trip.id, "status": trip.status}
+
+
+async def _web_dispatch_to_drivers(
+    trip_id: int, pickup_lat: float, pickup_lng: float, vehicle_type: str, fare: float | None
+):
+    """Find the nearest online drivers and send them a ride offer via FCM."""
+    try:
+        async with SessionLocal() as db:
+            # Confirm trip still exists
+            r = await db.execute(select(Trip).where(Trip.id == trip_id))
+            trip = r.scalar_one_or_none()
+            if not trip:
+                return
+
+            # Fetch all online drivers with known location
+            result = await db.execute(
+                select(User).where(
+                    User.role == "driver",
+                    User.is_online == True,
+                    User.lat != None,
+                    User.lng != None,
+                    User.status == "active",
+                )
+            )
+            all_drivers = result.scalars().all()
+
+            # Sort by haversine distance to pickup
+            nearby = sorted(
+                [(d, _haversine(pickup_lat, pickup_lng, d.lat, d.lng)) for d in all_drivers],
+                key=lambda x: x[1],
+            )
+
+            # Offer to the 5 nearest drivers
+            targets = [d for d, _ in nearby[:5]]
+            if not targets:
+                logging.warning("[WebDispatch] No online drivers available for trip %d", trip_id)
+                return
+
+            fare_str = f"${fare:.2f}" if fare else ""
+            pickup_short = (trip.pickup_address or "")[:40]
+            dropoff_short = (trip.dropoff_address or "")[:40]
+            push_body = f"{fare_str} \u00b7 {pickup_short} \u2192 {dropoff_short}".strip(" \u00b7")
+
+            for driver in targets:
+                offer = DispatchOffer(trip_id=trip_id, driver_id=driver.id, status="pending")
+                db.add(offer)
+                await db.flush()
+                if driver.fcm_token:
+                    asyncio.create_task(_send_fcm_push(
+                        driver.fcm_token,
+                        title="New Ride Request",
+                        body=push_body,
+                        data={"type": "new_trip", "trip_id": str(trip_id)},
+                    ))
+
+            await db.commit()
+            logging.info("[WebDispatch] Trip %d offered to %d drivers", trip_id, len(targets))
+
+    except Exception as e:
+        logging.error("[WebDispatch] Error for trip %d: %s", trip_id, e)
+
+
+@router.get("/bookings/web/{booking_id}/status")
+async def web_booking_status(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Poll status of a web booking. Returns driver + vehicle info once a driver accepts."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+
+    resp: dict = {"status": trip.status, "booking_id": trip.id}
+
+    if trip.driver_id:
+        # Fetch driver user
+        dr = await db.execute(select(User).where(User.id == trip.driver_id))
+        driver = dr.scalar_one_or_none()
+        if driver:
+            resp["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip()
+            resp["driver_photo_url"] = _abs_photo_url(driver.photo_url) or ""
+            resp["driver_rating"] = round(float(getattr(driver, "average_rating", None) or 5.0), 1)
+
+            # Fetch driver's vehicle — prefer matching vehicle_type
+            vq = (
+                select(Vehicle)
+                .where(Vehicle.user_id == driver.id)
+                .order_by(Vehicle.id.desc())
+                .limit(1)
+            )
+            if trip.vehicle_type:
+                vq_typed = (
+                    select(Vehicle)
+                    .where(Vehicle.user_id == driver.id, Vehicle.vehicle_type == trip.vehicle_type)
+                    .order_by(Vehicle.id.desc())
+                    .limit(1)
+                )
+                vr = await db.execute(vq_typed)
+                vehicle = vr.scalar_one_or_none()
+                if not vehicle:
+                    vr = await db.execute(vq)
+                    vehicle = vr.scalar_one_or_none()
+            else:
+                vr = await db.execute(vq)
+                vehicle = vr.scalar_one_or_none()
+
+            if vehicle:
+                resp["vehicle_make"] = vehicle.make or ""
+                resp["vehicle_model"] = vehicle.model or ""
+                resp["vehicle_plate"] = vehicle.plate or ""
+                resp["vehicle_year"] = vehicle.year or ""
+                resp["vehicle_color"] = vehicle.color or ""
+
+    return resp
 

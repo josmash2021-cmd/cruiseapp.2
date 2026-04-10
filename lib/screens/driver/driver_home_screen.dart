@@ -78,6 +78,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _mapReady = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
   StreamSubscription<Position>? _posStream;
+  StreamSubscription<String>? _fcmTokenRefreshSub;
 
   // ── Stats ──
   double _todayEarnings = 0.0;
@@ -277,12 +278,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       await messaging.requestPermission(alert: true, badge: true, sound: true);
       final token = await messaging.getToken();
       if (token != null) ApiService.saveFcmToken(token);
-      messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
+      _fcmTokenRefreshSub?.cancel();
+      _fcmTokenRefreshSub = messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
     } catch (_) {}
   }
 
   @override
   void dispose() {
+    _fcmTokenRefreshSub?.cancel();
     disposePanelAnimation();
     _pulseCtrl.dispose();
     _glossCtrl.dispose();

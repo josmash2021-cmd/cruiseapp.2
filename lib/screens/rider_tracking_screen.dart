@@ -126,7 +126,7 @@ String? _normalizeRemotePhotoUrl(String? rawUrl) {
 
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
-  void _setState(VoidCallback fn) { setState(fn); }
+  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
   mapbox.PointAnnotationManager? _carAnnotMgr;     // for car (icon-anchor: center)

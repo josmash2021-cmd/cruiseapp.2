@@ -133,7 +133,7 @@ const List<(double, double)> _searchCameraAngles = [
 
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
-  void _setState(VoidCallback fn) { setState(fn); }
+  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // ── Map ──
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;

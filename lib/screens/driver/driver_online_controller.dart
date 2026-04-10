@@ -690,8 +690,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('_goOnlineBackend: approval gate not passed, skipping');
       return;
     }
-    if (_pos == null) {
-      debugPrint('⚠️ _goOnlineBackend: GPS not ready yet, retrying in 3s');
+    if (_driverId == null || _pos == null) {
+      debugPrint('⚠️ _goOnlineBackend: ${_driverId == null ? "driverId" : "GPS"} not ready yet, retrying in 3s');
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _phase == _Phase.searching) _goOnlineBackend();
       });
@@ -1097,7 +1097,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _connectSse() {
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
-    if (_driverId == null || !mounted) return;
+    final driverId = _driverId;
+    if (driverId == null || !mounted) return;
 
     void scheduleReconnect(String reason) {
       debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 2s');
@@ -1107,7 +1108,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
 
-    _offerSseSub = ApiService.streamDriverOffers(_driverId!).listen(
+    _offerSseSub = ApiService.streamDriverOffers(driverId).listen(
       (offers) {
         if (!_sseActive) {
           debugPrint('[DriverOnline] SSE reconnected — stopping polling fallback');

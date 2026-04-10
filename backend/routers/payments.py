@@ -250,15 +250,21 @@ async def paypal_capture_order(body: PayPalCaptureIn, user: User = Depends(_get_
 # -------------------------------------------------------
 
 WEB_CHECKOUT_KEY = os.getenv("WEB_CHECKOUT_KEY", "")
+WEB_ALLOWED_ORIGINS = os.getenv("WEB_ALLOWED_ORIGINS", "https://cruiseinride.com,https://www.cruiseinride.com").split(",")
+
+def _verify_web_origin(request: Request):
+    """Block requests not from allowed origins."""
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    if origin and not any(origin.startswith(o.strip()) for o in WEB_ALLOWED_ORIGINS):
+        raise HTTPException(403, "Origin not allowed")
+    if not origin and referer and not any(referer.startswith(o.strip()) for o in WEB_ALLOWED_ORIGINS):
+        raise HTTPException(403, "Referer not allowed")
 
 @router.post("/payments/web/checkout")
 async def create_web_checkout(request: Request):
-    """Create a Stripe Checkout Session for website payments.
-    No HMAC required — uses a simple bearer token (WEB_CHECKOUT_KEY).
-    Body: {"amount": cents, "currency": "usd", "description": "...",
-           "success_url": "https://...", "cancel_url": "https://...",
-           "customer_email": "optional@email.com", "metadata": {}}
-    """
+    """Create a Stripe Checkout Session for website payments."""
+    _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):
         raise HTTPException(429, "Too many requests — try again in a minute")
@@ -317,9 +323,8 @@ async def create_web_checkout(request: Request):
 
 @router.post("/payments/web/create-intent")
 async def create_web_payment_intent(request: Request):
-    """Create a Stripe PaymentIntent for native Apple Pay / Google Pay.
-    Returns client_secret so Stripe.js can confirm the payment on the frontend.
-    """
+    """Create a Stripe PaymentIntent for native Apple Pay / Google Pay."""
+    _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):
         raise HTTPException(429, "Too many requests — try again in a minute")

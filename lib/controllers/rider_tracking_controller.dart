@@ -77,56 +77,34 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Connect to Firestore for trip status and RTDB for live driver movement.
-  void _startRealTimeTracking() async {
-    // Ensure Firebase Auth BEFORE any Firestore/RTDB listener — both require
-    // auth != null in security rules. Without this, Firestore listeners
-    // silently fail and the rider never sees status changes.
-    if (FirebaseAuth.instance.currentUser == null) {
-      try { await FirebaseAuth.instance.signInAnonymously(); }
-      catch (_) { debugPrint('[RiderTracking] Firebase anonymous auth failed'); }
-    }
-
+  /// Connect to backend poll + Firestore for trip status, RTDB for driver GPS.
+  void _startRealTimeTracking() {
     final tripId = widget.tripId;
     final sqlDocId = tripId != null ? 'sql_$tripId' : null;
     final fallbackDocId = widget.firestoreTripId;
 
+    // ── 1. PRIMARY: backend poll starts INSTANTLY — no auth dependency ──
     if (tripId != null) {
-      _attachTripDocListener(sqlDocId!, isFallbackDoc: false);
-
       _statusPollTimer?.cancel();
       _statusPollTimer = Timer.periodic(
-        const Duration(seconds: 3),
+        const Duration(seconds: 2),
         (_) => _pollBackendTripStatus(),
       );
-      unawaited(_pollBackendTripStatus());
-    } else {
-      _statusPollTimer?.cancel();
+      unawaited(_pollBackendTripStatus()); // first poll fires now
+      debugPrint('[RiderTracking] Poll started for trip $tripId (every 2s)');
     }
 
-    if (fallbackDocId != null &&
-        fallbackDocId.isNotEmpty &&
-        fallbackDocId != sqlDocId) {
-      _attachTripDocListener(fallbackDocId, isFallbackDoc: true);
-    } else {
-      _fallbackTripStatusSub?.cancel();
-      _fallbackTripStatusSub = null;
-    }
+    // ── 2. BONUS: Firestore listener (instant when it works) ──
+    // Firebase Auth + listener setup runs in parallel — never blocks the poll.
+    _initFirebaseAndListeners(tripId, sqlDocId, fallbackDocId);
 
-    if (tripId != null) {
-      debugPrint('[RiderTracking] Watching sql_$tripId for status updates');
-    } else if (fallbackDocId != null && fallbackDocId.isNotEmpty) {
-      _attachTripDocListener(fallbackDocId, isFallbackDoc: false);
-    }
-
-    // Start RTDB driver location listener immediately if driverId is known
-    // (don't wait for Firestore to deliver it — avoids false "connection lost")
+    // ── 3. RTDB driver GPS — start immediately if driverId known ──
     final did = widget.driverId;
     if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
       _startRtdbDriverListener(did);
     }
 
-    // Start chase camera follow timer (backs up per-GPS-update follow)
+    // Start chase camera follow timer
     _startCameraFollowTracking();
 
     // Periodically persist ride state so app resumption restores correct position
@@ -151,6 +129,30 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _fetchDriverPositionFallback();
         }
       });
+    }
+  }
+
+  /// Firebase Auth + Firestore listeners (bonus instant channel).
+  /// Runs async in the background — never blocks the primary poll.
+  void _initFirebaseAndListeners(int? tripId, String? sqlDocId, String? fallbackDocId) async {
+    // Authenticate so Firestore security rules pass
+    if (FirebaseAuth.instance.currentUser == null) {
+      try { await FirebaseAuth.instance.signInAnonymously(); }
+      catch (_) { debugPrint('[RiderTracking] Firebase anon auth failed — poll is primary'); }
+    }
+    if (!mounted) return;
+
+    // Attach Firestore trip doc listener (delivers instant sub-second updates)
+    if (sqlDocId != null) {
+      _attachTripDocListener(sqlDocId, isFallbackDoc: false);
+    }
+    if (fallbackDocId != null &&
+        fallbackDocId.isNotEmpty &&
+        fallbackDocId != sqlDocId) {
+      _attachTripDocListener(fallbackDocId, isFallbackDoc: true);
+    } else {
+      _fallbackTripStatusSub?.cancel();
+      _fallbackTripStatusSub = null;
     }
   }
 

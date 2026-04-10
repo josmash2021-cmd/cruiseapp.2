@@ -644,12 +644,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     if (isCancelledStatus) {
-      // Guard: if thet trip is already in an active phase (driver accepted,
-      // arriving, arrived, in trip) ignore a stale "cancelled" status that
-      // can appear from Firestore merge artefacts or race conditions.
-      if (_phase == _TrackPhase.arriving ||
-          _phase == _TrackPhase.arrived ||
-          _phase == _TrackPhase.onTrip ||
+      // Guard: only ignore a stale "cancelled" status while the trip is
+      // actively in progress (driver physically driving the rider). During
+      // `arriving` the trip has barely started — a cancel from dispatch or
+      // driver is legitimate and must NOT be swallowed, otherwise the rider
+      // screen gets stuck polling a dead trip forever.
+      if (_phase == _TrackPhase.onTrip ||
           _phase == _TrackPhase.nearDestination) {
         debugPrint('[RiderTracking] Ignoring cancelled status while in active phase $_phase');
         return;

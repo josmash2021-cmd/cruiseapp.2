@@ -61,30 +61,43 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         data = await ApiService.pollTripStatus(tripId);
       }
 
-      // Fallback: /trips/active — works even when tripId is null
+      // Fallback: /trips/active — works even when tripId is null OR when
+      // the primary poll endpoint fails/returns null for any reason.
       if (data == null && mounted) {
         final active = await ApiService.getActiveTrip();
         if (active != null) {
           final activeId = active['id'];
-          // Accept if tripId matches OR if we have no tripId (use whatever's active)
           if (tripId == null || activeId == tripId || activeId?.toString() == tripId.toString()) {
             data = {'status': active['status'], 'driver_id': active['driver_id']};
           }
         }
       }
 
-      if (!mounted || data == null) return;
+      if (!mounted || data == null) {
+        debugPrint('[RiderTracking] ⚠️ Poll got NO DATA (tripId=$tripId)');
+        return;
+      }
       final status = (data['status']?.toString() ?? '').trim().toLowerCase();
-      if (status.isEmpty || status == 'not_found' || status == 'unknown') return;
+      if (status.isEmpty || status == 'not_found' || status == 'unknown') {
+        debugPrint('[RiderTracking] ⚠️ Poll got empty/unknown status: "$status"');
+        return;
+      }
 
-      if (status == 'completed' || status == 'cancelled' || status == 'canceled' ||
-          status == 'arrived' || status == 'driver_arrived' ||
-          status == 'in_trip' || status == 'in_progress') {
-        debugPrint('[RiderTracking] Poll → status=$status');
+      // Log EVERY poll result so we can see exactly what's coming in.
+      debugPrint('[RiderTracking] 📡 Poll → status="$status" (current phase=$_phase)');
+
+      // Forward ANY actionable status — the handler has its own dedup/guards.
+      // Intentionally broad: missing a transition is worse than a no-op update.
+      const actionableStatuses = {
+        'completed', 'cancelled', 'canceled',
+        'arrived', 'driver_arrived', 'arrived_pickup', 'arrived_at_pickup',
+        'in_trip', 'in_progress', 'rider_onboard', 'on_trip', 'trip_started',
+      };
+      if (actionableStatuses.contains(status)) {
         _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
       }
     } catch (e) {
-      debugPrint('[RiderTracking] Poll error: $e');
+      debugPrint('[RiderTracking] ❌ Poll error: $e');
     }
   }
 
@@ -96,13 +109,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
     // ── 1. PRIMARY: backend poll starts INSTANTLY — no auth dependency ──
     // Poll runs even when tripId is null — _pollBackendTripStatus uses /trips/active fallback.
+    // Aggressive 1.5s interval — the extra traffic is trivial vs the cost of
+    // a rider missing the "driver arrived" signal.
     _statusPollTimer?.cancel();
     _statusPollTimer = Timer.periodic(
-      const Duration(seconds: 2),
+      const Duration(milliseconds: 1500),
       (_) => _pollBackendTripStatus(),
     );
     unawaited(_pollBackendTripStatus()); // first poll fires now
-    debugPrint('[RiderTracking] Poll started for trip $tripId (every 2s)');
+    debugPrint('[RiderTracking] 🟢 Poll started for trip $tripId (every 1.5s)');
 
     // ── 2. BONUS: Firestore listener (instant when it works) ──
     // Firebase Auth + listener setup runs in parallel — never blocks the poll.
@@ -536,19 +551,56 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Only trust the explicit status field for cancellation — never timestamps alone.
     final isCancelledStatus = status == 'cancelled';
 
-    debugPrint('[RiderTracking] Firestore status update: "$rawStatus" normalized="$status" (phase=$_phase, driverId=$did)');
-    if (isArrivedStatus && (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-      if (_phase == _TrackPhase.arriving) {
+    debugPrint('[RiderTracking] ⚡ STATUS UPDATE: raw="$rawStatus" → normalized="$status" (phase=$_phase, confirmShown=$_confirmPickupShown, driverId=$did)');
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  COMPLETED — navigate to rating screen. Fires regardless of phase.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (isCompletedStatus) {
+      if (_phase == _TrackPhase.completed || _goingToRating) {
+        debugPrint('[RiderTracking] ⏭️ completed already handled — skipping');
+        return;
+      }
+      debugPrint('[RiderTracking] ✅ TRIP COMPLETED — navigating to rating in 1.5s');
+      _goingToRating = true;
+      unawaited(LocalDataService.clearActiveRide());
+      _setState(() {
+        _phase = _TrackPhase.completed;
+        _showPickupOverlay = false;
+      });
+      _confirmPickupShown = false;
+      _arrivedDotPulse.stop();
+      _saveChatToInbox();
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) _goToRating();
+      });
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  ARRIVED — show confirm pickup overlay. Fires regardless of phase
+    //  as long as rider hasn't already confirmed pickup.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (isArrivedStatus) {
+      // Ignore if rider already confirmed (phase is onTrip or later) or trip done.
+      if (_phase == _TrackPhase.onTrip ||
+          _phase == _TrackPhase.nearDestination ||
+          _phase == _TrackPhase.completed) {
+        debugPrint('[RiderTracking] ⏭️ arrived ignored — phase=$_phase (already past pickup)');
+        return;
+      }
+      debugPrint('[RiderTracking] 🎯 DRIVER ARRIVED — showing confirm pickup overlay');
+      if (_phase != _TrackPhase.arrived) {
         _setState(() {
           _phase = _TrackPhase.arrived;
           _etaMinutes = 0;
           _distanceMiles = 0;
         });
         _saveRideState();
-        _arrivedDotPulse.repeat(reverse: true);
+        if (!_arrivedDotPulse.isAnimating) _arrivedDotPulse.repeat(reverse: true);
         _handleDriverArrived();
       }
-      // Always show confirm pickup — even if phase was already arrived (app resume)
+      // Always fire the overlay — guard inside _showRiderConfirmPickup handles dedup.
       _showRiderConfirmPickup();
       if (!_arrivedNotifSent) {
         _arrivedNotifSent = true;
@@ -557,21 +609,30 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
         );
       }
-    } else if (isInTripStatus &&
-        (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-      // If rider never saw the arrived/confirm overlay (poll skipped 'arrived'),
-      // show it now as auto-confirmed — the driver already started the ride.
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  IN_TRIP — transition to onTrip phase. If overlay never fired, show
+    //  it briefly as "auto-confirmed" before transitioning.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (isInTripStatus) {
+      if (_phase == _TrackPhase.onTrip ||
+          _phase == _TrackPhase.nearDestination ||
+          _phase == _TrackPhase.completed) {
+        debugPrint('[RiderTracking] ⏭️ in_trip already handled — phase=$_phase');
+        return;
+      }
+      debugPrint('[RiderTracking] 🚗 TRIP STARTED — transitioning to onTrip');
       if (_phase == _TrackPhase.arriving && !_confirmPickupShown) {
+        // Driver skipped the arrived signal — flash the overlay briefly.
         _setState(() {
           _phase = _TrackPhase.arrived;
           _etaMinutes = 0;
           _distanceMiles = 0;
         });
         _handleDriverArrived();
-        // Show confirm overlay in auto-confirmed state — it will detect
-        // in_trip via its Firestore listener and auto-dismiss after 2s.
         _showRiderConfirmPickup();
-        // Delay the onTrip transition so the rider sees the confirmation.
         Future.delayed(const Duration(milliseconds: 2500), () {
           if (!mounted) return;
           _transitionToOnTrip();
@@ -579,29 +640,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         return;
       }
       _transitionToOnTrip();
-    } else if (isInTripStatus &&
-        _phase == _TrackPhase.nearDestination) {
-      // Already near destination — don't reset to onTrip
-      _arrivedDotPulse.stop(); // Stop pulsing dot animation
-      _popOutPickupPin();
-      // FIX 3 & 4: Start the route animation and camera phases when starting ride
-      _startRideAnimationDone = false;
-      _startStartRideAnimation();
-    } else if (isCompletedStatus && _phase != _TrackPhase.completed) {
-      unawaited(LocalDataService.clearActiveRide());
-      _setState(() {
-        _phase = _TrackPhase.completed;
-        _showPickupOverlay = false; // dismiss confirm pickup if showing
-      });
-      _confirmPickupShown = false;
-      _arrivedDotPulse.stop();
-      // Save trip chat to inbox before navigating away
-      _saveChatToInbox();
-      // Let the rider see the "Trip completed" state briefly before rating
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) _goToRating();
-      });
-    } else if (isCancelledStatus) {
+      return;
+    }
+
+    if (isCancelledStatus) {
       // Guard: if thet trip is already in an active phase (driver accepted,
       // arriving, arrived, in trip) ignore a stale "cancelled" status that
       // can appear from Firestore merge artefacts or race conditions.

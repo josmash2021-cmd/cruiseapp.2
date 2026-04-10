@@ -189,6 +189,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
   bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
   bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
+  bool _goingToRating = false;      // guard: prevents double navigation to rating screen
 
   // ── Pickup overlay slide-up entrance ──
   late AnimationController _pickupOverlayCtrl;

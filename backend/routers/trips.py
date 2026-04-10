@@ -55,16 +55,26 @@ _STATUS_ALIASES = {
     "driver_assigned": "accepted",
 }
 
-# Valid trip status transitions -- enforce lifecycle integrity
+# Valid trip status transitions -- enforce lifecycle integrity.
 # Keys and values use CANONICAL status names only.
+#
+# Philosophy: be permissive on forward progress (arrived/in_trip/completed)
+# and cancellation. The driver owns the physical trip state — if they say
+# the trip is done, the backend must trust them rather than block the
+# flow with stale transition rules. Only TERMINAL states (completed,
+# cancelled) truly refuse further changes.
+_NON_TERMINAL_FORWARD = {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled"}
 _VALID_TRANSITIONS = {
-    "requested": {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled"},
-    "accepted": {"driver_en_route", "arrived", "in_trip", "completed", "cancelled"},
-    "driver_en_route": {"arrived", "in_trip", "completed", "cancelled"},
-    "arrived": {"in_trip", "completed", "cancelled"},
-    "in_trip": {"completed", "cancelled"},
-    "completed": set(),
-    "cancelled": set(),
+    "requested":       _NON_TERMINAL_FORWARD,
+    "accepted":        _NON_TERMINAL_FORWARD,
+    "driver_en_route": _NON_TERMINAL_FORWARD,
+    "arrived":         _NON_TERMINAL_FORWARD,
+    "in_trip":         _NON_TERMINAL_FORWARD,
+    "scheduled":       _NON_TERMINAL_FORWARD,
+    "scheduled_accepted": _NON_TERMINAL_FORWARD,
+    "scheduled_active":   _NON_TERMINAL_FORWARD,
+    "completed":       set(),  # terminal
+    "cancelled":       set(),  # terminal
 }
 
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
@@ -650,10 +660,45 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             )
             raise HTTPException(409, "Cannot cancel -- driver already assigned")
 
-    # Validate status transition using canonical names
-    allowed = _VALID_TRANSITIONS.get(canonical_current, set())
+    # Validate status transition using canonical names.
+    # Unknown current states fall through to the permissive default — the
+    # driver should always be able to complete/cancel a trip even if the DB
+    # has some legacy or unexpected status value stored.
+    allowed = _VALID_TRANSITIONS.get(canonical_current, _NON_TERMINAL_FORWARD)
+
+    # SPECIAL CASE: driver forward-progression bypass for stale cancellations.
+    # If the trip was auto-cancelled (scheduled ride expired, dispatch race,
+    # etc.) but the DRIVER is physically running the trip and slides to
+    # in_trip / completed, trust the driver and resurrect the trip.  This
+    # prevents the real-world "driver did the ride but can't finish it on
+    # the app because backend thinks it's cancelled" failure mode.
+    is_driver_update = (user.id == trip.driver_id)
+    is_forward_progression = canonical_new in ("in_trip", "completed", "arrived")
+    if is_driver_update and is_forward_progression and canonical_current in ("cancelled", "completed"):
+        logging.warning(
+            "[TripStatus] 🔓 Driver-override resurrecting trip %d from %r → %r",
+            trip_id, canonical_current, canonical_new,
+        )
+        # Clear any stale terminal metadata so the rating/payout flow works.
+        if canonical_current == "cancelled":
+            trip.cancel_reason = None
+            trip.cancellation_fee = 0.0
+        if canonical_current == "completed" and canonical_new != "completed":
+            # Un-completing: clear completed_at so it gets re-set when
+            # the driver actually finishes the trip again.
+            trip.completed_at = None
+        allowed = _NON_TERMINAL_FORWARD  # force allow
+
     if canonical_new not in allowed:
-        raise HTTPException(409, f"Invalid status transition from '{trip.status}' to '{status}'")
+        logging.warning(
+            "[TripStatus] Rejected transition trip=%d current=%r(canon=%r) → new=%r(canon=%r) user=%d(role=%s)",
+            trip_id, trip.status, canonical_current, status, canonical_new, user.id, user_role,
+        )
+        raise HTTPException(
+            409,
+            f"Cannot transition trip from '{trip.status}' (canonical: '{canonical_current}') to '{status}' — "
+            f"the trip is in a terminal state and cannot be modified."
+        )
 
     # Store the CANONICAL status, not the raw client input
     trip.status = canonical_new

@@ -704,7 +704,7 @@ async def _scheduled_ride_dispatcher():
                     # Expired: ride is more than 5 min past scheduled time
                     # --------------------------------------------------
                     if minutes_until < -5:
-                        trip.status = "canceled"
+                        trip.status = "cancelled"
                         trip.cancel_reason = "No driver found for your scheduled ride"
                         await db.commit()
                         logging.info(
@@ -987,7 +987,7 @@ async def _scheduled_ride_reminder_loop():
                     # No-show / expired: >5 min past with no pickup
                     # --------------------------------------------------
                     if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
-                        trip.status = "canceled"
+                        trip.status = "cancelled"
                         trip.cancel_reason = "No driver found for your scheduled ride"
                         await db.commit()
                         logging.info(

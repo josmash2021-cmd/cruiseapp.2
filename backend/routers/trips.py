@@ -666,18 +666,21 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     # has some legacy or unexpected status value stored.
     allowed = _VALID_TRANSITIONS.get(canonical_current, _NON_TERMINAL_FORWARD)
 
-    # SPECIAL CASE: driver forward-progression bypass for stale cancellations.
+    # SPECIAL CASE: forward-progression bypass for stale cancellations.
     # If the trip was auto-cancelled (scheduled ride expired, dispatch race,
-    # etc.) but the DRIVER is physically running the trip and slides to
-    # in_trip / completed, trust the driver and resurrect the trip.  This
-    # prevents the real-world "driver did the ride but can't finish it on
-    # the app because backend thinks it's cancelled" failure mode.
+    # ghost-agent, etc.) but the driver is physically running it, we must
+    # trust the physical world and allow the state forward.  This applies to:
+    #   • the assigned driver (user.id == trip.driver_id)
+    #   • admin / dispatch users who manage the trip on behalf of the driver
+    # Riders may NOT resurrect a cancelled trip.
     is_driver_update = (user.id == trip.driver_id)
-    is_forward_progression = canonical_new in ("in_trip", "completed", "arrived")
-    if is_driver_update and is_forward_progression and canonical_current in ("cancelled", "completed"):
+    is_privileged = user_role in ("admin", "dispatch")
+    is_forward_progression = canonical_new in ("arrived", "in_trip", "completed", "driver_en_route")
+    if (is_driver_update or is_privileged) and is_forward_progression and canonical_current in ("cancelled", "completed"):
         logging.warning(
-            "[TripStatus] 🔓 Driver-override resurrecting trip %d from %r → %r",
-            trip_id, canonical_current, canonical_new,
+            "[TripStatus] 🔓 %s-override resurrecting trip %d from %r → %r (user=%d role=%s)",
+            "driver" if is_driver_update else "dispatch",
+            trip_id, canonical_current, canonical_new, user.id, user_role,
         )
         # Clear any stale terminal metadata so the rating/payout flow works.
         if canonical_current == "cancelled":

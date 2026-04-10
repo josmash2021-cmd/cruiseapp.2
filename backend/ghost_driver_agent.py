@@ -103,7 +103,13 @@ class GhostDriverAgent:
         warn_cutoff = now - timedelta(minutes=WARN_AFTER_MINUTES)
         offline_cutoff = now - timedelta(minutes=OFFLINE_AFTER_MINUTES)
 
-        from models.database import User
+        from models.database import User, Trip
+
+        # Active-trip statuses: driver is physically running a trip in these states.
+        _ACTIVE_TRIP_STATUSES = (
+            "accepted", "driver_en_route", "arrived", "in_trip",
+            "scheduled_accepted", "scheduled_active",
+        )
 
         async with self._db_session_maker() as db:
             # Find all online drivers
@@ -117,6 +123,16 @@ class GhostDriverAgent:
             )
             online_drivers = result.scalars().all()
             self._stats["active_drivers_last_scan"] = len(online_drivers)
+
+            # Batch-load active trip driver_ids in one query so we don't need
+            # N individual queries inside the loop.
+            active_trip_result = await db.execute(
+                select(Trip.driver_id).where(
+                    Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                    Trip.driver_id.isnot(None),
+                )
+            )
+            drivers_on_active_trip: set[int] = {row[0] for row in active_trip_result.fetchall()}
 
             warned_count = 0
             offlined_count = 0
@@ -133,6 +149,20 @@ class GhostDriverAgent:
 
                 # ── FORCE OFFLINE: inactive > 20 min ──────────────
                 if last_active < offline_cutoff:
+                    # Never force offline a driver who is on an active trip.
+                    # When the phone backgrounds/locks during a ride the heartbeat
+                    # stops, but the driver is still physically running the trip —
+                    # kicking them offline would break rider tracking and payout.
+                    if driver.id in drivers_on_active_trip:
+                        logger.info(
+                            "[GhostDriver] SKIP driver #%d (%s) — inactive %.0f min "
+                            "but has an active trip, leaving online",
+                            driver.id,
+                            driver.first_name,
+                            (now - last_active).total_seconds() / 60,
+                        )
+                        continue
+
                     driver.is_online = False
                     offlined_count += 1
                     _warned_drivers.pop(driver.id, None)
@@ -156,6 +186,11 @@ class GhostDriverAgent:
 
                 # ── WARNING: inactive 15-20 min ───────────────────
                 elif last_active < warn_cutoff:
+                    # Skip warning drivers that are on an active trip — their
+                    # phone is probably locked in pocket while driving.
+                    if driver.id in drivers_on_active_trip:
+                        continue
+
                     # Only warn once per cycle
                     last_warn = _warned_drivers.get(driver.id, 0)
                     if time.time() - last_warn > WARN_AFTER_MINUTES * 60:

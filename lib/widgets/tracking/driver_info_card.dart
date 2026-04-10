@@ -202,17 +202,17 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         ),
                       ),
                       if (widget.tripId != null)
-                        StreamBuilder<int>(
-                          stream: ChatService().unreadCountStream(
-                            rideId: widget.tripId.toString(),
-                            readerRole: 'rider',
-                          ),
-                          builder: (context, snap) {
-                            final count = snap.data ?? 0;
-                            if (count == 0) return const SizedBox.shrink();
-                            return Positioned(
-                              right: -4, top: -4,
-                              child: TweenAnimationBuilder<double>(
+                        Positioned(
+                          right: -4, top: -4,
+                          child: StreamBuilder<int>(
+                            stream: ChatService().unreadCountStream(
+                              rideId: widget.tripId.toString(),
+                              readerRole: 'rider',
+                            ),
+                            builder: (context, snap) {
+                              final count = snap.data ?? 0;
+                              if (count == 0) return const SizedBox.shrink();
+                              return TweenAnimationBuilder<double>(
                                 key: ValueKey(count),
                                 tween: Tween(begin: 0.0, end: 1.0),
                                 duration: const Duration(milliseconds: 400),
@@ -241,9 +241,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                     ],
                   ),

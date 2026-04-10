@@ -379,6 +379,10 @@ class _ChatScreenState extends State<ChatScreen> {
           senderRole: _myRole,
           text: text,
         );
+        // Also notify backend so it sends FCM push to the other person
+        if (widget.tripId != null) {
+          unawaited(ApiService.sendChatMessage(tripId: widget.tripId!, message: text).catchError((_) => <String, dynamic>{}));
+        }
       } catch (e) {
         debugPrint('[Chat] RTDB send failed: $e');
         if (mounted) {

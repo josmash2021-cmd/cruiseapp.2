@@ -676,6 +676,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!mounted || _confirmPickupShown) return;
     _confirmPickupShown = true;
     _setState(() => _showPickupOverlay = true);
+    // Slide overlay up from the bottom
+    _pickupOverlayCtrl.forward(from: 0);
   }
 
   /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.

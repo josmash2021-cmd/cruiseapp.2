@@ -53,6 +53,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Future<void> _cleanupMapAnnotations() async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
+      if (_glowRouteAnnot != null) {
+        try { await polyMgr.delete(_glowRouteAnnot!); } catch (_) {}
+        _glowRouteAnnot = null;
+      }
       if (_remainingRouteAnnot != null) {
         try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
         _remainingRouteAnnot = null;
@@ -1057,6 +1061,18 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     });
   }
 
+  /// Called when the rider taps "Confirm" on the pickup overlay.
+  /// Removes the dimmed preview and starts the illuminated animated route draw.
+  void _restartRouteAnimation() {
+    if (_routeDrawDone) return; // driver-starts-first path already drawing
+    _removeDimmedRoute();
+    if (_routePts.length < 2 && _tripRoutePts.isNotEmpty) {
+      _routePts = _tripRoutePts;
+      _buildSegDist();
+    }
+    _startAnimatedRouteDraw();
+  }
+
   /// Pop-out animation for the pickup pin when driver picks up rider.
   /// Grows to 1.6x then shrinks to 0 and removes the annotation.
   void _popOutPickupPin() {
@@ -1097,7 +1113,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
 
-    // Delete any existing route annotation so we draw fresh
+    // Delete any existing route annotations so we draw fresh
+    if (_glowRouteAnnot != null) {
+      try { await polyMgr.delete(_glowRouteAnnot!); } catch (_) {}
+      _glowRouteAnnot = null;
+    }
     if (_remainingRouteAnnot != null) {
       try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
       _remainingRouteAnnot = null;
@@ -1172,20 +1192,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       updating = true;
       try {
         _remainingRouteAnnot!.geometry = geom;
+        // Animate glow layer in sync (best-effort, non-blocking)
+        if (_glowRouteAnnot != null) {
+          _glowRouteAnnot!.geometry = geom;
+          polyMgr.update(_glowRouteAnnot!).catchError((_) {});
+        }
         polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       } catch (_) { updating = false; }
 
       if (t >= 1.0) {
         // Final: set full route to ensure no rounding gaps
-        _remainingRouteAnnot!.geometry = mapbox.LineString(coordinates: allCoords);
+        final fullGeom = mapbox.LineString(coordinates: allCoords);
+        _remainingRouteAnnot!.geometry = fullGeom;
         polyMgr.update(_remainingRouteAnnot!).catchError((_) {});
+        if (_glowRouteAnnot != null) {
+          _glowRouteAnnot!.geometry = fullGeom;
+          polyMgr.update(_glowRouteAnnot!).catchError((_) {});
+        }
         _routeDrawTicker?.stop();
       }
     })..start();
   }
 
   Future<void> _createRouteLayers(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
-    // Single gloss gold line — clean, no glow
+    // Glow layer: wide soft gold halo that creates the illuminating effect
+    try { _glowRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geom,
+      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.28).toARGB32(),
+      lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
+    )); } catch (_) {}
+    // Main bright gold line on top
     try { _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFFFFD700).toARGB32(),
@@ -1355,14 +1391,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _remainingRouteAnnot = null;
     }
 
-    // Draw the trip route (pickup→dropoff) so rider can see where they're going.
+    // Prepare trip route (pickup→dropoff) — the dimmed preview stays visible.
+    // The animated illuminated draw fires later when the rider confirms pickup.
     if (_tripRoutePts.isNotEmpty) {
       _routePts = _tripRoutePts;
       _buildSegDist();
       _traveledM = 0;
       _tgtTraveledM = 0;
       _routeDrawDone = false;
-      _startAnimatedRouteDraw();
+      // Do NOT draw yet — deferred to _restartRouteAnimation() on rider confirm
     }
 
     // Ensure dropoff pin is visible

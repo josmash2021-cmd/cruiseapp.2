@@ -134,6 +134,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;  // single gloss gold line (5px)
+  mapbox.PolylineAnnotation? _glowRouteAnnot;       // wide soft glow behind the gold line
   mapbox.PolylineAnnotation? _dimmedRouteAnnot; // dimmed full route (pickup→dropoff)
   mapbox.PolylineAnnotation? _approachAnnot; // dashed line driver→pickup
   final double _cameraBearing = 0;
@@ -189,6 +190,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
   bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
   bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
+
+  // ── Pickup overlay slide-up entrance ──
+  late AnimationController _pickupOverlayCtrl;
+  late Animation<Offset> _pickupOverlaySlide;
 
   // ── More-menu dropdown & cancel overlay ──
   bool _showMoreMenu = false;
@@ -270,6 +275,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+    // Pickup overlay slide-up entrance
+    _pickupOverlayCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _pickupOverlaySlide = Tween<Offset>(
+      begin: const Offset(0, 1.0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _pickupOverlayCtrl, curve: Curves.easeOutCubic));
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
@@ -331,6 +345,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _riderLocSub?.cancel();
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
+    _pickupOverlayCtrl.dispose();
     _routeFadeTimer?.cancel();
     _startRidePhaseTimer?.cancel();
     _cameraFollowTimer?.cancel();
@@ -493,23 +508,32 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   /// Full-screen confirm pickup overlay rendered inline in the Stack so it
   /// always appears — no Navigator.push fragility.
+  /// Slides up from the bottom with a 380ms easeOutCubic entrance.
   Widget _buildInlinePickupOverlay() {
     final vehicleDesc =
         '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
     return Positioned.fill(
-      child: RiderConfirmPickupScreen(
-        driverName: widget.driverName,
-        vehicleDesc: vehicleDesc,
-        firestoreTripId: widget.firestoreTripId,
-        tripId: widget.tripId,
-        driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
-        driverId: widget.driverId,
-        driverRating: widget.driverRating,
-        vehiclePlate: widget.vehiclePlate,
-        onConfirmed: () {
-          _confirmPickupShown = false;
-          if (mounted) setState(() => _showPickupOverlay = false);
-        },
+      child: SlideTransition(
+        position: _pickupOverlaySlide,
+        child: RiderConfirmPickupScreen(
+          driverName: widget.driverName,
+          vehicleDesc: vehicleDesc,
+          firestoreTripId: widget.firestoreTripId,
+          tripId: widget.tripId,
+          driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
+          driverId: widget.driverId,
+          driverRating: widget.driverRating,
+          vehiclePlate: widget.vehiclePlate,
+          onConfirmed: () {
+            _confirmPickupShown = false;
+            if (mounted) {
+              setState(() => _showPickupOverlay = false);
+              // Pop out the pickup pin and reveal the illuminated route
+              _popOutPickupPin();
+              _restartRouteAnimation();
+            }
+          },
+        ),
       ),
     );
   }

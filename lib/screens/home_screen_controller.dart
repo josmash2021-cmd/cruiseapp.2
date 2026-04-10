@@ -994,7 +994,8 @@ extension _HomeScreenController on _HomeScreenState {
 
       // If still searching for a driver — show a pending trip indicator
       // so rider knows their search is still active after reopen/reinstall.
-      if (status == 'searching' || status == 'pending') {
+      // Backend uses 'requested' as the searching status.
+      if (status == 'searching' || status == 'pending' || status == 'requested') {
         final tripId = trip['id'] as int?;
         if (tripId == null || !mounted) return;
         _setState(() => _pendingSearchTripId = tripId);
@@ -1056,7 +1057,7 @@ extension _HomeScreenController on _HomeScreenState {
           verifyStatus == 'completed' || verifyStatus == 'scheduled_accepted' ||
           verifyStatus == 'driver_assigned' || verifyStatus == 'scheduled') { return; }
 
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         slideUpFadeRoute(
           RiderTrackingScreen(
             pickupLatLng: LatLng(pickupLat, pickupLng),
@@ -1086,6 +1087,9 @@ extension _HomeScreenController on _HomeScreenState {
           ),
         ),
       );
+      // Reset so HomeScreen can re-check for an active trip if the screen
+      // was dismissed without trip completion (e.g. system back gesture).
+      _didAutoResumeRide = false;
     } catch (e) {
       debugPrint('[HomeScreen] Backend active trip check failed: $e');
     }

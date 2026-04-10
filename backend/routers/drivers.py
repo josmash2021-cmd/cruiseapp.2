@@ -134,11 +134,14 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         )
         trip_row = active_trip.scalar_one_or_none()
         _driver_active_trip[driver_id] = (_now, trip_row)
-    if trip_row:
+    # Only push real location to trip watchers when driver is online.
+    # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
+    if trip_row and body.is_online:
         asyncio.create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
 
-    # Sync driver location to Firestore (non-blocking)
-    if _HAS_FIRESTORE:
+    # Sync driver location to Firestore (non-blocking).
+    # When going offline, skip lat/lng update so the rider map isn't poisoned with (0,0).
+    if _HAS_FIRESTORE and body.is_online:
         def _sync_fs():
             try:
                 firestore_sync.sync_driver_location(driver_id, body.lat, body.lng, body.is_online)

@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
-    get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer,
+    get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn
 from utils.security import (
@@ -997,7 +997,17 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
         if driver:
             resp["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip()
             resp["driver_photo_url"] = _abs_photo_url(driver.photo_url) or ""
-            resp["driver_rating"] = round(float(getattr(driver, "average_rating", None) or 5.0), 1)
+            # Only expose the driver rating if they have been rated at least once
+            drv_cnt_res = await db.execute(
+                select(func.count(Rating.id)).where(Rating.to_user_id == driver.id)
+            )
+            drv_ratings_count = int(drv_cnt_res.scalar() or 0)
+            resp["driver_ratings_count"] = drv_ratings_count
+            resp["driver_is_new"] = drv_ratings_count == 0
+            if drv_ratings_count > 0 and driver.average_rating is not None:
+                resp["driver_rating"] = round(float(driver.average_rating), 1)
+            else:
+                resp["driver_rating"] = None
 
             # Fetch driver's vehicle — prefer matching vehicle_type
             vq = (

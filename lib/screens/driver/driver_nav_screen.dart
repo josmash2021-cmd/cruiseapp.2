@@ -48,7 +48,8 @@ class DriverNavScreen extends StatefulWidget {
     required this.tripId,
     required this.riderName,
     this.riderPhotoUrl = '',
-    this.riderRating = 4.8,
+    this.riderRating = 0,
+    this.riderIsNew = true,
     this.riderId,
     required this.pickupLatLng,
     required this.dropoffLatLng,
@@ -67,6 +68,7 @@ class DriverNavScreen extends StatefulWidget {
   final String riderName;
   final String riderPhotoUrl;
   final double riderRating;
+  final bool riderIsNew;
   final int? riderId;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
@@ -1188,6 +1190,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           riderName:       widget.riderName,
           riderPhotoUrl:   widget.riderPhotoUrl,
           riderRating:     widget.riderRating,
+          riderIsNew:      widget.riderIsNew,
           riderId:         widget.riderId,
           pickupLatLng:    widget.pickupLatLng,
           dropoffLatLng:   widget.dropoffLatLng,
@@ -1474,6 +1477,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
           riderName:       widget.riderName,
           riderPhotoUrl:   widget.riderPhotoUrl,
           riderRating:     widget.riderRating,
+          riderIsNew:      widget.riderIsNew,
           riderId:         widget.riderId,
           pickupLatLng:    widget.pickupLatLng,
           dropoffLatLng:   widget.dropoffLatLng,
@@ -1551,18 +1555,25 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                             fontSize: Responsive.sp(17),
                             fontWeight: FontWeight.w800)),
                         const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            const Icon(Icons.star_rounded,
-                                color: _gold, size: 14),
-                            const SizedBox(width: 3),
-                            Text(widget.riderRating.toStringAsFixed(1),
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
-                          ],
-                        ),
+                        if (widget.riderIsNew)
+                          Text('New rider',
+                            style: TextStyle(
+                              color: _gold,
+                              fontSize: Responsive.sp(13),
+                              fontWeight: FontWeight.w600))
+                        else
+                          Row(
+                            children: [
+                              const Icon(Icons.star_rounded,
+                                  color: _gold, size: 14),
+                              const SizedBox(width: 3),
+                              Text(widget.riderRating.toStringAsFixed(1),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                       ],
                     ),
                   ),

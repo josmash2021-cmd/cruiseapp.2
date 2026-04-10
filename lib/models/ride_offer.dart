@@ -14,6 +14,8 @@ class RideOffer {
   final String vehicleType;
   final String riderPhotoUrl;
   final double riderRating;
+  final int riderRatingsCount;
+  final bool riderIsNew;
   final DateTime? createdAt;
   final int offerTimeoutSeconds;
   final int? riderId;
@@ -35,7 +37,9 @@ class RideOffer {
     required this.estimatedMinutes,
     required this.vehicleType,
     this.riderPhotoUrl = '',
-    this.riderRating = 5.0,
+    this.riderRating = 0,
+    this.riderRatingsCount = 0,
+    this.riderIsNew = true,
     this.createdAt,
     this.offerTimeoutSeconds = 20,
     this.riderId,
@@ -86,7 +90,10 @@ class RideOffer {
           riderMap?['photo_url']?.toString() ??
           riderMap?['photoUrl']?.toString() ??
           '',
-      riderRating: (json['rider_rating'] as num?)?.toDouble() ?? 5.0,
+      riderRating: (json['rider_rating'] as num?)?.toDouble() ?? 0,
+      riderRatingsCount: (json['rider_ratings_count'] as num?)?.toInt() ?? 0,
+      riderIsNew: json['rider_is_new'] == true ||
+          ((json['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString())
           : null,
@@ -114,6 +121,8 @@ class AcceptedOffer {
   final String riderName;
   final String riderPhotoUrl;
   final double riderRating;
+  final int riderRatingsCount;
+  final bool riderIsNew;
   final String pickupAddress;
   final String dropoffAddress;
 
@@ -125,6 +134,8 @@ class AcceptedOffer {
     required this.riderName,
     this.riderPhotoUrl = '',
     this.riderRating = 0,
+    this.riderRatingsCount = 0,
+    this.riderIsNew = true,
     this.pickupAddress = '',
     this.dropoffAddress = '',
   });

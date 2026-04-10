@@ -177,11 +177,32 @@ async def _send_offer_to_driver(
     _pending_cache.pop(driver.id, None)
     estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
 
+    # Compute the rider's real rating + ratings count so the driver app can
+    # show "New rider" for first-time users instead of a fake 5.0 default.
+    rider_rating_val = None
+    rider_ratings_count = 0
+    if trip.rider_id:
+        try:
+            cnt_res = await db.execute(
+                select(func.count(Rating.id)).where(Rating.to_user_id == trip.rider_id)
+            )
+            rider_ratings_count = int(cnt_res.scalar() or 0)
+            if rider_ratings_count > 0:
+                ur = await db.execute(select(User).where(User.id == trip.rider_id))
+                _rider = ur.scalar_one_or_none()
+                if _rider and _rider.average_rating is not None:
+                    rider_rating_val = round(float(_rider.average_rating), 2)
+        except Exception as _re:
+            logging.warning("[Dispatch] rider rating lookup failed: %s", _re)
+
     asyncio.create_task(event_bus.push_driver_offer(driver.id, [{
         "offer_id": offer.id,
         "rider_name": rider_name,
         "rider_phone": rider_phone,
         "rider_photo_url": rider_photo,
+        "rider_rating": rider_rating_val,
+        "rider_ratings_count": rider_ratings_count,
+        "rider_is_new": rider_ratings_count == 0,
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
         **_trip_dict(trip),

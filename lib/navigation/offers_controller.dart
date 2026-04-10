@@ -81,6 +81,8 @@ class OffersController {
           vehicleType: offer.vehicleType,
           riderPhotoUrl: offer.riderPhotoUrl,
           riderRating: offer.riderRating,
+          riderRatingsCount: offer.riderRatingsCount,
+          riderIsNew: offer.riderIsNew,
           riderId: offer.riderId,
           tripId: offer.tripId,
         );
@@ -173,6 +175,8 @@ class OffersController {
         riderName: offer.riderName,
         riderPhotoUrl: offer.riderPhotoUrl,
         riderRating: offer.riderRating,
+        riderRatingsCount: offer.riderRatingsCount,
+        riderIsNew: offer.riderIsNew,
         pickupAddress: offer.pickupAddress,
         dropoffAddress: offer.dropoffAddress,
       );

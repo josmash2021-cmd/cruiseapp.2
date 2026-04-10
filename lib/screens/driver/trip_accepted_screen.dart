@@ -27,6 +27,7 @@ class TripAcceptedScreen extends StatefulWidget {
     required this.riderName,
     required this.riderInitials,
     required this.riderRating,
+    this.riderIsNew = true,
     required this.pickupAddress,
     required this.pickupLatLng,
     required this.dropoffLatLng,
@@ -49,6 +50,7 @@ class TripAcceptedScreen extends StatefulWidget {
   final String? riderPhotoUrl;
   final bool riderVerified;
   final double riderRating;
+  final bool riderIsNew;
   final int? riderId;
   final String pickupAddress;
   final LatLng pickupLatLng;
@@ -411,6 +413,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
           riderName: widget.riderName,
           riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
           riderRating: widget.riderRating,
+          riderIsNew: widget.riderIsNew,
           riderId: widget.riderId,
           pickupLatLng: widget.pickupLatLng,
           dropoffLatLng: widget.dropoffLatLng,
@@ -617,16 +620,27 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.star_rounded,
-                              color: _gold, size: 14),
-                          const SizedBox(width: 4),
-                          Text(
-                            widget.riderRating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
+                          if (widget.riderIsNew)
+                            const Text(
+                              'New rider',
+                              style: TextStyle(
+                                color: _gold,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          else ...[
+                            const Icon(Icons.star_rounded,
+                                color: _gold, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              widget.riderRating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
+                          ],
                           const SizedBox(width: 12),
                           Text(
                             '${widget.etaMinutes} min · ${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',

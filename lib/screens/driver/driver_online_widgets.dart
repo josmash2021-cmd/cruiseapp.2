@@ -929,7 +929,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const mutedGray = Color(0xFF9A9A9A);
 
     // Parse offer data
-    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
+    final riderIsNew = offer['rider_is_new'] == true ||
+        ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final rawPickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
@@ -1186,16 +1188,27 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.star_rounded, color: goldAccent, size: 13),
-            const SizedBox(width: 3),
-            Text(
-              rating.toStringAsFixed(1),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            if (riderIsNew)
+              Text(
+                'New rider',
+                style: TextStyle(
+                  color: goldAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            else ...[
+              Icon(Icons.star_rounded, color: goldAccent, size: 13),
+              const SizedBox(width: 3),
+              Text(
+                rating.toStringAsFixed(1),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
+            ],
             const SizedBox(width: 12),
             Icon(Icons.access_time_rounded, color: goldAccent, size: 12),
             const SizedBox(width: 3),
@@ -1552,7 +1565,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final offer = _previewingOffer!;
     final name = (offer['rider_name'] ?? 'Rider') as String;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 4.8;
+    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
+    final riderIsNew = offer['rider_is_new'] == true ||
+        ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final rawPickupAddr2 = (offer['pickup_address'] ?? 'Pickup') as String;
     final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
@@ -1659,19 +1674,28 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                               ),
                             ),
                             const SizedBox(height: 5),
-                            Row(
-                              children: [
-                                const Icon(Icons.star_rounded, color: _gold, size: 13),
-                                const SizedBox(width: 3),
-                                Text(
-                                  rating.toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    color: _gold, fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                            if (riderIsNew)
+                              const Text(
+                                'New rider',
+                                style: TextStyle(
+                                  color: _gold, fontSize: 12,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ],
-                            ),
+                              )
+                            else
+                              Row(
+                                children: [
+                                  const Icon(Icons.star_rounded, color: _gold, size: 13),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    rating.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      color: _gold, fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ),

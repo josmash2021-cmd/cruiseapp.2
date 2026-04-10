@@ -52,7 +52,8 @@ class DriverTripAcceptScreen extends StatefulWidget {
     required this.tripId,
     required this.riderName,
     this.riderPhotoUrl = '',
-    this.riderRating = 4.8,
+    this.riderRating = 0,
+    this.riderIsNew = true,
     required this.pickupLatLng,
     required this.dropoffLatLng,
     required this.pickupAddress,
@@ -77,6 +78,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final String riderPhotoUrl;
   final int? riderId;
   final double riderRating;
+  final bool riderIsNew;
   final LatLng pickupLatLng;
   final LatLng dropoffLatLng;
   final String pickupAddress;
@@ -2145,12 +2147,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                                 color: Colors.white, fontSize: Responsive.sp(15),
                                 fontWeight: FontWeight.w700)),
                             const SizedBox(height: 4),
-                            _stars(widget.riderRating),
-                            const SizedBox(height: 3),
-                            Text('${widget.riderRating.toStringAsFixed(1)} ${S.of(context).rating.toLowerCase()}',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.42),
-                                fontSize: Responsive.sp(11))),
+                            if (widget.riderIsNew)
+                              Text('New rider',
+                                style: TextStyle(
+                                  color: const Color(0xFFE8C547),
+                                  fontSize: Responsive.sp(11),
+                                  fontWeight: FontWeight.w600))
+                            else ...[
+                              _stars(widget.riderRating),
+                              const SizedBox(height: 3),
+                              Text('${widget.riderRating.toStringAsFixed(1)} ${S.of(context).rating.toLowerCase()}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.42),
+                                  fontSize: Responsive.sp(11))),
+                            ],
                           ],
                         ),
                       ),

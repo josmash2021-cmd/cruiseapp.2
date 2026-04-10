@@ -1346,7 +1346,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     if (!mounted) return;
     final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-    final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 4.8;
+    final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
+    final riderRatingsCount = (r['rider_ratings_count'] as num?)?.toInt() ?? 0;
+    final riderIsNew = r['rider_is_new'] == true || riderRatingsCount == 0;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final navFuture = Navigator.of(context).push<String>(
       smoothFadeRoute(
@@ -1356,6 +1358,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           riderInitials:  riderInit,
           riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
           riderRating:    riderRating,
+          riderIsNew:     riderIsNew,
           riderId:        int.tryParse(_riderId),
           pickupLatLng:   _pickupLL,
           dropoffLatLng:  _dropoffLL,

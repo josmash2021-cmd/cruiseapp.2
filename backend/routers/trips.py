@@ -136,7 +136,21 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["rider_name"] = f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "Rider"
         data["rider_phone"] = (rider.phone or "") if rider else ""
         data["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-        data["rider_rating"] = float(getattr(rider, "average_rating", None) or 4.8) if rider else 4.8
+        # Only expose a rating if the rider has actually been rated before.
+        # New riders return null + ratings_count=0 so the driver app shows
+        # "New rider" instead of a fake default 5.0/4.8.
+        rider_rating_val = None
+        rider_ratings_count = 0
+        if rider:
+            cnt_res = await db.execute(
+                select(func.count(Rating.id)).where(Rating.to_user_id == rider.id)
+            )
+            rider_ratings_count = int(cnt_res.scalar() or 0)
+            if rider_ratings_count > 0 and rider.average_rating is not None:
+                rider_rating_val = round(float(rider.average_rating), 2)
+        data["rider_rating"] = rider_rating_val
+        data["rider_ratings_count"] = rider_ratings_count
+        data["rider_is_new"] = rider_ratings_count == 0
         return data
     else:
         result = await db.execute(
@@ -1211,6 +1225,21 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
                         logging.warning("[Rating] Firestore sync after rating failed: %s", fs_err)
         except Exception as e:
             logging.warning("[Rating] avg_rating update failed for driver %s: %s", trip.driver_id, e)
+
+    # Mirror: if a driver rated the rider, recompute the rider's average_rating
+    if to_user_id == trip.rider_id and trip.rider_id:
+        try:
+            avg_result = await db.execute(
+                select(func.avg(Rating.stars)).where(Rating.to_user_id == trip.rider_id)
+            )
+            avg_rating = avg_result.scalar()
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_result.scalar_one_or_none()
+            if rider and avg_rating is not None:
+                rider.average_rating = round(float(avg_rating), 2)
+                await db.commit()
+        except Exception as e:
+            logging.warning("[Rating] avg_rating update failed for rider %s: %s", trip.rider_id, e)
 
     return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount}
 

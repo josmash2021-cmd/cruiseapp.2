@@ -53,10 +53,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Future<void> _cleanupMapAnnotations() async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
-      if (_glowRouteAnnot != null) {
-        try { await polyMgr.delete(_glowRouteAnnot!); } catch (_) {}
-        _glowRouteAnnot = null;
-      }
       if (_remainingRouteAnnot != null) {
         try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
         _remainingRouteAnnot = null;
@@ -1113,11 +1109,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
 
-    // Delete any existing route annotations so we draw fresh
-    if (_glowRouteAnnot != null) {
-      try { await polyMgr.delete(_glowRouteAnnot!); } catch (_) {}
-      _glowRouteAnnot = null;
-    }
+    // Delete any existing route annotation so we draw fresh
     if (_remainingRouteAnnot != null) {
       try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
       _remainingRouteAnnot = null;
@@ -1192,11 +1184,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       updating = true;
       try {
         _remainingRouteAnnot!.geometry = geom;
-        // Animate glow layer in sync (best-effort, non-blocking)
-        if (_glowRouteAnnot != null) {
-          _glowRouteAnnot!.geometry = geom;
-          polyMgr.update(_glowRouteAnnot!).catchError((_) {});
-        }
         polyMgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
       } catch (_) { updating = false; }
 
@@ -1205,23 +1192,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         final fullGeom = mapbox.LineString(coordinates: allCoords);
         _remainingRouteAnnot!.geometry = fullGeom;
         polyMgr.update(_remainingRouteAnnot!).catchError((_) {});
-        if (_glowRouteAnnot != null) {
-          _glowRouteAnnot!.geometry = fullGeom;
-          polyMgr.update(_glowRouteAnnot!).catchError((_) {});
-        }
         _routeDrawTicker?.stop();
       }
     })..start();
   }
 
   Future<void> _createRouteLayers(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
-    // Glow layer: wide soft gold halo that creates the illuminating effect
-    try { _glowRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFFFFD700).withValues(alpha: 0.28).toARGB32(),
-      lineWidth: 16.0, lineJoin: mapbox.LineJoin.ROUND,
-    )); } catch (_) {}
-    // Main bright gold line on top
+    // Single gold line — clean, no glow
     try { _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFFFFD700).toARGB32(),

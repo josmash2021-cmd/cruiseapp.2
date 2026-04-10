@@ -134,7 +134,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;  // single gloss gold line (5px)
-  mapbox.PolylineAnnotation? _glowRouteAnnot;       // wide soft glow behind the gold line
   mapbox.PolylineAnnotation? _dimmedRouteAnnot; // dimmed full route (pickup→dropoff)
   mapbox.PolylineAnnotation? _approachAnnot; // dashed line driver→pickup
   final double _cameraBearing = 0;

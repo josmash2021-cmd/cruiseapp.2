@@ -308,6 +308,54 @@ async def create_web_checkout(request: Request):
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
+from fastapi.responses import RedirectResponse
+
+@router.get("/payments/web/book")
+async def web_book_redirect(
+    amount: int = Query(..., description="Amount in cents"),
+    key: str = Query(..., description="WEB_CHECKOUT_KEY"),
+    description: str = Query("Cruise Ride"),
+    currency: str = Query("usd"),
+    success_url: str = Query("https://ridecruise.app/success"),
+    cancel_url: str = Query("https://ridecruise.app/cancel"),
+    email: str = Query(None),
+):
+    """GET endpoint that creates a Stripe Checkout Session and redirects
+    the user directly to Stripe's payment page. Designed for Shopify —
+    just link to this URL, no JavaScript needed."""
+    if not WEB_CHECKOUT_KEY or key != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+    if not _HAS_STRIPE or not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured")
+    if amount <= 0 or amount > 100000:
+        raise HTTPException(400, "Invalid amount")
+
+    try:
+        session_params = {
+            "payment_method_types": ["card"],
+            "line_items": [{
+                "price_data": {
+                    "currency": currency,
+                    "unit_amount": amount,
+                    "product_data": {"name": description},
+                },
+                "quantity": 1,
+            }],
+            "mode": "payment",
+            "success_url": success_url + "?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": cancel_url,
+        }
+        if email:
+            session_params["customer_email"] = email
+
+        session = _stripe_mod.checkout.Session.create(**session_params)
+        logging.info("[WebBook] Redirect to Stripe: %s (amount=%d)", session.id, amount)
+        return RedirectResponse(url=session.url, status_code=303)
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[WebBook] Stripe error: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
 # -------------------------------------------------------
 #  STRIPE WEBHOOK
 # -------------------------------------------------------

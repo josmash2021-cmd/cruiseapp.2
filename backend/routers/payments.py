@@ -311,6 +311,54 @@ async def create_web_checkout(request: Request):
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
+# -------------------------------------------------------
+#  WEB PAYMENT INTENT — for Apple Pay / Google Pay native sheets
+# -------------------------------------------------------
+
+@router.post("/payments/web/create-intent")
+async def create_web_payment_intent(request: Request):
+    """Create a Stripe PaymentIntent for native Apple Pay / Google Pay.
+    Returns client_secret so Stripe.js can confirm the payment on the frontend.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid web checkout key")
+
+    if not _HAS_STRIPE or not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured")
+
+    body = await request.json()
+    amount = body.get("amount", 0)
+    currency = body.get("currency", "usd")
+    description = body.get("description", "Cruise Ride")
+    metadata = body.get("metadata", {})
+
+    if amount <= 0 or amount > 100000:
+        raise HTTPException(400, "Invalid amount")
+
+    try:
+        intent = _stripe_mod.PaymentIntent.create(
+            amount=amount,
+            currency=currency,
+            automatic_payment_methods={"enabled": True},
+            description=description,
+            metadata=metadata,
+        )
+        logging.info("[WebPayIntent] Created: %s (amount=%d %s)", intent.id, amount, currency)
+        return {
+            "client_secret": intent.client_secret,
+            "payment_intent_id": intent.id,
+        }
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[WebPayIntent] Stripe error: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
 from fastapi.responses import RedirectResponse
 
 # Rate limiting for web checkout — max 10 requests per IP per minute

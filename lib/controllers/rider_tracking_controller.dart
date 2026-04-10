@@ -55,38 +55,25 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
+  /// Primary status channel — lightweight raw-SQL poll, no ORM joins, no
+  /// Firestore dependency. This is the ONE channel that must always work.
   Future<void> _pollBackendTripStatus() async {
     final tripId = widget.tripId;
     if (!mounted || tripId == null || _phase == _TrackPhase.completed) return;
     try {
-      final data = await ApiService.getDispatchStatus(tripId);
-      if (!mounted || data.isEmpty) return;
+      final data = await ApiService.pollTripStatus(tripId);
+      if (!mounted || data == null) return;
       final status = (data['status']?.toString() ?? '').trim().toLowerCase();
-      if (status.isEmpty || status == 'error') return;
+      if (status.isEmpty || status == 'not_found' || status == 'unknown') return;
 
-      final tripData = data['trip'];
-      if (tripData is Map) {
-        final merged = Map<String, dynamic>.from(tripData.cast<String, dynamic>());
-        merged.putIfAbsent('status', () => data['status']);
-        if (status == 'completed' ||
-            status == 'cancelled' ||
-            status == 'canceled' ||
-            status == 'arrived' ||
-            status == 'driver_arrived' ||
-            status == 'in_trip' ||
-            status == 'in_progress') {
-          debugPrint('[RiderTracking] Backend poll found status=$status');
-          _onTripStatusUpdate(merged);
-        }
-        return;
-      }
-
-      if (status == 'completed' || status == 'cancelled' || status == 'canceled') {
-        debugPrint('[RiderTracking] Backend poll found terminal status=$status');
-        _onTripStatusUpdate({'status': status});
+      if (status == 'completed' || status == 'cancelled' || status == 'canceled' ||
+          status == 'arrived' || status == 'driver_arrived' ||
+          status == 'in_trip' || status == 'in_progress') {
+        debugPrint('[RiderTracking] Poll found status=$status');
+        _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
       }
     } catch (e) {
-      debugPrint('[RiderTracking] Backend poll error: $e');
+      debugPrint('[RiderTracking] Poll error: $e');
     }
   }
 

@@ -2384,6 +2384,22 @@ class ApiService {
   //  ACTIVE TRIP
   // ═══════════════════════════════════════════════════════
 
+  /// Ultra-lightweight trip status poll — raw SQL on backend, no ORM joins.
+  /// Primary channel for rider tracking screen status updates.
+  static Future<Map<String, dynamic>?> pollTripStatus(int tripId) async {
+    final h = await _authHeaders();
+    try {
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/trips/$tripId/poll'), headers: h)
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) return body;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Fetch the current user's active (in-progress) trip, if any.
   /// Returns null if no active trip exists.
   static Future<Map<String, dynamic>?> getActiveTrip() async {

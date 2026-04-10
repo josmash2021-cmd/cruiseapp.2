@@ -105,7 +105,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         "is_online": body.is_online, "ts": _now,
     }
 
-    # Update DB (lightweight â€" no SELECT needed, use the authenticated user object)
+    # Update DB (lightweight - no SELECT needed, use the authenticated user object)
     # Throttle DB writes: persist at most every 3s per driver (in-memory is always fresh)
     _last_write = _driver_last_db_write.get(driver_id, 0.0)
     if (_now - _last_write) >= _DB_WRITE_THROTTLE:
@@ -395,7 +395,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 amount=amount_cents,
                 currency="usd",
                 destination=user.stripe_connect_id,
-                description=f"Cruise driver payout â€" cashout #{cashout.id}",
+                description=f"Cruise driver payout - cashout #{cashout.id}",
                 metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
             )
             transfer_id = transfer["id"]
@@ -407,7 +407,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
             await db.commit()
             await db.refresh(cashout)
-            logging.info("[Cashout] Stripe Transfer %s created for driver %s â€" $%.2f", transfer_id, user.id, body.amount)
+            logging.info("[Cashout] Stripe Transfer %s created for driver %s - $%.2f", transfer_id, user.id, body.amount)
         except Exception as _se:
             stripe_error = str(_se)[:200]
             logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
@@ -485,7 +485,7 @@ async def exchange_plaid_token(request: Request, user: User = Depends(_get_curre
     institution = body.get("institution_name", "Bank")
     mask = body.get("account_mask", "")
     subtype = body.get("account_subtype", "checking")
-    display = f"{institution} {subtype.capitalize()} {'â€¢â€¢â€¢â€¢' + mask if mask else ''}".strip()
+    display = f"{institution} {subtype.capitalize()} {'****' + mask if mask else ''}".strip()
     pm = RiderPaymentMethod(user_id=user.id, method_type="bank_account", display_name=display)
     db.add(pm)
     await db.commit()

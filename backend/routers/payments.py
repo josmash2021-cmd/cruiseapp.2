@@ -966,7 +966,29 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
     if not trip:
         raise HTTPException(404, "Booking not found")
 
-    resp: dict = {"status": trip.status, "booking_id": trip.id}
+    # Normalise internal trip states into the simple vocabulary the
+    # Shopify widget understands (requested / accepted / in_progress /
+    # completed / cancelled). The widget flips to the "Driver Found"
+    # screen as soon as it sees "accepted" or "driver_assigned".
+    _raw = (trip.status or "").lower()
+    if _raw in ("requested", "pending", "searching"):
+        _web_status = "requested"
+    elif _raw in ("driver_en_route", "driver_enroute", "accepted", "driver_assigned", "arrived", "arrived_at_pickup"):
+        _web_status = "accepted"
+    elif _raw in ("in_trip", "in_progress", "on_trip"):
+        _web_status = "in_progress"
+    elif _raw in ("completed", "ended"):
+        _web_status = "completed"
+    elif _raw in ("canceled", "cancelled", "no_driver"):
+        _web_status = "cancelled"
+    else:
+        _web_status = _raw or "requested"
+
+    resp: dict = {
+        "status": _web_status,
+        "raw_status": trip.status,
+        "booking_id": trip.id,
+    }
 
     if trip.driver_id:
         # Fetch driver user

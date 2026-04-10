@@ -55,13 +55,23 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Primary status channel — lightweight raw-SQL poll, no ORM joins, no
-  /// Firestore dependency. This is the ONE channel that must always work.
+  /// Primary status channel — tries lightweight poll first, falls back to
+  /// getActiveTrip if the new endpoint isn't deployed yet.
   Future<void> _pollBackendTripStatus() async {
     final tripId = widget.tripId;
     if (!mounted || tripId == null || _phase == _TrackPhase.completed) return;
     try {
-      final data = await ApiService.pollTripStatus(tripId);
+      // Path 1: lightweight raw-SQL endpoint (fastest, no ORM)
+      var data = await ApiService.pollTripStatus(tripId);
+
+      // Path 2: fallback to /trips/active if poll endpoint not deployed
+      if (data == null && mounted) {
+        final active = await ApiService.getActiveTrip();
+        if (active != null && active['id'] == tripId) {
+          data = {'status': active['status'], 'driver_id': active['driver_id']};
+        }
+      }
+
       if (!mounted || data == null) return;
       final status = (data['status']?.toString() ?? '').trim().toLowerCase();
       if (status.isEmpty || status == 'not_found' || status == 'unknown') return;
@@ -69,7 +79,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (status == 'completed' || status == 'cancelled' || status == 'canceled' ||
           status == 'arrived' || status == 'driver_arrived' ||
           status == 'in_trip' || status == 'in_progress') {
-        debugPrint('[RiderTracking] Poll found status=$status');
+        debugPrint('[RiderTracking] Poll → status=$status');
         _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
       }
     } catch (e) {

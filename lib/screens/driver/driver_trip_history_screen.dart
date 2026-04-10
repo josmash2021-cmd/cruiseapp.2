@@ -64,24 +64,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
             backgroundColor: _surface,
             pinned: true,
             expandedHeight: 110,
-            leading: IconButton(
-              icon: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.arrow_back_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
+            automaticallyImplyLeading: false,
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
+              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
               title: Text(
                 S.of(context).tripHistoryTitle,
                 style: const TextStyle(

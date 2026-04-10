@@ -9,14 +9,26 @@ from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn
-from utils.security import _get_current_user, _verify_api_key, _require_dispatch_auth
-from utils.helpers import _haversine, _abs_photo_url
+from utils.security import (
+    _get_current_user, _verify_api_key, _require_dispatch_auth,
+    pwd, _create_token, _create_refresh_token, _create_login_token,
+    _check_login_throttle, _record_login_failure, _clear_login_failures,
+    JWT_SECRET, JWT_ALGORITHM,
+)
+from utils.helpers import _haversine, _abs_photo_url, _user_dict
 from services.fcm_service import _send_fcm_push
+from sqlalchemy.exc import IntegrityError
+from jose import jwt, JWTError
 from config import (
     STRIPE_SECRET, _HAS_STRIPE, _stripe_mod, STRIPE_WEBHOOK_SECRET,
     PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_SANDBOX,
     PAYPAL_CLIENT_SECRET, PAYPAL_MODE,
+    firestore_sync, _HAS_FIRESTORE,
 )
+try:
+    from utils.n8n_trigger import trigger_welcome_email
+except ImportError:
+    trigger_welcome_email = None
 
 router = APIRouter()
 
@@ -958,4 +970,432 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
                 resp["vehicle_color"] = vehicle.color or ""
 
     return resp
+
+
+# -------------------------------------------------------
+#  WEB AUTH — Register / Login / Social (for Shopify widget)
+#  Uses WEB_CHECKOUT_KEY instead of HMAC-based _verify_api_key
+# -------------------------------------------------------
+
+@router.post("/auth/web/check-exists")
+async def web_check_exists(request: Request, db: AsyncSession = Depends(get_db)):
+    """Check if email or phone already exists (web-safe, no HMAC needed)."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    identifier = (body.get("identifier") or "").strip().lower()
+    role = body.get("role", "rider")
+    if not identifier:
+        raise HTTPException(400, "identifier required")
+    if "@" in identifier:
+        r = await db.execute(
+            select(User).where(func.lower(User.email) == identifier, User.role == role)
+            .where(User.status.notin_(["deleted", "pending_deletion"]))
+        )
+    else:
+        r = await db.execute(
+            select(User).where(User.phone == identifier, User.role == role)
+            .where(User.status.notin_(["deleted", "pending_deletion"]))
+        )
+    return {"exists": r.scalar_one_or_none() is not None}
+
+
+@router.post("/auth/web/register")
+async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
+    """Register a new rider from the Shopify widget."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    first_name = (body.get("first_name") or "").strip()
+    last_name = (body.get("last_name") or "").strip()
+    email = (body.get("email") or "").strip().lower() or None
+    phone = (body.get("phone") or "").strip() or None
+    password = body.get("password", "")
+    role = "rider"
+
+    if not first_name or not last_name:
+        raise HTTPException(400, "first_name and last_name required")
+    if not email and not phone:
+        raise HTTPException(400, "email or phone required")
+    if len(password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    # Check duplicates
+    if email:
+        r = await db.execute(select(User).where(func.lower(User.email) == email, User.role == role))
+        existing = r.scalar_one_or_none()
+        if existing:
+            if existing.status in ("deleted", "pending_deletion"):
+                existing.first_name = first_name
+                existing.last_name = last_name
+                existing.password_hash = pwd.hash(password)
+                existing.status = "active"
+                existing.deletion_requested_at = None
+                await db.commit()
+                await db.refresh(existing)
+                token = _create_token(existing.id, role=existing.role, status="active")
+                return {"access_token": token, "token_type": "bearer", "user": _user_dict(existing)}
+            raise HTTPException(409, "Email already registered")
+
+    if phone:
+        r = await db.execute(select(User).where(User.phone == phone, User.role == role))
+        existing = r.scalar_one_or_none()
+        if existing:
+            if existing.status in ("deleted", "pending_deletion"):
+                existing.first_name = first_name
+                existing.last_name = last_name
+                existing.password_hash = pwd.hash(password)
+                existing.status = "active"
+                existing.deletion_requested_at = None
+                await db.commit()
+                await db.refresh(existing)
+                token = _create_token(existing.id, role=existing.role, status="active")
+                return {"access_token": token, "token_type": "bearer", "user": _user_dict(existing)}
+            raise HTTPException(409, "Phone already registered")
+
+    user = User(
+        first_name=first_name, last_name=last_name,
+        email=email, phone=phone,
+        password_hash=pwd.hash(password),
+        role=role,
+    )
+    db.add(user)
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Email or phone already registered")
+
+    # Handle profile photo upload (base64 data URL from wizard)
+    photo_data = body.get("photo_data") or ""
+    if photo_data and photo_data.startswith("data:image"):
+        try:
+            # Parse "data:image/jpeg;base64,XXXX" format
+            header, b64 = photo_data.split(",", 1)
+            if len(b64) > 4 * 1024 * 1024:
+                logging.warning("[WebAuth] Photo data too large for user %d", user.id)
+            else:
+                photo_bytes = base64.b64decode(b64, validate=True)
+                if len(photo_bytes) <= 3 * 1024 * 1024:
+                    if photo_bytes[:2] == b'\xff\xd8':
+                        ext, content_type = "jpg", "image/jpeg"
+                    elif photo_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                        ext, content_type = "png", "image/png"
+                    else:
+                        ext, content_type = None, None
+
+                    if ext and _HAS_FIRESTORE and firestore_sync:
+                        storage_path = f"photos/user_{user.id}/profile.{ext}"
+                        firebase_url = firestore_sync.upload_to_firebase_storage(
+                            data=photo_bytes, path=storage_path, content_type=content_type
+                        )
+                        if firebase_url:
+                            user.photo_url = firebase_url
+                            await db.commit()
+                            await db.refresh(user)
+                            logging.info("[WebAuth] Photo uploaded for user %d: %s", user.id, firebase_url)
+        except Exception as _photo_err:
+            logging.warning("[WebAuth] Photo upload failed for user %d: %s", user.id, _photo_err)
+
+    # Sync new user to Firestore (same as mobile app register)
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            firestore_sync.sync_client(
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                phone=user.phone or "",
+                email=user.email,
+                photo_url=user.photo_url,
+                role=user.role,
+                created_at=user.created_at,
+                is_verified=False,
+            )
+        except Exception as _fs_err:
+            logging.warning("[WebAuth] Firestore sync failed: %s", _fs_err)
+
+    # Trigger welcome email via n8n (same as mobile app register)
+    if trigger_welcome_email and user.email:
+        try:
+            trigger_welcome_email(user.email, user.first_name)
+        except Exception as _n8n_err:
+            logging.warning("[WebAuth] Welcome email trigger failed: %s", _n8n_err)
+
+    token = _create_token(user.id, role=user.role, status="active")
+    refresh = _create_refresh_token(user.id)
+    logging.info("[WebAuth] New rider registered via Shopify: %s (id=%d)", email or phone, user.id)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+
+@router.post("/auth/web/login")
+async def web_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """Login from the Shopify widget — returns login_token for complete-login step."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    identifier = (body.get("identifier") or "").strip()
+    password = body.get("password", "")
+    role = body.get("role", "rider")
+
+    if not identifier or not password:
+        raise HTTPException(400, "identifier and password required")
+
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_login_throttle(client_ip):
+        raise HTTPException(429, "Too many attempts. Try again in a few minutes.")
+
+    # Find user by email or phone
+    if "@" in identifier:
+        r = await db.execute(
+            select(User).where(func.lower(User.email) == identifier.lower(), User.role == role)
+        )
+    else:
+        r = await db.execute(select(User).where(User.phone == identifier, User.role == role))
+    user = r.scalar_one_or_none()
+
+    if not user or not pwd.verify(password, user.password_hash):
+        _record_login_failure(client_ip)
+        raise HTTPException(401, "Invalid credentials")
+
+    if user.status in ("deleted", "pending_deletion"):
+        raise HTTPException(403, "Account has been deleted")
+
+    _clear_login_failures(client_ip)
+    login_token = _create_login_token(user.id)
+    return {"login_token": login_token, "method": "web"}
+
+
+@router.post("/auth/web/complete-login")
+async def web_complete_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """Exchange login_token for full JWT (web flow skips OTP)."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    login_token = body.get("login_token", "")
+    if not login_token:
+        raise HTTPException(400, "login_token required")
+
+    try:
+        payload = jwt.decode(login_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "login":
+            raise HTTPException(401, "Invalid token type")
+        user_id = int(payload.get("sub", 0))
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired login token")
+
+    r = await db.execute(select(User).where(User.id == user_id))
+    user = r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    refresh = _create_refresh_token(user.id)
+    logging.info("[WebAuth] Login complete: user %d", user.id)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+
+@router.post("/auth/web/social")
+async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
+    """Google / Apple social auth from the Shopify widget."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    provider = body.get("provider", "")
+    id_token_str = body.get("id_token", "")
+    role = body.get("role", "rider")
+    login_only = body.get("login_only", False)
+    first_name = body.get("first_name", "")
+    last_name = body.get("last_name", "")
+
+    if provider not in ("google", "apple") or not id_token_str:
+        raise HTTPException(400, "provider and id_token required")
+
+    email = None
+    # Verify token based on provider
+    if provider == "google":
+        try:
+            import requests as _req
+            # Verify Google ID token via Google's tokeninfo endpoint
+            g = _req.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token_str}", timeout=10)
+            if g.status_code != 200:
+                raise HTTPException(401, "Invalid Google token")
+            g_data = g.json()
+            email = g_data.get("email", "").lower()
+            if not first_name:
+                first_name = g_data.get("given_name", "")
+            if not last_name:
+                last_name = g_data.get("family_name", "")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error("[WebSocial] Google verify error: %s", e)
+            raise HTTPException(401, "Could not verify Google token")
+
+    elif provider == "apple":
+        try:
+            # Decode Apple ID token header to get key ID
+            header = jwt.get_unverified_header(id_token_str)
+            kid = header.get("kid")
+            import requests as _req
+            apple_keys = _req.get("https://appleid.apple.com/auth/keys", timeout=10).json()
+            key_data = next((k for k in apple_keys.get("keys", []) if k["kid"] == kid), None)
+            if not key_data:
+                raise HTTPException(401, "Apple key not found")
+            from jose import jwk
+            public_key = jwk.construct(key_data, algorithm="RS256")
+            decoded = jwt.decode(id_token_str, public_key, algorithms=["RS256"], audience=body.get("client_id", ""))
+            email = decoded.get("email", "").lower()
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error("[WebSocial] Apple verify error: %s", e)
+            raise HTTPException(401, "Could not verify Apple token")
+
+    if not email:
+        raise HTTPException(400, "Could not extract email from token")
+
+    # Find or create user
+    r = await db.execute(
+        select(User).where(func.lower(User.email) == email, User.role == role)
+    )
+    user = r.scalar_one_or_none()
+
+    if user:
+        if user.status in ("deleted", "pending_deletion"):
+            user.status = "active"
+            user.deletion_requested_at = None
+            await db.commit()
+            await db.refresh(user)
+        token = _create_token(user.id, role=user.role, status=user.status or "active")
+        refresh = _create_refresh_token(user.id)
+        return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+    if login_only:
+        raise HTTPException(401, "No account found. Please create an account first.")
+
+    # Create new user
+    user = User(
+        first_name=first_name or "User",
+        last_name=last_name or "",
+        email=email,
+        password_hash=pwd.hash(secrets.token_hex(16)),
+        role=role,
+    )
+    db.add(user)
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Account already exists")
+
+    token = _create_token(user.id, role=user.role, status="active")
+    refresh = _create_refresh_token(user.id)
+    logging.info("[WebAuth] Social %s register: %s (id=%d)", provider, email, user.id)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+
+# -------------------------------------------------------
+#  WEB DEFAULT PAYMENT METHOD
+# -------------------------------------------------------
+
+def _decode_user_from_token(token: str) -> int:
+    """Extract user_id from a JWT access token. Returns 0 if invalid."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return int(payload.get("sub", 0))
+    except Exception:
+        return 0
+
+
+@router.post("/auth/web/set-default-payment")
+async def web_set_default_payment(request: Request, db: AsyncSession = Depends(get_db)):
+    """Save the user's chosen payment method as default.
+    Authenticated via the user's JWT access token (not WEB_CHECKOUT_KEY)."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    user_id = _decode_user_from_token(token)
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+
+    body = await request.json()
+    method_type = (body.get("method_type") or "").strip()  # 'apple_pay','google_pay','card','cash','test_mode'
+    display_name = (body.get("display_name") or method_type.replace("_", " ").title()).strip()
+    stripe_pm_id = body.get("stripe_pm_id") or None
+
+    if not method_type:
+        raise HTTPException(400, "method_type required")
+
+    r = await db.execute(select(User).where(User.id == user_id))
+    user = r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    # Clear any existing defaults
+    existing = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user_id, RiderPaymentMethod.is_default == True)
+    )
+    for m in existing.scalars().all():
+        m.is_default = False
+
+    # Find or create this method
+    lookup = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user_id,
+            RiderPaymentMethod.method_type == method_type
+        )
+    )
+    pm = lookup.scalar_one_or_none()
+    if pm:
+        pm.is_default = True
+        pm.display_name = display_name
+        if stripe_pm_id:
+            pm.stripe_pm_id = stripe_pm_id
+    else:
+        pm = RiderPaymentMethod(
+            user_id=user_id,
+            method_type=method_type,
+            display_name=display_name,
+            stripe_pm_id=stripe_pm_id,
+            is_default=True,
+        )
+        db.add(pm)
+
+    await db.commit()
+    logging.info("[WebAuth] Default payment set for user %d: %s", user_id, method_type)
+    return {"ok": True, "method_type": method_type}
+
+
+@router.get("/auth/web/default-payment")
+async def web_get_default_payment(request: Request, db: AsyncSession = Depends(get_db)):
+    """Return the user's default payment method (if any)."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    user_id = _decode_user_from_token(token)
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+
+    r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user_id,
+            RiderPaymentMethod.is_default == True
+        ).order_by(RiderPaymentMethod.id.desc()).limit(1)
+    )
+    pm = r.scalar_one_or_none()
+    if not pm:
+        return {"default": None}
+    return {
+        "default": {
+            "method_type": pm.method_type,
+            "display_name": pm.display_name,
+            "stripe_pm_id": pm.stripe_pm_id or "",
+        }
+    }
 

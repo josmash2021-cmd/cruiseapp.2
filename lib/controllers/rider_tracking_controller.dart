@@ -978,6 +978,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     }
 
+    // Suppress notifications and overlays that already fired in the previous session.
+    // Without this, reopening the app re-sends "driver has arrived" notifications
+    // and re-shows the confirm pickup overlay.
+    if (_phase == _TrackPhase.arrived || _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
+      _greetingSent = true;
+      _arrivedNotifSent = true;
+    }
+    if (_phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) {
+      _confirmPickupShown = true;
+    }
+
     // If persisted phase seems behind the backend status, upgrade it.
     // e.g., persistence says 'arriving' but backend says 'in_trip'
     final rawInit = (widget.initialStatus ?? '').toLowerCase().trim();
@@ -988,10 +999,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final s = initAliases[rawInit] ?? rawInit;
     final isBackendInTrip = s == 'in_trip';
     final isBackendArrived = s == 'arrived';
+    final isBackendCompleted = s == 'completed';
+    if (isBackendCompleted) {
+      // Trip finished while app was closed — go straight to rating
+      _phase = _TrackPhase.completed;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _goToRating();
+      });
+      return; // skip rest of persistence restore
+    }
     if (isBackendInTrip && (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
       _phase = _TrackPhase.onTrip;
+      _greetingSent = true;
+      _arrivedNotifSent = true;
+      _confirmPickupShown = true;
     } else if (isBackendArrived && _phase == _TrackPhase.arriving) {
       _phase = _TrackPhase.arrived;
+      _greetingSent = true;
+      _arrivedNotifSent = true;
     }
 
     // Restore route

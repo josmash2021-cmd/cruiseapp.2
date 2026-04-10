@@ -774,12 +774,15 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     _web_key_check(request)
 
     body = await request.json()
-    pickup_address = body.get("pickup_address", "")
-    pickup_lat = float(body.get("pickup_lat", 0))
-    pickup_lng = float(body.get("pickup_lng", 0))
-    dropoff_address = body.get("dropoff_address", "")
-    dropoff_lat = float(body.get("dropoff_lat", 0))
-    dropoff_lng = float(body.get("dropoff_lng", 0))
+    # Accept both flat and nested payload shapes (Shopify widget sends nested)
+    pickup_obj = body.get("pickup") if isinstance(body.get("pickup"), dict) else {}
+    dropoff_obj = body.get("dropoff") if isinstance(body.get("dropoff"), dict) else {}
+    pickup_address = body.get("pickup_address") or pickup_obj.get("address") or ""
+    pickup_lat = float(body.get("pickup_lat") or pickup_obj.get("lat") or 0)
+    pickup_lng = float(body.get("pickup_lng") or pickup_obj.get("lng") or 0)
+    dropoff_address = body.get("dropoff_address") or dropoff_obj.get("address") or ""
+    dropoff_lat = float(body.get("dropoff_lat") or dropoff_obj.get("lat") or 0)
+    dropoff_lng = float(body.get("dropoff_lng") or dropoff_obj.get("lng") or 0)
     vehicle_type = (body.get("vehicle_type") or "comfort").lower()
     fare_cents = int(body.get("amount_cents", 0))
     payment_intent_id = body.get("payment_intent_id")
@@ -791,27 +794,55 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     if not pickup_address or not dropoff_address:
         raise HTTPException(400, "pickup_address and dropoff_address are required")
 
-    # Resolve system rider account
-    rider_id = WEB_SYSTEM_USER_ID
-    if rider_id:
-        r = await db.execute(select(User).where(User.id == rider_id))
-        if not r.scalar_one_or_none():
-            rider_id = 0
+    # Resolve the rider:
+    #   1) If the Shopify widget forwards a rider JWT in `user_token`, use that user.
+    #   2) Else fall back to WEB_SYSTEM_USER_ID env var.
+    #   3) Else look up/auto-create a shared web@cruiseinride.com account.
+    rider_id = 0
+    user_token = body.get("user_token") or ""
+    if user_token:
+        try:
+            payload = jwt.decode(user_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            uid = int(payload.get("sub") or 0)
+            if uid:
+                r = await db.execute(select(User).where(User.id == uid, User.role == "rider"))
+                u = r.scalar_one_or_none()
+                if u and u.status not in ("deleted", "pending_deletion"):
+                    rider_id = u.id
+        except Exception as _e:
+            logging.warning("[WebBooking] user_token decode failed: %s", _e)
+
+    if not rider_id and WEB_SYSTEM_USER_ID:
+        r = await db.execute(select(User).where(User.id == WEB_SYSTEM_USER_ID))
+        if r.scalar_one_or_none():
+            rider_id = WEB_SYSTEM_USER_ID
 
     if not rider_id:
-        # Fallback: look for web system account by email
         r = await db.execute(select(User).where(User.email == "web@cruiseinride.com"))
         sys_user = r.scalar_one_or_none()
         if sys_user:
             rider_id = sys_user.id
 
     if not rider_id:
-        raise HTTPException(
-            503,
-            "Web booking system user not configured. "
-            "Set WEB_SYSTEM_USER_ID in Railway env vars (ID of an existing user), "
-            "or create a user with email web@cruiseinride.com."
-        )
+        # Auto-create a shared web system user so first-time deploys don't 503
+        try:
+            sys_user = User(
+                first_name="Web",
+                last_name="Booking",
+                email="web@cruiseinride.com",
+                password_hash=pwd.hash(secrets.token_urlsafe(24)),
+                role="rider",
+                status="active",
+            )
+            db.add(sys_user)
+            await db.commit()
+            await db.refresh(sys_user)
+            rider_id = sys_user.id
+            logging.info("[WebBooking] Auto-created system user web@cruiseinride.com id=%d", rider_id)
+        except Exception as _e:
+            await db.rollback()
+            logging.error("[WebBooking] Failed to auto-create system user: %s", _e)
+            raise HTTPException(503, "Web booking system user could not be created")
 
     scheduled_at = None
     if scheduled_date and scheduled_time:
@@ -860,16 +891,33 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
 async def _web_dispatch_to_drivers(
     trip_id: int, pickup_lat: float, pickup_lng: float, vehicle_type: str, fare: float | None
 ):
-    """Find the nearest online drivers and send them a ride offer via FCM."""
+    """Find the nearest online driver and send an offer using the SAME dispatch
+    path as the mobile app (SSE event_bus push + FCM offer notification +
+    auto-cascade to next driver if unanswered). This ensures a web booking
+    behaves identically to an app booking from the driver's perspective."""
     try:
+        # Import here to avoid a circular import at module load
+        from routers.dispatch import _send_offer_to_driver, _auto_cascade
+
         async with SessionLocal() as db:
-            # Confirm trip still exists
             r = await db.execute(select(Trip).where(Trip.id == trip_id))
             trip = r.scalar_one_or_none()
             if not trip:
                 return
 
-            # Fetch all online drivers with known location
+            # Rider info for the offer card shown in the app
+            rider_name = "Web Booking"
+            rider_phone = ""
+            rider_photo = ""
+            if trip.rider_id:
+                rr = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rr.scalar_one_or_none()
+                if rider:
+                    rider_name = f"{rider.first_name or ''} {rider.last_name or ''}".strip() or "Web Booking"
+                    rider_phone = rider.phone or ""
+                    rider_photo = _abs_photo_url(rider.photo_url) or ""
+
+            # Fetch online drivers with known location (match vehicle_type if possible)
             result = await db.execute(
                 select(User).where(
                     User.role == "driver",
@@ -880,41 +928,31 @@ async def _web_dispatch_to_drivers(
                 )
             )
             all_drivers = result.scalars().all()
+            if not all_drivers:
+                logging.warning("[WebDispatch] No online drivers for trip %d", trip_id)
+                return
 
-            # Sort by haversine distance to pickup
+            # Sort by distance
             nearby = sorted(
                 [(d, _haversine(pickup_lat, pickup_lng, d.lat, d.lng)) for d in all_drivers],
                 key=lambda x: x[1],
             )
+            first_driver = nearby[0][0]
 
-            # Offer to the 5 nearest drivers
-            targets = [d for d, _ in nearby[:5]]
-            if not targets:
-                logging.warning("[WebDispatch] No online drivers available for trip %d", trip_id)
-                return
+            # Send offer via the SAME mechanism as the app dispatch
+            offer = await _send_offer_to_driver(
+                db, trip, first_driver, rider_name, rider_phone, rider_photo,
+            )
+            logging.info(
+                "[WebDispatch] Trip %d offered to driver %d (%.2f km away) — cascade enabled",
+                trip_id, first_driver.id, nearby[0][1],
+            )
 
-            fare_str = f"${fare:.2f}" if fare else ""
-            pickup_short = (trip.pickup_address or "")[:40]
-            dropoff_short = (trip.dropoff_address or "")[:40]
-            push_body = f"{fare_str} \u00b7 {pickup_short} \u2192 {dropoff_short}".strip(" \u00b7")
-
-            for driver in targets:
-                offer = DispatchOffer(trip_id=trip_id, driver_id=driver.id, status="pending")
-                db.add(offer)
-                await db.flush()
-                if driver.fcm_token:
-                    asyncio.create_task(_send_fcm_push(
-                        driver.fcm_token,
-                        title="New Ride Request",
-                        body=push_body,
-                        data={"type": "new_trip", "trip_id": str(trip_id)},
-                    ))
-
-            await db.commit()
-            logging.info("[WebDispatch] Trip %d offered to %d drivers", trip_id, len(targets))
+            # Auto-cascade to next drivers if not accepted
+            asyncio.create_task(_auto_cascade(trip_id, offer.id, first_driver.id))
 
     except Exception as e:
-        logging.error("[WebDispatch] Error for trip %d: %s", trip_id, e)
+        logging.exception("[WebDispatch] Error for trip %d: %s", trip_id, e)
 
 
 @router.get("/bookings/web/{booking_id}/status")

@@ -105,6 +105,8 @@ MIGRATIONS = [
     ("users", "cruise_level", "VARCHAR(20) DEFAULT 'bronze'"),
     # ── Active session ──
     ("users", "active_session_id", "VARCHAR(64)"),
+    # ── Average rating ──
+    ("users", "average_rating", "FLOAT DEFAULT 5.0"),
 ]
 
 

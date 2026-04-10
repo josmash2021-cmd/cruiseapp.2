@@ -1352,7 +1352,8 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     if _cached and (_now - _cached[1]) < _DISPATCH_STATUS_CACHE_TTL:
         return _cached[0]
 
-    # Query with retry on connection errors
+    # Query with retry — uses a lightweight Trip-only query as fallback if
+    # the full ORM join fails (e.g. missing average_rating column on User).
     from sqlalchemy.orm import aliased
     trip = accepted = driver = veh = None
     for _attempt in range(2):
@@ -1381,8 +1382,19 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                 except Exception:
                     pass
                 continue
-            logging.error("[dispatch/status] DB query failed after retry: %s", e)
-            raise HTTPException(503, "Database temporarily unavailable")
+            # Full join failed — fall back to Trip-only query so the rider
+            # still receives status updates even if User ORM is broken.
+            logging.warning("[dispatch/status] Full join failed, falling back to Trip-only: %s", e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            try:
+                _trip_r = await db.execute(select(Trip).where(Trip.id == trip_id))
+                trip = _trip_r.scalar_one_or_none()
+            except Exception as e2:
+                logging.error("[dispatch/status] Trip-only fallback also failed: %s", e2)
+                raise HTTPException(503, "Database temporarily unavailable")
 
     if trip is None:
         return {"status": "not_found"}

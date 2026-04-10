@@ -91,7 +91,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Connect to Firestore for trip status and RTDB for live driver movement.
-  void _startRealTimeTracking() {
+  void _startRealTimeTracking() async {
+    // Ensure Firebase Auth BEFORE any Firestore/RTDB listener — both require
+    // auth != null in security rules. Without this, Firestore listeners
+    // silently fail and the rider never sees status changes.
+    if (FirebaseAuth.instance.currentUser == null) {
+      try { await FirebaseAuth.instance.signInAnonymously(); }
+      catch (_) { debugPrint('[RiderTracking] Firebase anonymous auth failed'); }
+    }
+
     final tripId = widget.tripId;
     final sqlDocId = tripId != null ? 'sql_$tripId' : null;
     final fallbackDocId = widget.firestoreTripId;
@@ -101,7 +109,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
       _statusPollTimer?.cancel();
       _statusPollTimer = Timer.periodic(
-        const Duration(seconds: 8),
+        const Duration(seconds: 3),
         (_) => _pollBackendTripStatus(),
       );
       unawaited(_pollBackendTripStatus());

@@ -591,10 +591,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     FirebaseFirestore.instance
         .collection('trips')
         .doc(_fsDocId)
-        .update({
+        .set({
       'status': 'arrived',
       'arrivedAt': FieldValue.serverTimestamp(),
-    }).then((_) {
+    }, SetOptions(merge: true)).then((_) {
       debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
     }).catchError((e) {
       debugPrint('[Driver] Firestore arrived write FAILED: $e');
@@ -696,10 +696,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     FirebaseFirestore.instance
         .collection('trips')
         .doc(_fsDocId)
-        .update({
+        .set({
       'status': 'in_trip',
       'rideStartedAt': FieldValue.serverTimestamp(),
-    }).then((_) {
+    }, SetOptions(merge: true)).then((_) {
       debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
     }).catchError((e) {
       debugPrint('[Driver] Firestore in_trip write FAILED: $e');
@@ -737,10 +737,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         await FirebaseFirestore.instance
             .collection('trips')
             .doc(_fsDocId)
-            .update({
+            .set({
           'status': 'completed',
           'completedAt': FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: true));
         debugPrint('[Driver] Firestore completed write OK → $_fsDocId');
       } catch (e) {
         debugPrint('[Driver] Firestore completed write FAILED: $e');

@@ -105,7 +105,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         "is_online": body.is_online, "ts": _now,
     }
 
-    # Update DB (lightweight â€” no SELECT needed, use the authenticated user object)
+    # Update DB (lightweight â€" no SELECT needed, use the authenticated user object)
     # Throttle DB writes: persist at most every 3s per driver (in-memory is always fresh)
     _last_write = _driver_last_db_write.get(driver_id, 0.0)
     if (_now - _last_write) >= _DB_WRITE_THROTTLE:
@@ -129,7 +129,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     else:
         active_trip = await db.execute(
             select(Trip.id).where(
-                and_(Trip.driver_id == driver_id, Trip.status.in_(["driver_en_route", "arrived", "in_progress"]))
+                and_(Trip.driver_id == driver_id, Trip.status.in_(["driver_en_route", "arrived", "in_trip"]))
             ).limit(1)
         )
         trip_row = active_trip.scalar_one_or_none()
@@ -305,7 +305,7 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         "transactions": transactions,
     }
 
-# â”€â”€ Stripe Connect onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Stripe Connect onboarding â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 @router.post("/drivers/stripe-connect", dependencies=[Depends(_verify_api_key)])
 async def create_stripe_connect_link(
     user: User = Depends(_get_current_user),
@@ -382,7 +382,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     await db.commit()
     await db.refresh(cashout)
 
-    # â”€â”€ Stripe Connect Transfer (real payout to driver's bank) â”€â”€
+    # â"€â"€ Stripe Connect Transfer (real payout to driver's bank) â"€â"€
     transfer_id = None
     stripe_error = None
     if user.stripe_connect_id and STRIPE_SECRET:
@@ -395,7 +395,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 amount=amount_cents,
                 currency="usd",
                 destination=user.stripe_connect_id,
-                description=f"Cruise driver payout â€” cashout #{cashout.id}",
+                description=f"Cruise driver payout â€" cashout #{cashout.id}",
                 metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
             )
             transfer_id = transfer["id"]
@@ -407,7 +407,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
             await db.commit()
             await db.refresh(cashout)
-            logging.info("[Cashout] Stripe Transfer %s created for driver %s â€” $%.2f", transfer_id, user.id, body.amount)
+            logging.info("[Cashout] Stripe Transfer %s created for driver %s â€" $%.2f", transfer_id, user.id, body.amount)
         except Exception as _se:
             stripe_error = str(_se)[:200]
             logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
@@ -616,9 +616,9 @@ async def top_up_wallet(body: WalletTopUpIn, user: User = Depends(_get_current_u
     
     wallet = await _get_or_create_wallet(user.id, db)
     
-    # In production, process payment via Stripe here using body.payment_method_id
-    # For now, we directly credit the wallet (simulated success)
-    
+    # SECURITY: Block until Stripe PaymentIntent is implemented
+    raise HTTPException(501, "Wallet top-up not yet available — payment processing required")
+
     wallet.balance += body.amount
     wallet.updated_at = datetime.now(timezone.utc)
     
@@ -686,11 +686,19 @@ async def pay_ride_with_wallet(trip_id: int, amount: float, user: User = Depends
 
 @router.post("/wallet/refund", dependencies=[Depends(_verify_api_key)])
 async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refund", user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Refund amount to wallet (for cancelled rides, etc.)."""
+    """Refund amount to wallet (for cancelled rides, etc.). Admin only."""
+    if user.role not in ("admin", "dispatch"):
+        raise HTTPException(403, "Admin access required for refunds")
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
-    
-    wallet = await _get_or_create_wallet(user.id, db)
+    trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = trip_result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if amount > (trip.fare or 0):
+        raise HTTPException(400, "Refund amount exceeds trip fare")
+
+    wallet = await _get_or_create_wallet(trip.rider_id, db)
     
     wallet.balance += amount
     wallet.updated_at = datetime.now(timezone.utc)
@@ -719,7 +727,9 @@ async def refund_to_wallet(trip_id: int, amount: float, reason: str = "Ride refu
 
 @router.get("/drivers/{driver_id}/stats", dependencies=[Depends(_verify_api_key)])
 async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Compute real acceptance rate, on-time rate, etc. â€” 2 queries instead of 5."""
+    """Compute real acceptance rate, on-time rate, etc."""
+    if user.id != driver_id and user.role not in ("admin", "dispatch"):
+        raise HTTPException(403, "Not authorized to view these stats")
     from sqlalchemy import case as sql_case, literal_column
 
     # Single query: all offer counts via CASE
@@ -740,13 +750,13 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
         select(
             func.count(Trip.id).label("total"),
             func.sum(sql_case((Trip.status == "completed", 1), else_=0)).label("completed"),
-            func.sum(sql_case((Trip.status == "canceled", 1), else_=0)).label("canceled"),
+            func.sum(sql_case((Trip.status.in_(["cancelled", "canceled"]), 1), else_=0)).label("cancelled_count"),
         ).where(Trip.driver_id == driver_id)
     )
     trip_row = trip_r.one()
     total_trips = trip_row.total or 0
     completed = int(trip_row.completed or 0)
-    canceled = int(trip_row.canceled or 0)
+    canceled = int(trip_row.cancelled_count or 0)
 
     # Average rating (lightweight index scan)
     ratings_r = await db.execute(

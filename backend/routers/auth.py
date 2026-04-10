@@ -217,14 +217,16 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     client_ip = request.client.host if request.client else "unknown"
 
     # ── Apple Review demo accounts — skip OTP, return tokens directly ──
+    _demo_pw = os.getenv("DEMO_ACCOUNT_PASSWORD", "")
     _DEMO_ACCOUNTS = {
-        "+15550001234": {"password": "CruiseDemo2026!", "role": "rider"},
-        "+15550005678": {"password": "CruiseDemo2026!", "role": "driver"},
-        "applereview@cruiseride.com": {"password": "CruiseDemo2026!", "role": "rider"},
-        "appledriver@cruiseride.com": {"password": "CruiseDemo2026!", "role": "driver"},
+        "+15550001234": {"password": _demo_pw, "role": "rider"},
+        "+15550005678": {"password": _demo_pw, "role": "driver"},
+        "applereview@cruiseride.com": {"password": _demo_pw, "role": "rider"},
+        "appledriver@cruiseride.com": {"password": _demo_pw, "role": "driver"},
     }
     identifier_clean = body.identifier.strip().lower() if "@" in body.identifier else body.identifier.strip()
-    demo = _DEMO_ACCOUNTS.get(identifier_clean)
+    _demo_enabled = os.getenv("ENABLE_DEMO_ACCOUNTS", "").lower() in ("true", "1", "yes")
+    demo = _DEMO_ACCOUNTS.get(identifier_clean) if _demo_enabled else None
     if demo and body.password == demo["password"]:
         role = body.role or demo["role"]
         is_driver = role == "driver"
@@ -390,7 +392,9 @@ async def send_otp(body: SendOtpIn, request: Request):
         del _otp_store[k]
     
     # â"€â"€ ALWAYS log code for development/troubleshooting â"€â"€
-    logging.info("[OTP] Generated code for %s: %s (expires in %d seconds)", otp_key, code, _OTP_TTL)
+    import hashlib as _hl
+    _code_hint = _hl.sha256(code.encode()).hexdigest()[:8]
+    logging.info("[OTP] Code generated for %s (hash=%s, expires in %d seconds)", otp_key, _code_hint, _OTP_TTL)
     
     # â"€â"€ Try Email if email is provided â"€â"€
     if email:
@@ -509,7 +513,7 @@ async def send_otp(body: SendOtpIn, request: Request):
             logging.warning("[OTP] Twilio not properly configured, skipping SMS")
     
     # â"€â"€ Final Fallback: Return code directly (for development/testing) â"€â"€
-    logging.info("[OTP] CODE FOR %s: %s (check backend logs)", otp_key, code)
+    logging.warning("[OTP] No delivery channel succeeded for %s (hash=%s)", otp_key, _hl.sha256(code.encode()).hexdigest()[:8])
     
     return {
         "ok": True, 
@@ -712,8 +716,9 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         try:
             from google.oauth2 import id_token as google_id_token
             from google.auth.transport import requests as google_requests
+            _google_client_id = os.getenv("GOOGLE_CLIENT_ID")
             idinfo = google_id_token.verify_oauth2_token(
-                body.id_token, google_requests.Request()
+                body.id_token, google_requests.Request(), audience=_google_client_id
             )
             email = idinfo.get("email")
             given_name = given_name or idinfo.get("given_name", "")
@@ -936,8 +941,6 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
             setattr(db_user, key, updates[key])
     # Update last active timestamp
     db_user.last_active_at = datetime.now(timezone.utc)
-    if updates.get("is_verified") and not db_user.verified_at:
-        db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(db_user)
 

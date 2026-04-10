@@ -559,45 +559,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } else if (isInTripStatus &&
         (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
-      // Swap from approach route (driver→pickup) to trip route (pickup→dropoff)
-      if (_tripRoutePts.isNotEmpty) {
-        _routePts = _tripRoutePts;
-        _buildSegDist();
+      // If rider never saw the arrived/confirm overlay (poll skipped 'arrived'),
+      // show it now as auto-confirmed — the driver already started the ride.
+      if (_phase == _TrackPhase.arriving && !_confirmPickupShown) {
+        _setState(() {
+          _phase = _TrackPhase.arrived;
+          _etaMinutes = 0;
+          _distanceMiles = 0;
+        });
+        _handleDriverArrived();
+        // Show confirm overlay in auto-confirmed state — it will detect
+        // in_trip via its Firestore listener and auto-dismiss after 2s.
+        _showRiderConfirmPickup();
+        // Delay the onTrip transition so the rider sees the confirmation.
+        Future.delayed(const Duration(milliseconds: 2500), () {
+          if (!mounted) return;
+          _transitionToOnTrip();
+        });
+        return;
       }
-      // Reset traveled distance for the new trip leg and recalculate ETA
-      _traveledM = 0;
-      _tgtTraveledM = 0;
-      _velocityMps = 0;
-      _approachRouteFetched = false;
-      // Reset route duration — will be set on next route fetch
-      _routeDurationSec = null;
-      if (_segDist.isNotEmpty) {
-        final totalRouteM = _segDist.last;
-        _distanceMiles = totalRouteM / 1609.34;
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
-      }
-      _setState(() {
-        _phase = _TrackPhase.onTrip;
-        _tripJustStarted = true;
-      });
-      // Re-enable camera tracking (disabled during arrived phase)
-      _shouldFollowDriver = true;
-      _startCameraFollowTracking();
-      _saveRideState();
-      _tripStartedTimer?.cancel();
-      _tripStartedTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) _setState(() => _tripJustStarted = false);
-      });
-      _arrivedDotPulse.stop();
-      _popOutPickupPin();
-      // Dismiss confirm pickup overlay if it was showing
-      if (_showPickupOverlay) {
-        _confirmPickupShown = false;
-        _setState(() => _showPickupOverlay = false);
-      }
-      // Reset guard so animation always runs fresh on arriving→onTrip transition
-      _startRideAnimationDone = false;
-      _startStartRideAnimation();
+      _transitionToOnTrip();
     } else if (isInTripStatus &&
         _phase == _TrackPhase.nearDestination) {
       // Already near destination — don't reset to onTrip
@@ -674,6 +655,45 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         );
       }
     }
+  }
+
+  /// Transition to the onTrip phase — shared by normal flow and catch-up flow.
+  void _transitionToOnTrip() {
+    if (!mounted || _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination) return;
+    // Swap to trip route
+    if (_tripRoutePts.isNotEmpty) {
+      _routePts = _tripRoutePts;
+      _buildSegDist();
+    }
+    _traveledM = 0;
+    _tgtTraveledM = 0;
+    _velocityMps = 0;
+    _approachRouteFetched = false;
+    _routeDurationSec = null;
+    if (_segDist.isNotEmpty) {
+      final totalRouteM = _segDist.last;
+      _distanceMiles = totalRouteM / 1609.34;
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+    }
+    _setState(() {
+      _phase = _TrackPhase.onTrip;
+      _tripJustStarted = true;
+    });
+    _shouldFollowDriver = true;
+    _startCameraFollowTracking();
+    _saveRideState();
+    _tripStartedTimer?.cancel();
+    _tripStartedTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) _setState(() => _tripJustStarted = false);
+    });
+    _arrivedDotPulse.stop();
+    _popOutPickupPin();
+    if (_showPickupOverlay) {
+      _confirmPickupShown = false;
+      _setState(() => _showPickupOverlay = false);
+    }
+    _startRideAnimationDone = false;
+    _startStartRideAnimation();
   }
 
   /// Show the rider confirmation pickup overlay when driver has arrived.

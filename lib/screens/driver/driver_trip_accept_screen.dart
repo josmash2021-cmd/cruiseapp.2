@@ -569,9 +569,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
+  /// Ensure Firebase anonymous auth is active before any Firestore write.
+  /// The token can expire after long sessions; re-auth is instant.
+  Future<void> _ensureFirebaseAuth() async {
+    if (FirebaseAuth.instance.currentUser == null) {
+      try {
+        await FirebaseAuth.instance.signInAnonymously();
+      } catch (e) {
+        debugPrint('[Driver] Firebase re-auth failed: $e');
+      }
+    }
+  }
+
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
+    await _ensureFirebaseAuth();
     // Retry backend API up to 3 times; only then fire Firestore sync as backup.
     bool apiOk = false;
     for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
@@ -677,6 +690,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
+    await _ensureFirebaseAuth();
     // Retry backend API up to 3 times; only then fire Firestore sync as backup.
     bool apiOk = false;
     for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
@@ -710,6 +724,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _finishTrip() async {
     if (_tripFinished) return;
     setState(() => _tripFinished = true);
+    await _ensureFirebaseAuth();
     HapticFeedback.heavyImpact();
 
     // Show completion overlay immediately (do not block on network)

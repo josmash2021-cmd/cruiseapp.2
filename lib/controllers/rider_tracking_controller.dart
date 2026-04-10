@@ -51,17 +51,25 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Primary status channel — tries lightweight poll first, falls back to
   /// getActiveTrip if the new endpoint isn't deployed yet.
   Future<void> _pollBackendTripStatus() async {
+    if (!mounted || _phase == _TrackPhase.completed) return;
     final tripId = widget.tripId;
-    if (!mounted || tripId == null || _phase == _TrackPhase.completed) return;
     try {
-      // Path 1: lightweight raw-SQL endpoint (fastest, no ORM)
-      var data = await ApiService.pollTripStatus(tripId);
+      Map<String, dynamic>? data;
 
-      // Path 2: fallback to /trips/active if poll endpoint not deployed
+      if (tripId != null) {
+        // Primary: fast raw-SQL endpoint
+        data = await ApiService.pollTripStatus(tripId);
+      }
+
+      // Fallback: /trips/active — works even when tripId is null
       if (data == null && mounted) {
         final active = await ApiService.getActiveTrip();
-        if (active != null && active['id'] == tripId) {
-          data = {'status': active['status'], 'driver_id': active['driver_id']};
+        if (active != null) {
+          final activeId = active['id'];
+          // Accept if tripId matches OR if we have no tripId (use whatever's active)
+          if (tripId == null || activeId == tripId || activeId?.toString() == tripId.toString()) {
+            data = {'status': active['status'], 'driver_id': active['driver_id']};
+          }
         }
       }
 
@@ -87,15 +95,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final fallbackDocId = widget.firestoreTripId;
 
     // ── 1. PRIMARY: backend poll starts INSTANTLY — no auth dependency ──
-    if (tripId != null) {
-      _statusPollTimer?.cancel();
-      _statusPollTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => _pollBackendTripStatus(),
-      );
-      unawaited(_pollBackendTripStatus()); // first poll fires now
-      debugPrint('[RiderTracking] Poll started for trip $tripId (every 2s)');
-    }
+    // Poll runs even when tripId is null — _pollBackendTripStatus uses /trips/active fallback.
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _pollBackendTripStatus(),
+    );
+    unawaited(_pollBackendTripStatus()); // first poll fires now
+    debugPrint('[RiderTracking] Poll started for trip $tripId (every 2s)');
 
     // ── 2. BONUS: Firestore listener (instant when it works) ──
     // Firebase Auth + listener setup runs in parallel — never blocks the poll.

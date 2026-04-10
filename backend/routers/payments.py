@@ -310,6 +310,10 @@ async def create_web_checkout(request: Request):
                 "quantity": 1,
             }],
             "mode": "payment",
+            "payment_intent_data": {
+                "capture_method": "manual",  # HOLD — authorize only, capture on trip completion
+                "metadata": metadata,
+            },
             "success_url": success_url + "?session_id={CHECKOUT_SESSION_ID}",
             "cancel_url": cancel_url,
             "metadata": metadata,
@@ -359,16 +363,59 @@ async def create_web_payment_intent(request: Request):
             amount=amount,
             currency=currency,
             automatic_payment_methods={"enabled": True},
+            capture_method="manual",  # HOLD — authorize only, capture later
             description=description,
             metadata=metadata,
         )
-        logging.info("[WebPayIntent] Created: %s (amount=%d %s)", intent.id, amount, currency)
+        logging.info("[WebPayIntent] HOLD created: %s (amount=%d %s)", intent.id, amount, currency)
         return {
             "client_secret": intent.client_secret,
             "payment_intent_id": intent.id,
         }
     except _stripe_mod.error.StripeError as e:
         logging.error("[WebPayIntent] Stripe error: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+# -------------------------------------------------------
+#  WEB CAPTURE / CANCEL HOLD — called when trip completes or cancels
+# -------------------------------------------------------
+
+@router.post("/payments/web/capture/{intent_id}")
+async def capture_web_hold(intent_id: str, request: Request):
+    """Capture a held PaymentIntent — charge the customer after trip completion."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured")
+    try:
+        intent = _stripe_mod.PaymentIntent.capture(intent_id)
+        logging.info("[WebCapture] Captured: %s (amount=%d)", intent.id, intent.amount_received)
+        return {"status": intent.status, "amount_captured": intent.amount_received}
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+@router.post("/payments/web/cancel/{intent_id}")
+async def cancel_web_hold(intent_id: str, request: Request):
+    """Cancel a held PaymentIntent — release the hold if trip is cancelled."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured")
+    try:
+        intent = _stripe_mod.PaymentIntent.cancel(intent_id)
+        logging.info("[WebCancel] Cancelled hold: %s", intent.id)
+        return {"status": intent.status}
+    except _stripe_mod.error.StripeError as e:
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 

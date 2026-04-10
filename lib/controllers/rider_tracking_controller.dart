@@ -530,17 +530,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final isCancelledStatus = status == 'cancelled';
 
     debugPrint('[RiderTracking] Firestore status update: "$rawStatus" normalized="$status" (phase=$_phase, driverId=$did)');
-    if (isArrivedStatus && _phase == _TrackPhase.arriving) {
-      _setState(() {
-        _phase = _TrackPhase.arrived;
-        _etaMinutes = 0;
-        _distanceMiles = 0;
-      });
-      _saveRideState();
-      // FIX 2: Start the pulsing dot animation and handle arrival visuals
-      _arrivedDotPulse.repeat(reverse: true);
-      // Fade route polyline and zoom camera to driver location
-      _handleDriverArrived();
+    if (isArrivedStatus && (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived)) {
+      if (_phase == _TrackPhase.arriving) {
+        _setState(() {
+          _phase = _TrackPhase.arrived;
+          _etaMinutes = 0;
+          _distanceMiles = 0;
+        });
+        _saveRideState();
+        _arrivedDotPulse.repeat(reverse: true);
+        _handleDriverArrived();
+      }
+      // Always show confirm pickup — even if phase was already arrived (app resume)
       _showRiderConfirmPickup();
       if (!_arrivedNotifSent) {
         _arrivedNotifSent = true;
@@ -1065,7 +1066,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _arrivedDotPulse.repeat(reverse: true);
       _shouldFollowDriver = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _handleDriverArrived();
+        if (mounted) {
+          _handleDriverArrived();
+          _showRiderConfirmPickup();
+        }
       });
     }
 

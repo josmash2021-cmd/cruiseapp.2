@@ -51,15 +51,17 @@ _STATUS_ALIASES = {
     "rider_no_show": "cancelled",
     "canceled": "cancelled",
     "driver_arriving": "driver_en_route",
+    "en_route_to_pickup": "driver_en_route",
+    "driver_assigned": "accepted",
 }
 
 # Valid trip status transitions -- enforce lifecycle integrity
 # Keys and values use CANONICAL status names only.
 _VALID_TRANSITIONS = {
-    "requested": {"accepted", "driver_en_route", "cancelled"},
-    "accepted": {"driver_en_route", "cancelled"},
-    "driver_en_route": {"arrived", "cancelled"},
-    "arrived": {"in_trip", "cancelled"},
+    "requested": {"accepted", "driver_en_route", "arrived", "cancelled"},
+    "accepted": {"driver_en_route", "arrived", "cancelled"},
+    "driver_en_route": {"arrived", "in_trip", "cancelled"},
+    "arrived": {"in_trip", "completed", "cancelled"},
     "in_trip": {"completed", "cancelled"},
     "completed": set(),
     "cancelled": set(),

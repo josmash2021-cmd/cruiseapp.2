@@ -1083,14 +1083,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
+    final topPad = MediaQuery.of(context).padding.top;
     final phase = _ctrl.state.phase;
-    // The map is full-screen and the route sheet covers about 35%.
-    // Keep route framed in the visible map area above that sheet.
+    // The map is full-screen and the route panel covers ~42% of the screen.
+    // Bottom padding must push the route above the panel so both pins are visible.
     final double bottomPad;
     if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
-      bottomPad = 160 + botPad;
+      bottomPad = (screenH * 0.42).clamp(280.0, 400.0) + botPad;
     } else {
-      bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botPad + 20;
+      bottomPad = (screenH * 0.40).clamp(260.0, 380.0) + botPad;
     }
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
@@ -1099,7 +1100,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         pitch: preserveCamera ? 55.0 : null,
         bearing: preserveCamera ? _randomBearing : null,
       ),
-      mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),
+      mapbox.MbxEdgeInsets(top: topPad + 60, left: 40, bottom: bottomPad, right: 40),
       null, null,
     ).then((cam) {
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
@@ -1212,10 +1213,11 @@ extension _RideRequestMap on _RideRequestScreenState {
       ];
       final screenH = MediaQuery.of(context).size.height;
       final botSafe = MediaQuery.of(context).padding.bottom;
-      final bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
+      final topSafe = MediaQuery.of(context).padding.top;
+      final bottomPad = (screenH * 0.42).clamp(280.0, 400.0) + botSafe;
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
-        mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,
+        mapbox.MbxEdgeInsets(top: topSafe + 60, left: 60, bottom: bottomPad, right: 60), null, null,
       );
       if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
     } else if (_userLocation != null) {

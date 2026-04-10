@@ -23,11 +23,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
         _pollFailCount = 0;
         if (_connectionLost) _setState(() => _connectionLost = false);
-        // Fix 4: Firestore recovered — restore normal 8s polling interval
-        _statusPollTimer?.cancel();
-        _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-          _pollBackendTripStatus();
-        });
+        // Firestore is a bonus channel — do NOT touch the 2s poll timer.
+        // Slowing the poll when Firestore fires was causing missed "arrived"
+        // events: the initial cached snapshot (old status) would downgrade the
+        // poll to 8s, then the real arrived update took up to 8s to surface.
         _onTripStatusUpdate(data);
       },
       onError: (error) {
@@ -36,13 +35,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
           _setState(() => _connectionLost = true);
         }
-        // Fix 4: Firestore down → poll backend every 3s (instead of 8s) until recovered
-        if (mounted && _phase != _TrackPhase.completed) {
-          _statusPollTimer?.cancel();
-          _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-            _pollBackendTripStatus();
-          });
-        }
+        // Firestore error — poll continues at its normal 2s interval.
       },
     );
 

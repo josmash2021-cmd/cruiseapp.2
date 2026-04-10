@@ -60,6 +60,13 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   Timer? _paymentStartTimer;
   Timer? _declinedPopTimer;
 
+  // ── status text cycling ──
+  // 0 = "Confirming your ride…" (briefly)
+  // 1 = "Looking for your driver…"
+  // 2 = "Connecting to nearby drivers…"
+  int _textPhase = 0;
+  Timer? _textPhaseTimer;
+
   // ── driver-found early-pop ──
   VoidCallback? _driverFoundCb;
 
@@ -130,7 +137,17 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat();
 
-    // ── 8. Driver-found early pop ──
+    // ── 8. Status text cycling: "Confirming" → "Looking for driver" → "Connecting" ──
+    _textPhaseTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!mounted || _paymentDeclined) return;
+      setState(() => _textPhase = 1);
+      _textPhaseTimer = Timer(const Duration(seconds: 8), () {
+        if (!mounted || _paymentDeclined) return;
+        setState(() => _textPhase = 2);
+      });
+    });
+
+    // ── 9. Driver-found early pop ──
     if (widget.driverFound != null) {
       _driverFoundCb = () {
         if (widget.driverFound!.value && mounted) {
@@ -172,6 +189,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   @override
   void dispose() {
+    _textPhaseTimer?.cancel();
     if (_driverFoundCb != null) widget.driverFound?.removeListener(_driverFoundCb!);
     _paymentStartTimer?.cancel();
     _declinedPopTimer?.cancel();
@@ -431,14 +449,22 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
               end: Alignment(v * 3 - 0.5, 0),
             ).createShader(bounds);
           },
-          child: Text(
-            S.of(context).searchStatusMsg4,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            child: Text(
+            key: ValueKey(_textPhase),
+            _textPhase == 0
+                ? S.of(context).searchStatusMsg4   // "Confirming your ride…"
+                : _textPhase == 1
+                    ? S.of(context).searchStatusMsg1 // "Looking for your driver…"
+                    : S.of(context).searchStatusMsg2, // "Connecting to nearby drivers…"
             style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
               fontWeight: FontWeight.w300,
               letterSpacing: 0.5,
             ),
+          ),
           ),
         );
       },

@@ -259,6 +259,9 @@ async def create_web_checkout(request: Request):
            "success_url": "https://...", "cancel_url": "https://...",
            "customer_email": "optional@email.com", "metadata": {}}
     """
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
     # Auth: simple bearer token check
     auth = request.headers.get("authorization", "")
     if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
@@ -310,8 +313,24 @@ async def create_web_checkout(request: Request):
 
 from fastapi.responses import RedirectResponse
 
+# Rate limiting for web checkout — max 10 requests per IP per minute
+_web_checkout_hits: dict = {}  # ip -> [timestamps]
+_WEB_CHECKOUT_MAX = 10
+_WEB_CHECKOUT_WINDOW = 60  # seconds
+
+def _check_web_rate_limit(ip: str) -> bool:
+    now = time.monotonic()
+    hits = _web_checkout_hits.get(ip, [])
+    hits = [t for t in hits if now - t < _WEB_CHECKOUT_WINDOW]
+    _web_checkout_hits[ip] = hits
+    if len(hits) >= _WEB_CHECKOUT_MAX:
+        return True  # blocked
+    hits.append(now)
+    return False
+
 @router.get("/payments/web/book")
 async def web_book_redirect(
+    request: Request,
     amount: int = Query(..., description="Amount in cents"),
     key: str = Query(..., description="WEB_CHECKOUT_KEY"),
     description: str = Query("Cruise Ride"),
@@ -323,6 +342,9 @@ async def web_book_redirect(
     """GET endpoint that creates a Stripe Checkout Session and redirects
     the user directly to Stripe's payment page. Designed for Shopify —
     just link to this URL, no JavaScript needed."""
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
     if not WEB_CHECKOUT_KEY or key != WEB_CHECKOUT_KEY:
         raise HTTPException(401, "Invalid key")
     if not _HAS_STRIPE or not STRIPE_SECRET:

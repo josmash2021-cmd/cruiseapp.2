@@ -6,6 +6,7 @@ import '../../services/directions_service.dart' show RouteResult;
 import '../../services/places_service.dart' show PlaceDetails;
 import '../../state/rider_trip_controller.dart';
 import '../ride_request_screen.dart';
+import 'rider_flow_cards.dart';
 import 'rider_flow_phase.dart';
 
 /// Single-map rider flow shell.
@@ -216,18 +217,58 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
     );
   }
 
-  /// Returns a placeholder card for the given shell phase. Day 2 uses
-  /// minimal stubs so the fade/slide wiring can be smoke-tested without
-  /// touching the real ride option / confirming / searching widgets.
-  /// Day 2b replaces each stub with the real widget from
-  /// `ride_request_widgets.dart`.
+  /// Returns the real card widget for the current shell phase. Each
+  /// card is wrapped in a ValueKey(phase) so AnimatedSwitcher treats
+  /// phase changes as widget replacements (triggering fade + slide).
+  ///
+  /// Day 6-9 (arrived / inTrip / nearDestination / completed) still
+  /// fall through to the stub card — they land in Day 3-4 when the
+  /// RiderTrackingController is plugged into the shell.
   Widget _buildCardForPhase(RiderFlowPhase phase) {
-    final label = _phaseLabel(phase);
-    return _StubCard(
-      key: ValueKey(phase),
-      title: label,
-      subtitle: 'Day 2 stub — real widget lands in Day 2b',
-    );
+    switch (phase) {
+      case RiderFlowPhase.chooseVehicle:
+        return ChooseVehicleCard(
+          key: const ValueKey(RiderFlowPhase.chooseVehicle),
+          state: _ctrl.state,
+          onSelect: _ctrl.selectRideOption,
+          onRequest: () {
+            // Fire-and-forget — the controller handles its own
+            // isRequesting guard + state transitions.
+            _ctrl.requestRide();
+          },
+        );
+      case RiderFlowPhase.confirmingPayment:
+        return const ConfirmingPaymentCard(
+          key: ValueKey(RiderFlowPhase.confirmingPayment),
+        );
+      case RiderFlowPhase.searchingDriver:
+        return SearchingDriverCard(
+          key: const ValueKey(RiderFlowPhase.searchingDriver),
+          state: _ctrl.state,
+          onCancel: _ctrl.cancelRide,
+        );
+      case RiderFlowPhase.driverFound:
+        return DriverFoundCard(
+          key: const ValueKey(RiderFlowPhase.driverFound),
+          state: _ctrl.state,
+        );
+      case RiderFlowPhase.driverEnRoute:
+        return DriverEnRouteCard(
+          key: const ValueKey(RiderFlowPhase.driverEnRoute),
+          state: _ctrl.state,
+        );
+      case RiderFlowPhase.arrived:
+      case RiderFlowPhase.inTrip:
+      case RiderFlowPhase.nearDestination:
+      case RiderFlowPhase.completed:
+      case RiderFlowPhase.cancelled:
+        // Placeholder until Day 3-4 plugs in the RiderTrackingController.
+        return _StubCard(
+          key: ValueKey(phase),
+          title: _phaseLabel(phase),
+          subtitle: 'Day 3-4 stub — tracking controller lands next',
+        );
+    }
   }
 
   static String _phaseLabel(RiderFlowPhase phase) {
@@ -256,9 +297,8 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   }
 }
 
-/// Minimal placeholder card used for the Day 2 smoke test of the
-/// AnimatedSwitcher wiring. Stripped of any animation / business logic —
-/// real phase cards are extracted in Day 2b.
+/// Minimal placeholder card used for phases that haven't been migrated
+/// yet (P06-P09 — tracking phases land in Day 3-4).
 class _StubCard extends StatelessWidget {
   final String title;
   final String subtitle;

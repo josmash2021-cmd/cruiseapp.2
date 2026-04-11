@@ -179,12 +179,23 @@ async def _send_offer_to_driver(
     _pending_cache.pop(driver.id, None)
     estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
 
-    # Compute the rider's real rating + ratings count so the driver app can
-    # show "New rider" for first-time users instead of a fake 5.0 default.
+    # Compute rider's trip history, rating, and "new rider" flag so the
+    # driver card shows the right label:
+    #   - rides_count == 0  →  "New rider" (first request ever)
+    #   - ratings_count > 0 →  show the actual star rating
+    #   - else              →  show nothing (has ridden but never rated)
     rider_rating_val = None
     rider_ratings_count = 0
+    rider_rides_count = 0
     if trip.rider_id:
         try:
+            rides_res = await db.execute(
+                select(func.count(Trip.id)).where(Trip.rider_id == trip.rider_id)
+            )
+            # Subtract 1 so the current trip (which is already in the DB by
+            # the time this dispatch runs) is not counted — we want
+            # "prior rides", not "total rides including this one".
+            rider_rides_count = max(0, int(rides_res.scalar() or 0) - 1)
             cnt_res = await db.execute(
                 select(func.count(Rating.id)).where(Rating.to_user_id == trip.rider_id)
             )
@@ -195,7 +206,7 @@ async def _send_offer_to_driver(
                 if _rider and _rider.average_rating is not None:
                     rider_rating_val = round(float(_rider.average_rating), 2)
         except Exception as _re:
-            logging.warning("[Dispatch] rider rating lookup failed: %s", _re)
+            logging.warning("[Dispatch] rider history lookup failed: %s", _re)
 
     asyncio.create_task(event_bus.push_driver_offer(driver.id, [{
         "offer_id": offer.id,
@@ -204,7 +215,8 @@ async def _send_offer_to_driver(
         "rider_photo_url": rider_photo,
         "rider_rating": rider_rating_val,
         "rider_ratings_count": rider_ratings_count,
-        "rider_is_new": rider_ratings_count == 0,
+        "rider_rides_count": rider_rides_count,
+        "rider_is_new": rider_rides_count == 0,
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
         **_trip_dict(trip),
@@ -824,13 +836,16 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     await db.commit()
     await db.refresh(trip)
 
-    # Sync trip to Firestore for dispatch_app
+    # Sync trip to Firestore for dispatch_app.
+    # Use the guest-aware resolver so web/Shopify bookings show the guest
+    # name on the dispatch panel, not the "Web Booking" system user profile.
+    _disp_name, _disp_phone = _resolve_rider_display(trip, user)
     if _HAS_FIRESTORE:
         try:
             firestore_sync.sync_trip(
                 trip_id=trip.id, rider_id=trip.rider_id,
-                rider_name=f"{user.first_name} {user.last_name}",
-                rider_phone=user.phone or "",
+                rider_name=_disp_name,
+                rider_phone=_disp_phone,
                 pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
                 dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
                 status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
@@ -844,8 +859,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             if trip.scheduled_at is not None:
                 firestore_sync.sync_scheduled_ride(
                     trip_id=trip.id, rider_id=trip.rider_id,
-                    rider_name=f"{user.first_name} {user.last_name}",
-                    rider_phone=user.phone or "",
+                    rider_name=_disp_name,
+                    rider_phone=_disp_phone,
                     scheduled_at=trip.scheduled_at, status=trip.status,
                     vehicle_type=trip.vehicle_type or "",
                     pickup_address=trip.pickup_address or "", dropoff_address=trip.dropoff_address or "",
@@ -892,8 +907,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     # Create offer for closest driver and start auto-cascade
     if drivers_sorted:
         assigned = drivers_sorted[0]
-        rider_name = user.first_name + " " + user.last_name
-        rider_phone = user.phone or ""
+        rider_name, rider_phone = _resolve_rider_display(trip, user)
         rider_photo = _abs_photo_url(user.photo_url) or ""
 
         offer = await _send_offer_to_driver(

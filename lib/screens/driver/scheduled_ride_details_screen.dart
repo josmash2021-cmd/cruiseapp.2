@@ -192,8 +192,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           riderName: riderName,
           riderPhotoUrl: _normalizePhotoUrl(trip['rider_photo_url']?.toString() ?? ''),
           riderRating: (trip['rider_rating'] as num?)?.toDouble() ?? 0,
-          riderIsNew: trip['rider_is_new'] == true ||
-              ((trip['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0,
+          riderIsNew: trip['rider_is_new'] == true,
           riderId: riderId,
           pickupLatLng: pickup,
           dropoffLatLng: dropoff,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -72,6 +73,17 @@ class NotificationService {
         await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
         await _offerPlayer.setReleaseMode(ReleaseMode.stop);
         await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+        // Explicitly release player state when the clip ends so the
+        // MediaPlayer / AVAudioPlayer instance does not keep the audio
+        // session held — that hold is what produced the ~1 s UI freeze
+        // the moment the online chime finished during a go-online.
+        _onlinePlayer.onPlayerComplete.listen((_) {
+          unawaited(_onlinePlayer.stop());
+          _onlineSoundPlaying = false;
+        });
+        _offerPlayer.onPlayerComplete.listen((_) {
+          unawaited(_offerPlayer.stop());
+        });
         // Pre-warm iOS audio session: play silently so first real play is instant
         await _onlinePlayer.setVolume(0.0);
         await _onlinePlayer.resume();
@@ -383,22 +395,30 @@ class NotificationService {
   static void playOnlineSound() {
     if (_onlineSoundPlaying) return; // prevent double-play
     _onlineSoundPlaying = true;
-    Future.microtask(() async {
+    // Hop to a microtask so the caller frame is never on the platform
+    // thread — dispatch, don't await.
+    scheduleMicrotask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         if (!(prefs.getBool('notif_sounds') ?? true)) {
           _onlineSoundPlaying = false;
           return;
         }
-        // Fire-and-forget — don't await platform channel calls
-        // to avoid blocking the UI thread during screen transitions.
-        _onlinePlayer.seek(Duration.zero);
-        _onlinePlayer.resume();
-        // Reset guard after sound finishes (~2s)
-        Future.delayed(const Duration(seconds: 2), () => _onlineSoundPlaying = false);
+        // Use stop() first so any lingering playback state is cleared
+        // before we re-trigger. Avoids the 1-second UI freeze that
+        // happened when the player finished a previous loop and its
+        // onComplete callback landed on the main isolate mid-transition.
+        unawaited(_onlinePlayer.stop());
+        unawaited(_onlinePlayer.seek(Duration.zero));
+        unawaited(_onlinePlayer.resume());
       } catch (e) {
-        _onlineSoundPlaying = false;
         debugPrint('[NotificationService] playOnlineSound error: $e');
+      } finally {
+        // Reset the guard just after the clip ends (~1.8s) so the next
+        // go-online can play cleanly.
+        Future.delayed(const Duration(milliseconds: 1800), () {
+          _onlineSoundPlaying = false;
+        });
       }
     });
   }

@@ -1382,8 +1382,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
     final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
-    final riderRatingsCount = (r['rider_ratings_count'] as num?)?.toInt() ?? 0;
-    final riderIsNew = r['rider_is_new'] == true || riderRatingsCount == 0;
+    // Use the backend's rider_is_new flag as the source of truth — it now
+    // reflects rider_rides_count == 0 (first request ever), not just
+    // "has never been rated".
+    final riderIsNew = r['rider_is_new'] == true;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final navFuture = Navigator.of(context).push<String>(
       smoothFadeRoute(

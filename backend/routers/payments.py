@@ -1100,12 +1100,21 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         except Exception as _fcm_err:
             logging.warning("[WebBooking] FCM scheduled-ride broadcast failed: %s", _fcm_err)
     else:
-        # Immediate booking — dispatch to nearby drivers (non-blocking background task)
-        asyncio.create_task(
-            _web_dispatch_to_drivers(trip.id, pickup_lat, pickup_lng, vehicle_type, fare)
-        )
+        # Immediate booking — dispatch to nearest driver INLINE so the offer
+        # hits the driver app before the widget's first poll. Auto-cascade to
+        # subsequent drivers (if the first doesn't accept) still runs in the
+        # background so we don't block on offer timeouts.
+        try:
+            await asyncio.wait_for(
+                _web_dispatch_to_drivers(trip.id, pickup_lat, pickup_lng, vehicle_type, fare),
+                timeout=3.0,
+            )
+        except asyncio.TimeoutError:
+            logging.warning("[WebBooking] dispatch inline timeout for trip %d — continuing", trip.id)
+        except Exception as _dx:
+            logging.warning("[WebBooking] dispatch inline error for trip %d: %s", trip.id, _dx)
         logging.info(
-            "[WebBooking] Created trip %d (%.2f %s) → dispatching now",
+            "[WebBooking] Created trip %d (%.2f %s) → dispatched",
             trip.id, fare or 0, vehicle_type,
         )
     return {"booking_id": trip.id, "status": trip.status}
@@ -1128,25 +1137,18 @@ async def _web_dispatch_to_drivers(
             if not trip:
                 return
 
-            rider_name = ""
-            rider_phone = ""
-            rider_photo = ""
-            # Guest info takes priority — rider_id on web bookings points to the
-            # shared web@cruiseinride.com system user, whose "name" would otherwise
-            # overwrite the actual guest's first/last name collected at checkout.
-            guest_full = f"{getattr(trip, 'guest_first_name', '') or ''} {getattr(trip, 'guest_last_name', '') or ''}".strip()
-            if guest_full:
-                rider_name = guest_full
-                rider_phone = getattr(trip, 'guest_phone', '') or ""
-            elif trip.rider_id:
+            # Guest info takes priority — rider_id on web bookings points to
+            # the shared web@cruiseinride.com system user, whose "name" would
+            # otherwise overwrite the actual guest name collected at checkout.
+            # _resolve_rider_display centralises this preference.
+            rider = None
+            if trip.rider_id:
                 rr = await db.execute(select(User).where(User.id == trip.rider_id))
                 rider = rr.scalar_one_or_none()
-                if rider:
-                    rider_name = f"{rider.first_name or ''} {rider.last_name or ''}".strip()
-                    rider_phone = rider.phone or ""
-                    rider_photo = _abs_photo_url(rider.photo_url) or ""
-            if not rider_name:
-                rider_name = "Web Booking"
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            rider_photo = (
+                _abs_photo_url(rider.photo_url) if rider else ""
+            ) or ""
 
             # Fetch online drivers with known location (match vehicle_type if possible)
             result = await db.execute(

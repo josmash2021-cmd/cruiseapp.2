@@ -928,10 +928,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const deepBlack = Color(0xFF0F0F0F);
     const mutedGray = Color(0xFF9A9A9A);
 
-    // Parse offer data
+    // Parse offer data.
+    // Rating display rules (backend-driven via rider_rides_count):
+    //   rider_is_new == true                          -> "New rider"
+    //   ratingsCount > 0 && rating > 0                -> show star rating
+    //   else                                          -> show nothing
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
-    final riderIsNew = offer['rider_is_new'] == true ||
-        ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
+    final ratingsCount =
+        (offer['rider_ratings_count'] as num?)?.toInt() ?? 0;
+    final riderIsNew = offer['rider_is_new'] == true;
+    final hasRating = !riderIsNew && ratingsCount > 0 && rating > 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final rawPickupAddr =
         (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
@@ -1024,6 +1030,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           fare: fare,
                           rating: rating,
                           riderIsNew: riderIsNew,
+                          hasRating: hasRating,
                           vehicleType: vehicleType,
                           etaToPickup: etaToPickup,
                           distToPickupMi: distToPickupMi,
@@ -1077,6 +1084,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     required double fare,
     required double rating,
     required bool riderIsNew,
+    required bool hasRating,
     required String vehicleType,
     required int etaToPickup,
     required double distToPickupMi,
@@ -1240,7 +1248,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   fontWeight: FontWeight.w600,
                 ),
               )
-            else ...[
+            else if (hasRating) ...[
               Icon(Icons.star_rounded, color: goldAccent, size: 13),
               const SizedBox(width: 3),
               Text(
@@ -1252,7 +1260,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
             ],
-            const SizedBox(width: 12),
+            if (riderIsNew || hasRating) const SizedBox(width: 12),
             Icon(Icons.access_time_rounded, color: goldAccent, size: 12),
             const SizedBox(width: 3),
             Text(
@@ -1653,8 +1661,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final name = (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
-    final riderIsNew = offer['rider_is_new'] == true ||
-        ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
+    final ratingsCount =
+        (offer['rider_ratings_count'] as num?)?.toInt() ?? 0;
+    final riderIsNew = offer['rider_is_new'] == true;
+    final hasRating = !riderIsNew && ratingsCount > 0 && rating > 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
     final rawPickupAddr2 =
         (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
@@ -1762,7 +1772,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 5),
+                            if (riderIsNew || hasRating)
+                              const SizedBox(height: 5),
                             if (riderIsNew)
                               Text(
                                 S.of(context).newRiderLabel,
@@ -1771,7 +1782,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                                   fontWeight: FontWeight.w700,
                                 ),
                               )
-                            else
+                            else if (hasRating)
                               Row(
                                 children: [
                                   const Icon(Icons.star_rounded, color: _gold, size: 13),

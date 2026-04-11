@@ -1554,14 +1554,15 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                             color: Colors.white,
                             fontSize: Responsive.sp(17),
                             fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 3),
+                        if (widget.riderIsNew || widget.riderRating > 0)
+                          const SizedBox(height: 3),
                         if (widget.riderIsNew)
                           Text(S.of(context).newRiderLabel,
                             style: TextStyle(
                               color: _gold,
                               fontSize: Responsive.sp(13),
                               fontWeight: FontWeight.w600))
-                        else
+                        else if (widget.riderRating > 0)
                           Row(
                             children: [
                               const Icon(Icons.star_rounded,

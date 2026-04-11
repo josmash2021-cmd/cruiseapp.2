@@ -630,7 +630,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                                 fontWeight: FontWeight.w600,
                               ),
                             )
-                          else ...[
+                          else if (widget.riderRating > 0) ...[
                             const Icon(Icons.star_rounded,
                                 color: _gold, size: 14),
                             const SizedBox(width: 4),
@@ -642,7 +642,8 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                               ),
                             ),
                           ],
-                          const SizedBox(width: 12),
+                          if (widget.riderIsNew || widget.riderRating > 0)
+                            const SizedBox(width: 12),
                           Text(
                             '${widget.etaMinutes} min · ${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',
                             style: const TextStyle(

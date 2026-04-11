@@ -2206,14 +2206,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               style: TextStyle(
                                 color: Colors.white, fontSize: Responsive.sp(15),
                                 fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 4),
+                            if (widget.riderIsNew || widget.riderRating > 0)
+                              const SizedBox(height: 4),
                             if (widget.riderIsNew)
                               Text(S.of(context).newRiderLabel,
                                 style: TextStyle(
                                   color: const Color(0xFFE8C547),
                                   fontSize: Responsive.sp(11),
                                   fontWeight: FontWeight.w600))
-                            else ...[
+                            else if (widget.riderRating > 0) ...[
                               _stars(widget.riderRating),
                               const SizedBox(height: 3),
                               Text('${widget.riderRating.toStringAsFixed(1)} ${S.of(context).rating.toLowerCase()}',

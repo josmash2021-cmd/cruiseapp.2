@@ -131,15 +131,16 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["driver_earnings"] = visible_fare
     # Never expose platform_fee to drivers
     data.pop("platform_fee", None)
-    # Guest-booking fallback for driver-facing rider name/phone so the
-    # driver app shows the real guest name instead of "Web Booking" / "W"
-    # when rider_id is NULL.
-    if not getattr(trip, "rider_id", None) and (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_phone", None)):
-        _gf = (trip.guest_first_name or "").strip()
-        _gl = (trip.guest_last_name or "").strip()
-        _name = f"{_gf} {_gl}".strip() or "Guest Rider"
-        data["rider_name"] = _name
-        data["rider_phone"] = (trip.guest_phone or "").strip()
+    # Guest-booking override for driver-facing rider name/phone so the
+    # driver app shows the real guest name instead of "Web Booking" / "W".
+    # Must fire even when rider_id is set — web/Shopify trips point
+    # rider_id at the shared web@cruiseinride.com system user, whose
+    # profile would otherwise leak through.
+    _gf = (getattr(trip, "guest_first_name", None) or "").strip()
+    _gl = (getattr(trip, "guest_last_name", None) or "").strip()
+    if _gf or _gl:
+        data["rider_name"] = f"{_gf} {_gl}".strip() or "Guest Rider"
+        data["rider_phone"] = (getattr(trip, "guest_phone", None) or "").strip()
     return data
 
 
@@ -179,12 +180,20 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["rider_name"] = _rn
         data["rider_phone"] = _rp
         data["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-        # Only expose a rating if the rider has actually been rated before.
-        # New riders return null + ratings_count=0 so the driver app shows
-        # "New rider" instead of a fake default 5.0/4.8.
+        # Rider history + rating. The driver card uses these three fields to
+        # decide what label to show:
+        #   - rides_count == 0  →  "New rider" (first request ever)
+        #   - ratings_count > 0 →  show the star rating
+        #   - else              →  show nothing (has ridden but never rated)
         rider_rating_val = None
         rider_ratings_count = 0
+        rider_rides_count = 0
         if rider:
+            rides_res = await db.execute(
+                select(func.count(Trip.id)).where(Trip.rider_id == rider.id)
+            )
+            # Subtract the current trip so we report "prior rides".
+            rider_rides_count = max(0, int(rides_res.scalar() or 0) - 1)
             cnt_res = await db.execute(
                 select(func.count(Rating.id)).where(Rating.to_user_id == rider.id)
             )
@@ -193,7 +202,8 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
                 rider_rating_val = round(float(rider.average_rating), 2)
         data["rider_rating"] = rider_rating_val
         data["rider_ratings_count"] = rider_ratings_count
-        data["rider_is_new"] = rider_ratings_count == 0
+        data["rider_rides_count"] = rider_rides_count
+        data["rider_is_new"] = rider_rides_count == 0
         return data
     else:
         result = await db.execute(

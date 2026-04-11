@@ -1492,14 +1492,38 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] trip screen popped with result=cancelled — firing _cancel()');
       _cancel();
     } else {
-      // Null or unexpected result — iOS swipe-back gesture, Android system
-      // back button, route override, etc.  **DO NOT** auto-cancel the trip:
-      // the driver may still be physically running it and we would kill the
-      // rider's ride just because the screen popped. Treat this exactly
-      // like 'back_to_home' — keep the trip alive and let the driver
-      // resume from DriverHomeScreen.
-      debugPrint('[DriverOnline] trip screen popped with result=$result — treating as back_to_home (trip preserved)');
-      _goBackToHomeWithTrip();
+      // result == null — THE big phantom-cancel case.
+      //
+      // This fires ~3 seconds after accept because TripAcceptedScreen
+      // does `Navigator.pushReplacement(DriverTripAcceptScreen(...))`.
+      // pushReplacement destroys the route that our `navFuture` was
+      // tracking, so Flutter completes navFuture with `null` — even
+      // though the driver is now actively on DriverTripAcceptScreen
+      // managing the trip.
+      //
+      // Previously (v293) we blindly called _cancel() here, which
+      // PATCHed the backend to status=cancelled while the driver kept
+      // driving — the mysterious "Ride Cancelled by operator" dialog
+      // the rider kept seeing. The v294 intermediate fix tried
+      // _goBackToHomeWithTrip() but that calls nav.pop() which closes
+      // DriverTripAcceptScreen out from under the driver.
+      //
+      // Correct behaviour: do NOTHING. DriverTripAcceptScreen is now
+      // the source of truth for the trip lifecycle (it owns arrived /
+      // in_trip / completed state machine and its own navigation on
+      // exit). Touching controller state from here would race its
+      // transitions.
+      debugPrint(
+        '[DriverOnline] navFuture resolved with null — pushReplacement handoff to '
+        'DriverTripAcceptScreen detected. Leaving trip alone.',
+      );
+      // Clear local offer/trip refs so if the driver later exits
+      // DriverTripAcceptScreen back to this online screen via a
+      // back_to_home pop, the controller doesn't think there's a ghost
+      // trip still in progress. The rider-side trip state lives in
+      // DriverTripAcceptScreen — we don't need to mirror it here.
+      _tripId = null;
+      _currentOfferId = null;
     }
   }
 

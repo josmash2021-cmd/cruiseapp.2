@@ -16,10 +16,28 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
 
   Future<void> _executeCancelAndTransition() async {
     await LocalDataService.clearActiveRide();
+    bool backendOk = true;
     if (widget.tripId != null) {
       try {
         await ApiService.cancelTrip(widget.tripId!);
-      } catch (_) {}
+      } catch (e) {
+        backendOk = false;
+        debugPrint('[RiderTracking] cancelTrip(${widget.tripId}) failed: $e');
+      }
+    }
+    if (!backendOk && mounted) {
+      // Show a warning but continue the flow so the rider isn't stuck.
+      // Backend will eventually reconcile via the dispatch auto-cancel loop.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Cancel request may not have reached the server — we will retry in the background',
+          ),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     }
     AnalyticsService.instance.logRideCancelled('user_cancelled', false);
     await _cleanupMapAnnotations();

@@ -2084,18 +2084,32 @@ class ApiService {
   }
 
   /// Rider polls dispatch status to see if a driver accepted.
+  /// Returns a map with at least `status`. On error the map will contain
+  /// `{'status': 'error', 'error': '<reason>'}` — callers MUST check for
+  /// `status == 'error'` before reading other fields to avoid null map access.
   static Future<Map<String, dynamic>> getDispatchStatus(int tripId) async {
     final h = await _authHeaders();
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/dispatch/trip/status?trip_id=$tripId'),
-          headers: h,
-        )
-        .timeout(const Duration(seconds: 3));
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      return jsonDecode(res.body) as Map<String, dynamic>;
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/dispatch/trip/status?trip_id=$tripId'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) return body;
+        debugPrint('[ApiService] getDispatchStatus($tripId) — unexpected body type');
+        return {'status': 'error', 'error': 'unexpected_body'};
+      }
+      debugPrint(
+        '[ApiService] getDispatchStatus($tripId) status=${res.statusCode}',
+      );
+      return {'status': 'error', 'error': 'http_${res.statusCode}'};
+    } catch (e) {
+      debugPrint('[ApiService] getDispatchStatus($tripId) exception: $e');
+      return {'status': 'error', 'error': e.toString()};
     }
-    return {'status': 'error'};
   }
 
   /// Fetch a user's photo URL from the backend DB.
@@ -2395,8 +2409,18 @@ class ApiService {
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         if (body is Map<String, dynamic>) return body;
+        debugPrint('[ApiService] pollTripStatus($tripId) — unexpected body type');
+        return null;
       }
-    } catch (_) {}
+      // H3 fix: previously all non-200 responses returned null silently,
+      // which masked 401 (session expired) and 5xx (backend down) errors
+      // and left the rider tracking screen completely blind.
+      debugPrint(
+        '[ApiService] pollTripStatus($tripId) status=${res.statusCode}',
+      );
+    } catch (e) {
+      debugPrint('[ApiService] pollTripStatus($tripId) error: $e');
+    }
     return null;
   }
 

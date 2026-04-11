@@ -98,6 +98,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } catch (e) {
       debugPrint('[RiderTracking] ❌ Poll error: $e');
+      // H1 fix: surface connection issues to the rider. Previously this
+      // silently swallowed auth/500/TLS errors and the "connection lost"
+      // banner only fired from the Firestore path.
+      _pollFailCount++;
+      if (mounted &&
+          _pollFailCount >= _maxPollFailsBeforeBanner &&
+          !_connectionLost &&
+          !NetworkService().isOnline) {
+        _setState(() => _connectionLost = true);
+      }
     }
   }
 
@@ -571,7 +581,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _confirmPickupShown = false;
       _arrivedDotPulse.stop();
       _saveChatToInbox();
-      Future.delayed(const Duration(milliseconds: 1500), () {
+      // C7 fix: use a cancellable Timer so dispose() can kill the pending
+      // navigation if the rider leaves the screen during the 1.5s delay.
+      _ratingNavTimer?.cancel();
+      _ratingNavTimer = Timer(const Duration(milliseconds: 1500), () {
         if (mounted) _goToRating();
       });
       return;
@@ -644,16 +657,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     if (isCancelledStatus) {
-      // Guard: only ignore a stale "cancelled" status while the trip is
-      // actively in progress (driver physically driving the rider). During
-      // `arriving` the trip has barely started — a cancel from dispatch or
-      // driver is legitimate and must NOT be swallowed, otherwise the rider
-      // screen gets stuck polling a dead trip forever.
-      if (_phase == _TrackPhase.onTrip ||
-          _phase == _TrackPhase.nearDestination) {
-        debugPrint('[RiderTracking] Ignoring cancelled status while in active phase $_phase');
-        return;
-      }
+      // C3 fix: this handler can be invoked from a Firestore snapshot
+      // callback AFTER the widget has been disposed. Bail out early to
+      // avoid touching `context` on a dead State.
+      if (!mounted || _phase == _TrackPhase.completed) return;
+
+      // C2 fix: previously we ignored `cancelled` while in active phases
+      // (onTrip / nearDestination) to defend against stale Firestore
+      // snapshots.  The side effect was that LEGITIMATE cancels from
+      // dispatch or the driver mid-ride were swallowed, leaving the rider
+      // polling a dead trip forever. We now trust the status and use
+      // `_cancelDialogShown` + `_goingToRating` as the only dedup guards.
 
       final cancelledBy =
           (data['cancelledBy'] ??
@@ -689,12 +703,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
 
       if (!_cancelDialogShown) {
+        // C3 fix: capture the localised string BEFORE any async gap so we
+        // never touch `context` from a stale closure.
+        final String? operatorMessage = cancelledByDriver
+            ? null
+            : S.of(context).tripCancelledByOperator;
         _cancelDialogShown = true;
-        _showDriverCancelledDialog(
-          message: cancelledByDriver
-              ? null
-              : S.of(context).tripCancelledByOperator,
-        );
+        _showDriverCancelledDialog(message: operatorMessage);
       }
     }
   }
@@ -803,9 +818,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _rtdbFailCount = 0;
         _rtdbReconnectTimer?.cancel();
         _statusPollTimer?.cancel();
-        _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-          _pollBackendTripStatus();
-        });
+        // C6 fix: defensive check — don't re-create the poll timer if the
+        // trip is already completed (a late RTDB event could otherwise
+        // restart polling on a dead trip forever).
+        if (mounted && _phase != _TrackPhase.completed) {
+          _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+            _pollBackendTripStatus();
+          });
+        }
       }
       if (_connectionLost) _setState(() => _connectionLost = false);
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
@@ -829,9 +849,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         });
         // Fix 4: while RTDB is down, poll backend every 3s (faster than normal 8s)
         _statusPollTimer?.cancel();
-        _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-          _pollBackendTripStatus();
-        });
+        // C6 fix: defensive check — same reasoning as the success path above.
+        if (mounted && _phase != _TrackPhase.completed) {
+          _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+            _pollBackendTripStatus();
+          });
+        }
       }
     });
   }

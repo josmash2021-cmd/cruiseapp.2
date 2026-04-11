@@ -858,8 +858,11 @@ async def _scheduled_ride_dispatcher():
                                     dropoff_lng=trip.dropoff_lng or 0,
                                     fare=trip.fare or 0,
                                 )
-                            except Exception:
-                                pass
+                            except Exception as _fs_err:
+                                logging.warning(
+                                    "[Scheduler] Firestore sync_scheduled_ride failed for trip %d: %s",
+                                    trip.id, _fs_err,
+                                )
 
         except Exception as e:
             logging.error("[Scheduler] Error in scheduled ride dispatcher: %s", e)

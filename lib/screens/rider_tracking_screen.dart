@@ -205,6 +205,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Bottom bar phase transition state ──
   bool _tripJustStarted = false; // brief "Your trip has started" message
   Timer? _tripStartedTimer;
+  Timer? _ratingNavTimer;    // cancellable delay before navigating to rating
 
   int _pickupIdx = 0;
 
@@ -350,6 +351,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _startRidePhaseTimer?.cancel();
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
+    _ratingNavTimer?.cancel();
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _gpsFallbackTimer?.cancel();

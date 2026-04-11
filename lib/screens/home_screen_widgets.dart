@@ -156,11 +156,27 @@ extension _HomeScreenWidgets on _HomeScreenState {
             onTap: () async {
               final tripId = _pendingSearchTripId;
               if (tripId == null) return;
+              bool backendOk = false;
               try {
                 await ApiService.cancelTrip(tripId);
-              } catch (_) {}
+                backendOk = true;
+              } catch (e) {
+                debugPrint('[HomeScreen] cancelTrip($tripId) failed: $e');
+              }
               _pendingSearchTimer?.cancel();
+              if (!mounted) return;
               _setState(() => _pendingSearchTripId = null);
+              if (!backendOk) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Could not cancel — check your connection',
+                    ),
+                    backgroundColor: Colors.red.shade700,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
             },
             child: Container(
               margin: const EdgeInsets.only(right: 8),

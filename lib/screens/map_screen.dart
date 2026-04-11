@@ -1599,7 +1599,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // Cancel on backend
     final tripId = _currentTripId;
     if (tripId != null) {
-      try { await ApiService.cancelTrip(tripId); } catch (_) {}
+      try {
+        await ApiService.cancelTrip(tripId);
+      } catch (e) {
+        debugPrint('[MapScreen] cancelTrip($tripId) failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Could not cancel on server — trip may still be active',
+              ),
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
     }
 
     // Cancel timers and listeners

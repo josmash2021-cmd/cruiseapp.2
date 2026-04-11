@@ -47,7 +47,11 @@ def _ensure_init():
             log.warning("⚠️  Firebase Storage bucket init failed: %s", e)
         return
     except ValueError:
-        pass  # Not yet initialized
+        # Not yet initialized — continue to the init path below.
+        # (ValueError is the specific exception firebase_admin.get_app() raises
+        # when there is no default app; we log at DEBUG because this is the
+        # expected path on first boot, not an error.)
+        log.debug("firebase_admin not yet initialized — proceeding with init")
 
     cred = None
     # 1. Try local file

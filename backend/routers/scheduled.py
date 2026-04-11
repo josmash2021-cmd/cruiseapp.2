@@ -12,6 +12,8 @@ from models.database import get_db, User, Trip, DispatchOffer, Vehicle
 from utils.security import _verify_api_key, _get_current_user
 from utils.helpers import utc_now, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
+from services.sms_service import notify_guest_driver_assigned
+from services.email_service import email_guest_driver_assigned
 from config import _HAS_FIRESTORE, firestore_sync
 
 router = APIRouter(tags=["scheduled"])
@@ -170,6 +172,40 @@ async def claim_scheduled_trip(
             )
     except Exception as e:
         logging.warning("[Scheduled] FCM notify rider failed: %s", e)
+
+    # Guest rider notifications (SMS + email) when a driver claims a scheduled
+    # ride from the marketplace — fires the same "driver_assigned" templates
+    # as an immediate dispatch accept, so guests get the conductor/vehicle card
+    # the moment the driver confirms, not when the scheduler activates the trip.
+    try:
+        veh_r = await db.execute(
+            select(Vehicle).where(Vehicle.user_id == user.id).limit(1)
+        )
+        _veh_for_notif = veh_r.scalar_one_or_none()
+        class _VehStub:
+            year = ""
+            make = ""
+            model = ""
+            color = ""
+            plate = ""
+            license_plate = ""
+        _veh = _veh_for_notif or _VehStub()
+        try:
+            await notify_guest_driver_assigned(db, trip, user, _veh)
+        except Exception as _sms_err:
+            logging.warning(
+                "[SMS] notify_guest_driver_assigned (claim) failed for trip %s: %s",
+                trip.id, _sms_err,
+            )
+        try:
+            await email_guest_driver_assigned(db, trip, user, _veh)
+        except Exception as _email_err:
+            logging.warning(
+                "[EMAIL] email_guest_driver_assigned (claim) failed for trip %s: %s",
+                trip.id, _email_err,
+            )
+    except Exception as e:
+        logging.warning("[Scheduled] guest notifications on claim failed: %s", e)
 
     # Firestore sync
     if _HAS_FIRESTORE:

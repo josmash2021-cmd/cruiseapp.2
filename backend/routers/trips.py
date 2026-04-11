@@ -58,24 +58,43 @@ _STATUS_ALIASES = {
 # Valid trip status transitions -- enforce lifecycle integrity.
 # Keys and values use CANONICAL status names only.
 #
-# Philosophy: be permissive on forward progress (arrived/in_trip/completed)
-# and cancellation. The driver owns the physical trip state — if they say
-# the trip is done, the backend must trust them rather than block the
-# flow with stale transition rules. Only TERMINAL states (completed,
-# cancelled) truly refuse further changes.
-_NON_TERMINAL_FORWARD = {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled"}
+# Forward-only state machine. Earlier versions used a single permissive set
+# (_NON_TERMINAL_FORWARD) for every key, which allowed backward transitions
+# like in_trip → arrived — that's how the trip 210 incident ended up with
+# 6 arrived PATCHes and 3 in_trip PATCHes from multiple stale client
+# instances all firing against the same trip. We now encode the real
+# lifecycle order and reject any PATCH that tries to go backward.
+#
+# The driver-override bypass (below, for stale cancelled/completed) is the
+# only escape hatch and it's rate-limited to the driver + admin/dispatch.
+_TERMINAL_SET = set()  # completed / cancelled — no transitions out
 _VALID_TRANSITIONS = {
-    "requested":       _NON_TERMINAL_FORWARD,
-    "accepted":        _NON_TERMINAL_FORWARD,
-    "driver_en_route": _NON_TERMINAL_FORWARD,
-    "arrived":         _NON_TERMINAL_FORWARD,
-    "in_trip":         _NON_TERMINAL_FORWARD,
-    "scheduled":       _NON_TERMINAL_FORWARD,
-    "scheduled_accepted": _NON_TERMINAL_FORWARD,
-    "scheduled_active":   _NON_TERMINAL_FORWARD,
-    "completed":       set(),  # terminal
-    "cancelled":       set(),  # terminal
+    "requested":          {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled"},
+    "accepted":           {"driver_en_route", "arrived", "in_trip", "completed", "cancelled"},
+    "driver_en_route":    {"arrived", "in_trip", "completed", "cancelled"},
+    "arrived":            {"in_trip", "completed", "cancelled"},
+    "in_trip":            {"completed", "cancelled"},
+    "scheduled":          {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled",
+                           "scheduled_accepted", "scheduled_active"},
+    "scheduled_accepted": {"driver_en_route", "arrived", "in_trip", "completed", "cancelled", "scheduled_active"},
+    "scheduled_active":   {"driver_en_route", "arrived", "in_trip", "completed", "cancelled"},
+    "completed":          _TERMINAL_SET,  # terminal
+    "cancelled":          _TERMINAL_SET,  # terminal
 }
+
+# Legacy alias kept because the driver-override bypass below references it.
+# The full forward set is what we fall back to when a trip is resurrected
+# from a terminal state.
+_NON_TERMINAL_FORWARD = {"accepted", "driver_en_route", "arrived", "in_trip", "completed", "cancelled"}
+
+# Rapid-duplicate idempotency cache: (trip_id, canonical_status) → last_seen_ts.
+# If the same PATCH arrives from ANY client within _DEDUP_WINDOW_SECONDS of
+# the first, we short-circuit with a 200 OK and do no work. This catches the
+# "6 arrived PATCHes in a row" pattern where stale client instances keep
+# firing the same transition against an already-transitioned trip.
+_recent_status_patches: dict[tuple[int, str], float] = {}
+_DEDUP_WINDOW_SECONDS = 10.0
+_DEDUP_CACHE_MAX = 2000
 
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
     """Return (platform_rate, driver_rate) for the given vehicle type."""
@@ -639,6 +658,34 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
 
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # ── Idempotency pre-check: if the same (trip, status) pair arrived in
+    # the last N seconds, short-circuit before touching the DB at all.
+    # This fires BEFORE the FOR UPDATE lock so rapid duplicate PATCHes from
+    # multiple stale client instances (the trip 210 pattern: 6x arrived +
+    # 3x in_trip in one window) don't each grab the row lock and do a
+    # full write + event-bus + Firestore + n8n round trip.
+    _now_mono = time.monotonic()
+    _normalized_status = _STATUS_ALIASES.get(
+        status.lower().strip(), status.lower().strip()
+    )
+    _dedup_key = (trip_id, _normalized_status)
+    _last_seen = _recent_status_patches.get(_dedup_key)
+    if _last_seen is not None and (_now_mono - _last_seen) < _DEDUP_WINDOW_SECONDS:
+        logging.info(
+            "[TripStatus] 🔁 Deduped PATCH trip=%d status=%r — same transition %0.1fs ago from client",
+            trip_id, _normalized_status, _now_mono - _last_seen,
+        )
+        # Return a minimal OK so the client doesn't retry. We don't have the
+        # full trip dict here (we haven't loaded it) but the client only
+        # cares about success/failure for status updates.
+        return {"id": trip_id, "status": _normalized_status, "deduped": True}
+    _recent_status_patches[_dedup_key] = _now_mono
+    # Prune cache if it grows too large — drop entries older than the window.
+    if len(_recent_status_patches) > _DEDUP_CACHE_MAX:
+        _cutoff = _now_mono - _DEDUP_WINDOW_SECONDS
+        for _k in [k for k, v in _recent_status_patches.items() if v < _cutoff]:
+            _recent_status_patches.pop(_k, None)
+
     # Use FOR UPDATE to prevent race condition where driver accepts while
     # a stale cancel request overwrites the trip status concurrently.
     result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())

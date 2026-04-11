@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text,
-    UniqueConstraint, text,
+    UniqueConstraint, text, func,
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -149,7 +149,7 @@ class ConsentLog(Base):
 class Trip(Base):
     __tablename__ = "trips"
     id = Column(Integer, primary_key=True, index=True)
-    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     pickup_address = Column(Text, nullable=False)
     dropoff_address = Column(Text, nullable=False)
@@ -166,6 +166,10 @@ class Trip(Base):
     terminal = Column(String(50), nullable=True)
     pickup_zone = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
+    guest_first_name = Column(String(100), nullable=True)
+    guest_last_name = Column(String(100), nullable=True)
+    guest_phone = Column(String(30), nullable=True)
+    guest_email = Column(String(200), nullable=True)
     cancel_reason = Column(Text, nullable=True)
     payment_status = Column(String(20), default="unpaid")
     stripe_payment_intent_id = Column(String(100), nullable=True)
@@ -502,6 +506,36 @@ class AuditLog(Base):
     details = Column(Text, nullable=True)
     prev_hash = Column(String(64), nullable=True)   # hash chain link
     entry_hash = Column(String(64), nullable=False)  # SHA-256 of this entry
+
+
+class SmsLog(Base):
+    __tablename__ = "sms_log"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "event_type", name="uq_sms_log_trip_event"),
+    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False, index=True)
+    event_type = Column(String(40), nullable=False, index=True)
+    phone_number = Column(String(30), nullable=False)
+    status = Column(String(20), nullable=False, default="sent")
+    twilio_sid = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+
+class EmailLog(Base):
+    __tablename__ = "email_log"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "event_type", name="uq_email_log_trip_event"),
+    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False, index=True)
+    event_type = Column(String(40), nullable=False, index=True)
+    email_address = Column(String(200), nullable=False)
+    status = Column(String(20), nullable=False, default="sent")
+    provider_id = Column(String(100), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
 
 
 # ═══════════════════════════════════════════════════════

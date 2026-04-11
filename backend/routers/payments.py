@@ -15,8 +15,10 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _haversine, _abs_photo_url, _user_dict
+from utils.helpers import _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
 from services.fcm_service import _send_fcm_push
+from services.sms_service import notify_guest_welcome
+from services.email_service import email_guest_welcome
 from sqlalchemy.exc import IntegrityError
 from jose import jwt, JWTError
 from config import (
@@ -875,6 +877,21 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     contact_name = body.get("contact_name") or "Web Booking"
     contact_phone = body.get("contact_phone") or ""
 
+    # Preferred: the Shopify widget now sends discrete guest fields via the
+    # "Continue as Guest" flow. Legacy clients still send contact_name /
+    # contact_phone, so we fall back to splitting contact_name on the first
+    # space when the new fields are absent.
+    guest_first_name = (body.get("rider_first_name") or "").strip()
+    guest_last_name = (body.get("rider_last_name") or "").strip()
+    guest_phone = (body.get("rider_phone") or "").strip()
+    guest_email = (body.get("rider_email") or "").strip().lower()
+    if not guest_first_name and not guest_last_name and contact_name and contact_name != "Web Booking":
+        _parts = contact_name.strip().split(" ", 1)
+        guest_first_name = _parts[0]
+        guest_last_name = _parts[1] if len(_parts) > 1 else ""
+    if not guest_phone:
+        guest_phone = contact_phone
+
     if not pickup_address or not dropoff_address:
         raise HTTPException(400, "pickup_address and dropoff_address are required")
 
@@ -989,6 +1006,10 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             stripe_payment_intent_id=payment_intent_id,
             scheduled_at=scheduled_at,
             notes=notes_text,
+            guest_first_name=guest_first_name or None,
+            guest_last_name=guest_last_name or None,
+            guest_phone=guest_phone or None,
+            guest_email=guest_email or None,
             payment_status="held" if payment_intent_id else "unpaid",
         )
         db.add(trip)
@@ -999,11 +1020,68 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         logging.error("[WebBooking] Create trip failed: %s", e)
         raise HTTPException(500, f"Failed to create booking: {e}")
 
+    # Guest SMS: welcome message (no-op if trip.guest_phone is empty).
+    # Fired AFTER commit so a rolled-back transaction cannot trigger an SMS.
+    try:
+        await notify_guest_welcome(db, trip)
+    except Exception as _sms_err:
+        logging.warning("[SMS] notify_guest_welcome failed for trip %s: %s", trip.id, _sms_err)
+    try:
+        await email_guest_welcome(db, trip)
+    except Exception as _email_err:
+        logging.warning("[EMAIL] email_guest_welcome failed for trip %s: %s", trip.id, _email_err)
+
     if is_future_scheduled:
         logging.info(
             "[WebBooking] Created SCHEDULED trip %d for %s (%.2f %s) — marketplace will pick it up",
             trip.id, scheduled_at.isoformat(), fare or 0, vehicle_type,
         )
+        # Mirror the rider-app /trips path: sync Firestore and broadcast to drivers
+        # so web-scheduled bookings enter the exact same marketplace pipeline.
+        _rn, _rp = _resolve_rider_display(trip, None)
+        _trip_snap = {
+            "id": trip.id, "rider_id": trip.rider_id or 0, "rider_name": _rn, "rider_phone": _rp,
+            "pickup_address": trip.pickup_address, "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+            "dropoff_address": trip.dropoff_address, "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
+            "status": trip.status, "fare": trip.fare, "vehicle_type": trip.vehicle_type,
+            "created_at": trip.created_at, "scheduled_at": trip.scheduled_at,
+            "is_airport": getattr(trip, "is_airport", False) or False,
+            "airport_code": getattr(trip, "airport_code", None),
+            "terminal": getattr(trip, "terminal", None),
+            "pickup_zone": getattr(trip, "pickup_zone", None),
+            "notes": trip.notes,
+        }
+        async def _bg_sched_firestore_sync():
+            try:
+                if _HAS_FIRESTORE and firestore_sync:
+                    firestore_sync.sync_trip(
+                        trip_id=_trip_snap["id"], rider_id=_trip_snap["rider_id"],
+                        rider_name=_trip_snap["rider_name"], rider_phone=_trip_snap["rider_phone"],
+                        pickup_address=_trip_snap["pickup_address"], pickup_lat=_trip_snap["pickup_lat"], pickup_lng=_trip_snap["pickup_lng"],
+                        dropoff_address=_trip_snap["dropoff_address"], dropoff_lat=_trip_snap["dropoff_lat"], dropoff_lng=_trip_snap["dropoff_lng"],
+                        status=_trip_snap["status"], fare=_trip_snap["fare"], vehicle_type=_trip_snap["vehicle_type"],
+                        created_at=_trip_snap["created_at"], scheduled_at=_trip_snap["scheduled_at"],
+                        is_airport=_trip_snap["is_airport"], airport_code=_trip_snap["airport_code"],
+                        terminal=_trip_snap["terminal"], pickup_zone=_trip_snap["pickup_zone"], notes=_trip_snap["notes"],
+                    )
+            except Exception as _e:
+                logging.warning("[WebBooking] Firestore sync scheduled trip %d failed: %s", trip.id, _e)
+        asyncio.create_task(_bg_sched_firestore_sync())
+        try:
+            from services.fcm_service import send_to_topic_async
+            _fare_str = f"${trip.fare:.2f}" if trip.fare else ""
+            _pu = (trip.pickup_address or "")[:40]
+            _do = (trip.dropoff_address or "")[:40]
+            _sched_str = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
+            _body = f"{_fare_str} \u00b7 {_pu} \u2192 {_do} \u00b7 {_sched_str}".strip(" \u00b7")
+            asyncio.create_task(send_to_topic_async(
+                topic="drivers_available",
+                title="New Scheduled Ride Available",
+                body=_body,
+                data={"type": "scheduled_ride", "trip_id": str(trip.id)},
+            ))
+        except Exception as _fcm_err:
+            logging.warning("[WebBooking] FCM scheduled-ride broadcast failed: %s", _fcm_err)
     else:
         # Immediate booking — dispatch to nearby drivers (non-blocking background task)
         asyncio.create_task(
@@ -1033,17 +1111,25 @@ async def _web_dispatch_to_drivers(
             if not trip:
                 return
 
-            # Rider info for the offer card shown in the app
-            rider_name = "Web Booking"
+            rider_name = ""
             rider_phone = ""
             rider_photo = ""
-            if trip.rider_id:
+            # Guest info takes priority — rider_id on web bookings points to the
+            # shared web@cruiseinride.com system user, whose "name" would otherwise
+            # overwrite the actual guest's first/last name collected at checkout.
+            guest_full = f"{getattr(trip, 'guest_first_name', '') or ''} {getattr(trip, 'guest_last_name', '') or ''}".strip()
+            if guest_full:
+                rider_name = guest_full
+                rider_phone = getattr(trip, 'guest_phone', '') or ""
+            elif trip.rider_id:
                 rr = await db.execute(select(User).where(User.id == trip.rider_id))
                 rider = rr.scalar_one_or_none()
                 if rider:
-                    rider_name = f"{rider.first_name or ''} {rider.last_name or ''}".strip() or "Web Booking"
+                    rider_name = f"{rider.first_name or ''} {rider.last_name or ''}".strip()
                     rider_phone = rider.phone or ""
                     rider_photo = _abs_photo_url(rider.photo_url) or ""
+            if not rider_name:
+                rider_name = "Web Booking"
 
             # Fetch online drivers with known location (match vehicle_type if possible)
             result = await db.execute(

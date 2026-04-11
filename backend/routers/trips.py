@@ -14,8 +14,20 @@ from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display
 from services.fcm_service import _send_fcm_push, send_to_topic_async
+from services.sms_service import (
+    notify_guest_driver_assigned,
+    notify_guest_driver_en_route,
+    notify_guest_driver_arrived,
+    notify_guest_trip_completed,
+)
+from services.email_service import (
+    email_guest_driver_assigned,
+    email_guest_driver_en_route,
+    email_guest_driver_arrived,
+    email_guest_trip_completed,
+)
 from services.n8n_webhooks import fire as _n8n_fire
 from routers.drivers import reevaluate_driver_tier
 from cruise_level_agent import evaluate_driver_level
@@ -119,6 +131,15 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["driver_earnings"] = visible_fare
     # Never expose platform_fee to drivers
     data.pop("platform_fee", None)
+    # Guest-booking fallback for driver-facing rider name/phone so the
+    # driver app shows the real guest name instead of "Web Booking" / "W"
+    # when rider_id is NULL.
+    if not getattr(trip, "rider_id", None) and (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_phone", None)):
+        _gf = (trip.guest_first_name or "").strip()
+        _gl = (trip.guest_last_name or "").strip()
+        _name = f"{_gf} {_gl}".strip() or "Guest Rider"
+        data["rider_name"] = _name
+        data["rider_phone"] = (trip.guest_phone or "").strip()
     return data
 
 
@@ -153,8 +174,10 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
             return None
         trip, rider = row
         data = _driver_visible_trip_dict(trip)
-        data["rider_name"] = f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "Rider"
-        data["rider_phone"] = (rider.phone or "") if rider else ""
+        # Guest-booking aware fallback: use trip.guest_* when there's no registered rider.
+        _rn, _rp = _resolve_rider_display(trip, rider)
+        data["rider_name"] = _rn
+        data["rider_phone"] = _rp
         data["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
         # Only expose a rating if the rider has actually been rated before.
         # New riders return null + ratings_count=0 so the driver app shows
@@ -358,15 +381,24 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
     await db.commit()
     await db.refresh(trip)
 
+    # Load driver + first vehicle once — reused for Firestore sync AND guest SMS
+    _accept_driver = None
+    _accept_vehicle = None
+    try:
+        _drv_r = await db.execute(select(User).where(User.id == body.driver_id))
+        _accept_driver = _drv_r.scalar_one_or_none()
+        _veh_r = await db.execute(
+            select(Vehicle).where(Vehicle.user_id == body.driver_id).limit(1)
+        )
+        _accept_vehicle = _veh_r.scalar_one_or_none()
+    except Exception as _load_err:
+        logging.warning("[AcceptTrip] Failed to pre-load driver/vehicle: %s", _load_err)
+
     # Sync to Firestore (include vehicle info so rider can see plate/model)
     if _HAS_FIRESTORE:
         try:
-            drv = await db.execute(select(User).where(User.id == body.driver_id))
-            driver = drv.scalar_one_or_none()
-            veh_r = await db.execute(
-                select(Vehicle).where(Vehicle.user_id == body.driver_id).limit(1)
-            )
-            veh = veh_r.scalar_one_or_none()
+            driver = _accept_driver
+            veh = _accept_vehicle
             firestore_sync.sync_trip_status(
                 trip_id=trip.id, status="driver_en_route",
                 driver_id=body.driver_id,
@@ -381,6 +413,33 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
             )
         except Exception as e:
             logging.error("Firestore sync on accept_trip failed: %s", e)
+
+    # Guest SMS: driver assigned (no-op if trip.guest_phone is empty).
+    # Fired AFTER commit; uses the pre-loaded driver/vehicle above.
+    try:
+        if _accept_vehicle is None:
+            class _VehStub:
+                make = ""
+                model = ""
+                plate = ""
+                year = ""
+                color = ""
+            _veh_for_sms = _VehStub()
+        else:
+            _veh_for_sms = _accept_vehicle
+        await notify_guest_driver_assigned(db, trip, _accept_driver, _veh_for_sms)
+    except Exception as _sms_err:
+        logging.warning(
+            "[SMS] notify_guest_driver_assigned failed for trip %s: %s",
+            trip.id, _sms_err,
+        )
+    try:
+        await email_guest_driver_assigned(db, trip, _accept_driver, _veh_for_sms)
+    except Exception as _email_err:
+        logging.warning(
+            "[EMAIL] email_guest_driver_assigned failed for trip %s: %s",
+            trip.id, _email_err,
+        )
 
     # SSE instant push to rider — must await before returning HTTP response
     try:
@@ -830,6 +889,66 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
     await db.commit()
     await db.refresh(trip)
+
+    # --- Guest SMS notifications --------------------------------------------
+    # The early-return guard at the top of this endpoint (canonical_current ==
+    # canonical_new) already ensures we do NOT reach this line on a no-op
+    # transition, so firing SMS here cannot double-send. Each call is fully
+    # wrapped so SMS failure can never break the status transition response.
+    try:
+        if canonical_new in ("driver_en_route", "arrived"):
+            _drv_sms_r = await db.execute(select(User).where(User.id == trip.driver_id))
+            _drv_for_sms = _drv_sms_r.scalar_one_or_none()
+            if canonical_new == "driver_en_route":
+                try:
+                    await notify_guest_driver_en_route(db, trip, _drv_for_sms)
+                except Exception as _sms_err:
+                    logging.warning(
+                        "[SMS] notify_guest_driver_en_route failed for trip %s: %s",
+                        trip.id, _sms_err,
+                    )
+                try:
+                    await email_guest_driver_en_route(db, trip, _drv_for_sms)
+                except Exception as _email_err:
+                    logging.warning(
+                        "[EMAIL] email_guest_driver_en_route failed for trip %s: %s",
+                        trip.id, _email_err,
+                    )
+            else:  # arrived
+                try:
+                    await notify_guest_driver_arrived(db, trip, _drv_for_sms)
+                except Exception as _sms_err:
+                    logging.warning(
+                        "[SMS] notify_guest_driver_arrived failed for trip %s: %s",
+                        trip.id, _sms_err,
+                    )
+                try:
+                    await email_guest_driver_arrived(db, trip, _drv_for_sms)
+                except Exception as _email_err:
+                    logging.warning(
+                        "[EMAIL] email_guest_driver_arrived failed for trip %s: %s",
+                        trip.id, _email_err,
+                    )
+        elif canonical_new == "completed":
+            try:
+                await notify_guest_trip_completed(db, trip)
+            except Exception as _sms_err:
+                logging.warning(
+                    "[SMS] notify_guest_trip_completed failed for trip %s: %s",
+                    trip.id, _sms_err,
+                )
+            try:
+                await email_guest_trip_completed(db, trip)
+            except Exception as _email_err:
+                logging.warning(
+                    "[EMAIL] email_guest_trip_completed failed for trip %s: %s",
+                    trip.id, _email_err,
+                )
+    except Exception as _sms_outer_err:
+        logging.warning(
+            "[SMS] guest notification block failed for trip %s: %s",
+            trip.id, _sms_outer_err,
+        )
 
     # --- SSE instant push to riders watching this trip (sub-second) ===
     await event_bus.push_trip_update(trip.id, {

@@ -26,6 +26,7 @@ from utils.security import (
 from utils.helpers import utc_now, _user_dict, _haversine
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
+from services.guest_link_service import link_guest_trips_to_user
 from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
 from config import (
     _otp_store, _OTP_TTL, PHOTOS_DIR, PUBLIC_URL,
@@ -104,6 +105,10 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
+                try:
+                    await link_guest_trips_to_user(db, existing)
+                except Exception as e:
+                    logging.warning("guest trip link on register(email-reactivate) failed: %s", e)
                 token = await _create_driver_aware_token(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
@@ -121,6 +126,10 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 await db.commit()
                 await db.refresh(existing)
+                try:
+                    await link_guest_trips_to_user(db, existing)
+                except Exception as e:
+                    logging.warning("guest trip link on register(phone-reactivate) failed: %s", e)
                 token = await _create_driver_aware_token(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
@@ -194,6 +203,11 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             )
     except Exception as e:
         logging.error("n8n trigger on register failed: %s", e)
+
+    try:
+        await link_guest_trips_to_user(db, user)
+    except Exception as e:
+        logging.warning("guest trip link on register failed: %s", e)
 
     token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)
@@ -689,6 +703,11 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("Firestore photo recovery failed for user %s: %s", user.id, e)
 
+    try:
+        await link_guest_trips_to_user(db, user)
+    except Exception as e:
+        logging.warning("guest trip link on complete_login failed: %s", e)
+
     token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
@@ -802,6 +821,11 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+    try:
+        await link_guest_trips_to_user(db, user)
+    except Exception as e:
+        logging.warning("guest trip link on social_auth failed: %s", e)
 
     token = await _create_driver_aware_token(user, db)
     refresh = _create_refresh_token(user.id)

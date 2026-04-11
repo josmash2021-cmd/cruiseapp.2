@@ -19,6 +19,7 @@ from utils.security import (
 from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
+from services.email_service import email_guest_driver_assigned
 from config import (
     OWNER_EMAIL, OWNER_PASSWORD_HASH,
     DISPATCH_ALLOWED_IPS, PUBLIC_URL,
@@ -1311,6 +1312,13 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             logging.warning(
                 "[SMS] notify_guest_driver_assigned failed for trip %s: %s",
                 trip.id, _sms_err,
+            )
+        try:
+            await email_guest_driver_assigned(db, trip, drv, _veh_for_sms)
+        except Exception as _email_err:
+            logging.warning(
+                "[EMAIL] email_guest_driver_assigned failed for trip %s: %s",
+                trip.id, _email_err,
             )
 
     # -- Push + SMS notification to rider when driver accepts --

@@ -20,6 +20,34 @@ def _abs_photo_url(url: str | None) -> str | None:
 
 
 # ═══════════════════════════════════════════════════════
+#  Guest-booking aware rider display resolver
+# ═══════════════════════════════════════════════════════
+
+def _resolve_rider_display(trip, rider=None) -> tuple[str, str]:
+    """Return (rider_name, rider_phone) for driver-facing payloads.
+
+    Guest bookings from the Shopify widget set guest_first_name/guest_last_name
+    on the Trip row but use a shared web@cruiseinride.com system user as rider_id.
+    Guest fields take PRIORITY over the system user's profile so drivers see the
+    real booker's name, not "Web Booking".
+    """
+    guest_first = (getattr(trip, "guest_first_name", None) or "").strip()
+    guest_last = (getattr(trip, "guest_last_name", None) or "").strip()
+    guest_phone = (getattr(trip, "guest_phone", None) or "").strip()
+
+    if guest_first or guest_last or guest_phone:
+        name = f"{guest_first} {guest_last}".strip() or "Guest Rider"
+        return name, guest_phone
+
+    if rider is not None:
+        name = f"{getattr(rider, 'first_name', '') or ''} {getattr(rider, 'last_name', '') or ''}".strip() or "Rider"
+        phone = getattr(rider, "phone", None) or ""
+        return name, phone
+
+    return "Rider", ""
+
+
+# ═══════════════════════════════════════════════════════
 #  Timezone-aware datetime helpers
 # ═══════════════════════════════════════════════════════
 
@@ -142,6 +170,12 @@ def _trip_dict(t) -> dict:
             "share_token": getattr(t, "share_token", None),
             "created_at": t.created_at.isoformat() if getattr(t, "created_at", None) else None,
             "updated_at": t.updated_at.isoformat() if getattr(t, "updated_at", None) else None,
+            # Guest booking contact info (web widget / no registered account).
+            # Always included so driver app / dispatch / Firestore sync can
+            # fall back to these when rider_id is NULL.
+            "guest_first_name": getattr(t, "guest_first_name", None),
+            "guest_last_name": getattr(t, "guest_last_name", None),
+            "guest_phone": getattr(t, "guest_phone", None),
         }
         if d.get("pickup_lat") and d.get("dropoff_lat"):
             d["distance_miles"] = round(_haversine(d["pickup_lat"], d["pickup_lng"], d["dropoff_lat"], d["dropoff_lng"]) * 0.621371, 1)

@@ -936,11 +936,19 @@ async def bulk_sync_all(session_maker):
         result = await db.execute(select(Trip))
         trips = result.scalars().all()
         for t in trips:
-            # Look up rider info
-            r_result = await db.execute(select(User).where(User.id == t.rider_id))
-            rider = r_result.scalar_one_or_none()
-            rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Unknown"
-            rider_phone = rider.phone or "" if rider else ""
+            # Look up rider info (with guest-booking fallback)
+            rider = None
+            if t.rider_id:
+                r_result = await db.execute(select(User).where(User.id == t.rider_id))
+                rider = r_result.scalar_one_or_none()
+            if rider:
+                rider_name = f"{rider.first_name} {rider.last_name}"
+                rider_phone = rider.phone or ""
+            else:
+                _gf = (getattr(t, "guest_first_name", None) or "").strip()
+                _gl = (getattr(t, "guest_last_name", None) or "").strip()
+                rider_name = f"{_gf} {_gl}".strip() or "Unknown"
+                rider_phone = (getattr(t, "guest_phone", None) or "").strip()
 
             driver_name = driver_phone = None
             if t.driver_id:

@@ -1189,11 +1189,13 @@ class UnmatchedTripRetryAgent:
                 await db.refresh(offer)
                 self._matched += 1
 
-                # Get rider info for push payload
-                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_result.scalar_one_or_none()
-                rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-                rider_phone = rider.phone or "" if rider else ""
+                # Get rider info for push payload (with guest-booking fallback)
+                from utils.helpers import _resolve_rider_display
+                rider = None
+                if trip.rider_id:
+                    rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                    rider = rider_result.scalar_one_or_none()
+                rider_name, rider_phone = _resolve_rider_display(trip, rider)
                 rider_photo = rider.photo_url or "" if rider else ""
 
                 # Calculate driver fare

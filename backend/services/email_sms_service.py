@@ -172,14 +172,17 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
 
 
 def _send_sms(phone_number: str, message: str):
-    """Send SMS via Twilio."""
+    """Send SMS via Twilio. Returns Twilio message SID on success, None on failure.
+
+    Historically this returned bool; callers that only check truthiness keep
+    working because a non-empty SID string is truthy."""
     TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
     TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
     TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 
     if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER):
         logging.error("[SMS] Twilio credentials not configured")
-        return False
+        return None
 
     try:
         from twilio.rest import Client
@@ -190,7 +193,7 @@ def _send_sms(phone_number: str, message: str):
             to=phone_number
         )
         logging.info("[SMS] Sent to %s (SID: %s)", phone_number, sms.sid)
-        return True
+        return sms.sid
     except Exception as e:
         logging.error("[SMS] Failed to send to %s: %s", phone_number, e)
-        return False
+        return None

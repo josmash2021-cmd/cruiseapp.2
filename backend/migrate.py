@@ -107,6 +107,11 @@ MIGRATIONS = [
     ("users", "active_session_id", "VARCHAR(64)"),
     # ── Average rating ──
     ("users", "average_rating", "FLOAT DEFAULT 5.0"),
+    # ── Guest rider contact (Shopify widget "Continue as Guest") ──
+    ("trips", "guest_first_name", "VARCHAR(100)"),
+    ("trips", "guest_last_name", "VARCHAR(100)"),
+    ("trips", "guest_phone", "VARCHAR(30)"),
+    ("trips", "guest_email", "VARCHAR(200)"),
 ]
 
 
@@ -212,6 +217,18 @@ async def run():
             except Exception as e:
                 log.warning("  tz-skip: %s.%s - %s", table, col, e)
 
+        # Make trips.rider_id nullable (guest bookings have no registered rider)
+        try:
+            row = await conn.fetchval(
+                "SELECT is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'trips' AND column_name = 'rider_id'"
+            )
+            if row and row != 'YES':
+                await conn.execute("ALTER TABLE trips ALTER COLUMN rider_id DROP NOT NULL")
+                log.info("  ok: trips.rider_id made nullable")
+        except Exception as e:
+            log.warning("  skip: trips.rider_id nullable - %s", e)
+
         # Make support_messages.sender_id nullable (bot/system messages)
         try:
             row = await conn.fetchval(
@@ -294,6 +311,79 @@ async def run():
                 log.info("  ok: default service area created")
         except Exception as e:
             log.warning("  skip: service area - %s", e)
+
+        # ── sms_log table (idempotency guard for Twilio transactional SMS) ──
+        try:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sms_log (
+                  id SERIAL PRIMARY KEY,
+                  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+                  event_type VARCHAR(40) NOT NULL,
+                  phone_number VARCHAR(30) NOT NULL,
+                  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+                  twilio_sid VARCHAR(50),
+                  error_message TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  CONSTRAINT uq_sms_log_trip_event UNIQUE (trip_id, event_type)
+                )
+                """
+            )
+            log.info("  ok: table sms_log ensured")
+        except Exception as e:
+            log.warning("  skip: sms_log table - %s", e)
+
+        for idx_name, idx_col in (
+            ("idx_sms_log_trip_id", "trip_id"),
+            ("idx_sms_log_event_type", "event_type"),
+        ):
+            try:
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON sms_log ({idx_col})"
+                )
+                log.info("  idx-ok: %s", idx_name)
+            except Exception as e:
+                log.warning("  idx-skip: %s - %s", idx_name, e)
+
+        try:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS email_log (
+                  id SERIAL PRIMARY KEY,
+                  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+                  event_type VARCHAR(40) NOT NULL,
+                  email_address VARCHAR(200) NOT NULL,
+                  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+                  provider_id VARCHAR(100),
+                  error_message TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  CONSTRAINT uq_email_log_trip_event UNIQUE (trip_id, event_type)
+                )
+                """
+            )
+            log.info("  ok: table email_log ensured")
+        except Exception as e:
+            log.warning("  skip: email_log table - %s", e)
+
+        for idx_name, idx_col in (
+            ("idx_email_log_trip_id", "trip_id"),
+            ("idx_email_log_event_type", "event_type"),
+        ):
+            try:
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON email_log ({idx_col})"
+                )
+                log.info("  idx-ok: %s", idx_name)
+            except Exception as e:
+                log.warning("  idx-skip: %s - %s", idx_name, e)
+
+        try:
+            await conn.execute(
+                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS guest_email VARCHAR(200)"
+            )
+            log.info("  ok: trips.guest_email ensured")
+        except Exception as e:
+            log.warning("  skip: trips.guest_email - %s", e)
     finally:
         await conn.close()
 

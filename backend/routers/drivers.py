@@ -74,6 +74,15 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     if trip.platform_fee is None and trip.fare is not None:
         data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
     data["driver_base_earnings"] = base
+    # Guest-booking fallback for driver-facing rider name/phone.
+    # For trips with rider_id NULL, show the real guest name instead of
+    # "Web Booking" / "W" default in the driver app.
+    if not getattr(trip, "rider_id", None) and (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_phone", None)):
+        _gf = (trip.guest_first_name or "").strip()
+        _gl = (trip.guest_last_name or "").strip()
+        _name = f"{_gf} {_gl}".strip() or "Guest Rider"
+        data["rider_name"] = _name
+        data["rider_phone"] = (trip.guest_phone or "").strip()
     return data
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

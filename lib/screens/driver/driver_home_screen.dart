@@ -113,6 +113,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
+  // Prevents _resumeActiveTrip() from pushing DriverTripAcceptScreen twice.
+  // Six different code paths call _resumeActiveTrip (initState, app resume,
+  // polling, notification tap, refresh-complete, Firestore listener). Without
+  // this guard two of them firing within the same frame stack two trip
+  // screens on top of each other — the duplicate the rider reported.
+  bool _resumingActiveTrip = false;
   Timer? _tripPollTimer;
   Timer? _statsRefreshTimer;
   int? _driverId;
@@ -2015,6 +2021,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _resumeActiveTrip() async {
+    // Idempotency guard — 6 callers, any two firing concurrently would
+    // push DriverTripAcceptScreen twice.
+    if (_resumingActiveTrip) {
+      debugPrint('[DriverHome] _resumeActiveTrip skipped — already in progress');
+      return;
+    }
+    _resumingActiveTrip = true;
+    try {
+      await _resumeActiveTripBody();
+    } finally {
+      _resumingActiveTrip = false;
+    }
+  }
+
+  Future<void> _resumeActiveTripBody() async {
     // Use existing trip data immediately — don't block on Firestore.
     // Refresh in background for status updates, but navigate instantly.
     if (_activeTripData != null) {

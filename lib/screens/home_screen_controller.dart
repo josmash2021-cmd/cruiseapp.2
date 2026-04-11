@@ -847,8 +847,22 @@ extension _HomeScreenController on _HomeScreenState {
   Future<void> _openScheduleSheet() => _showScheduleSheet();
 
   void _resumeActiveRide() {
+    // Idempotency guard: both this path (local-cache resume) and
+    // _checkBackendActiveTrip (backend resume) can fire in parallel
+    // during home screen init. Without this guard a slow backend call
+    // that returns after the local cache has already pushed the tracking
+    // screen would push a SECOND tracking screen on top — the duplicate
+    // the user reported.
+    if (_didAutoResumeRide) {
+      debugPrint('[HomeScreen] _resumeActiveRide skipped — already auto-resumed');
+      return;
+    }
+    _didAutoResumeRide = true;
     final ride = _activeRide;
-    if (ride == null) return;
+    if (ride == null) {
+      _didAutoResumeRide = false; // nothing to resume, allow retry
+      return;
+    }
     // Map persisted phase to initialStatus so the tracking controller
     // starts at the correct phase even before Firestore delivers an update.
     String? resumeStatus;
@@ -978,26 +992,48 @@ extension _HomeScreenController on _HomeScreenState {
   /// Check backend for an active trip (handles reinstall / re-login where
   /// SharedPreferences are cleared but trip is still in-progress).
   Future<void> _checkBackendActiveTrip() async {
+    // Idempotency guard at entry: claim the auto-resume slot IMMEDIATELY
+    // so a parallel _resumeActiveRide() triggered by the local cache
+    // loading in the meantime can't race us to a double-push.
+    if (_didAutoResumeRide) {
+      debugPrint('[HomeScreen] _checkBackendActiveTrip skipped — already auto-resumed');
+      return;
+    }
+    _didAutoResumeRide = true;
     try {
       final trip = await ApiService.getActiveTrip();
-      if (!mounted || trip == null) return;
+      if (!mounted || trip == null) {
+        // No active trip — release the slot so a later reload (new trip)
+        // can auto-resume normally.
+        _didAutoResumeRide = false;
+        return;
+      }
       final status = (trip['status'] ?? '').toString();
       // Skip completed/cancelled/scheduled trips — never auto-navigate for scheduled rides
       if (status == 'completed' || status == 'canceled' || status == 'cancelled' ||
           status == 'scheduled_accepted' || status == 'driver_assigned' ||
-          status == 'scheduled') { return; }
+          status == 'scheduled') {
+        _didAutoResumeRide = false; // release slot — nothing to resume
+        return;
+      }
 
       // If trip was originally scheduled (has scheduled_at), never auto-navigate.
       // The rider must tap the card to open the tracking screen.
       final scheduledAt = trip['scheduled_at'];
-      if (scheduledAt != null && scheduledAt.toString().isNotEmpty) { return; }
+      if (scheduledAt != null && scheduledAt.toString().isNotEmpty) {
+        _didAutoResumeRide = false;
+        return;
+      }
 
       // If still searching for a driver — show a pending trip indicator
       // so rider knows their search is still active after reopen/reinstall.
       // Backend uses 'requested' as the searching status.
       if (status == 'searching' || status == 'pending' || status == 'requested') {
         final tripId = trip['id'] as int?;
-        if (tripId == null || !mounted) return;
+        if (tripId == null || !mounted) {
+          _didAutoResumeRide = false;
+          return;
+        }
         _setState(() => _pendingSearchTripId = tripId);
         // Poll every 6s until driver assigned or trip cancelled
         _pendingSearchTimer?.cancel();
@@ -1020,17 +1056,27 @@ extension _HomeScreenController on _HomeScreenState {
             }
           } catch (_) {}
         });
+        // Leave _didAutoResumeRide=true so the 6s polling loop is the
+        // only one that can re-trigger _checkBackendActiveTrip — don't
+        // want a parallel path to race it. The polling loop resets the
+        // flag via _pendingSearchTripId=null on driver assigned.
         return;
       }
 
       // Only resume trips that have a driver assigned
-      if (trip['driver_id'] == null && trip['driver_name'] == null) return;
+      if (trip['driver_id'] == null && trip['driver_name'] == null) {
+        _didAutoResumeRide = false;
+        return;
+      }
 
       final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
       final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
       final dropoffLat = (trip['dropoff_lat'] as num?)?.toDouble();
       final dropoffLng = (trip['dropoff_lng'] as num?)?.toDouble();
-      if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) return;
+      if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+        _didAutoResumeRide = false;
+        return;
+      }
 
       final tripId = trip['id'] as int?;
       final driverName = (trip['driver_name'] ?? 'Driver').toString();
@@ -1048,14 +1094,22 @@ extension _HomeScreenController on _HomeScreenState {
       final pickupLabel = (trip['pickup_address'] ?? '').toString();
       final dropoffLabel = (trip['dropoff_address'] ?? '').toString();
 
-      _didAutoResumeRide = true;
+      // Flag was already claimed at the top of this method — no need to
+      // re-set it here. Leaving it as-is so the slot stays reserved while
+      // we push the tracking screen.
 
       // Final safety check: re-verify trip hasn't been cancelled/scheduled since we started
-      if (!mounted) return;
+      if (!mounted) {
+        _didAutoResumeRide = false;
+        return;
+      }
       final verifyStatus = (trip['status'] ?? '').toString();
       if (verifyStatus == 'canceled' || verifyStatus == 'cancelled' ||
           verifyStatus == 'completed' || verifyStatus == 'scheduled_accepted' ||
-          verifyStatus == 'driver_assigned' || verifyStatus == 'scheduled') { return; }
+          verifyStatus == 'driver_assigned' || verifyStatus == 'scheduled') {
+        _didAutoResumeRide = false;
+        return;
+      }
 
       await Navigator.of(context).push(
         slideUpFadeRoute(
@@ -1092,6 +1146,7 @@ extension _HomeScreenController on _HomeScreenState {
       _didAutoResumeRide = false;
     } catch (e) {
       debugPrint('[HomeScreen] Backend active trip check failed: $e');
+      _didAutoResumeRide = false; // release slot on error so retries work
     }
   }
 

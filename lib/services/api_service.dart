@@ -1445,6 +1445,7 @@ class ApiService {
   }
 
   /// Driver accepts a trip request.
+  /// Timeout bumped to 30s — see acceptRideOffer comment for reasoning.
   static Future<Map<String, dynamic>> acceptTrip({
     required int tripId,
     required int driverId,
@@ -1456,7 +1457,7 @@ class ApiService {
           headers: h,
           body: jsonEncode({'driver_id': driverId}),
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 30));
     return _parse(res);
   }
 
@@ -2047,6 +2048,12 @@ class ApiService {
   }
 
   /// Driver accepts a ride offer.
+  ///
+  /// Timeout bumped to 30s (was 8s) because on slow cellular or during a
+  /// Railway cold start the backend can take 10-20s to respond even when
+  /// the accept WILL succeed. An 8s cutoff produced false TimeoutException
+  /// failures that our caller interpreted as "trip no longer available"
+  /// and silently force-cancelled the trip — the phantom-cancel bug.
   static Future<Map<String, dynamic>> acceptRideOffer({
     required int offerId,
     required int driverId,
@@ -2059,7 +2066,7 @@ class ApiService {
           ),
           headers: h,
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 30));
     return _parse(res);
   }
 

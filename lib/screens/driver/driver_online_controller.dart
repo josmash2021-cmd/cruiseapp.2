@@ -1410,10 +1410,60 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     try {
       await acceptFuture;
     } catch (e) {
+      // ⚠️ CRITICAL phantom-cancel fix:
+      //
+      // Previously this catch fired _cancel() unconditionally, which sent
+      // a PATCH /trips/{id}/status?status=canceled to the server. The
+      // problem: the acceptFuture failing doesn't mean the server failed
+      // — the 8s HTTP timeout on _client can fire even when the backend
+      // successfully processed the accept and marked the trip
+      // driver_en_route; only the response got lost / was slow. The
+      // driver kept driving to pickup while the rider saw a mysterious
+      // "cancelled by operator" dialog because our own client had
+      // force-cancelled the trip in the background.
+      //
+      // Fix: verify the trip's real state server-side before cancelling.
+      // If the server says the trip has a driver assigned OR is in
+      // driver_en_route/arrived/in_trip, the accept WAS successful —
+      // just log the timeout and continue. Only cancel if the server
+      // confirms the accept actually did not stick.
       if (!mounted) return;
-      _snack(S.of(context).tripNoLongerAvailable);
-      _cancel();
-      return;
+      debugPrint('[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
+      bool serverHasTrip = false;
+      final verifyTripId = tripId ?? offerId;
+      if (verifyTripId != null) {
+        try {
+          final serverTrip = await ApiService.getTrip(verifyTripId)
+              .timeout(const Duration(seconds: 6));
+          final srvStatus = (serverTrip['status'] ?? '').toString().toLowerCase();
+          final srvDriver = serverTrip['driver_id'];
+          // Accept is "good" if the backend has us as driver OR the trip
+          // has already progressed past 'requested'.
+          const liveStatuses = {
+            'accepted', 'driver_en_route', 'driver_arriving',
+            'arrived', 'driver_arrived', 'in_trip', 'in_progress',
+          };
+          if (liveStatuses.contains(srvStatus) ||
+              (srvDriver != null && srvDriver.toString() == _driverId.toString())) {
+            serverHasTrip = true;
+            debugPrint(
+              '[DriverOnline] accept verified on server (status=$srvStatus driver=$srvDriver) — keeping trip alive',
+            );
+          }
+        } catch (verifyErr) {
+          debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
+        }
+      }
+      if (serverHasTrip) {
+        // The client lost the accept response but the server is
+        // happily running the trip. Swallow the error, stay on the
+        // trip screen, let the driver continue.
+        // Fall through to the normal result handling below.
+      } else {
+        _snack(S.of(context).tripNoLongerAvailable);
+        _cancel();
+        return;
+      }
     }
     final result = await navFuture;
     if (!mounted) return;

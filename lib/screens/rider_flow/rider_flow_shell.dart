@@ -4,7 +4,9 @@ import '../../config/feature_flags.dart';
 import '../../models/airport_models.dart' show AirportSelection;
 import '../../services/directions_service.dart' show RouteResult;
 import '../../services/places_service.dart' show PlaceDetails;
+import '../../state/rider_trip_controller.dart';
 import '../ride_request_screen.dart';
+import 'rider_flow_phase.dart';
 
 /// Single-map rider flow shell.
 ///
@@ -19,10 +21,10 @@ import '../ride_request_screen.dart';
 /// navigator guard from the old flow is preserved — only the presentation
 /// layer changes.
 ///
-/// Day 1 (2026-04-11): skeleton only. When
-/// [FeatureFlags.useRiderFlowShell] is false (the default), the shell is
-/// never reached and the app behaves exactly as before. The real phase
-/// wiring lands in Day 2 (P01-P05) and Day 3-4 (P06-P09).
+/// Day 1 (2026-04-11): file skeleton only, delegating to RideRequestScreen.
+/// Day 2 (2026-04-11): state listener + meta-phase mapping + placeholder
+///   cards per shell phase (P01-P05). Still no map — that lands Day 2b.
+///   Flag stays off in production.
 ///
 /// Constructor signature intentionally mirrors [RideRequestScreen] so any
 /// caller that constructs one can construct the other without touching
@@ -62,11 +64,95 @@ class RiderFlowShell extends StatefulWidget {
 }
 
 class _RiderFlowShellState extends State<RiderFlowShell> {
+  /// The same state machine that RideRequestScreen owns. The shell
+  /// NEVER reimplements its logic — it just listens + renders.
+  final RiderTripController _ctrl = RiderTripController();
+
+  RiderFlowPhase _shellPhase = RiderFlowPhase.chooseVehicle;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_onTripStateChange);
+
+    // Seed the controller with the same inputs RideRequestScreen would.
+    // This preserves the exact pre-flow data path from the map picker.
+    if (widget.isAirportTrip) {
+      _ctrl.setAirportTrip(true);
+    }
+    if (widget.scheduledAt != null) {
+      _ctrl.setSchedule(widget.scheduledAt);
+    }
+    if (widget.preloadedRoute != null &&
+        widget.initialPickupDetails != null &&
+        widget.initialDropoffDetails != null) {
+      _ctrl.setPreloadedRoute(
+        pickup: widget.initialPickupDetails!,
+        dropoff: widget.initialDropoffDetails!,
+        route: widget.preloadedRoute!,
+        pickupLabel: widget.initialPickupLabel ?? '',
+        dropoffLabel: widget.initialDropoffLabel ?? '',
+      );
+    } else {
+      if (widget.initialPickupDetails != null) {
+        _ctrl.setPickup(
+            widget.initialPickupDetails!, widget.initialPickupLabel ?? '');
+      }
+      if (widget.initialDropoffDetails != null) {
+        _ctrl.setDropoff(
+            widget.initialDropoffDetails!, widget.initialDropoffLabel ?? '');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onTripStateChange);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  /// Map the inner [RiderPhase] onto the shell meta-phase so a single
+  /// switcher decides which card to render. Keeps all the business logic
+  /// inside [RiderTripController] — the shell is a pure consumer.
+  void _onTripStateChange() {
+    if (!mounted) return;
+    final innerPhase = _ctrl.state.phase;
+    final next = _mapInnerPhaseToShellPhase(innerPhase);
+    if (next != _shellPhase) {
+      setState(() => _shellPhase = next);
+    }
+  }
+
+  static RiderFlowPhase _mapInnerPhaseToShellPhase(RiderPhase inner) {
+    switch (inner) {
+      case RiderPhase.idle:
+      case RiderPhase.selectingLocations:
+      case RiderPhase.previewRoute:
+      case RiderPhase.selectingRide:
+        return RiderFlowPhase.chooseVehicle;
+      case RiderPhase.requesting:
+        return RiderFlowPhase.confirmingPayment;
+      case RiderPhase.searchingDriver:
+        return RiderFlowPhase.searchingDriver;
+      case RiderPhase.driverAssigned:
+        return RiderFlowPhase.driverFound;
+      case RiderPhase.driverArriving:
+        return RiderFlowPhase.driverEnRoute;
+      case RiderPhase.onTrip:
+        return RiderFlowPhase.inTrip;
+      case RiderPhase.completed:
+        return RiderFlowPhase.completed;
+      case RiderPhase.cancelled:
+        return RiderFlowPhase.cancelled;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Safety net: even if something constructs RiderFlowShell directly
-    // while the feature flag is off, we fall back to the old screen so
-    // no caller ever renders a half-built shell in production.
+    // Safety net: when the feature flag is off, ALWAYS delegate straight
+    // to the existing RideRequestScreen so callers that accidentally hit
+    // the shell in production get the old, battle-tested behaviour.
     if (!FeatureFlags.useRiderFlowShell) {
       return RideRequestScreen(
         fastRide: widget.fastRide,
@@ -84,15 +170,141 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
       );
     }
 
-    // Day 1 placeholder — Day 2 replaces this with the real shell UI
-    // (single MapWidget + AnimatedSwitcher bottom sheet slot + cards).
-    return const Scaffold(
-      backgroundColor: Color(0xFF0A0D14),
-      body: Center(
-        child: Text(
-          'RiderFlowShell · Day 1 skeleton',
-          style: TextStyle(color: Color(0xFFE8C547), fontSize: 16),
+    // Day 2 — single-map shell with placeholder cards per phase.
+    // The real MapWidget lands in Day 2b; for now the bottom layer is a
+    // dark canvas so the AnimatedSwitcher logic can be verified in isolation.
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0D14),
+      body: Stack(
+        children: [
+          // ── Map layer (placeholder for now) ────────────────────────
+          const Positioned.fill(
+            child: ColoredBox(color: Color(0xFF0A0D14)),
+          ),
+
+          // ── Bottom sheet slot — AnimatedSwitcher with fade + slide ─
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, anim) {
+                    final slide = Tween<Offset>(
+                      begin: const Offset(0, 0.08),
+                      end: Offset.zero,
+                    ).animate(anim);
+                    return FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(
+                        position: slide,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: _buildCardForPhase(_shellPhase),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Returns a placeholder card for the given shell phase. Day 2 uses
+  /// minimal stubs so the fade/slide wiring can be smoke-tested without
+  /// touching the real ride option / confirming / searching widgets.
+  /// Day 2b replaces each stub with the real widget from
+  /// `ride_request_widgets.dart`.
+  Widget _buildCardForPhase(RiderFlowPhase phase) {
+    final label = _phaseLabel(phase);
+    return _StubCard(
+      key: ValueKey(phase),
+      title: label,
+      subtitle: 'Day 2 stub — real widget lands in Day 2b',
+    );
+  }
+
+  static String _phaseLabel(RiderFlowPhase phase) {
+    switch (phase) {
+      case RiderFlowPhase.chooseVehicle:
+        return 'P01 · Choose a ride';
+      case RiderFlowPhase.confirmingPayment:
+        return 'P02 · Confirming your ride…';
+      case RiderFlowPhase.searchingDriver:
+        return 'P03 · Finding the best driver for you…';
+      case RiderFlowPhase.driverFound:
+        return 'P04 · Driver found!';
+      case RiderFlowPhase.driverEnRoute:
+        return 'P05 · Driver on the way';
+      case RiderFlowPhase.arrived:
+        return 'P06 · Driver arrived';
+      case RiderFlowPhase.inTrip:
+        return 'P07 · Trip in progress';
+      case RiderFlowPhase.nearDestination:
+        return 'P08 · Almost there';
+      case RiderFlowPhase.completed:
+        return 'P09 · Trip completed';
+      case RiderFlowPhase.cancelled:
+        return 'Cancelled';
+    }
+  }
+}
+
+/// Minimal placeholder card used for the Day 2 smoke test of the
+/// AnimatedSwitcher wiring. Stripped of any animation / business logic —
+/// real phase cards are extracted in Day 2b.
+class _StubCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _StubCard({super.key, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1218),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFFE8C547),
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }

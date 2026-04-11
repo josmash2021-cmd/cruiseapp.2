@@ -844,17 +844,51 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             logging.error("[WebBooking] Failed to auto-create system user: %s", _e)
             raise HTTPException(503, "Web booking system user could not be created")
 
+    # Resolve scheduled_at with two guards:
+    #   1) The Shopify widget pre-fills scheduled_date / scheduled_time with
+    #      the current date/time even when the rider taps "Book now", so we
+    #      treat anything within 3 minutes of now as an immediate booking
+    #      and clear scheduled_at — otherwise the driver offer card would
+    #      render with a "VIAJE RESERVADO" badge for a normal on-demand ride.
+    #   2) Hardcoding "+00:00" assumed the widget always sent UTC; we try
+    #      a couple of timezone interpretations so local-time payloads do
+    #      not end up shifted.
     scheduled_at = None
     if scheduled_date and scheduled_time:
-        try:
-            scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}:00+00:00")
-        except Exception:
-            pass
+        raw = f"{scheduled_date}T{scheduled_time}"
+        parsed: datetime | None = None
+        # Accept: ISO with offset, ISO without offset (assume UTC), or HH:MM only
+        for candidate in (raw, f"{raw}:00", f"{raw}:00+00:00"):
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                break
+            except Exception:
+                continue
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            if parsed - now_utc < timedelta(minutes=3):
+                logging.info(
+                    "[WebBooking] scheduled_at %s is within 3 min of now — treating as immediate",
+                    parsed.isoformat(),
+                )
+                scheduled_at = None
+            else:
+                scheduled_at = parsed
 
     fare = fare_cents / 100.0 if fare_cents else None
     notes_text = f"Web booking \u2014 {contact_name}"
     if contact_phone:
         notes_text += f" \u00b7 {contact_phone}"
+
+    # A future scheduled booking must enter the scheduled-ride marketplace
+    # rather than the live dispatch path — otherwise the driver offer card
+    # fires right now for a trip that is not actually ready to pick up.
+    # The scheduled-ride dispatcher in main.py handles the hand-off when
+    # the pickup time gets close enough.
+    is_future_scheduled = scheduled_at is not None
+    trip_status = "scheduled" if is_future_scheduled else "requested"
 
     try:
         trip = Trip(
@@ -867,7 +901,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             dropoff_lng=dropoff_lng,
             vehicle_type=vehicle_type,
             fare=fare,
-            status="requested",
+            status=trip_status,
             stripe_payment_intent_id=payment_intent_id,
             scheduled_at=scheduled_at,
             notes=notes_text,
@@ -881,10 +915,20 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         logging.error("[WebBooking] Create trip failed: %s", e)
         raise HTTPException(500, f"Failed to create booking: {e}")
 
-    # Dispatch to nearby drivers (non-blocking background task)
-    asyncio.create_task(_web_dispatch_to_drivers(trip.id, pickup_lat, pickup_lng, vehicle_type, fare))
-
-    logging.info("[WebBooking] Created trip %d (%.2f %s) → dispatching", trip.id, fare or 0, vehicle_type)
+    if is_future_scheduled:
+        logging.info(
+            "[WebBooking] Created SCHEDULED trip %d for %s (%.2f %s) — marketplace will pick it up",
+            trip.id, scheduled_at.isoformat(), fare or 0, vehicle_type,
+        )
+    else:
+        # Immediate booking — dispatch to nearby drivers (non-blocking background task)
+        asyncio.create_task(
+            _web_dispatch_to_drivers(trip.id, pickup_lat, pickup_lng, vehicle_type, fare)
+        )
+        logging.info(
+            "[WebBooking] Created trip %d (%.2f %s) → dispatching now",
+            trip.id, fare or 0, vehicle_type,
+        )
     return {"booking_id": trip.id, "status": trip.status}
 
 

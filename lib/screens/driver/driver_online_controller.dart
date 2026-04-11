@@ -922,8 +922,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _smoothMoveTo(LatLng target, double heading) {
-    _targetPos = target;
-    _targetHeading = heading;
+    _motion.setTarget(target.latitude, target.longitude, bearing: heading);
+    // Seed _pos on the very first fix so the first render doesn't start
+    // from (0, 0) — the ticker fills it in subsequent frames.
+    if (_pos == null && _motion.hasPosition) {
+      _pos = LatLng(_motion.lat!, _motion.lng!);
+      _heading = _motion.bearing;
+    }
     // Start the ticker lazily on the first real GPS position so it does not
     // burn CPU during the period before any movement data is available.
     if (!(_smoothTicker?.isTicking ?? false)) {
@@ -961,31 +966,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setRouteAnnotation(List.from(_routePts), _navyRoute);
   }
 
-  /// Continuous 60fps ticker — exponential decay toward target position.
-  /// Never resets, never stutters. Each frame closes 18% of the remaining gap.
+  /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
+  /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
+  /// measured speed between GPS fixes instead of decelerating into a stall.
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
-    if (_targetPos.latitude == 0 && _targetPos.longitude == 0) return;
+    if (!_motion.hasPosition) return;
 
-    // Time-based decay so animation is frame-rate independent
+    // Frame delta in seconds. Clamp huge gaps (background resume) so we
+    // never teleport the marker across several seconds in one step.
     final dtMs = (elapsed - _lastTickElapsed).inMilliseconds.clamp(1, 50);
     _lastTickElapsed = elapsed;
-    final dt = dtMs / 16.667; // normalize to 60fps frame
+    final dtSec = dtMs / 1000.0;
 
-    // Position: exponential decay — 14% of gap per frame at 60fps (smooth glide)
-    const posDecay = 0.14;
-    final posFactor = 1.0 - _pow(1.0 - posDecay, dt);
-    final newLat = _pos!.latitude + (_targetPos.latitude - _pos!.latitude) * posFactor;
-    final newLng = _pos!.longitude + (_targetPos.longitude - _pos!.longitude) * posFactor;
-    _pos = LatLng(newLat, newLng);
-
-    // Bearing: exponential decay — 12% per frame, shortest-arc (smooth nose turn)
-    const brgDecay = 0.12;
-    final brgFactor = 1.0 - _pow(1.0 - brgDecay, dt);
-    double diff = _targetHeading - _heading;
-    while (diff > 180) { diff -= 360; }
-    while (diff < -180) { diff += 360; }
-    _heading += diff * brgFactor;
+    _motion.tick(dtSec);
+    _pos = LatLng(_motion.lat!, _motion.lng!);
+    _heading = _motion.bearing;
 
     // Unified camera following (single source of truth for all phases)
     // Skip camera control when offer animation is running or route is previewing
@@ -1023,10 +1019,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _updateDriverAnnotation();
 
-    // Stop ticker when close enough to target — saves CPU when idle/stationary
-    final latGap = (_targetPos.latitude - _pos!.latitude).abs();
-    final lngGap = (_targetPos.longitude - _pos!.longitude).abs();
-    if (latGap < 0.000001 && lngGap < 0.000001) {
+    // Stop ticker when parked on the target — saves CPU when idle/stationary.
+    // The ticker restarts automatically on the next _smoothMoveTo().
+    if (_motion.isAtTarget) {
       _smoothTicker?.stop();
     }
 

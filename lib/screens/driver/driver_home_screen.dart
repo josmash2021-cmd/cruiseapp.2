@@ -2027,6 +2027,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       debugPrint('[DriverHome] _resumeActiveTrip skipped — already in progress');
       return;
     }
+    // Don't re-push DriverTripAcceptScreen if DriverHomeScreen is not the
+    // topmost route — that means a trip screen is already on the stack and
+    // pushing another one on top would reset its local state (the Arrived
+    // slider, Start Ride button, etc.) back to phase 1. This fires on every
+    // app-resume after the driver used Google Maps for turn-by-turn.
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      debugPrint('[DriverHome] _resumeActiveTrip skipped — another route is on top');
+      return;
+    }
     _resumingActiveTrip = true;
     try {
       await _resumeActiveTripBody();

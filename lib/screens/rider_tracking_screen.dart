@@ -527,7 +527,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
           driverRating: widget.driverRating,
           vehiclePlate: widget.vehiclePlate,
           onConfirmed: () {
-            _confirmPickupShown = false;
+            // NOTE: keep _confirmPickupShown = true so a late status=arrived
+            // poll (driver hasn't tapped Start Ride yet) does NOT re-show the
+            // overlay. The guard is reset inside _transitionToOnTrip() when
+            // the backend flips to in_trip.
             if (mounted) {
               setState(() => _showPickupOverlay = false);
               // Pop out the pickup pin and reveal the illuminated route

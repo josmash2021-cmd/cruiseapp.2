@@ -30,6 +30,7 @@ import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../utils/smooth_motion.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
@@ -270,10 +271,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _clock;
 
   // -- Driver smooth animation --
+  // Constant-velocity Google-Maps-style smoother. Set the latest GPS fix
+  // via _motion.setTarget() in _smoothMoveTo(), then on every tick the
+  // smoother advances _pos at the measured velocity. Feels like real
+  // navigation instead of the old exponential "catch-up-then-stall" lerp.
   late AnimationController _driverAnim;
   Ticker? _smoothTicker;
   Duration _lastTickElapsed = Duration.zero;
-  LatLng _targetPos = const LatLng(0, 0); // exponential decay target
+  final SmoothMotion _motion = SmoothMotion();
   double _heading = 0;
   double _smoothedBearing = 0;
   Uint8List? _arrowIconBytes;
@@ -540,8 +545,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _nearPickupNotified = false;
   bool _nearDropoffNotified = false;
 
-
-  double _targetHeading = 0;
   int _lastUiRebuildMs = 0; // throttle: only rebuild widget tree at ~15fps
   int _lastSearchCamMs = 0; // throttle: one easeTo per ~500ms in searching mode
 

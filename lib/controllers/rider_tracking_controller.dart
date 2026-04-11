@@ -799,10 +799,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _checkTripStatusFallback();
         }
       });
-      // Throttle: max 8 updates/sec — more GPS data = smoother interpolation
+      // Throttle: max 15 updates/sec — gives _interpolate more GPS data to
+      // blend, matching the Google-Maps glide feel of the driver side. The
+      // interp ticker runs at vsync (~60fps) so this is just a floor on how
+      // often we re-seed the target, not how often we redraw.
       final now = DateTime.now();
       if (lastRtdbUpdate != null &&
-          now.difference(lastRtdbUpdate!).inMilliseconds < 125) {
+          now.difference(lastRtdbUpdate!).inMilliseconds < 66) {
         return;
       }
       lastRtdbUpdate = now;

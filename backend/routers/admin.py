@@ -101,13 +101,36 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
 async def admin_list_trips(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
+    include_auto_cancelled: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all trips with optional status filter. For dispatch admin panel."""
+    """List all trips with optional status filter. For dispatch admin panel.
+
+    By default, trips that were auto-cancelled by the system because no
+    driver was ever assigned (10 min on-demand timeout, 30 min scheduled
+    timeout) are HIDDEN — from the dispatch panel's perspective they
+    never actually happened and would just be noise. Pass
+    `include_auto_cancelled=true` to see them (for audit / analytics).
+    """
     limit = min(limit, 500)  # Cap max results
     query = select(Trip)
     if status:
         query = query.where(Trip.status == status)
+    if not include_auto_cancelled:
+        # Hide no-driver auto-cancels from the default list. Trips that
+        # did have a driver assigned (ghost cleanup, scheduler reminder,
+        # explicit cancels) stay visible regardless.
+        query = query.where(
+            ~(
+                (Trip.driver_id.is_(None))
+                & (
+                    Trip.cancel_reason.in_([
+                        "auto:no_driver_found_10min",
+                        "auto:scheduled_no_driver_30min",
+                    ])
+                )
+            )
+        )
     query = query.order_by(Trip.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     trips = result.scalars().all()

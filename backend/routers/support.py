@@ -245,20 +245,21 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
 
 
 async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
-    """Cancel the user's active trip and return confirmation message.
+    """Support-chat bot handler for "cancel my trip" intents.
 
-    Only touches on-demand trips in early phases (requested / accepted /
-    driver_en_route). Refuses to cancel a trip once the driver has arrived
-    at pickup or is mid-ride — at that point the rider must talk to the
-    driver or use the in-app cancel flow which applies fees. This prevents
-    a support chat slip-up from killing an active ride.
+    IMPORTANT POLICY CHANGE: the bot no longer cancels trips directly.
+    Per product rules (2026-04-11), only the rider via the in-app
+    cancel button (before a driver is assigned) and the dispatch team
+    (via the dispatch panel or an action request from support) may
+    cancel a trip.
+
+    This function now CREATES an action request routed to dispatch
+    instead of mutating trip.status, and returns a message telling the
+    user a human dispatcher will handle the cancellation shortly.
     """
     result = await db.execute(
         select(Trip).where(
             Trip.rider_id == user_id,
-            # Canonical status uses double-L "cancelled" — the old one-L
-            # value was a legacy bug that let this query pick up trips
-            # that had already been cancelled.
             Trip.status.notin_(["completed", "cancelled", "canceled"]),
         ).order_by(Trip.created_at.desc()).limit(1)
     )
@@ -268,45 +269,42 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
             return "No tienes un viaje activo en este momento para cancelar."
         return "You don't have an active trip to cancel right now."
 
-    # Refuse to cancel a trip that has already progressed past dispatch.
-    if trip.status in ("arrived", "in_trip", "in_progress"):
+    # Route the cancel request to dispatch via an ActionRequest record.
+    # Dispatch will see it in their panel and decide whether to cancel.
+    try:
+        ar = ActionRequest(
+            chat_id=None,  # Will be wired up from the caller if available
+            user_id=user_id,
+            trip_id=int(trip.id),
+            action_type="cancel_trip",
+            params=json.dumps({
+                "requested_from": "support_chat_bot",
+                "trip_status_at_request": trip.status,
+                "pickup_address": trip.pickup_address or "",
+                "dropoff_address": trip.dropoff_address or "",
+            }),
+            status="pending",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(ar)
+        await db.flush()
         logging.warning(
-            "[SupportBot] Refusing to cancel trip %d in status %r — user must use in-app flow",
-            trip.id, trip.status,
+            "[SupportBot] Cancel requested for trip %d user %d — action_request=%d routed to dispatch",
+            trip.id, user_id, ar.id,
         )
-        if lang.startswith("es"):
-            return (
-                f"Tu viaje #{trip.id} ya está en curso (el conductor está en el punto "
-                f"de recogida o manejando hacia el destino). Por seguridad no puedo "
-                f"cancelarlo desde aquí — por favor usa el botón de cancelar en la "
-                f"pantalla del viaje o habla directamente con el conductor."
-            )
-        return (
-            f"Your trip #{trip.id} has already progressed (the driver is at the "
-            f"pickup or driving). For safety I can't cancel it from here — please "
-            f"use the cancel button in the trip screen or talk to the driver directly."
-        )
+    except Exception as e:
+        logging.error("[SupportBot] Failed to create cancel action_request: %s", e)
 
-    trip.status = "cancelled"  # canonical double-L
-    trip.cancel_reason = "auto:support_chat_bot_confirmed"
-    trip.updated_at = datetime.now(timezone.utc)
-    await db.flush()
-    logging.warning(
-        "[AutoCancel/SupportBot] trip=%d user=%d prev_status=%r — cancelled via support chat confirmation",
-        trip.id, user_id, trip.status,
-    )
-    if _HAS_FIRESTORE:
-        try:
-            firestore_sync.sync_trip_status(
-                trip_id=int(trip.id),
-                status="cancelled",
-                cancel_reason=str(trip.cancel_reason),
-            )
-        except Exception:
-            pass
     if lang.startswith("es"):
-        return f"Tu viaje #{trip.id} de {trip.pickup_address} a {trip.dropoff_address} ha sido cancelado exitosamente. No se te realizara ningun cargo."
-    return f"Your trip #{trip.id} from {trip.pickup_address} to {trip.dropoff_address} has been successfully canceled. You won't be charged."
+        return (
+            f"Entendido. He enviado tu solicitud al equipo de dispatch para que "
+            f"revisen la cancelación de tu viaje #{trip.id}. Un agente se pondrá "
+            f"en contacto contigo en breve."
+        )
+    return (
+        f"Got it. I've escalated your cancellation request for trip #{trip.id} "
+        f"to the dispatch team. An agent will reach out shortly to process it."
+    )
 
 
 def _score_categories(text: str) -> list[tuple[str, int]]:

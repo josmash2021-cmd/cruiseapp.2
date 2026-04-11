@@ -318,30 +318,38 @@ class DataGuardian:
 
                 await session.commit()
 
-                # Check for stuck requested trips (no update for 30+ minutes)
-                # Exclude trips that have pending dispatch offers (still being matched)
+                # ── On-demand auto-cancel: 10 min rule ──────────────────
+                # Per product rules: a rider's on-demand request that goes
+                # 10 minutes from created_at without a driver accepting is
+                # auto-cancelled. Rider transitions back to home with a
+                # toast. Hidden from the dispatch panel (see
+                # backend/routers/admin.py list filter which excludes
+                # cancel_reason LIKE 'auto:no_driver%' when driver_id IS NULL).
+                #
+                # Scheduled trips are handled in _check_scheduled_deadlines()
+                # — this loop only touches on-demand (scheduled_at IS NULL).
                 result = await session.execute(text("""
-                    SELECT t.id, t.status, t.created_at
+                    SELECT t.id, t.status, t.created_at, t.rider_id
                     FROM trips t
                     WHERE t.status = 'requested'
-                    AND t.created_at < NOW() - INTERVAL '30 minutes'
-                    AND NOT EXISTS (
-                        SELECT 1 FROM dispatch_offers d
-                        WHERE d.trip_id = t.id AND d.status = 'pending'
-                    )
+                      AND t.scheduled_at IS NULL
+                      AND t.driver_id IS NULL
+                      AND t.created_at < NOW() - INTERVAL '10 minutes'
                 """))
                 stuck = result.fetchall()
-                
+
                 for row in stuck:
-                    trip_id, status, created_at = row
+                    trip_id, status, created_at, rider_id = row
                     logger.warning(
-                        "[AutoCancel/Guardian] STUCK trip=%d prev_status=%r created_at=%s "
-                        "(30+ min in 'requested' with no pending offer) — auto-cancel",
-                        trip_id, status, created_at,
+                        "[AutoCancel/Guardian] ON-DEMAND trip=%d prev_status=%r created_at=%s "
+                        "rider=%s (10+ min with no driver) — auto-cancel",
+                        trip_id, status, created_at, rider_id,
                     )
                     await session.execute(text("""
                         UPDATE trips
-                        SET status = 'cancelled', cancel_reason = 'auto:guardian_timeout_no_driver'
+                        SET status = 'cancelled',
+                            cancel_reason = 'auto:no_driver_found_10min',
+                            updated_at = NOW()
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id})
                     self._trips_fixed += 1
@@ -352,7 +360,7 @@ class DataGuardian:
                             firestore_sync.sync_trip_status(
                                 trip_id=trip_id,
                                 status="cancelled",
-                                cancel_reason="timeout_no_driver",
+                                cancel_reason="auto:no_driver_found_10min",
                                 cancelled_by="system",
                             )
                     except Exception as fs_err:
@@ -360,6 +368,56 @@ class DataGuardian:
 
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)
+
+                # ── Scheduled ride auto-cancel: 30 min deadline ──────────
+                # If a scheduled ride is <=30 minutes from its scheduled_at
+                # and still has no driver assigned, auto-cancel. The rider
+                # gets a "Scheduled ride cancelled" push and the trip is
+                # hidden from the dispatch panel (never happened in practice).
+                # Window: 30 min before scheduled_at up to exactly scheduled_at.
+                # After scheduled_at passes, the reminder loop in main.py
+                # catches any remaining driver-assigned-but-no-pickup cases.
+                sched_result = await session.execute(text("""
+                    SELECT t.id, t.status, t.scheduled_at, t.rider_id
+                    FROM trips t
+                    WHERE t.status IN ('scheduled', 'requested')
+                      AND t.scheduled_at IS NOT NULL
+                      AND t.driver_id IS NULL
+                      AND t.scheduled_at > NOW()
+                      AND t.scheduled_at <= NOW() + INTERVAL '30 minutes'
+                """))
+                sched_stuck = sched_result.fetchall()
+
+                for row in sched_stuck:
+                    trip_id, status, scheduled_at, rider_id = row
+                    logger.warning(
+                        "[AutoCancel/Guardian] SCHEDULED trip=%d prev_status=%r "
+                        "scheduled_at=%s rider=%s (<=30 min window, no driver) — auto-cancel",
+                        trip_id, status, scheduled_at, rider_id,
+                    )
+                    await session.execute(text("""
+                        UPDATE trips
+                        SET status = 'cancelled',
+                            cancel_reason = 'auto:scheduled_no_driver_30min',
+                            updated_at = NOW()
+                        WHERE id = :trip_id
+                    """), {"trip_id": trip_id})
+                    self._trips_fixed += 1
+                    try:
+                        from config import _HAS_FIRESTORE, firestore_sync
+                        if _HAS_FIRESTORE:
+                            firestore_sync.sync_trip_status(
+                                trip_id=trip_id,
+                                status="cancelled",
+                                cancel_reason="auto:scheduled_no_driver_30min",
+                                cancelled_by="system",
+                            )
+                    except Exception as fs_err:
+                        logger.error(f"Firestore sync for scheduled trip {trip_id} failed: {fs_err}")
+
+                if sched_stuck:
+                    await session.commit()
+                    self._trips_checked += len(sched_stuck)
 
                 # Check for ghost trips: driver_en_route/arrived/in_trip with no
                 # DB update for 180+ minutes — driver app likely crashed.

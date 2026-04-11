@@ -709,9 +709,8 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         return _trip_dict_for_user(trip, user)
 
     # Cancel trace: log every request that transitions a trip TO cancelled
-    # with the full caller identity so we can finally track down the
-    # phantom-cancel bug that the rider keeps reporting. Shows up in
-    # Railway as "[CancelTrace]" — grep for it.
+    # with the full caller identity so we can trace any phantom-cancel
+    # cases in Railway logs. Shows up as "[CancelTrace]" — grep for it.
     if canonical_new == "cancelled":
         _caller_kind = (
             "rider" if user.id == trip.rider_id
@@ -726,18 +725,34 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             trip.rider_id, trip.driver_id,
         )
 
-    # Guard: prevent rider (or stale client request) from cancelling a trip
-    # that already has a driver assigned.  Only the assigned driver or an
-    # admin/dispatch user may cancel after acceptance.
-    if canonical_new == "cancelled" and trip.driver_id is not None:
-        is_assigned_driver = (user.id == trip.driver_id)
+    # ── STRICT CANCEL POLICY ──────────────────────────────────────────────
+    # Only two actors are allowed to cancel a trip through this endpoint:
+    #
+    #   1. The RIDER who owns the trip (their own trip, from the rider app)
+    #   2. ADMIN / DISPATCH users (via the dispatch panel)
+    #
+    # Drivers are explicitly BLOCKED from cancelling. If a driver needs a
+    # trip cancelled they must contact dispatch. This closes the phantom-
+    # cancel class of bugs entirely — any ambiguous pop/timeout/retry in
+    # the driver app can NEVER cancel a ride again.
+    #
+    # System auto-cancels (scheduler expiration, guardian ghost cleanup,
+    # dispatch cascade exhaustion) run with their own DB sessions and
+    # don't go through this HTTP endpoint, so they're unaffected.
+    if canonical_new == "cancelled":
+        is_owner_rider = (user.id == trip.rider_id)
         is_privileged = user_role in ("admin", "dispatch")
-        if not is_assigned_driver and not is_privileged:
+        if not (is_owner_rider or is_privileged):
             logging.warning(
-                "[Guard] Blocked stale cancel on trip %d by user %d (role=%s) -- driver %d already assigned",
-                trip_id, user.id, user_role, trip.driver_id,
+                "[Guard] BLOCKED cancel on trip %d by user %d (role=%s) — "
+                "only owning rider or admin/dispatch may cancel. rider_id=%d driver_id=%s",
+                trip_id, user.id, user_role, trip.rider_id, trip.driver_id,
             )
-            raise HTTPException(409, "Cannot cancel -- driver already assigned")
+            raise HTTPException(
+                403,
+                "Only the rider or dispatch can cancel a trip. "
+                "Drivers must contact dispatch to request a cancellation.",
+            )
 
     # Validate status transition using canonical names.
     # Unknown current states fall through to the permissive default — the

@@ -1438,6 +1438,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     required bool urgent,
   }) async {
     try {
+      // Guard: Firestore subcollection writes require an authenticated
+      // request. If the anonymous sign-in in main.dart failed or got
+      // invalidated, re-run it here so we don't surface a
+      // permission-denied crash to Crashlytics.
+      await _ensureFirebaseAuth();
       final driverId = FirebaseAuth.instance.currentUser?.uid ?? '';
       await FirebaseFirestore.instance
           .collection('trips')

@@ -38,6 +38,17 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();
       allow delete: if isAdmin();
+
+      // Subcollections under a trip (reports, chat_messages, etc.)
+      // Without this the default-deny policy blocks every write and
+      // throws permission-denied inside driver_trip_accept_screen's
+      // _submitReport — the exact error spiking in Crashlytics on
+      // builds 280/285. Applies to any subcollection path so future
+      // trip-scoped subcollections stay consistent.
+      match /{subcollection}/{subDocId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
     }
 
     match /users/{docId} {

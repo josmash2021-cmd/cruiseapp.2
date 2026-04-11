@@ -14,8 +14,12 @@ SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")
 
 
-def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None):
-    """Send email via EmailJS, Mailgun API, SendGrid API, Brevo API, or SMTP fallback."""
+def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None, skip_emailjs: bool = False):
+    """Send email via EmailJS, Mailgun API, SendGrid API, Brevo API, or SMTP fallback.
+
+    ``skip_emailjs=True`` bypasses the EmailJS branch — used for branded HTML
+    guest notifications which EmailJS reformats through its own template.
+    """
     import urllib.request as _ureq, json as _json, urllib.error as _uerr, urllib.parse as _uparse
 
     # 1. EmailJS REST API (server-side)
@@ -23,7 +27,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     EMAILJS_TEMPLATE_ID = os.getenv("EMAILJS_TEMPLATE_ID", "")
     EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
     EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")
-    if EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY and EMAILJS_PRIVATE_KEY:
+    if not skip_emailjs and EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY and EMAILJS_PRIVATE_KEY:
         try:
             # Extract OTP code from html_body if present (6-digit number)
             import re as _re

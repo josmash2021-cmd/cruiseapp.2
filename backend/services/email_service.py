@@ -200,26 +200,30 @@ def _build_trip_completed(lang: str) -> tuple[str, str, str]:
     if lang == "es":
         subject = "Tu viaje ha sido completado — gracias"
         body = (
-            _h1("Viaje completado")
-            + _p("¡Gracias por viajar con Cruise!")
-            + _p('Para más información visita <a href="https://cruiseinride.com" '
+            _h1("¡Viaje completado!")
+            + _p("Tu viaje ha sido completado.")
+            + _p("Gracias por contratarnos y confiar en nosotros.")
+            + _p('Para más información visita nuestra página <a href="https://cruiseinride.com" '
                  'style="color:#E8C547 !important;text-decoration:none;font-weight:700;">cruiseinride.com</a>.')
         )
         text = (
-            "Tu viaje ha sido completado. ¡Gracias por viajar con Cruise!\n"
-            "Para más información visita cruiseinride.com"
+            "Tu viaje ha sido completado.\n\n"
+            "Gracias por contratarnos y confiar en nosotros.\n"
+            "Para más información visita nuestra página cruiseinride.com"
         )
     else:
         subject = "Your trip is complete — thank you"
         body = (
-            _h1("Trip completed")
-            + _p("Thank you for riding with Cruise!")
-            + _p('For more info visit <a href="https://cruiseinride.com" '
+            _h1("Trip completed!")
+            + _p("Your trip has been completed.")
+            + _p("Thank you for booking with us and trusting Cruise.")
+            + _p('For more information visit our website <a href="https://cruiseinride.com" '
                  'style="color:#E8C547 !important;text-decoration:none;font-weight:700;">cruiseinride.com</a>.')
         )
         text = (
-            "Your trip has been completed. Thank you for riding with Cruise!\n"
-            "For more info visit cruiseinride.com"
+            "Your trip has been completed.\n\n"
+            "Thank you for booking with us and trusting Cruise.\n"
+            "For more information visit our website cruiseinride.com"
         )
     return subject, _shell(subject, body), text
 
@@ -283,7 +287,7 @@ async def _dispatch(
     if db is None:
         try:
             await asyncio.to_thread(
-                _send_email, email_address, subject, html_body, {"message": text_body}
+                _send_email, email_address, subject, html_body, {"message": text_body}, True
             )
         except Exception as e:
             _log.warning("[EMAIL] exception sending %s to %s: %s", event_type, email_address, e)
@@ -314,7 +318,7 @@ async def _dispatch(
     success = False
     try:
         result = await asyncio.to_thread(
-            _send_email, email_address, subject, html_body, {"message": text_body}
+            _send_email, email_address, subject, html_body, {"message": text_body}, True
         )
         success = bool(result)
         if not success:

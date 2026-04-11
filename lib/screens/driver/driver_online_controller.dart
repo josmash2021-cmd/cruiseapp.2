@@ -1094,13 +1094,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Connect (or reconnect) the SSE offer stream.
   /// Automatically retries after 2 seconds on error or stream close.
+  ///
+  /// C4 fix: this used to be invoked from 3 different places (go-online,
+  /// network change, onError/onDone) which could leave two streams active
+  /// at once if timing was unlucky — both would deliver the same offer and
+  /// the driver could double-accept. We now bump `_currentSseGeneration`
+  /// on every reconnect and drop any event whose captured generation no
+  /// longer matches the current one.
   void _connectSse() {
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
     final driverId = _driverId;
     if (driverId == null || !mounted) return;
 
+    final int myGeneration = ++_currentSseGeneration;
+
     void scheduleReconnect(String reason) {
+      // Only the CURRENT generation is allowed to schedule the next reconnect.
+      // Events from stale generations are dropped silently.
+      if (myGeneration != _currentSseGeneration) return;
       debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 2s');
       _sseActive = false;
       if (mounted && _phase == _Phase.searching) {
@@ -1110,6 +1122,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _offerSseSub = ApiService.streamDriverOffers(driverId).listen(
       (offers) {
+        // Drop events from stale generations — another _connectSse has
+        // already superseded this listener.
+        if (myGeneration != _currentSseGeneration) {
+          debugPrint(
+            '[DriverOnline] SSE stale event dropped (gen $myGeneration < $_currentSseGeneration)',
+          );
+          return;
+        }
         if (!_sseActive) {
           debugPrint('[DriverOnline] SSE reconnected — stopping polling fallback');
         }
@@ -1225,6 +1245,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
     if (_offerAcceptState != _OfferAcceptState.normal) return;
 
+    final offerId = r['offer_id'] as int?;
+    final tripId = r['trip_id'] as int? ?? r['id'] as int?;
+
+    // C5 fix: idempotent guard keyed on offerId. If the same offer is
+    // delivered twice by the SSE layer (or re-emitted from a stale stream
+    // that slipped past the generation check in _connectSse), the second
+    // call here is dropped silently instead of firing a second backend
+    // accept request.
+    if (offerId != null) {
+      if (_acceptedOfferIds.contains(offerId)) {
+        debugPrint('[DriverOnline] duplicate accept dropped for offer=$offerId');
+        return;
+      }
+      _acceptedOfferIds.add(offerId);
+    }
+
     HapticFeedback.heavyImpact();
 
     // Block further taps but do NOT change visual state — card stays normal
@@ -1232,9 +1268,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {
       _offerAcceptState = _OfferAcceptState.routing; // blocks re-entry, no visual change
     });
-
-    final offerId = r['offer_id'] as int?;
-    final tripId = r['trip_id'] as int? ?? r['id'] as int?;
 
     final acceptFuture = (() async {
       if (offerId != null && _driverId != null) {

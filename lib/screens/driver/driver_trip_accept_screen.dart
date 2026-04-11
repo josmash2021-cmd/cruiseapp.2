@@ -429,6 +429,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } catch (_) {}
 
     if (!mounted) return;
+    // H5 fix: cancel any pre-existing live GPS subscription before creating
+    // a new one. Without this, calling _startLiveGpsForRider more than once
+    // (e.g. on lifecycle resume) leaks a native geolocation stream.
+    _liveGpsSub?.cancel();
     _liveGpsSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
@@ -601,6 +605,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     if (!apiOk) {
       debugPrint('[Driver] arrived API FAILED after 3 attempts');
+      // H2 fix: previously the UI stayed in "arrived" state even when all
+      // 3 backend attempts failed — the driver thought they were at pickup
+      // but neither the backend nor the rider ever knew. Roll back the
+      // local state and surface the failure so the driver can retry.
+      if (mounted) {
+        setState(() => _arrivedConfirmed = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Could not confirm arrival — check your connection and swipe again',
+            ),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+      return;  // don't fall through to Firestore backup — nothing to sync
     }
     // Fire-and-forget Firestore sync as backup (backend already syncs on success)
     FirebaseFirestore.instance
@@ -665,7 +687,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       } catch (_) {}
     }());
 
-    // Navigate to rating screen after brief overlay
+    // Navigate to rating screen after brief overlay.
+    // H4 fix: cancel any pre-existing timer so the local-finish and the
+    // external-completion paths cannot both schedule a navigation.
+    _finishNavTimer?.cancel();
     _finishNavTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -771,7 +796,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       } catch (_) {}
     }());
 
-    // After 1.5 seconds navigate to DriverRateRiderScreen
+    // After 1.5 seconds navigate to DriverRateRiderScreen.
+    // H4 fix: cancel the pre-existing timer (see _finishTrip) so both
+    // finish paths can't schedule a navigation at the same time.
+    _finishNavTimer?.cancel();
     _finishNavTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(

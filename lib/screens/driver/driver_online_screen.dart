@@ -228,6 +228,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
   Timer? _sseReconnectTimer; // retries SSE after drop
   bool _sseActive = false;
+  // C4 fix: monotonic generation counter for SSE streams. Any event arriving
+  // from a stream whose generation no longer matches `_currentSseGeneration`
+  // is dropped. This prevents two concurrent streams (from accidental
+  // reconnects) from both delivering the same offer.
+  int _currentSseGeneration = 0;
+  // C5 fix: offers we have already accepted (or are in the process of
+  // accepting). Prevents double-accept when an offer is delivered twice by
+  // the SSE layer or re-emitted by a stale stream.
+  final Set<int> _acceptedOfferIds = {};
   VoidCallback? _networkListener; // NetworkService online/offline callback
   String _riderName = '';
   String _riderInit = '';

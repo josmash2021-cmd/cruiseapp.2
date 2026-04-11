@@ -16,8 +16,9 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url
+from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
+from services.sms_service import notify_guest_driver_assigned
 from config import (
     OWNER_EMAIL, OWNER_PASSWORD_HASH,
     DISPATCH_ALLOWED_IPS, PUBLIC_URL,
@@ -304,11 +305,12 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                 next_driver = next_drivers[0]
                 tried_driver_ids.add(next_driver.id)
 
-                # Get rider info
-                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_result.scalar_one_or_none()
-                rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-                rider_phone = (rider.phone or "") if rider else ""
+                # Get rider info (with guest-booking fallback)
+                rider = None
+                if trip.rider_id:
+                    rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                    rider = rider_result.scalar_one_or_none()
+                rider_name, rider_phone = _resolve_rider_display(trip, rider)
                 rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
 
                 new_offer = await _send_offer_to_driver(
@@ -926,6 +928,19 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     # -- Stale offer cleanup: expire offers older than 5 minutes --
     # This catches offers that were never explicitly rejected (e.g. app crash, no response).
     # Note: the auto-cascade handles fast 8s timeouts; this is the safety-net for truly stale offers.
+    #
+    # Deadlock prevention (2026-04-11): the cleanup used to do a bare
+    # SELECT then mutate the returned rows in Python. With many drivers
+    # polling in parallel, two sessions could grab locks on the same
+    # dispatch_offers rows in opposite orders and PostgreSQL would pick
+    # one of them to kill with a DeadlockDetectedError — the exact 500
+    # seen in Railway logs for driver_id=3.
+    #
+    # Fix: use `SELECT ... ORDER BY id FOR UPDATE SKIP LOCKED` so
+    # (a) rows are always locked in the same deterministic order, and
+    # (b) any row already locked by another cleanup pass is skipped
+    # entirely rather than waited on. The skipped rows will be picked
+    # up by the next poll or the auto-cascade background task.
     _OFFER_MAX_AGE_SECONDS = 300  # 5 minutes
     stale_cutoff = utc_now() - timedelta(seconds=_OFFER_MAX_AGE_SECONDS)
     try:
@@ -939,6 +954,8 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                     DispatchOffer.created_at <= stale_cutoff,
                 )
             )
+            .order_by(DispatchOffer.id)
+            .with_for_update(of=DispatchOffer, skip_locked=True)
         )
         stale_rows = stale_result.all()
         for stale_offer, stale_trip in stale_rows:
@@ -980,10 +997,11 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                     )
                     if next_drivers:
                         next_driver = next_drivers[0]
-                        rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
-                        rider = rider_result.scalar_one_or_none()
-                        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-                        rider_phone = (rider.phone or "") if rider else ""
+                        rider = None
+                        if stale_trip.rider_id:
+                            rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
+                            rider = rider_result.scalar_one_or_none()
+                        rider_name, rider_phone = _resolve_rider_display(stale_trip, rider)
                         rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
 
                         new_offer = await _send_offer_to_driver(
@@ -1025,8 +1043,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     )
     offers = []
     for offer, trip, rider in result.all():
-        rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-        rider_phone = (rider.phone or "") if rider else ""
+        rider_name, rider_phone = _resolve_rider_display(trip, rider)
         rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
         offers.append({
@@ -1142,7 +1159,39 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     # Authorization: ensure the authenticated user IS the driver
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to accept this offer")
-    # Use FOR UPDATE to prevent two drivers accepting the same offer simultaneously
+
+    # ── Deadlock-safe lock ordering ────────────────────────────────
+    # Convention (2026-04-11): when a transaction needs to lock BOTH
+    # `trips` and `dispatch_offers`, it ALWAYS locks `trips` first,
+    # then `dispatch_offers`. That way concurrent transactions can't
+    # deadlock on a cyclic wait (the exact DeadlockDetectedError seen
+    # in Railway logs was accept_offer taking offers→trips while the
+    # get_driver_pending cleanup took trips→offers).
+    #
+    # We need the offer.trip_id before we can lock the trip, so we do
+    # a cheap un-locked lookup first, THEN lock trip, THEN re-lock
+    # the offer in the established order.
+    lookup = await db.execute(
+        select(DispatchOffer.trip_id).where(DispatchOffer.id == offer_id)
+    )
+    trip_id_for_lock = lookup.scalar_one_or_none()
+    if trip_id_for_lock is None:
+        raise HTTPException(404, "Offer not found")
+
+    # Step 1: lock trip first.
+    trip_result = await db.execute(
+        select(Trip).where(Trip.id == trip_id_for_lock).with_for_update()
+    )
+    trip = trip_result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found for this offer")
+    if trip.status in ("canceled", "cancelled", "completed"):
+        raise HTTPException(
+            status_code=409,
+            detail="Trip is no longer available -- it was canceled or completed",
+        )
+
+    # Step 2: lock the offer itself (second in the canonical order).
     result = await db.execute(
         select(DispatchOffer).where(DispatchOffer.id == offer_id).with_for_update()
     )
@@ -1153,7 +1202,11 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         raise HTTPException(409, "Offer already accepted or expired")
     if offer.driver_id != driver_id:
         raise HTTPException(403, "This offer is not assigned to you")
-    # Check no other driver already accepted an offer for this trip
+
+    # Check no other driver already accepted an offer for this trip.
+    # SKIP LOCKED so we don't block on rows another session is mutating
+    # — if someone else is in the middle of accepting, we'll simply see
+    # their update on the next query and fail fast.
     existing_accepted = await db.execute(
         select(DispatchOffer).where(
             DispatchOffer.trip_id == offer.trip_id,
@@ -1173,14 +1226,8 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     if cascade_task and not cascade_task.done():
         cascade_task.cancel()
 
-    trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id).with_for_update())
-    trip = trip_result.scalar_one_or_none()
-    if trip:
-        # Guard: do not accept if trip was already canceled
-        if trip.status in ("canceled", "cancelled", "completed"):
-            raise HTTPException(status_code=409, detail="Trip is no longer available -- it was canceled or completed")
-        trip.driver_id = driver_id
-        trip.status = "driver_en_route"
+    trip.driver_id = driver_id
+    trip.status = "driver_en_route"
     await db.commit()
 
     # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
@@ -1244,6 +1291,27 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             })
         except Exception as e:
             logging.error("SSE push with driver info failed: %s", e)
+
+        # Guest SMS: driver assigned (no-op if trip.guest_phone is empty).
+        # Reuses `drv` and `veh` loaded above — no extra queries.
+        # If the vehicle row is missing, pass a stub so the template doesn't crash.
+        try:
+            if veh is None:
+                class _VehStub:
+                    make = ""
+                    model = ""
+                    plate = ""
+                    year = ""
+                    color = ""
+                _veh_for_sms = _VehStub()
+            else:
+                _veh_for_sms = veh
+            await notify_guest_driver_assigned(db, trip, drv, _veh_for_sms)
+        except Exception as _sms_err:
+            logging.warning(
+                "[SMS] notify_guest_driver_assigned failed for trip %s: %s",
+                trip.id, _sms_err,
+            )
 
     # -- Push + SMS notification to rider when driver accepts --
     if trip:
@@ -1343,10 +1411,11 @@ async def reject_offer(
         )
         if drivers_sorted:
             next_driver = drivers_sorted[0]
-            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_result.scalar_one_or_none()
-            rider_name = f"{rider.first_name} {rider.last_name}" if rider else "Rider"
-            rider_phone = (rider.phone or "") if rider else ""
+            rider = None
+            if trip.rider_id:
+                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_result.scalar_one_or_none()
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
             rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
 
             new_offer = await _send_offer_to_driver(
@@ -1420,20 +1489,32 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
     if trip is None:
         return {"status": "not_found"}
 
-    # Fetch rider info so driver screens can display the rider's photo
+    # Fetch rider info so driver screens can display the rider's photo.
+    # For guest bookings (trip.rider_id is NULL), fall back to trip.guest_*.
     rider_info = {}
-    if trip.rider_id:
-        try:
+    try:
+        rider = None
+        if trip.rider_id:
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
             rider = rider_result.scalar_one_or_none()
-            if rider:
-                rider_info = {
-                    "rider_id": rider.id,
-                    "rider_name": f"{rider.first_name} {rider.last_name}",
-                    "rider_photo_url": _abs_photo_url(rider.photo_url) or "",
-                }
-        except Exception as _e:
-            logging.warning("[dispatch/status] rider info fetch failed (non-fatal): %s", _e)
+        _rn, _rp = _resolve_rider_display(trip, rider)
+        if rider:
+            rider_info = {
+                "rider_id": rider.id,
+                "rider_name": _rn,
+                "rider_phone": _rp,
+                "rider_photo_url": _abs_photo_url(rider.photo_url) or "",
+            }
+        elif _rn and _rn != "Rider":
+            # Guest booking — no User row, but we have guest contact info.
+            rider_info = {
+                "rider_id": None,
+                "rider_name": _rn,
+                "rider_phone": _rp,
+                "rider_photo_url": "",
+            }
+    except Exception as _e:
+        logging.warning("[dispatch/status] rider info fetch failed (non-fatal): %s", _e)
 
     if accepted and driver:
         # Fetch actual driver stats from ratings

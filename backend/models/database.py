@@ -170,6 +170,7 @@ class Trip(Base):
     guest_last_name = Column(String(100), nullable=True)
     guest_phone = Column(String(30), nullable=True)
     guest_email = Column(String(200), nullable=True)
+    guest_lang = Column(String(5), nullable=True, default="en")
     cancel_reason = Column(Text, nullable=True)
     payment_status = Column(String(20), default="unpaid")
     stripe_payment_intent_id = Column(String(100), nullable=True)

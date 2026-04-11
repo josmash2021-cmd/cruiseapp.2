@@ -35,6 +35,61 @@ import 'rider_flow_phase.dart';
 /// Constructor signature intentionally mirrors [RideRequestScreen] so any
 /// caller that constructs one can construct the other without touching
 /// the arg list — the feature flag picks the implementation.
+/// Factory used by the existing rider navigation paths. Returns the
+/// new [RiderFlowShell] when [FeatureFlags.useRiderFlowShell] is true
+/// and the legacy [RideRequestScreen] otherwise. Call sites that used
+/// to construct `RideRequestScreen(...)` can switch to
+/// `riderFlowEntry(...)` once and the flag picks the implementation
+/// at runtime — no call-site-by-call-site edits when we flip the flag.
+Widget riderFlowEntry({
+  Key? key,
+  bool fastRide = false,
+  bool applyPromo = false,
+  bool isAirportTrip = false,
+  DateTime? scheduledAt,
+  AirportSelection? airportSelection,
+  String? initialDropoffAddress,
+  PlaceDetails? initialPickupDetails,
+  PlaceDetails? initialDropoffDetails,
+  String? initialPickupLabel,
+  String? initialDropoffLabel,
+  RouteResult? preloadedRoute,
+  String? initialRideId,
+}) {
+  if (FeatureFlags.useRiderFlowShell) {
+    return RiderFlowShell(
+      key: key,
+      fastRide: fastRide,
+      applyPromo: applyPromo,
+      isAirportTrip: isAirportTrip,
+      scheduledAt: scheduledAt,
+      airportSelection: airportSelection,
+      initialDropoffAddress: initialDropoffAddress,
+      initialPickupDetails: initialPickupDetails,
+      initialDropoffDetails: initialDropoffDetails,
+      initialPickupLabel: initialPickupLabel,
+      initialDropoffLabel: initialDropoffLabel,
+      preloadedRoute: preloadedRoute,
+      initialRideId: initialRideId,
+    );
+  }
+  return RideRequestScreen(
+    key: key,
+    fastRide: fastRide,
+    applyPromo: applyPromo,
+    isAirportTrip: isAirportTrip,
+    scheduledAt: scheduledAt,
+    airportSelection: airportSelection,
+    initialDropoffAddress: initialDropoffAddress,
+    initialPickupDetails: initialPickupDetails,
+    initialDropoffDetails: initialDropoffDetails,
+    initialPickupLabel: initialPickupLabel,
+    initialDropoffLabel: initialDropoffLabel,
+    preloadedRoute: preloadedRoute,
+    initialRideId: initialRideId,
+  );
+}
+
 class RiderFlowShell extends StatefulWidget {
   final bool fastRide;
   final bool applyPromo;
@@ -72,7 +127,13 @@ class RiderFlowShell extends StatefulWidget {
 class _RiderFlowShellState extends State<RiderFlowShell> {
   /// The same state machine that RideRequestScreen owns. The shell
   /// NEVER reimplements its logic — it just listens + renders.
-  final RiderTripController _ctrl = RiderTripController();
+  ///
+  /// Lazily created: when [FeatureFlags.useRiderFlowShell] is false we
+  /// never allocate the controller or attach listeners, so wiring the
+  /// shell into production call sites is zero-cost until the flag
+  /// flips on.
+  RiderTripController? _ctrlRef;
+  RiderTripController get _ctrl => _ctrlRef!;
 
   RiderFlowPhase _shellPhase = RiderFlowPhase.chooseVehicle;
 
@@ -97,6 +158,13 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   @override
   void initState() {
     super.initState();
+    // Lazy: only spin up the controller + listeners if the shell is
+    // actually going to render its own UI. When the flag is off, build()
+    // delegates straight to RideRequestScreen and we must NOT allocate
+    // a second controller — that would duplicate backend calls.
+    if (!FeatureFlags.useRiderFlowShell) return;
+
+    _ctrlRef = RiderTripController();
     _ctrl.addListener(_onTripStateChange);
 
     // Seed the controller with the same inputs RideRequestScreen would.
@@ -131,8 +199,11 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
 
   @override
   void dispose() {
-    _ctrl.removeListener(_onTripStateChange);
-    _ctrl.dispose();
+    if (_ctrlRef != null) {
+      _ctrl.removeListener(_onTripStateChange);
+      _ctrl.dispose();
+      _ctrlRef = null;
+    }
     super.dispose();
   }
 

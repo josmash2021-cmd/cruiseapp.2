@@ -232,8 +232,14 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
 
 @router.post("/admin/cancel-all-active", dependencies=[Depends(_verify_api_key)])
 async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
-    """Emergency: cancel ALL active trips. Requires API key auth."""
-    active = ["requested", "driver_en_route", "arrived", "in_trip"]
+    """Emergency: cancel ALL active trips. Requires API key auth.
+
+    Per-trip Firestore sync is fired after commit so every driver app
+    listening on trips/sql_<id> is notified and can tear its trip screen
+    down. Without this sync the drivers stay visually stuck on a dead
+    trip until the next manual refresh.
+    """
+    active = ["requested", "accepted", "driver_en_route", "arrived", "in_trip"]
     result = await db.execute(select(Trip).where(Trip.status.in_(active)))
     trips = result.scalars().all()
     canceled = []
@@ -242,6 +248,19 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
         t.cancel_reason = "admin_bulk_cleanup"
         canceled.append(t.id)
     await db.commit()
+    if _HAS_FIRESTORE:
+        for trip_id in canceled:
+            try:
+                firestore_sync.sync_trip_status(
+                    trip_id=trip_id,
+                    status="cancelled",
+                    cancel_reason="admin_bulk_cleanup",
+                    cancelled_by="admin",
+                )
+            except Exception as e:
+                logging.warning(
+                    "Firestore bulk-cancel sync failed for trip %d: %s", trip_id, e
+                )
     _security_audit_log("ADMIN_BULK_CANCEL", "api", f"canceled={canceled}")
     return {"canceled_count": len(canceled), "trip_ids": canceled}
 
@@ -265,6 +284,7 @@ async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = D
             firestore_sync.sync_trip_status(
                 trip_id=trip.id, status=trip.status,
                 cancel_reason=trip.cancel_reason,
+                cancelled_by="admin",
             )
         except Exception as e:
             logging.warning("Firestore cancel sync failed: %s", e)

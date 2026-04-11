@@ -1303,6 +1303,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _currentOfferId = offerId;
     _tripId = tripId;
+    // Start the top-level cancel watcher as soon as we know the trip id.
+    // Survives pushReplacement (TripAcceptedScreen -> DriverTripAcceptScreen)
+    // and any subsequent screen transitions — the only sources of truth for
+    // remote cancellation are Firestore and this watcher.
+    if (tripId != null) {
+      _startActiveTripCancelWatcher(tripId);
+    }
     _riderName = name;
     _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
     _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
@@ -1792,6 +1799,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         driverId: _driverId!,
       ).catchError((_) => <String, dynamic>{});
     }
+    _stopActiveTripCancelWatcher();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -1849,6 +1857,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ChatService().deleteChat(_tripId.toString());
     }
     _doneCtrl?.reverse();
+    _stopActiveTripCancelWatcher();
     // INSTANT reset — no delay
     _setState(() {
       _phase = _Phase.searching;
@@ -2052,6 +2061,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // All callers are async-after-await, so the State may already be
     // disposed by the time we land here.
     if (!mounted) return;
+    _stopActiveTripCancelWatcher();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -2106,9 +2116,74 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  NAV — Real GPS drives the navigation now.
   //  _simNav is kept as a no-op for backward compat.
+  //  (_startActiveTripCancelWatcher / _handleExternalTripCancel defined below)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _simNav() {
     // No-op: real GPS position stream handles all nav updates
+  }
+
+  /// Start a Firestore snapshot listener on the active trip doc. Fires
+  /// [_handleExternalTripCancel] as soon as the backend flips the trip to
+  /// cancelled, regardless of which screen is currently on top of the
+  /// navigator stack. This is the definitive detection mechanism for
+  /// dispatch-initiated cancels — the navFuture-based detection in
+  /// _acceptOffer resolves with null after TripAcceptedScreen does
+  /// pushReplacement, so without this watcher the controller would never
+  /// learn about a remote cancel.
+  void _startActiveTripCancelWatcher(int tripId) {
+    _activeTripCancelWatcher?.cancel();
+    _watchedCancelTripId = tripId;
+    final docId = 'sql_$tripId';
+    _activeTripCancelWatcher = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(docId)
+        .snapshots()
+        .listen(
+      (snap) {
+        if (!mounted) return;
+        if (_watchedCancelTripId != tripId) return; // stale listener
+        final data = snap.data();
+        if (data == null) return;
+        final status = (data['status'] ?? '').toString().toLowerCase();
+        if (status == 'cancelled' || status == 'canceled') {
+          debugPrint(
+              '[DriverOnline] external cancel detected for trip $tripId (status=$status) — resetting');
+          _handleExternalTripCancel();
+        }
+      },
+      onError: (e) =>
+          debugPrint('[DriverOnline] cancel watcher error for $tripId: $e'),
+    );
+    debugPrint('[DriverOnline] cancel watcher armed on $docId');
+  }
+
+  /// Tear down the cancel watcher. Safe to call multiple times.
+  void _stopActiveTripCancelWatcher() {
+    _activeTripCancelWatcher?.cancel();
+    _activeTripCancelWatcher = null;
+    _watchedCancelTripId = null;
+  }
+
+  /// Shared handler for a remote cancel fired from the Firestore watcher.
+  /// Pops every route pushed on top of DriverOnlineScreen
+  /// (TripAcceptedScreen, DriverTripAcceptScreen, DriverNavScreen, ...)
+  /// and then resets the controller back to the searching phase with the
+  /// same gold toast used elsewhere.
+  void _handleExternalTripCancel() {
+    if (!mounted) return;
+    _stopActiveTripCancelWatcher();
+    // ModalRoute.of(context) gives the route of DriverOnlineScreen itself,
+    // so popUntil stops there. If we are already the top route, popUntil
+    // is a no-op and _resetToSearchingOnRemoteCancel does the rest.
+    final myRoute = ModalRoute.of(context);
+    if (myRoute != null) {
+      try {
+        Navigator.of(context).popUntil((r) => r == myRoute || r.isFirst);
+      } catch (e) {
+        debugPrint('[DriverOnline] popUntil on cancel failed: $e');
+      }
+    }
+    _resetToSearchingOnRemoteCancel();
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

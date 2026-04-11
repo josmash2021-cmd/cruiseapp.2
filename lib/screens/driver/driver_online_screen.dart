@@ -227,6 +227,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Request data (for active trip after acceptance) â”€â”€
   Timer? _pollT;
   StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
+  // Top-level Firestore watcher that fires when the active trip is
+  // cancelled externally (dispatch, guardian ghost cleanup, auto-cancel).
+  // Required because the navFuture-based detection in _acceptOffer resolves
+  // with null after TripAcceptedScreen pushReplacement(DriverTripAcceptScreen),
+  // so the controller never learns of the cancel and leaves the trip visually
+  // active. See _startActiveTripCancelWatcher().
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _activeTripCancelWatcher;
+  int? _watchedCancelTripId;
   Timer? _sseReconnectTimer; // retries SSE after drop
   bool _sseActive = false;
   // C4 fix: monotonic generation counter for SSE streams. Any event arriving
@@ -502,6 +511,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();
+    _activeTripCancelWatcher?.cancel();
     _sseReconnectTimer?.cancel();
     _scheduledPollTimer?.cancel();
     _clock?.cancel();

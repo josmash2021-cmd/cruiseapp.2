@@ -1005,14 +1005,43 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       // Driver assigned/arriving → show "Driver Found" overlay first, THEN tracking.
+      //
+      // Important: if the backend matched a driver while the user was still
+      // on the "Confirming your ride" sheet, the phase here is already
+      // driverAssigned. Jumping straight to the overlay skips the
+      // "Finding the best driver for you…" bottom card entirely, which made
+      // it look like a hard cut from payment → driver-found. Instead we:
+      //   1) force the searching card on for a minimum display time
+      //   2) wait that long
+      //   3) THEN fire the driver-found overlay
+      // so the rider always sees the map with the route + searching card
+      // before the driver-found celebration.
       if ((phase == RiderPhase.driverArriving || phase == RiderPhase.driverAssigned) &&
           !_navigatingToTracking) {
-        // Ensure phase is driverAssigned so _onStateChange shows the overlay
-        if (phase == RiderPhase.driverArriving) {
-          _ctrl.forcePhase(RiderPhase.driverAssigned);
-        }
-        _driverFoundVisible = false; // reset so _onStateChange shows it fresh
-        _onStateChange();
+        _searchMapTimer?.cancel();
+        _setState(() {
+          _searchingShowMap = true;
+          _searchingSplash = false;
+        });
+        // Trigger the cinematic camera replay (fits pickup→dropoff + route)
+        // so the user gets the same visual as if the backend had been slow.
+        _replayCinematicIfRouteAvailable();
+        Future.delayed(const Duration(milliseconds: 2500), () {
+          if (!mounted) return;
+          // Abort if the user cancelled or the phase moved on during the wait.
+          final p = _ctrl.state.phase;
+          if (p != RiderPhase.driverAssigned &&
+              p != RiderPhase.driverArriving) {
+            return;
+          }
+          if (_navigatingToTracking) return;
+          // Force driverAssigned so _onStateChange shows the overlay
+          if (p == RiderPhase.driverArriving) {
+            _ctrl.forcePhase(RiderPhase.driverAssigned);
+          }
+          _driverFoundVisible = false; // reset so _onStateChange shows it fresh
+          _onStateChange();
+        });
         return;
       }
 

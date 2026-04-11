@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../../config/feature_flags.dart';
+import '../../config/mapbox_config.dart';
 import '../../models/airport_models.dart' show AirportSelection;
 import '../../services/directions_service.dart' show RouteResult;
 import '../../services/places_service.dart' show PlaceDetails;
@@ -71,6 +73,15 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
 
   RiderFlowPhase _shellPhase = RiderFlowPhase.chooseVehicle;
 
+  // ── Mapbox — single instance alive for the whole flow ──────────────
+  mapbox.MapboxMap? _map;
+  mapbox.PolylineAnnotationManager? _polylineMgr;
+  mapbox.PointAnnotationManager? _pointMgr;
+  mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  bool _cameraFitted = false;
+
   @override
   void initState() {
     super.initState();
@@ -123,6 +134,132 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
     if (next != _shellPhase) {
       setState(() => _shellPhase = next);
     }
+    // Route / pickup / dropoff may arrive after the initial seed if the
+    // user edits the trip in the choose-vehicle phase. Re-sync on every
+    // state change — the manager caches the annotations so this is cheap.
+    _syncMapAnnotations();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Map wiring
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
+    _map = ctrl;
+    try {
+      await ctrl.scaleBar
+          .updateSettings(mapbox.ScaleBarSettings(enabled: false));
+      await ctrl.compass
+          .updateSettings(mapbox.CompassSettings(enabled: false));
+      await ctrl.attribution
+          .updateSettings(mapbox.AttributionSettings(enabled: false));
+      await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+      _polylineMgr = await ctrl.annotations
+          .createPolylineAnnotationManager(below: 'road-label');
+      _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+    } catch (e) {
+      debugPrint('[RiderFlowShell] map setup error: $e');
+    }
+    await _syncMapAnnotations();
+  }
+
+  /// Draw / refresh pickup + dropoff markers and the route polyline
+  /// based on the current [RiderTripState]. Cheap — only hits Mapbox
+  /// when the coordinates actually change between calls.
+  Future<void> _syncMapAnnotations() async {
+    if (_map == null || _polylineMgr == null || _pointMgr == null) return;
+    final state = _ctrl.state;
+    final pickup = state.pickup;
+    final dropoff = state.dropoff;
+    final route = state.route;
+
+    // ── Route polyline ────────────────────────────────────────────
+    if (route != null && route.points.length >= 2) {
+      final coords = route.points
+          .map((p) => mapbox.Position(p.longitude, p.latitude))
+          .toList();
+      try {
+        if (_routeAnnot != null) {
+          await _polylineMgr!.delete(_routeAnnot!);
+          _routeAnnot = null;
+        }
+        _routeAnnot = await _polylineMgr!.create(
+          mapbox.PolylineAnnotationOptions(
+            geometry: mapbox.LineString(coordinates: coords),
+            lineColor: 0xFFE8C547,
+            lineWidth: 5.5,
+            lineOpacity: 0.95,
+          ),
+        );
+      } catch (e) {
+        debugPrint('[RiderFlowShell] route draw error: $e');
+      }
+    }
+
+    // ── Pickup + dropoff point annotations ────────────────────────
+    try {
+      if (pickup != null) {
+        final p = mapbox.Point(
+          coordinates: mapbox.Position(pickup.lng, pickup.lat),
+        );
+        if (_pickupAnnot != null) {
+          _pickupAnnot!.geometry = p;
+          await _pointMgr!.update(_pickupAnnot!);
+        } else {
+          _pickupAnnot = await _pointMgr!.create(
+            mapbox.PointAnnotationOptions(
+              geometry: p,
+              iconAnchor: mapbox.IconAnchor.BOTTOM,
+              iconSize: 1.0,
+            ),
+          );
+        }
+      }
+      if (dropoff != null) {
+        final p = mapbox.Point(
+          coordinates: mapbox.Position(dropoff.lng, dropoff.lat),
+        );
+        if (_dropoffAnnot != null) {
+          _dropoffAnnot!.geometry = p;
+          await _pointMgr!.update(_dropoffAnnot!);
+        } else {
+          _dropoffAnnot = await _pointMgr!.create(
+            mapbox.PointAnnotationOptions(
+              geometry: p,
+              iconAnchor: mapbox.IconAnchor.BOTTOM,
+              iconSize: 1.0,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[RiderFlowShell] point annot error: $e');
+    }
+
+    // ── First-fit camera to pickup + dropoff ──────────────────────
+    if (!_cameraFitted && pickup != null && dropoff != null) {
+      try {
+        final camera = await _map!.cameraForCoordinatesPadding(
+          [
+            mapbox.Point(
+                coordinates: mapbox.Position(pickup.lng, pickup.lat)),
+            mapbox.Point(
+                coordinates: mapbox.Position(dropoff.lng, dropoff.lat)),
+          ],
+          mapbox.CameraOptions(pitch: 35.0),
+          mapbox.MbxEdgeInsets(top: 140, left: 60, bottom: 320, right: 60),
+          null,
+          null,
+        );
+        await _map!.easeTo(
+          camera,
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+        _cameraFitted = true;
+      } catch (e) {
+        debugPrint('[RiderFlowShell] camera fit error: $e');
+      }
+    }
   }
 
   static RiderFlowPhase _mapInnerPhaseToShellPhase(RiderPhase inner) {
@@ -171,16 +308,33 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
       );
     }
 
-    // Day 2 — single-map shell with placeholder cards per phase.
-    // The real MapWidget lands in Day 2b; for now the bottom layer is a
-    // dark canvas so the AnimatedSwitcher logic can be verified in isolation.
+    // Day 2c — single Mapbox MapWidget + phase cards. The map is created
+    // ONCE and never disposed between phases, which is the whole point of
+    // the shell refactor (no per-screen style reload, no camera reset,
+    // no black flash).
+    final initialCenter = _ctrl.state.pickup;
     return Scaffold(
       backgroundColor: const Color(0xFF0A0D14),
       body: Stack(
         children: [
-          // ── Map layer (placeholder for now) ────────────────────────
-          const Positioned.fill(
-            child: ColoredBox(color: Color(0xFF0A0D14)),
+          // ── Shared map layer ───────────────────────────────────────
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: mapbox.MapWidget(
+                styleUri: MapboxConfig.styleDark,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(
+                    coordinates: mapbox.Position(
+                      initialCenter?.lng ?? -86.8,
+                      initialCenter?.lat ?? 33.5,
+                    ),
+                  ),
+                  zoom: 14.5,
+                  pitch: 35.0,
+                ),
+                onMapCreated: _onMapCreated,
+              ),
+            ),
           ),
 
           // ── Bottom sheet slot — AnimatedSwitcher with fade + slide ─

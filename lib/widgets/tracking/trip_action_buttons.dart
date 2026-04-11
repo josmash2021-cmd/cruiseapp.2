@@ -30,9 +30,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       // Backend will eventually reconcile via the dispatch auto-cancel loop.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'Cancel request may not have reached the server — we will retry in the background',
-          ),
+          content: Text(S.of(context).cancelRequestRetryBackground),
           backgroundColor: Colors.orange.shade800,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
@@ -180,7 +178,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not share trip: $e'),
+          content: Text(S.of(context).couldNotShareTrip(e.toString())),
           behavior: SnackBarBehavior.floating,
         ),
       );

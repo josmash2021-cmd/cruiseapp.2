@@ -1226,15 +1226,16 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     final suffix = h24 < 12 ? 'AM' : 'PM';
     final mm = dt.minute.toString().padLeft(2, '0');
     final timeStr = '$h12:$mm $suffix';
+    final s = S.of(context);
     if (diff.isNegative) {
-      return 'Hoy a las $timeStr (ahora)';
+      return s.schedTimeNow(timeStr);
     } else if (diff.inMinutes <= 60) {
-      return 'Hoy a las $timeStr (en ${diff.inMinutes} min)';
+      return s.schedTimeInMinutes(timeStr, diff.inMinutes);
     } else if (diff.inHours <= 24) {
-      return 'Hoy a las $timeStr (en ${diff.inHours}h ${diff.inMinutes % 60}m)';
+      return s.schedTimeInHours(
+          timeStr, diff.inHours, diff.inMinutes % 60);
     } else {
-      const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-      return '${dt.day} ${months[dt.month - 1]} a las $timeStr';
+      return s.schedTimeFutureDay(dt.day, dt.month - 1, timeStr);
     }
   }
 

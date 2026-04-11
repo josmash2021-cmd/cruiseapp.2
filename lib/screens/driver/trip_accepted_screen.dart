@@ -14,6 +14,7 @@ import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import 'driver_trip_accept_screen.dart';
 
@@ -621,9 +622,9 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           if (widget.riderIsNew)
-                            const Text(
-                              'New rider',
-                              style: TextStyle(
+                            Text(
+                              S.of(context).newRiderLabel,
+                              style: const TextStyle(
                                 color: _gold,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,

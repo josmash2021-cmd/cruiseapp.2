@@ -933,8 +933,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final riderIsNew = offer['rider_is_new'] == true ||
         ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
-    final rawPickupAddr = (offer['pickup_address'] ?? 'Pickup') as String;
-    final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
+    final rawPickupAddr =
+        (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
+    final dropoffAddr =
+        (offer['dropoff_address'] as String?) ?? S.of(context).dropoffFallback;
     final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
     final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
@@ -1231,7 +1233,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           children: [
             if (riderIsNew)
               Text(
-                'New rider',
+                S.of(context).newRiderLabel,
                 style: TextStyle(
                   color: goldAccent,
                   fontSize: 12,
@@ -1474,20 +1476,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   }
 
   /// Format a scheduled ride time relative to now — always 12-hour clock
-  /// with AM/PM suffix (e.g. "8:15 PM"), never 24-hour.
+  /// with AM/PM suffix (e.g. "8:15 PM"), never 24-hour. Localised via
+  /// S.of(context) so the phone language picks ES vs EN.
   String _formatScheduledTime(DateTime dt) {
     final now = DateTime.now();
     final diff = dt.difference(now);
     final timeStr = _format12Hour(dt);
+    final s = S.of(context);
     if (diff.isNegative) {
-      return 'Hoy a las $timeStr (ahora)';
+      return s.schedTimeNow(timeStr);
     } else if (diff.inMinutes <= 60) {
-      return 'Hoy a las $timeStr (en ${diff.inMinutes} min)';
+      return s.schedTimeInMinutes(timeStr, diff.inMinutes);
     } else if (diff.inHours <= 24) {
-      return 'Hoy a las $timeStr (en ${diff.inHours}h ${diff.inMinutes % 60}m)';
+      return s.schedTimeInHours(
+          timeStr, diff.inHours, diff.inMinutes % 60);
     } else {
-      const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-      return '${dt.day} ${months[dt.month - 1]} a las $timeStr';
+      return s.schedTimeFutureDay(dt.day, dt.month - 1, timeStr);
     }
   }
 
@@ -1646,14 +1650,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _routePreviewPanel(bool isDark) {
     final offer = _previewingOffer!;
-    final name = (offer['rider_name'] ?? 'Rider') as String;
+    final name = (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
     final riderIsNew = offer['rider_is_new'] == true ||
         ((offer['rider_ratings_count'] as num?)?.toInt() ?? 0) == 0;
     final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
-    final rawPickupAddr2 = (offer['pickup_address'] ?? 'Pickup') as String;
-    final dropoffAddr = (offer['dropoff_address'] ?? 'Drop-off') as String;
+    final rawPickupAddr2 =
+        (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
+    final dropoffAddr =
+        (offer['dropoff_address'] as String?) ?? S.of(context).dropoffFallback;
     final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
     final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
     final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
@@ -1758,9 +1764,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             ),
                             const SizedBox(height: 5),
                             if (riderIsNew)
-                              const Text(
-                                'New rider',
-                                style: TextStyle(
+                              Text(
+                                S.of(context).newRiderLabel,
+                                style: const TextStyle(
                                   color: _gold, fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),

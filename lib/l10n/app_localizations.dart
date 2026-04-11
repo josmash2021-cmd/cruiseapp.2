@@ -3578,6 +3578,104 @@ class S {
   String get releaseRideError => _es
       ? 'No se pudo liberar el viaje. Intenta de nuevo.'
       : 'Could not release the ride. Please try again.';
+
+  // ── Scheduled-time format helpers (driver offer card + offers screen) ─
+  // The "Hoy a las HH:MM (ahora)" / "Today at HH:MM (now)" labels live
+  // here so the driver app shows them in the phone's language. Use
+  // schedTimeNow / schedTimeInMinutes / schedTimeInHours / schedTimeFutureDay
+  // by passing the already-12-hour-formatted time string and the deltas.
+  String schedTimeNow(String timeStr) =>
+      _es ? 'Hoy a las $timeStr (ahora)' : 'Today at $timeStr (now)';
+  String schedTimeInMinutes(String timeStr, int minutes) => _es
+      ? 'Hoy a las $timeStr (en $minutes min)'
+      : 'Today at $timeStr (in $minutes min)';
+  String schedTimeInHours(String timeStr, int hours, int extraMinutes) => _es
+      ? 'Hoy a las $timeStr (en ${hours}h ${extraMinutes}m)'
+      : 'Today at $timeStr (in ${hours}h ${extraMinutes}m)';
+  String schedTimeFutureDay(int day, int monthIndex0, String timeStr) {
+    const monthsEs = [
+      'Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic',
+    ];
+    const monthsEn = [
+      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec',
+    ];
+    final m = (_es ? monthsEs : monthsEn)[monthIndex0];
+    return _es ? '$day $m a las $timeStr' : '$m $day at $timeStr';
+  }
+
+  // Driver offer card — rider quality labels.
+  String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
+
+  // Generic fallback labels used by offer cards when the trip payload
+  // is missing addresses or names. These are visible in the offer
+  // notifications, so they need to be localised.
+  String get pickupFallback => _es ? 'Recogida' : 'Pickup';
+  String get dropoffFallback => _es ? 'Destino' : 'Drop-off';
+  String get riderFallback => _es ? 'Rider' : 'Rider';
+
+  // Trip-share error snackbar.
+  String couldNotShareTrip(String error) =>
+      _es ? 'No se pudo compartir el viaje: $error' : 'Could not share trip: $error';
+
+  // Driver scheduled trips screen.
+  String get notLoggedIn => _es ? 'No has iniciado sesión' : 'Not logged in';
+  String get navigateToPickup =>
+      _es ? 'Navegar al pickup' : 'Navigate to Pickup';
+
+  // Cancel-failure snackbars from the rider waiting/tracking flow.
+  String get cancelTripCheckConnection => _es
+      ? 'No se pudo cancelar — revisa tu conexión.'
+      : 'Could not cancel — check your connection.';
+  String get cancelOnServerFailedActive => _es
+      ? 'No se pudo cancelar en el servidor — el viaje puede seguir activo.'
+      : 'Could not cancel on server — trip may still be active.';
+  String get cancelRequestRetryBackground => _es
+      ? 'La solicitud de cancelación puede no haber llegado al servidor — reintentaremos en segundo plano.'
+      : 'Cancel request may not have reached the server — we will retry in the background.';
+
+  // ── Cancel-code → user-friendly localized message ──────────────
+  // Used by the rider UI to translate the canonical `cancelCode`
+  // field on RiderTripState into a phrase the rider can read in
+  // their phone language. Falls back to the raw `rawReason` (or a
+  // generic message) when the code isn't recognised.
+  //
+  // Codes are intentionally string literals so this stays
+  // independent of the rider_trip_controller import.
+  String cancelCodeMessage(String? code, {String? rawReason}) {
+    switch (code) {
+      case 'auto:no_driver_found_10min':
+        return _es
+            ? 'No encontramos un conductor disponible. Intenta de nuevo.'
+            : "We couldn't find a driver in time. Please try again.";
+      case 'auto:scheduled_no_driver_30min':
+        return _es
+            ? 'No hubo conductor para tu viaje reservado. Reserva nuevamente.'
+            : 'No driver was available for your scheduled ride. Please book again.';
+      case 'auto:guardian_ghost_stale':
+        return _es
+            ? 'Tu viaje fue detenido por el sistema. Contacta a soporte.'
+            : 'Your trip was stopped by the system. Please contact support.';
+      case 'client:no_internet':
+        return _es
+            ? 'Sin conexión a internet. Revisa tu red e intenta de nuevo.'
+            : 'No internet connection. Check your network and try again.';
+      case 'client:no_session':
+        return _es
+            ? 'No pudimos verificar tu sesión. Intenta de nuevo.'
+            : 'Could not verify your session. Please try again.';
+      case 'client:create_failed':
+        return _es
+            ? 'No se pudo crear el viaje. Intenta de nuevo.'
+            : 'Could not create the trip. Please try again.';
+      case 'client:connection_error':
+        return _es
+            ? 'Error de conexión. Revisa tu red e intenta de nuevo.'
+            : 'Connection error. Check your network and try again.';
+      default:
+        if (rawReason != null && rawReason.isNotEmpty) return rawReason;
+        return _es ? 'Tu viaje fue cancelado.' : 'Your trip was cancelled.';
+    }
+  }
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

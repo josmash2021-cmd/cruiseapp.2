@@ -415,8 +415,14 @@ extension _RideRequestController on _RideRequestScreenState {
         if (RiderTripCancelCodes.isNoDriverAutoCancel(s.cancelCode)) {
           if (_cancelDialogShown) break; // dedup
           _cancelDialogShown = true;
-          final friendlyMessage = s.cancelReason ??
-              S.of(context).riderNoDriversFoundTryAgain;
+          // Capture before the post-frame callback so we don't read
+          // freshly-reset state.
+          final cancelCodeForToast = s.cancelCode;
+          final rawReasonForToast = s.cancelReason;
+          final friendlyMessage = S.of(context).cancelCodeMessage(
+                cancelCodeForToast,
+                rawReason: rawReasonForToast,
+              );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             // Fire the SnackBar on the root ScaffoldMessenger BEFORE
@@ -471,11 +477,17 @@ extension _RideRequestController on _RideRequestScreenState {
         // Guard: only show one cancel dialog per cancellation event
         if (_cancelDialogShown) break;
         _cancelDialogShown = true;
-        final rawReason = s.cancelReason;
-        final reason = (rawReason != null && rawReason.isNotEmpty) ? rawReason : null;
+        final cancelCodeForDialog = s.cancelCode;
+        final rawReasonForDialog = s.cancelReason;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final displayReason = reason ?? S.of(context).tripCancelled;
+          // Translate via cancelCodeMessage so the dialog content is in
+          // the phone's language even when the controller stored an
+          // English fallback string in cancelReason.
+          final displayReason = S.of(context).cancelCodeMessage(
+                cancelCodeForDialog,
+                rawReason: rawReasonForDialog,
+              );
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -1043,8 +1055,10 @@ extension _RideRequestController on _RideRequestScreenState {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      rawReason ??
-                          S.of(context).riderNoDriversFoundTryAgain,
+                      S.of(context).cancelCodeMessage(
+                            cancelCode,
+                            rawReason: rawReason,
+                          ),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
@@ -1075,6 +1089,11 @@ extension _RideRequestController on _RideRequestScreenState {
         );
         Future.delayed(const Duration(milliseconds: 600), () {
           if (!mounted) return;
+          // Translate via cancelCodeMessage to honour the phone language.
+          final localizedBody = S.of(context).cancelCodeMessage(
+                cancelCode,
+                rawReason: rawReason,
+              );
           showDialog(
             context: Navigator.of(context, rootNavigator: true).context,
             barrierDismissible: true,
@@ -1087,8 +1106,8 @@ extension _RideRequestController on _RideRequestScreenState {
                 Expanded(child: Text(isNoDrivers ? S.of(context).noDriversAvailableTitle : S.of(context).tripCancelled,
                     style: const TextStyle(fontSize: 17))),
               ]),
-              content: Text(rawReason ?? S.of(context).tripCancelled, style: const TextStyle(fontSize: 15)),
-              actions: [TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('OK'))],
+              content: Text(localizedBody, style: const TextStyle(fontSize: 15)),
+              actions: [TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: Text(S.of(context).okBtn))],
             ),
           );
         });

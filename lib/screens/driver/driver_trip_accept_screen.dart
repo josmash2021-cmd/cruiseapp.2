@@ -2203,7 +2203,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                                 fontWeight: FontWeight.w700)),
                             const SizedBox(height: 4),
                             if (widget.riderIsNew)
-                              Text('New rider',
+                              Text(S.of(context).newRiderLabel,
                                 style: TextStyle(
                                   color: const Color(0xFFE8C547),
                                   fontSize: Responsive.sp(11),

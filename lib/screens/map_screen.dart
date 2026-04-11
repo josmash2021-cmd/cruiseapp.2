@@ -1606,9 +1606,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text(
-                'Could not cancel on server — trip may still be active',
-              ),
+              content: Text(S.of(context).cancelOnServerFailedActive),
               backgroundColor: Colors.red.shade700,
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 4),

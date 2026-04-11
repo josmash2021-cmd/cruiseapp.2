@@ -61,10 +61,12 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     try {
       final userId = await ApiService.getCurrentUserId();
       if (userId == null) {
-        setState(() {
-          _error = 'Not logged in';
-          _loading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _error = S.of(context).notLoggedIn;
+            _loading = false;
+          });
+        }
         return;
       }
       final trips = await ApiService.getDriverScheduledTrips(userId);
@@ -562,18 +564,18 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.navigation_rounded,
                         color: Colors.black87,
                         size: 18,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
-                        'Navigate to Pickup',
-                        style: TextStyle(
+                        S.of(context).navigateToPickup,
+                        style: const TextStyle(
                           color: Colors.black87,
                           fontWeight: FontWeight.w700,
                           fontSize: 14,

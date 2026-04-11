@@ -1556,7 +1556,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
                             fontWeight: FontWeight.w800)),
                         const SizedBox(height: 3),
                         if (widget.riderIsNew)
-                          Text('New rider',
+                          Text(S.of(context).newRiderLabel,
                             style: TextStyle(
                               color: _gold,
                               fontSize: Responsive.sp(13),

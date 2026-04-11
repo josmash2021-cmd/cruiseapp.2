@@ -196,13 +196,26 @@ class RiderTripState {
   }
 }
 
-/// Canonical cancel code identifiers that the backend sends via
-/// `cancel_reason`. The UI uses these to decide between a smooth
-/// toast-and-transition flow vs the regular cancel dialog.
+/// Canonical cancel code identifiers used across the rider trip flow.
+/// Backend codes use the `auto:` / `system:` prefix and are written
+/// to trips.cancel_reason. Client-side codes use the `client:` prefix
+/// and are set when the local controller fails before any server
+/// commit (no internet, no session, etc.). The UI consumes these to
+/// pick a localised user-friendly string and to choose between the
+/// smooth toast flow vs the regular cancel dialog.
 class RiderTripCancelCodes {
+  // ── Backend (auto) ───────────────────────────────────────────
   static const autoNoDriver10Min = 'auto:no_driver_found_10min';
   static const autoScheduledNoDriver30Min = 'auto:scheduled_no_driver_30min';
   static const autoGuardianGhost = 'auto:guardian_ghost_stale';
+
+  // ── Client-side error codes ──────────────────────────────────
+  // These never reach the backend; they're set by the controller
+  // when local prerequisites fail before the trip is even created.
+  static const clientNoInternet = 'client:no_internet';
+  static const clientNoSession = 'client:no_session';
+  static const clientCreateFailed = 'client:create_failed';
+  static const clientConnectionError = 'client:connection_error';
 
   /// True when the cancel was the "no driver available" timeout for an
   /// on-demand request. Gets the smooth home-screen handoff + gold toast.
@@ -599,9 +612,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       final userId = checks[1] as int?;
 
       if (!online) {
+        // Localised message is set by the UI layer via cancelCode in
+        // _userFriendlyCancelReason. The cancelReason field carries a
+        // canonical English fallback for callers that don't translate.
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
           cancelReason: 'No internet connection. Check your network and try again.',
+          cancelCode: RiderTripCancelCodes.clientNoInternet,
         );
         notifyListeners();
         return;
@@ -610,6 +627,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
           cancelReason: 'Could not verify your session. Please try again.',
+          cancelCode: RiderTripCancelCodes.clientNoSession,
         );
         notifyListeners();
         return;
@@ -650,6 +668,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
           cancelReason: 'Could not create the trip. Please try again.',
+          cancelCode: RiderTripCancelCodes.clientCreateFailed,
         );
         notifyListeners();
         return;
@@ -669,6 +688,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       _state = _state.copyWith(
         phase: RiderPhase.cancelled,
         cancelReason: 'Connection error. Check your network and try again.',
+        cancelCode: RiderTripCancelCodes.clientConnectionError,
       );
       notifyListeners();
     } finally {

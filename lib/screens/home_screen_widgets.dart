@@ -169,9 +169,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               if (!backendOk) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: const Text(
-                      'Could not cancel — check your connection',
-                    ),
+                    content: Text(S.of(context).cancelTripCheckConnection),
                     backgroundColor: Colors.red.shade700,
                     behavior: SnackBarBehavior.floating,
                   ),

@@ -3617,10 +3617,8 @@ class S {
   String couldNotShareTripError(String error) =>
       _es ? 'No se pudo compartir el viaje: $error' : 'Could not share trip: $error';
 
-  // Driver scheduled trips screen.
-  String get notLoggedIn => _es ? 'No has iniciado sesión' : 'Not logged in';
-  String get navigateToPickup =>
-      _es ? 'Navegar al pickup' : 'Navigate to Pickup';
+  // notLoggedIn / navigateToPickup already defined further up in the
+  // scheduled-trips strings block (around line 1362). Do not redeclare.
 
   // Cancel-failure snackbars from the rider waiting/tracking flow.
   String get cancelTripCheckConnection => _es

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, FareSplit, Rating, ChatMessage, SurgeZone,
     RiderPaymentMethod, Notification, Vehicle, DispatchOffer,
+    ActionRequest, SupportChat,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
@@ -1060,6 +1061,147 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     }))
 
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
+
+# ---====================================================
+#  REQUEST CANCEL  (non-destructive: creates ActionRequest)
+# ---====================================================
+
+@router.post("/trips/{trip_id}/request-cancel", dependencies=[Depends(_verify_api_key)])
+async def request_cancel_trip(
+    trip_id: int,
+    payload: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a pending cancel_trip ActionRequest that dispatch must approve.
+
+    Under the new strict cancel policy, drivers cannot unilaterally cancel a
+    trip. Riders and drivers use this endpoint to file a cancellation request
+    that appears in the dispatch panel; dispatch/admin then decide whether to
+    approve or reject it via the existing action-request flow.
+    """
+    # --- Body validation -------------------------------------------------
+    reason = (payload.get("reason") or "").strip() if isinstance(payload, dict) else ""
+    urgency = (payload.get("urgency") or "normal").strip().lower() if isinstance(payload, dict) else "normal"
+    if urgency not in ("low", "normal", "high"):
+        raise HTTPException(400, "urgency must be one of: low, normal, high")
+    if not reason:
+        raise HTTPException(400, "reason is required")
+
+    # --- Trip lookup + authz --------------------------------------------
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    if user.id == trip.rider_id:
+        requested_by = "rider"
+    elif user.id == trip.driver_id:
+        requested_by = "driver"
+    else:
+        raise HTTPException(403, "Not authorized to request cancellation for this trip")
+
+    # Block requests against terminal trips
+    if trip.status in ("completed", "cancelled", "canceled"):
+        raise HTTPException(400, f"Cannot request cancel on trip with status '{trip.status}'")
+
+    # --- Resolve / create a SupportChat row (ActionRequest.chat_id NOT NULL)
+    chat_id: Optional[int] = None
+    try:
+        chat_r = await db.execute(
+            select(SupportChat).where(
+                SupportChat.user_id == user.id,
+                SupportChat.status == "open",
+            ).order_by(SupportChat.id.desc()).limit(1)
+        )
+        existing_chat = chat_r.scalar_one_or_none()
+        if existing_chat:
+            chat_id = existing_chat.id
+        else:
+            new_chat = SupportChat(
+                user_id=user.id,
+                status="open",
+                subject=f"Cancel request trip #{trip.id}",
+                agent_name="dispatch",
+                bot_phase="action_request",
+                needs_escalation=True,
+            )
+            db.add(new_chat)
+            await db.flush()
+            chat_id = new_chat.id
+    except Exception as e:
+        logging.error("[CancelRequest] Failed to resolve SupportChat for user %d: %s", user.id, e)
+        await db.rollback()
+        raise HTTPException(500, "Failed to create cancel request")
+
+    # --- Create the ActionRequest ---------------------------------------
+    user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or f"User #{user.id}"
+    details_payload = {
+        "requested_by": requested_by,
+        "reason": reason,
+        "urgency": urgency,
+        "trip_id": trip.id,
+        "trip_status_at_request": trip.status,
+        "pickup_address": trip.pickup_address or "",
+        "dropoff_address": trip.dropoff_address or "",
+    }
+    try:
+        ar = ActionRequest(
+            chat_id=chat_id,
+            user_id=user.id,
+            user_name=user_name,
+            user_type=requested_by,
+            agent_name="dispatch",
+            action_type="cancel_trip",
+            details=json.dumps(details_payload, ensure_ascii=False),
+            status="pending",
+            created_at=utc_now(),
+        )
+        db.add(ar)
+        await db.commit()
+        await db.refresh(ar)
+    except Exception as e:
+        logging.error("[CancelRequest] Failed to insert ActionRequest for trip %d user %d: %s", trip_id, user.id, e)
+        await db.rollback()
+        raise HTTPException(500, "Failed to create cancel request")
+
+    logging.warning(
+        "[CancelRequest] trip_id=%d user_id=%d role=%s reason=%r urgency=%s action_request_id=%d",
+        trip.id, user.id, requested_by, reason, urgency, ar.id,
+    )
+
+    # --- Firestore notification so dispatch panel sees it instantly ----
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_action_request(ar.id, {
+                "type": "cancel_trip",
+                "chat_id": chat_id,
+                "user_id": user.id,
+                "user_name": user_name,
+                "user_type": requested_by,
+                "agent_name": "dispatch",
+                "details": details_payload,
+                "status": "pending",
+                "trip_id": trip.id,
+                "urgency": urgency,
+            })
+        except Exception as e:
+            logging.warning("[CancelRequest] Firestore sync_action_request failed: %s", e)
+        try:
+            firestore_sync.sync_dispatch_notification(
+                chat_id or 0,
+                user_name,
+                "cancel_trip_request",
+                f"Cancel request for trip #{trip.id} ({requested_by}, {urgency}): {reason}",
+            )
+        except Exception as e:
+            logging.warning("[CancelRequest] Firestore sync_dispatch_notification failed: %s", e)
+
+    return {
+        "ok": True,
+        "action_request_id": ar.id,
+        "message": "Tu solicitud fue enviada a dispatch",
+    }
 
 # ---====================================================
 #  LIVE TRIP SHARING  ENDPOINTS

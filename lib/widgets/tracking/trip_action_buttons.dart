@@ -189,6 +189,16 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
 
   void _showCancelDialog() {
     final s = S.of(context);
+    // ── Cancel policy (2026-04-11) ──────────────────────────────────
+    // RiderTrackingScreen only opens once a driver has been assigned
+    // and is arriving/en-route/arrived/in_trip. Per policy, riders may
+    // NOT directly cancel trips with a driver assigned — the only
+    // escape path is to contact support, which creates an action
+    // request for dispatch. So from this screen we always route to
+    // Contact Support.  The in-app flow that cancels BEFORE a driver
+    // is assigned lives in RideRequestScreen's waiting mode, not here.
+    _showContactSupportForCancel();
+    return;
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -457,6 +467,141 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Shown when the rider asks to cancel but a driver is already assigned.
+  /// Per policy, the only way to cancel at that point is to contact
+  /// dispatch. This dialog explains why and opens the support chat.
+  void _showContactSupportForCancel() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.support_agent_rounded,
+                  color: Color(0xFFE8C547),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Trip already in progress',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Your driver is on the way. If you need to cancel, please contact support and a dispatcher will help you.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8C547),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                  label: Text(
+                    S.of(context).contactSupport,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _openSupportChatFromCancel();
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Close',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Opens the support chat pre-filled with a cancellation request and
+  /// fires the backend action-request so dispatch sees it immediately.
+  Future<void> _openSupportChatFromCancel() async {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    // Fire-and-forget: create the action request. The support chat still
+    // opens regardless so the rider can add context.
+    unawaited(() async {
+      try {
+        await ApiService.requestTripCancel(
+          tripId: tripId,
+          reason: 'rider_requested_via_cancel_button',
+          urgency: 'normal',
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Dispatch has been notified and will contact you shortly.',
+              ),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Color(0xFF1a1a1a),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('[RiderTracking] requestTripCancel failed: $e');
+      }
+    }());
+    if (!mounted) return;
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        ChatScreen(
+          recipientName: 'Support',
+          isSupport: true,
+          tripId: tripId,
+          currentRole: 'rider',
         ),
       ),
     );

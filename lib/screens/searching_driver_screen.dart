@@ -137,17 +137,18 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat();
 
-    // ── 8. Status text cycling: "Confirming" → "Looking for driver" → "Connecting" ──
-    _textPhaseTimer = Timer(const Duration(milliseconds: 2500), () {
-      if (!mounted || _paymentDeclined) return;
-      setState(() => _textPhase = 1);
-      _textPhaseTimer = Timer(const Duration(seconds: 8), () {
-        if (!mounted || _paymentDeclined) return;
-        setState(() => _textPhase = 2);
-      });
-    });
+    // Policy 2026-04-11: this screen is ONLY for the payment-authorization
+    // phase. It shows a single "Confirming your ride..." label while the
+    // Stripe paymentCallback runs, then pops on success so the
+    // RideRequestScreen can enter its waiting-for-driver map mode. We no
+    // longer cycle through "Looking for driver" / "Connecting" strings or
+    // listen on a driverFound notifier — driver matching happens on the
+    // next screen.
+    _textPhase = 0; // always "Confirming your ride…"
 
-    // ── 9. Driver-found early pop ──
+    // Legacy: a driverFound notifier may still be passed by old callers
+    // during the refactor. Retain the listener so the screen pops if the
+    // driver matches while it's still showing (edge case on slow payments).
     if (widget.driverFound != null) {
       _driverFoundCb = () {
         if (widget.driverFound!.value && mounted) {
@@ -155,7 +156,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
         }
       };
       widget.driverFound!.addListener(_driverFoundCb!);
-      // Already matched before screen opened
       if (widget.driverFound!.value && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) Navigator.of(context).pop();
@@ -163,23 +163,28 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       }
     }
 
-    // ── 9. Payment handling ──
+    // ── Payment handling ──────────────────────────────────────────────
+    // On success we pop the screen so the caller (RideRequestScreen) can
+    // transition to its waiting-for-driver map state. On user-cancel we
+    // pop with `true` so the caller knows to roll back. On bank decline
+    // we flash the declined state and then pop with `false`.
     if (widget.initiallyDeclined) {
-      // Native pay sheet already ran and was declined — show error immediately
       WidgetsBinding.instance.addPostFrameCallback((_) => _handleDeclined());
     } else if (widget.paymentCallback != null) {
-      // Card / sandbox: fire payment during the loading animation
       _paymentStartTimer = Timer(const Duration(milliseconds: 800), () async {
         if (!mounted) return;
         try {
           final ok = await widget.paymentCallback!();
           if (!mounted) return;
           if (!ok) {
-            // User explicitly cancelled from payment sheet
+            // User explicitly cancelled from payment sheet.
             widget.onCancel?.call();
             Navigator.of(context).pop(true);
+          } else {
+            // Payment succeeded — caller picks up and transitions the
+            // parent screen into waiting-for-driver mode.
+            Navigator.of(context).pop(false);
           }
-          // success — search continues, screen stays until driver found
         } catch (_) {
           if (mounted) _handleDeclined();
         }

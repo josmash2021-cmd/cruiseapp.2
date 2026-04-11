@@ -118,8 +118,13 @@ class RiderTripState {
   final int? tripId;
   final String? firestoreTripId;
 
-  // Cancel reason from dispatch
+  // Cancel reason from dispatch — user-friendly message already resolved.
   final String? cancelReason;
+
+  // Raw cancel code from the backend (e.g. "auto:no_driver_found_10min").
+  // Used by the UI to branch into the smooth-toast flow vs the regular
+  // cancel dialog. See RiderTripCancelCodes for the known values.
+  final String? cancelCode;
 
   // Route fetch failed — show retry
   final bool routeFetchFailed;
@@ -142,6 +147,7 @@ class RiderTripState {
     this.tripId,
     this.firestoreTripId,
     this.cancelReason,
+    this.cancelCode,
     this.routeFetchFailed = false,
   });
 
@@ -163,6 +169,7 @@ class RiderTripState {
     int? tripId,
     String? firestoreTripId,
     String? cancelReason,
+    String? cancelCode,
     bool? routeFetchFailed,
   }) {
     return RiderTripState(
@@ -183,8 +190,25 @@ class RiderTripState {
       tripId: tripId ?? this.tripId,
       firestoreTripId: firestoreTripId ?? this.firestoreTripId,
       cancelReason: cancelReason ?? this.cancelReason,
+      cancelCode: cancelCode ?? this.cancelCode,
       routeFetchFailed: routeFetchFailed ?? this.routeFetchFailed,
     );
+  }
+}
+
+/// Canonical cancel code identifiers that the backend sends via
+/// `cancel_reason`. The UI uses these to decide between a smooth
+/// toast-and-transition flow vs the regular cancel dialog.
+class RiderTripCancelCodes {
+  static const autoNoDriver10Min = 'auto:no_driver_found_10min';
+  static const autoScheduledNoDriver30Min = 'auto:scheduled_no_driver_30min';
+  static const autoGuardianGhost = 'auto:guardian_ghost_stale';
+
+  /// True when the cancel was the "no driver available" timeout for an
+  /// on-demand request. Gets the smooth home-screen handoff + gold toast.
+  static bool isNoDriverAutoCancel(String? code) {
+    if (code == null) return false;
+    return code == autoNoDriver10Min || code == autoScheduledNoDriver30Min;
   }
 }
 
@@ -285,9 +309,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         _pollTimer?.cancel();
         _timeoutTimer?.cancel();
         _isRequesting = false;
+        final rawReason = status['cancel_reason']?.toString();
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'Your trip was cancelled.',
+          cancelReason: _userFriendlyCancelReason(rawReason),
+          cancelCode: rawReason,
         );
         notifyListeners();
         await CacheService.clearActiveTrip();
@@ -723,9 +749,15 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _pollTimer?.cancel();
           _timeoutTimer?.cancel();
           _isRequesting = false;
+          // Pull the real cancel_reason from the Firestore doc so the UI
+          // can branch into the smooth-toast flow when it's an auto-cancel.
+          final rawReason = (_currentStatus['cancelReason'] ??
+                  _currentStatus['cancel_reason'])
+              ?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason: 'Your trip was cancelled.',
+            cancelReason: _userFriendlyCancelReason(rawReason),
+            cancelCode: rawReason,
           );
           notifyListeners();
           unawaited(CacheService.clearActiveTrip());
@@ -735,7 +767,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('[RiderTrip] Firestore match listener error: $e');
     });
 
-    // Safety-net timeout — 10 minutes max searching then show no-drivers message
+    // Safety-net timeout — 10 minutes max searching then show the
+    // "no drivers available" smooth-toast flow. Matches the backend
+    // auto-cancel that fires at the same deadline, so either path leads
+    // the rider back to home gracefully.
     _timeoutTimer = Timer(const Duration(minutes: 10), () {
       _pollTimer?.cancel();
       _isRequesting = false;
@@ -743,7 +778,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _state.phase == RiderPhase.requesting) {
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No drivers available in your area right now.',
+          cancelReason: _userFriendlyCancelReason(
+            RiderTripCancelCodes.autoNoDriver10Min,
+          ),
+          cancelCode: RiderTripCancelCodes.autoNoDriver10Min,
         );
         notifyListeners();
         unawaited(CacheService.clearActiveTrip());
@@ -787,9 +825,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _fsCancelDebounce?.cancel();
           _isRequesting = false;
           final reason = tripData?['cancel_reason']?.toString();
+          // Resolve the backend cancel code to a user-friendly message
+          // up front — the UI consumes `cancelReason` for display and
+          // `cancelCode` for branching (toast vs dialog).
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
-            cancelReason: reason ?? 'Your trip was cancelled.',
+            cancelReason: _userFriendlyCancelReason(reason),
+            cancelCode: reason,
           );
           notifyListeners();
           await CacheService.clearActiveTrip();
@@ -964,5 +1006,27 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _fsCancelDebounce?.cancel();
     _fsMatchSub?.cancel();
     super.dispose();
+  }
+
+  /// Translate a backend `cancel_reason` code into a user-friendly string.
+  /// The UI also receives the raw code via `state.cancelCode` so it can
+  /// choose a different visual treatment (toast vs dialog).
+  String _userFriendlyCancelReason(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Your trip was cancelled.';
+    switch (raw) {
+      case RiderTripCancelCodes.autoNoDriver10Min:
+        return "We couldn't find a driver in time. Please try again.";
+      case RiderTripCancelCodes.autoScheduledNoDriver30Min:
+        return 'No driver was available for your scheduled ride. Please book again.';
+      case RiderTripCancelCodes.autoGuardianGhost:
+        return 'Your trip was stopped by the system. Please contact support.';
+      default:
+        // Pass through cancel reasons written by dispatch or the old
+        // scheduler paths so operators can still communicate context.
+        if (raw.toLowerCase().contains('no driver')) {
+          return "We couldn't find a driver. Please try again.";
+        }
+        return raw;
+    }
   }
 }

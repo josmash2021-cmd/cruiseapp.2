@@ -1101,71 +1101,86 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final bool isScheduled = scheduledAt != null &&
         scheduledAt.difference(DateTime.now()).inMinutes >= 3;
     final bool isAirportTrip = offer['is_airport'] == true;
+    // Cash ride detection — backend sends `payment_method: 'cash'` when the
+    // rider chose to pay in cash at the end of the trip. Accept a few
+    // possible keys for forward compat.
+    final String paymentMethod = (offer['payment_method'] ??
+            offer['paymentMethod'] ??
+            offer['payment_type'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final bool isCashRide =
+        paymentMethod == 'cash' || offer['is_cash'] == true;
+
+    // ── Badge policy (2026-04-11) ──────────────────────────────────
+    // Only 3 badges are allowed on the driver offer card, in priority order:
+    //   1. VIAJE RESERVADO (purple)  — future scheduled pickup
+    //   2. RESERVA AEROPUERTO (blue) — airport trip
+    //   3. CASH RIDE (green)         — paying in cash at the end of the trip
+    // The old vehicle-type (Comfort/Premium/VIP) shimmer badge is removed —
+    // the vehicle type is redundant with the fare/route info and was
+    // causing clutter on short cards.
+    final List<_OfferBadgeData> badges = [];
+    if (isScheduled) {
+      badges.add(const _OfferBadgeData(
+        label: 'VIAJE RESERVADO',
+        icon: Icons.schedule_rounded,
+        color: Color(0xFF8B5CF6),
+      ));
+    }
+    if (isAirportTrip) {
+      badges.add(const _OfferBadgeData(
+        label: 'RESERVA AEROPUERTO',
+        icon: Icons.flight_takeoff_rounded,
+        color: Color(0xFF3B82F6),
+      ));
+    }
+    if (isCashRide) {
+      badges.add(const _OfferBadgeData(
+        label: 'CASH RIDE',
+        icon: Icons.payments_rounded,
+        color: Color(0xFF10B981),
+      ));
+    }
 
     return Column(
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── Scheduled ride badge ──
-        if (isScheduled) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: isAirportTrip
-                  ? const Color(0xFF3B82F6).withValues(alpha: 0.15)
-                  : const Color(0xFF8B5CF6).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isAirportTrip
-                    ? const Color(0xFF3B82F6).withValues(alpha: 0.4)
-                    : const Color(0xFF8B5CF6).withValues(alpha: 0.4),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+        // ── Badges (scheduled / airport / cash) ─────────────────────
+        if (badges.isNotEmpty) ...[
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final b in badges) _buildOfferBadge(b),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (isScheduled) ...[
+            // Scheduled time display — only when VIAJE RESERVADO is on.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  isAirportTrip ? Icons.flight_takeoff_rounded : Icons.schedule_rounded,
-                  size: 16,
-                  color: isAirportTrip ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
-                ),
-                const SizedBox(width: 6),
+                const Icon(Icons.access_time_rounded,
+                    size: 14, color: Color(0xFFE8C547)),
+                const SizedBox(width: 4),
                 Text(
-                  isAirportTrip ? 'RESERVA AEROPUERTO' : 'VIAJE RESERVADO',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: isAirportTrip ? const Color(0xFF3B82F6) : const Color(0xFF8B5CF6),
+                  _formatScheduledTime(scheduledAt),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE8C547),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 4),
-          // ── Scheduled time display ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFE8C547)),
-              const SizedBox(width: 4),
-              Text(
-                _formatScheduledTime(scheduledAt),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFFE8C547),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
+            const SizedBox(height: 4),
+          ],
         ],
-        // ── ROW 1: Service badge (centered) ──
-        _ShimmerBadge(label: vehicleType),
-
-        const SizedBox(height: 4),
 
         // ── ROW 2: Price + Tips (centered) ──
         Row(
@@ -1397,24 +1412,43 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// Responsive card height: adapts to screen so Accept button never gets cut.
   double _offerCardHeight(BuildContext context) {
-    // Tight fit — no wasted space below the Accept button
+    // Tight fit — no wasted space below the Accept button. The old
+    // _ShimmerBadge row (Comfort/Premium/VIP) is gone so the base
+    // height drops by ~22 px. We add per-badge allowance for each of
+    // the 3 new badges (scheduled / airport / cash) that the current
+    // offer qualifies for, plus the scheduled-time row when relevant.
     final botPad = MediaQuery.of(context).padding.bottom;
-    // Only reserve extra height for the schedule badge when the trip is
-    // actually in the future (same 3-minute threshold as the card UI).
-    // Immediate web bookings must use the standard height.
     double extra = 0;
     if (_pendingOffers.isNotEmpty) {
-      final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+      final safeIdx = _currentOfferIndex.clamp(
+        0, (_pendingOffers.length - 1).clamp(0, 999));
       final offer = _pendingOffers[safeIdx];
+
+      bool hasAnyBadge = false;
       final raw = offer['scheduled_at'];
+      bool isScheduled = false;
       if (raw != null) {
         final dt = DateTime.tryParse(raw.toString())?.toLocal();
         if (dt != null && dt.difference(DateTime.now()).inMinutes >= 3) {
-          extra = 62;
+          isScheduled = true;
+          hasAnyBadge = true;
         }
       }
+      if (offer['is_airport'] == true) hasAnyBadge = true;
+      final paymentMethod = (offer['payment_method'] ??
+              offer['paymentMethod'] ??
+              offer['payment_type'] ??
+              '')
+          .toString()
+          .toLowerCase();
+      final isCash = paymentMethod == 'cash' || offer['is_cash'] == true;
+      if (isCash) hasAnyBadge = true;
+
+      if (hasAnyBadge) extra += 32; // badge row
+      if (isScheduled) extra += 24; // scheduled time sublabel
     }
-    return 275 + extra + (botPad > 20 ? botPad - 10 : 0);
+    // Base 253 = old 275 minus 22 for the removed _ShimmerBadge row.
+    return 253 + extra + (botPad > 20 ? botPad - 10 : 0);
   }
 
   /// Format a scheduled ride time relative to now — always 12-hour clock
@@ -3682,8 +3716,53 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   );
 }
 
+/// Data for a single offer-card badge (scheduled / airport / cash).
+class _OfferBadgeData {
+  const _OfferBadgeData({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
+}
+
+/// Render a compact pill-shaped badge used on the driver offer card.
+/// The color controls both the border and the translucent fill.
+Widget _buildOfferBadge(_OfferBadgeData b) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: b.color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: b.color.withValues(alpha: 0.4)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(b.icon, size: 14, color: b.color),
+        const SizedBox(width: 5),
+        Text(
+          b.label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.6,
+            color: b.color,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// A self-contained VIP/Comfort/Premium badge with a professional
 /// shimmer sweep animation (light streak moves left→right).
+/// DEPRECATED as of 2026-04-11: the offer card no longer displays
+/// vehicle-type badges. Keeping the class so the route-preview panel
+/// (which still uses it) doesn't break, but it's not rendered on the
+/// compact offer card anymore.
 class _ShimmerBadge extends StatefulWidget {
   const _ShimmerBadge({required this.label});
   final String label;

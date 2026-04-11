@@ -1460,8 +1460,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // trip screen, let the driver continue.
         // Fall through to the normal result handling below.
       } else {
+        // Accept genuinely failed — offer is gone. Reset local state
+        // but do NOT try to cancel the trip (the driver never owned it
+        // anyway). The local reset brings the driver back to searching.
         _snack(S.of(context).tripNoLongerAvailable);
-        _cancel();
+        _resetToSearchingOnRemoteCancel();
         return;
       }
     }
@@ -1487,10 +1490,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // button appears.  Do NOT call _cancel() — the trip must survive.
       _goBackToHomeWithTrip();
     } else if (result == 'cancelled') {
-      // Explicit cancel from inside the trip screen — the driver tapped
-      // a cancel button. Run the cancel flow.
-      debugPrint('[DriverOnline] trip screen popped with result=cancelled — firing _cancel()');
-      _cancel();
+      // Trip screen reports a remote cancellation (dispatch or auto-cancel).
+      // The driver cannot cancel trips directly anymore — this branch is
+      // only reached when the trip was ended from outside the driver app.
+      // Just reset local state and return to searching with a gold toast.
+      debugPrint('[DriverOnline] trip screen popped with result=cancelled — remote cancel, resetting');
+      _resetToSearchingOnRemoteCancel();
     } else {
       // result == null — THE big phantom-cancel case.
       //
@@ -2038,24 +2043,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
-  Future<void> _cancel() async {
+  /// Driver can no longer directly cancel a trip (policy 2026-04-11).
+  /// When a trip is dispatch-cancelled or auto-cancelled, the rider
+  /// tracking listener will fire `_handleRemoteTripCancelled()` below
+  /// which resets this controller back to searching and surfaces a
+  /// friendly gold SnackBar. The driver cannot initiate a cancel — the
+  /// only escape path during an active trip is "Contact Support", which
+  /// creates an action request for dispatch.
+  ///
+  /// This method now ONLY resets the local controller state and returns
+  /// the screen to the searching phase. It never PATCHes the backend.
+  void _resetToSearchingOnRemoteCancel() {
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
     _navTimer?.cancel();
-    final tripId = _tripId;
-    if (tripId != null) {
-      try {
-        await ApiService.updateTripStatus(tripId: tripId, status: 'canceled');
-      } catch (_) {}
-      // Immediate Firestore sync so rider listener reacts in real time.
-      await TripFirestoreService.syncTripCancelled(
-        'sql_$tripId',
-        cancelledBy: 'driver',
-        cancellationReason: 'driver_cancelled',
-        reason: 'Driver cancelled',
-      );
-    }
     _setState(() {
       _phase = _Phase.searching;
       _tripId = null;
@@ -2067,6 +2069,36 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1a1a1a),
+          content: Row(
+            children: const [
+              Icon(Icons.info_outline, color: Color(0xFFE8C547), size: 22),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Trip cancelled. Returning to ride requests.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE8C547), width: 1),
+          ),
+        ),
+      );
+    }
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

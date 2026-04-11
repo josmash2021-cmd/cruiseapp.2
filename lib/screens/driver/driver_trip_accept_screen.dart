@@ -657,6 +657,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         return;
       }
 
+      // Detect external cancellation (dispatch cancelled the trip, or
+      // guardian ghost cleanup fired, or an auto-cancel reason landed).
+      // The driver can no longer cancel directly — any cancel here is
+      // remote. Pop back to the online controller which will show a
+      // gold toast and reset to searching.
+      if (!_tripFinished &&
+          (status == 'cancelled' || status == 'canceled')) {
+        debugPrint('[Driver] Trip cancelled externally → returning to online');
+        _tripFinished = true;
+        _riderConfirmSub?.cancel();
+        // Pop with 'cancelled' result so DriverOnlineController.
+        // _resetToSearchingOnRemoteCancel() takes over. If the screen is
+        // not on the stack for some reason, fall back to a direct push
+        // to DriverHomeScreen.
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop('cancelled');
+        }
+        return;
+      }
+
       if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
         HapticFeedback.mediumImpact();

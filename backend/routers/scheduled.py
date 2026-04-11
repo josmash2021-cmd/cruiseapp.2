@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -357,6 +357,120 @@ async def cancel_claimed_scheduled_trip(
             pass
 
     return {"ok": True, "trip_id": trip.id, "status": "scheduled"}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  POST /scheduled-trips/{trip_id}/drop — release pre-pickup
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Phases where a driver can no longer "drop" a scheduled ride back to the
+# marketplace — once the driver has reached pickup or started the trip, the
+# normal cancel flow (or dispatch override) must be used instead.
+_DROP_BLOCKED_STATUSES = {"arrived", "in_trip", "completed", "cancelled", "canceled"}
+
+
+@router.post("/scheduled-trips/{trip_id}/drop", dependencies=[Depends(_verify_api_key)])
+async def drop_scheduled_trip(
+    trip_id: int,
+    payload: Optional[dict] = Body(default=None),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Driver releases a claimed scheduled ride back to the marketplace.
+
+    Only allowed pre-pickup: if the driver is already arrived, in-trip, or the
+    trip is terminal, the drop is refused. Clears `driver_id` and resets status
+    to `scheduled` so another driver can claim it.
+    """
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can drop scheduled rides")
+
+    reason = ""
+    if isinstance(payload, dict):
+        reason = (payload.get("reason") or "").strip()
+
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    if trip.scheduled_at is None:
+        raise HTTPException(400, "Trip is not a scheduled ride")
+    if trip.driver_id is None:
+        raise HTTPException(400, "Trip has no assigned driver to drop")
+    if trip.driver_id != user.id:
+        raise HTTPException(403, "This trip is not assigned to you")
+    if trip.status in _DROP_BLOCKED_STATUSES:
+        raise HTTPException(
+            400,
+            f"Cannot drop scheduled ride in status '{trip.status}' — contact dispatch",
+        )
+
+    previous_driver_id = trip.driver_id
+    previous_status = trip.status
+
+    try:
+        trip.driver_id = None
+        trip.status = "scheduled"
+        trip.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(trip)
+    except Exception as e:
+        logging.error(
+            "[ScheduledDrop] DB update failed for trip %d driver %d: %s",
+            trip_id, previous_driver_id, e,
+        )
+        await db.rollback()
+        raise HTTPException(500, "Failed to release scheduled ride")
+
+    logging.warning(
+        "[ScheduledDrop] trip_id=%d driver_id=%d previous_status=%s reason=%r — released to marketplace",
+        trip.id, previous_driver_id, previous_status, reason or "(none)",
+    )
+    logging.warning(
+        "[ScheduledDrop] dispatch-notice: driver %d dropped scheduled trip %d",
+        previous_driver_id, trip.id,
+    )
+
+    # Firestore: flip the scheduled_ride doc back to unassigned
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_scheduled_ride(
+                trip_id=trip.id,
+                rider_id=trip.rider_id,
+                status="scheduled",
+                driver_id=None,
+                scheduled_at=trip.scheduled_at,
+                pickup_address=trip.pickup_address or "",
+                dropoff_address=trip.dropoff_address or "",
+                pickup_lat=trip.pickup_lat or 0,
+                pickup_lng=trip.pickup_lng or 0,
+                dropoff_lat=trip.dropoff_lat or 0,
+                dropoff_lng=trip.dropoff_lng or 0,
+                fare=trip.fare or 0,
+            )
+        except Exception as e:
+            logging.warning("[ScheduledDrop] Firestore sync failed: %s", e)
+
+    # Notify rider — their driver stepped away, another will pick up
+    try:
+        rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_r.scalar_one_or_none()
+        if rider and rider.fcm_token:
+            _send_fcm_push(
+                token=rider.fcm_token,
+                title="Buscando otro conductor",
+                body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
+                data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
+            )
+    except Exception as e:
+        logging.warning("[ScheduledDrop] FCM notify rider failed: %s", e)
+
+    return {
+        "ok": True,
+        "message": "Scheduled ride released to marketplace",
+        "trip_id": trip.id,
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -1412,6 +1412,39 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Request cancellation via an action request (rider / driver cannot
+  /// directly cancel once a driver is assigned — dispatch must approve).
+  /// Returns `{ok, action_request_id, message}`.
+  static Future<Map<String, dynamic>> requestTripCancel({
+    required int tripId,
+    String reason = '',
+    String urgency = 'normal',
+  }) async {
+    final h = await _authHeaders();
+    h['Content-Type'] = 'application/json';
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/request-cancel'),
+          headers: h,
+          body: jsonEncode({'reason': reason, 'urgency': urgency}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Driver releases a previously-accepted scheduled ride back to the
+  /// marketplace. Only allowed before the driver has started the pickup.
+  static Future<Map<String, dynamic>> dropScheduledTrip(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/scheduled-trips/$tripId/drop'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Get a trip by ID (for polling status).
   static Future<Map<String, dynamic>> getTrip(int tripId) async {
     final h = await _authHeaders();

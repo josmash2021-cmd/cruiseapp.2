@@ -519,7 +519,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
 
           // ── Navigate button ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: SizedBox(
               width: double.infinity,
               child: GestureDetector(
@@ -585,9 +585,113 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
               ),
             ),
           ),
+
+          // ── Release scheduled ride button ──
+          // Lets the driver return this trip to the marketplace if they
+          // can no longer take it. Only valid before the pickup phase
+          // starts; after that they must contact support.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: Icon(
+                  Icons.undo_rounded,
+                  color: Colors.white.withValues(alpha: 0.7),
+                  size: 16,
+                ),
+                label: Text(
+                  'Release this ride',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                onPressed: () => _confirmDropScheduled(trip),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDropScheduled(Map<String, dynamic> trip) async {
+    final tripId = (trip['id'] as num?)?.toInt();
+    if (tripId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a1a),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text(
+          'Release this scheduled ride?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'The ride will go back to the marketplace so another driver can pick it up. '
+          'This does not cancel the trip for the rider.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Release',
+              style: TextStyle(color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ApiService.dropScheduledTrip(tripId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1a1a1a),
+          content: const Text(
+            'Ride released. It is back in the marketplace.',
+            style: TextStyle(color: Colors.white),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE8C547), width: 1),
+          ),
+        ),
+      );
+      // Reload the list so the released trip disappears.
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('[DriverScheduled] dropScheduledTrip failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFFF5252),
+          content: Text(
+            'Could not release the ride. ${e.toString()}',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    }
   }
 
   Widget _chip(IconData icon, String text, AppColors c) {

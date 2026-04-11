@@ -406,6 +406,64 @@ extension _RideRequestController on _RideRequestScreenState {
           }
           break;
         }
+        // ── Auto-cancel (10 min on-demand / 30 min scheduled) ─────────
+        // The backend will auto-cancel the trip when no driver picks it
+        // up inside the deadline. That is a friendly system message, not
+        // an error — so instead of the intrusive dialog we flash a gold
+        // SnackBar and slide the rider straight back to home so they
+        // can immediately request again.
+        if (RiderTripCancelCodes.isNoDriverAutoCancel(s.cancelCode)) {
+          if (_cancelDialogShown) break; // dedup
+          _cancelDialogShown = true;
+          final friendlyMessage = s.cancelReason ??
+              "We couldn't find a driver in time. Please try again.";
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            // Fire the SnackBar on the root ScaffoldMessenger BEFORE
+            // popping to HomeScreen — the root messenger survives the
+            // Navigator replacement so the toast shows up on the home
+            // screen after the transition.
+            final rootMessenger = ScaffoldMessenger.maybeOf(context);
+            rootMessenger?.clearSnackBars();
+            rootMessenger?.showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: const Color(0xFF1a1a1a),
+                content: Row(
+                  children: [
+                    const Icon(Icons.info_outline,
+                        color: Color(0xFFE8C547), size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        friendlyMessage,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                duration: const Duration(seconds: 5),
+                margin: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(
+                      color: Color(0xFFE8C547), width: 1),
+                ),
+              ),
+            );
+            _ctrl.reset();
+            Navigator.of(context).pushAndRemoveUntil(
+              smoothFadeRoute(const HomeScreen()),
+              (_) => false,
+            );
+            _cancelDialogShown = false;
+          });
+          break;
+        }
         // Guard: only show one cancel dialog per cancellation event
         if (_cancelDialogShown) break;
         _cancelDialogShown = true;
@@ -953,10 +1011,60 @@ extension _RideRequestController on _RideRequestScreenState {
       if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
         _cancelDialogShown = true;
         final rawReason = _ctrl.state.cancelReason;
-        final isNoDrivers = rawReason != null &&
-            (rawReason.toLowerCase().contains('no hay driver') ||
-             rawReason.toLowerCase().contains('no driver'));
+        final cancelCode = _ctrl.state.cancelCode;
+        // Use the canonical cancelCode when available (set by the new
+        // auto-cancel paths). Fall back to the legacy string heuristic
+        // for older paths that only populate cancelReason.
+        final isAutoNoDriver =
+            RiderTripCancelCodes.isNoDriverAutoCancel(cancelCode);
+        final isNoDrivers = isAutoNoDriver ||
+            (rawReason != null &&
+                (rawReason.toLowerCase().contains('no hay driver') ||
+                    rawReason.toLowerCase().contains('no driver')));
         _ctrl.reset();
+        // For the smooth auto-cancel flow we show a gold SnackBar on the
+        // home screen instead of the intrusive dialog. Fire it BEFORE
+        // the navigation so the root messenger survives the replacement.
+        if (isAutoNoDriver) {
+          final rootMessenger = ScaffoldMessenger.maybeOf(context);
+          rootMessenger?.clearSnackBars();
+          rootMessenger?.showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF1a1a1a),
+              content: Row(
+                children: [
+                  const Icon(Icons.info_outline,
+                      color: Color(0xFFE8C547), size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      rawReason ??
+                          "We couldn't find a driver in time. Please try again.",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              duration: const Duration(seconds: 5),
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(
+                    color: Color(0xFFE8C547), width: 1),
+              ),
+            ),
+          );
+          Navigator.of(context).pushAndRemoveUntil(
+            smoothFadeRoute(const HomeScreen()),
+            (_) => false,
+          );
+          return;
+        }
         Navigator.of(context).pushAndRemoveUntil(
           smoothFadeRoute(const HomeScreen()),
           (_) => false,

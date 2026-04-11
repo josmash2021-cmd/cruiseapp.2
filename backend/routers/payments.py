@@ -605,7 +605,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 if trip:
                     refunded_cents = charge.get("amount_refunded", 0)
                     total_cents = charge.get("amount", 0)
-                    trip.refund_amount = round(refunded_cents / 100, 2)
+                    refund_amount = round(refunded_cents / 100, 2)
+                    # Clawback BEFORE updating payment_status so the
+                    # idempotency guard inside the helper still works.
+                    await _apply_refund_clawback(db, trip, refund_amount)
+                    trip.refund_amount = refund_amount
                     trip.refund_status = "full" if refunded_cents >= total_cents else "partial"
                     trip.payment_status = "refunded"
                     await db.commit()
@@ -617,6 +621,82 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 logging.error("[Stripe Webhook] Failed to process refund for pi=%s: %s", pi_id, e)
 
     return {"status": "ok"}
+
+
+async def _apply_refund_clawback(db: AsyncSession, trip: Trip, refund_amount: float) -> None:
+    """Decrement the driver's pending / total balances proportional to the
+    refund.  Idempotent — if the trip was already marked as refunded, the
+    clawback is skipped so the Stripe webhook and the admin refund endpoint
+    can never double-decrement when both run for the same trip.
+
+    Clawback strategy:
+      • Compute the driver's share of the refund as:
+            clawback = driver_earnings * (refund_amount / fare)
+      • Clamp pending_balance at zero — if the driver already cashed out,
+        we log a warning with the unrecovered debt so an operator can do
+        a manual adjustment.
+      • Always decrement total_earnings by the full clawback so lifetime
+        stats reflect reality.
+    """
+    if (trip.payment_status or "").lower() == "refunded":
+        logging.info(
+            "[Refund] Trip %d already marked refunded — clawback skipped (idempotent)",
+            trip.id,
+        )
+        return
+    if not trip.driver_id:
+        return
+    fare = float(trip.fare or 0)
+    driver_earnings = float(trip.driver_earnings or 0)
+    if fare <= 0 or driver_earnings <= 0:
+        logging.info(
+            "[Refund] Trip %d has no driver earnings to claw back (fare=%.2f, earnings=%.2f)",
+            trip.id, fare, driver_earnings,
+        )
+        return
+
+    ratio = min(1.0, max(0.0, refund_amount / fare))
+    clawback = round(driver_earnings * ratio, 2)
+    if clawback <= 0:
+        return
+
+    drv_r = await db.execute(select(User).where(User.id == trip.driver_id))
+    drv = drv_r.scalar_one_or_none()
+    if not drv:
+        logging.warning(
+            "[Refund] Trip %d — driver %d not found for clawback of $%.2f",
+            trip.id, trip.driver_id, clawback,
+        )
+        return
+
+    pending_before = float(drv.pending_balance or 0)
+    pending_after = max(0.0, round(pending_before - clawback, 2))
+    actual_clawback = round(pending_before - pending_after, 2)
+    drv.pending_balance = pending_after
+    # Decrement total_earnings by the full clawback even if pending can't
+    # cover it — lifetime stats should reflect the real payment outcome.
+    drv.total_earnings = max(
+        0.0, round(float(drv.total_earnings or 0) - clawback, 2)
+    )
+
+    # Also reduce the trip's driver_earnings so the cashout endpoint in
+    # drivers.py (which recomputes available_balance from trip rows) sees
+    # the refund. Without this, pending_balance and the cashout calculation
+    # would diverge and a clawed-back driver could still cash out the old
+    # amount.
+    trip.driver_earnings = max(0.0, round(driver_earnings - clawback, 2))
+
+    if actual_clawback < clawback:
+        debt = round(clawback - actual_clawback, 2)
+        logging.warning(
+            "[Refund] PARTIAL clawback on trip %d — driver %d only had "
+            "$%.2f pending, $%.2f debt remains (manual adjustment needed)",
+            trip.id, trip.driver_id, pending_before, debt,
+        )
+    logging.info(
+        "[Refund] Clawed back $%.2f from driver %d on trip %d (pending %.2f -> %.2f, refund_amount=$%.2f)",
+        actual_clawback, trip.driver_id, trip.id, pending_before, pending_after, refund_amount,
+    )
 
 
 # ═══════════════════════════════════════════════════════
@@ -648,9 +728,13 @@ async def admin_refund_trip(request: Request, db: AsyncSession = Depends(get_db)
     if trip.fare and amount > float(trip.fare):
         raise HTTPException(400, "Refund amount cannot exceed trip fare")
 
+    # Clawback driver earnings BEFORE marking payment_status=refunded so
+    # the idempotency guard inside _apply_refund_clawback still works.
+    await _apply_refund_clawback(db, trip, amount)
     trip.refund_status = "full" if (trip.fare and amount >= float(trip.fare)) else "partial"
     trip.refund_amount = amount
     trip.refund_reason = reason
+    trip.payment_status = "refunded"
     await db.commit()
     await db.refresh(trip)
     logging.info("[Refund] trip_id=%s amount=%.2f reason=%s", trip_id, amount, reason)

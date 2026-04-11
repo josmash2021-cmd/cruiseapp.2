@@ -361,7 +361,21 @@ async def get_stripe_connect_status(
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if body.amount <= 0:
         raise HTTPException(400, "Cashout amount must be positive")
+    # Lock the driver row for the duration of the transaction so two
+    # concurrent cashout requests from the same driver can't both pass
+    # the balance check with stale data. Without FOR UPDATE a driver
+    # with $100 available could fire two simultaneous $100 cashouts and
+    # end up owing the platform $100.
+    lock_r = await db.execute(
+        select(User).where(User.id == user.id).with_for_update()
+    )
+    locked_user = lock_r.scalar_one_or_none()
+    if not locked_user:
+        raise HTTPException(404, "Driver not found")
+
     # Calculate available balance from driver payout (not rider gross fare).
+    # We subtract refund clawbacks (trip.driver_earnings is reduced by the
+    # refund flow) and all non-failed cashouts.
     completed_r = await db.execute(
         select(Trip).where(and_(Trip.driver_id == user.id, Trip.status == "completed"))
     )
@@ -374,7 +388,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         )
     )
     total_cashouts = float(cashouts_r.scalar() or 0)
-    available_balance = total_earnings - total_cashouts
+    available_balance = round(total_earnings - total_cashouts, 2)
     if body.amount > available_balance:
         raise HTTPException(400, f"Insufficient balance. Available: ${available_balance:.2f}")
     cashout = Cashout(user_id=user.id, amount=body.amount)

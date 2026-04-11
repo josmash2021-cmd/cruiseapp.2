@@ -416,7 +416,7 @@ extension _RideRequestController on _RideRequestScreenState {
           if (_cancelDialogShown) break; // dedup
           _cancelDialogShown = true;
           final friendlyMessage = s.cancelReason ??
-              "We couldn't find a driver in time. Please try again.";
+              S.of(context).riderNoDriversFoundTryAgain;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             // Fire the SnackBar on the root ScaffoldMessenger BEFORE
@@ -460,7 +460,11 @@ extension _RideRequestController on _RideRequestScreenState {
               smoothFadeRoute(const HomeScreen()),
               (_) => false,
             );
-            _cancelDialogShown = false;
+            // Don't reset _cancelDialogShown here — _ctrl.reset() above
+            // already starts a fresh state, and leaving the flag true
+            // until the next ride request prevents a re-entrant
+            // RiderPhase.cancelled emission from firing this branch
+            // twice in the same frame.
           });
           break;
         }
@@ -1040,7 +1044,7 @@ extension _RideRequestController on _RideRequestScreenState {
                   Expanded(
                     child: Text(
                       rawReason ??
-                          "We couldn't find a driver in time. Please try again.",
+                          S.of(context).riderNoDriversFoundTryAgain,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,

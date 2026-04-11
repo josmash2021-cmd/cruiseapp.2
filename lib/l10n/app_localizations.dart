@@ -3524,6 +3524,60 @@ class S {
       _es ? 'Presiona cuando\nestés con el driver' : 'Press when you\nare with the driver';
   String get yourTripConfirmed =>
       _es ? 'Tu viaje\nconfirmado' : 'Your trip\nconfirmed';
+
+  // ── Driver offer card badges (2026-04-11 stack-of-badges policy) ─
+  // Each badge is a single short label that can stack with the others
+  // in a Wrap. Used by driver_online_widgets._buildOfferBadge.
+  // Examples shown on the offer card:
+  //   immediate, card    →  (no badges)
+  //   immediate, cash    →  [PAGO EN EFECTIVO]
+  //   scheduled, card    →  [RESERVADO]
+  //   scheduled, cash    →  [RESERVADO]  [EFECTIVO]
+  //   scheduled, airport →  [RESERVADO]  [AEROPUERTO]
+  //   scheduled, airport+cash → [RESERVADO]  [AEROPUERTO]  [EFECTIVO]
+  String get badgeReserved => _es ? 'RESERVADO' : 'RESERVED';
+  String get badgeAirport  => _es ? 'AEROPUERTO' : 'AIRPORT';
+  String get badgeCash     => _es ? 'EFECTIVO' : 'CASH';
+  // Used standalone on immediate cash trips (slightly longer label
+  // because there are no other badges next to it).
+  String get badgeCashRide => _es ? 'PAGO EN EFECTIVO' : 'CASH RIDE';
+
+  // Driver toast when a trip is cancelled remotely (dispatch / auto).
+  String get driverTripCancelledReturning => _es
+      ? 'Viaje cancelado. Volviendo a las ofertas.'
+      : 'Trip cancelled. Returning to ride requests.';
+
+  // Rider gold-snackbar messages used by the auto-cancel flow.
+  String get riderNoDriversFoundTryAgain => _es
+      ? 'No encontramos un conductor disponible. Intenta de nuevo.'
+      : "We couldn't find a driver in time. Please try again.";
+
+  // Rider Contact-Support flow strings.
+  String get tripAlreadyInProgressTitle =>
+      _es ? 'Viaje en curso' : 'Trip already in progress';
+  String get tripAlreadyInProgressBody => _es
+      ? 'Tu conductor está en camino. Si necesitas cancelar, contacta a soporte y un agente te ayudará.'
+      : 'Your driver is on the way. If you need to cancel, please contact support and a dispatcher will help you.';
+  String get dispatchNotifiedSnack => _es
+      ? 'Dispatch ha sido notificado y te contactará en breve.'
+      : 'Dispatch has been notified and will contact you shortly.';
+
+  // Driver scheduled-rides "Release this ride" strings.
+  String get releaseRideButton =>
+      _es ? 'Liberar este viaje' : 'Release this ride';
+  String get releaseRideTitle =>
+      _es ? '¿Liberar este viaje reservado?' : 'Release this scheduled ride?';
+  String get releaseRideBody => _es
+      ? 'El viaje volverá al marketplace para que otro conductor lo tome. Esto NO cancela el viaje del rider.'
+      : 'The ride will go back to the marketplace so another driver can pick it up. This does not cancel the trip for the rider.';
+  String get releaseRideKeep => _es ? 'Mantener' : 'Keep';
+  String get releaseRideConfirm => _es ? 'Liberar' : 'Release';
+  String get releaseRideOk => _es
+      ? 'Viaje liberado. Ya está en el marketplace.'
+      : 'Ride released. It is back in the marketplace.';
+  String get releaseRideError => _es
+      ? 'No se pudo liberar el viaje. Intenta de nuevo.'
+      : 'Could not release the ride. Please try again.';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

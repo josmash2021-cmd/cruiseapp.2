@@ -939,10 +939,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   // ─── Cancel ─────────────────────────────────────────────────
 
   void cancelRide() {
-    // Fix 6: Race condition guard — if a driver was already matched while the rider
-    // was tapping cancel (e.g. network lag), do NOT cancel. Let the match win.
+    // Cancel policy (2026-04-11): the rider may only directly cancel
+    // a trip BEFORE a driver has been assigned. If a driver is already
+    // matched, the rider must request cancellation through dispatch
+    // (an ActionRequest gets created and a dispatcher decides).
+    //
+    // This guard catches both the explicit-match case (`_driverMatched`)
+    // and the in-state-driver case (state.tripId may have a driver_id
+    // even if the local match flag hasn't propagated yet).
     if (_driverMatched) {
-      debugPrint('[RiderTrip] cancelRide() ignored — driver already matched');
+      debugPrint(
+          '[RiderTrip] cancelRide() routed to request-cancel — driver already matched');
+      _routeCancelToDispatch('rider_cancel_after_match');
       return;
     }
 
@@ -961,15 +969,20 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // just written a driver match in the last 300ms.
       Future.delayed(const Duration(milliseconds: 300), () async {
         if (_driverMatched) {
-          debugPrint('[RiderTrip] cancelRide() backend call skipped — driver matched during delay');
+          debugPrint(
+              '[RiderTrip] cancelRide() driver matched during 300ms grace — routing to request-cancel');
+          _routeCancelToDispatch('rider_cancel_after_match_grace');
           return;
         }
         try {
           await ApiService.cancelTrip(tripId);
         } catch (e) {
           debugPrint('[RiderTrip] cancelTrip failed: $e');
-          // 409 = driver already assigned — rider still chose to cancel,
-          // so keep phase as cancelled (do not revert to driverAssigned).
+          // Backend rejected the cancel because a driver was assigned in
+          // the same instant — fall through to the dispatch escalation
+          // path so the cancel intent isn't lost.
+          _routeCancelToDispatch('rider_cancel_backend_409');
+          return;
         }
       });
     }
@@ -979,6 +992,35 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     // Clear trip from cache
     unawaited(CacheService.clearActiveTrip());
+  }
+
+  /// Escalation helper: when the rider taps Cancel after a driver has
+  /// been assigned, we cannot mutate the trip directly anymore. We
+  /// create a backend ActionRequest so dispatch sees the request, and
+  /// keep the local phase active so the rider stays on the tracking
+  /// flow until dispatch confirms or rejects.
+  void _routeCancelToDispatch(String reason) {
+    final tripId = _state.tripId;
+    if (tripId == null) {
+      _state = _state.copyWith(phase: RiderPhase.cancelled);
+      notifyListeners();
+      return;
+    }
+    unawaited(() async {
+      try {
+        await ApiService.requestTripCancel(
+          tripId: tripId,
+          reason: reason,
+          urgency: 'normal',
+        );
+        debugPrint('[RiderTrip] request-cancel posted for trip $tripId');
+      } catch (e) {
+        debugPrint('[RiderTrip] request-cancel failed: $e');
+      }
+    }());
+    // Do NOT flip phase to cancelled — the trip is still active server-side
+    // until dispatch decides. The UI will react when the real cancel
+    // arrives via the poll/Firestore listener.
   }
 
   void reset() {

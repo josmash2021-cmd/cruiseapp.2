@@ -608,7 +608,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
                   size: 16,
                 ),
                 label: Text(
-                  'Release this ride',
+                  S.of(context).releaseRideButton,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w600,
@@ -627,6 +627,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
   Future<void> _confirmDropScheduled(Map<String, dynamic> trip) async {
     final tripId = (trip['id'] as num?)?.toInt();
     if (tripId == null) return;
+    final s = S.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -634,25 +635,27 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        title: const Text(
-          'Release this scheduled ride?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        title: Text(
+          s.releaseRideTitle,
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w700),
         ),
-        content: const Text(
-          'The ride will go back to the marketplace so another driver can pick it up. '
-          'This does not cancel the trip for the rider.',
-          style: TextStyle(color: Colors.white70),
+        content: Text(
+          s.releaseRideBody,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep', style: TextStyle(color: Colors.white70)),
+            child: Text(s.releaseRideKeep,
+                style: const TextStyle(color: Colors.white70)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Release',
-              style: TextStyle(color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+            child: Text(
+              s.releaseRideConfirm,
+              style: const TextStyle(
+                  color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -666,9 +669,9 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF1a1a1a),
-          content: const Text(
-            'Ride released. It is back in the marketplace.',
-            style: TextStyle(color: Colors.white),
+          content: Text(
+            s.releaseRideOk,
+            style: const TextStyle(color: Colors.white),
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -676,8 +679,9 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           ),
         ),
       );
-      // Reload the list so the released trip disappears.
-      if (mounted) setState(() {});
+      // Reload the list so the released trip disappears from the
+      // current driver's view (it's still in the global marketplace).
+      await _loadTrips();
     } catch (e) {
       debugPrint('[DriverScheduled] dropScheduledTrip failed: $e');
       if (!mounted) return;
@@ -686,7 +690,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFFFF5252),
           content: Text(
-            'Could not release the ride. ${e.toString()}',
+            s.releaseRideError,
             style: const TextStyle(color: Colors.white),
           ),
         ),

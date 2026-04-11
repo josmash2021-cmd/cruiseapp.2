@@ -969,22 +969,49 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    # IDOR protection: only rider, assigned driver, or admin can cancel
-    if user.id != trip.rider_id and user.id != trip.driver_id and user.role != "admin":
-        raise HTTPException(403, "Not authorized to cancel this trip")
-    # Block cancellation for trips that are actively in progress (rider is in vehicle)
+
+    # ── STRICT CANCEL POLICY (2026-04-11) ──────────────────────────────
+    # Only two actors may cancel a trip:
+    #   1. The owning rider — AND ONLY before a driver has been assigned.
+    #   2. Admin / dispatch — at any time.
+    #
+    # Drivers are HARD-BLOCKED. Any driver-initiated cancel must go
+    # through /trips/{id}/request-cancel which creates an ActionRequest
+    # that dispatch reviews in their panel.
+    #
+    # This endpoint is also hit by legacy clients via
+    # ApiService.cancelTrip(), so the guard lives here too — not only
+    # on PATCH /trips/{id}/status.
+    user_role = getattr(user, "role", None) or ""
+    is_owner_rider = (user.id == trip.rider_id)
+    is_privileged = user_role in ("admin", "dispatch")
+    if not (is_owner_rider or is_privileged):
+        logging.warning(
+            "[Guard] BLOCKED cancel_trip trip=%d by user=%d (role=%s) — only "
+            "rider or dispatch may cancel. rider_id=%d driver_id=%s",
+            trip_id, user.id, user_role, trip.rider_id, trip.driver_id,
+        )
+        raise HTTPException(
+            403,
+            "Only the rider or dispatch can cancel a trip. "
+            "Drivers must contact dispatch to request a cancellation.",
+        )
+    # Rider can only cancel BEFORE a driver has been assigned.
+    if is_owner_rider and not is_privileged and trip.driver_id is not None:
+        logging.warning(
+            "[Guard] BLOCKED rider cancel_trip trip=%d by user=%d — driver %d "
+            "already assigned, rider must go through /request-cancel",
+            trip_id, user.id, trip.driver_id,
+        )
+        raise HTTPException(
+            403,
+            "A driver is already assigned. Please contact support to request cancellation.",
+        )
+    # Terminal-state guards stay the same.
     if trip.status in ("in_trip", "in_progress"):
         raise HTTPException(409, "Cannot cancel a trip that is currently in progress")
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
-    # Guard: prevent rider from cancelling a trip that already has a driver assigned.
-    # Only the assigned driver or an admin may cancel after acceptance.
-    if trip.driver_id is not None and user.id != trip.driver_id and user.role != "admin":
-        logging.warning(
-            "[Guard] Blocked cancel_trip on trip %d by user %d (role=%s) -- driver %d already assigned",
-            trip_id, user.id, user.role, trip.driver_id,
-        )
-        raise HTTPException(409, "Cannot cancel -- driver already assigned")
     # Accept optional cancel_reason from body
     reason = None
     try:

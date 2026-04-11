@@ -1113,36 +1113,53 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final bool isCashRide =
         paymentMethod == 'cash' || offer['is_cash'] == true;
 
-    // ── Badge policy (2026-04-11) ──────────────────────────────────
-    // Only 3 badges are allowed on the driver offer card, in priority order:
-    //   1. VIAJE RESERVADO (purple)  — future scheduled pickup
-    //   2. RESERVA AEROPUERTO (blue) — airport trip
-    //   3. CASH RIDE (green)         — paying in cash at the end of the trip
-    // The old vehicle-type (Comfort/Premium/VIP) shimmer badge is removed —
-    // the vehicle type is redundant with the fare/route info and was
-    // causing clutter on short cards.
+    // ── Badge policy (2026-04-11, stack-of-badges) ──────────────────
+    // Immediate trips paid by card → NO badges (the card is clean).
+    // Immediate trips paid by cash → only the standalone CASH RIDE badge.
+    // Scheduled trips → always include RESERVED, then ADD the modifiers
+    //   (AIRPORT and/or CASH) as separate stacked badges in a Wrap.
+    //
+    // The vehicle-type shimmer badge (Comfort/Premium/VIP) is removed
+    // entirely — vehicle type is redundant with the fare/route info.
+    //
+    // Localization is via S.of(context) so the labels render in
+    // Spanish on Spanish phones and English on English phones.
+    final s = S.of(context);
     final List<_OfferBadgeData> badges = [];
     if (isScheduled) {
-      badges.add(const _OfferBadgeData(
-        label: 'VIAJE RESERVADO',
+      // Future-scheduled trip — RESERVED is the anchor badge, plus
+      // optional AIRPORT and CASH modifiers stacked next to it.
+      badges.add(_OfferBadgeData(
+        label: s.badgeReserved,
         icon: Icons.schedule_rounded,
-        color: Color(0xFF8B5CF6),
+        color: const Color(0xFF8B5CF6), // purple
       ));
-    }
-    if (isAirportTrip) {
-      badges.add(const _OfferBadgeData(
-        label: 'RESERVA AEROPUERTO',
-        icon: Icons.flight_takeoff_rounded,
-        color: Color(0xFF3B82F6),
-      ));
-    }
-    if (isCashRide) {
-      badges.add(const _OfferBadgeData(
-        label: 'CASH RIDE',
+      if (isAirportTrip) {
+        badges.add(_OfferBadgeData(
+          label: s.badgeAirport,
+          icon: Icons.flight_takeoff_rounded,
+          color: const Color(0xFF3B82F6), // blue
+        ));
+      }
+      if (isCashRide) {
+        badges.add(_OfferBadgeData(
+          label: s.badgeCash,
+          icon: Icons.payments_rounded,
+          color: const Color(0xFF10B981), // green
+        ));
+      }
+    } else if (isCashRide) {
+      // Immediate cash trip — single standalone CASH RIDE badge.
+      // (Immediate airport trips are NOT badged per product policy:
+      // there is no "reservation" to advertise; the airport pickup
+      // address itself communicates the trip type.)
+      badges.add(_OfferBadgeData(
+        label: s.badgeCashRide,
         icon: Icons.payments_rounded,
-        color: Color(0xFF10B981),
+        color: const Color(0xFF10B981), // green
       ));
     }
+    // Immediate, card-paid trips fall through with no badges at all.
 
     return Column(
       key: const ValueKey('compact'),
@@ -1414,9 +1431,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   double _offerCardHeight(BuildContext context) {
     // Tight fit — no wasted space below the Accept button. The old
     // _ShimmerBadge row (Comfort/Premium/VIP) is gone so the base
-    // height drops by ~22 px. We add per-badge allowance for each of
-    // the 3 new badges (scheduled / airport / cash) that the current
-    // offer qualifies for, plus the scheduled-time row when relevant.
+    // height drops by ~22 px. We add per-badge allowance only when
+    // the current offer actually shows badges per the new stack-of-
+    // badges policy:
+    //   immediate, card    → no badges
+    //   immediate, cash    → 1 badge (CASH RIDE)
+    //   scheduled          → 1+ badges (RESERVED [+ AIRPORT] [+ CASH])
+    // The Wrap row stays at one line as long as the total stays under
+    // ~3 badges, so a single 32-px allowance is enough.
     final botPad = MediaQuery.of(context).padding.bottom;
     double extra = 0;
     if (_pendingOffers.isNotEmpty) {
@@ -1424,17 +1446,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         0, (_pendingOffers.length - 1).clamp(0, 999));
       final offer = _pendingOffers[safeIdx];
 
-      bool hasAnyBadge = false;
       final raw = offer['scheduled_at'];
       bool isScheduled = false;
       if (raw != null) {
         final dt = DateTime.tryParse(raw.toString())?.toLocal();
         if (dt != null && dt.difference(DateTime.now()).inMinutes >= 3) {
           isScheduled = true;
-          hasAnyBadge = true;
         }
       }
-      if (offer['is_airport'] == true) hasAnyBadge = true;
       final paymentMethod = (offer['payment_method'] ??
               offer['paymentMethod'] ??
               offer['payment_type'] ??
@@ -1442,9 +1461,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           .toString()
           .toLowerCase();
       final isCash = paymentMethod == 'cash' || offer['is_cash'] == true;
-      if (isCash) hasAnyBadge = true;
 
-      if (hasAnyBadge) extra += 32; // badge row
+      // Only scheduled trips OR immediate cash trips get a badge row.
+      // Immediate card-paid trips (the most common case) use the
+      // shortest layout with no extra height.
+      final bool hasBadgeRow = isScheduled || isCash;
+      if (hasBadgeRow) extra += 32;
       if (isScheduled) extra += 24; // scheduled time sublabel
     }
     // Base 253 = old 275 minus 22 for the removed _ShimmerBadge row.

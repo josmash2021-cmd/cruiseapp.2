@@ -363,10 +363,15 @@ async def cancel_claimed_scheduled_trip(
 #  POST /scheduled-trips/{trip_id}/drop — release pre-pickup
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Phases where a driver can no longer "drop" a scheduled ride back to the
-# marketplace — once the driver has reached pickup or started the trip, the
-# normal cancel flow (or dispatch override) must be used instead.
-_DROP_BLOCKED_STATUSES = {"arrived", "in_trip", "completed", "cancelled", "canceled"}
+# Whitelist: a driver may "drop" a claimed scheduled ride back to the
+# marketplace ONLY when the trip is still in one of these phases. Anything
+# past `scheduled_active` (i.e. driver_en_route, arrived, in_trip,
+# completed, cancelled) requires the dispatch override path.
+#
+# Per code review (2026-04-11): the previous blacklist allowed drivers
+# in `driver_en_route` to drop the trip mid-route to pickup, leaving
+# the rider with a phantom ETA. Switched to a strict whitelist.
+_DROP_ALLOWED_STATUSES = {"scheduled", "scheduled_accepted", "scheduled_active"}
 
 
 @router.post("/scheduled-trips/{trip_id}/drop", dependencies=[Depends(_verify_api_key)])
@@ -378,9 +383,11 @@ async def drop_scheduled_trip(
 ):
     """Driver releases a claimed scheduled ride back to the marketplace.
 
-    Only allowed pre-pickup: if the driver is already arrived, in-trip, or the
-    trip is terminal, the drop is refused. Clears `driver_id` and resets status
-    to `scheduled` so another driver can claim it.
+    Only allowed pre-pickup: the trip must still be in one of the
+    `scheduled*` statuses. Once the driver moves to `driver_en_route`,
+    `arrived`, or starts the trip, the normal cancel/contact-support
+    path is required. Clears `driver_id`, resets status to `scheduled`,
+    cancels any pending DispatchOffer rows so another driver can claim it.
     """
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can drop scheduled rides")
@@ -389,7 +396,7 @@ async def drop_scheduled_trip(
     if isinstance(payload, dict):
         reason = (payload.get("reason") or "").strip()
 
-    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
@@ -400,7 +407,7 @@ async def drop_scheduled_trip(
         raise HTTPException(400, "Trip has no assigned driver to drop")
     if trip.driver_id != user.id:
         raise HTTPException(403, "This trip is not assigned to you")
-    if trip.status in _DROP_BLOCKED_STATUSES:
+    if trip.status not in _DROP_ALLOWED_STATUSES:
         raise HTTPException(
             400,
             f"Cannot drop scheduled ride in status '{trip.status}' — contact dispatch",
@@ -413,6 +420,28 @@ async def drop_scheduled_trip(
         trip.driver_id = None
         trip.status = "scheduled"
         trip.updated_at = datetime.now(timezone.utc)
+        # Cancel any pending DispatchOffer rows for this trip so the
+        # cascade can re-offer cleanly when another driver becomes
+        # available. Without this the dispatch panel can show stale
+        # offers pointing at the now-released trip.
+        try:
+            from models.database import DispatchOffer
+            stale_offers = await db.execute(
+                select(DispatchOffer).where(
+                    DispatchOffer.trip_id == trip.id,
+                    DispatchOffer.status == "pending",
+                )
+            )
+            for offer in stale_offers.scalars().all():
+                offer.status = "canceled"
+                logging.info(
+                    "[ScheduledDrop] Cancelled stale offer id=%d for released trip %d",
+                    offer.id, trip.id,
+                )
+        except Exception as _offer_err:
+            logging.warning(
+                "[ScheduledDrop] failed to cancel stale offers: %s", _offer_err,
+            )
         await db.commit()
         await db.refresh(trip)
     except Exception as e:

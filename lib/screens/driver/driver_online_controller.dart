@@ -2054,6 +2054,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// This method now ONLY resets the local controller state and returns
   /// the screen to the searching phase. It never PATCHes the backend.
   void _resetToSearchingOnRemoteCancel() {
+    // All callers are async-after-await, so the State may already be
+    // disposed by the time we land here.
+    if (!mounted) return;
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -2065,23 +2068,27 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _routePts = [];
       _pendingOffers = [];
     });
+    if (!mounted) return;
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     _startPolling();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      // Use maybeOf — if the screen has no Scaffold ancestor (e.g. mid
+      // teardown) we silently skip the toast instead of crashing.
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF1a1a1a),
           content: Row(
-            children: const [
-              Icon(Icons.info_outline, color: Color(0xFFE8C547), size: 22),
-              SizedBox(width: 10),
+            children: [
+              const Icon(Icons.info_outline,
+                  color: Color(0xFFE8C547), size: 22),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Trip cancelled. Returning to ride requests.',
-                  style: TextStyle(
+                  S.of(context).driverTripCancelledReturning,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,

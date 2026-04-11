@@ -664,15 +664,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // gold toast and reset to searching.
       if (!_tripFinished &&
           (status == 'cancelled' || status == 'canceled')) {
+        // Re-check mounted: this listener is async-firing and the
+        // widget may have been disposed between the snapshot arriving
+        // and the cancel check.
+        if (!mounted) return;
         debugPrint('[Driver] Trip cancelled externally → returning to online');
         _tripFinished = true;
         _riderConfirmSub?.cancel();
         // Pop with 'cancelled' result so DriverOnlineController.
-        // _resetToSearchingOnRemoteCancel() takes over. If the screen is
-        // not on the stack for some reason, fall back to a direct push
-        // to DriverHomeScreen.
-        if (Navigator.of(context).canPop()) {
-          Navigator.of(context).pop('cancelled');
+        // _resetToSearchingOnRemoteCancel() takes over. Wrap in try
+        // so a stale Navigator can't crash the listener.
+        try {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop('cancelled');
+          }
+        } catch (e) {
+          debugPrint('[Driver] cancel-pop failed: $e');
         }
         return;
       }

@@ -9,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
     SupportChat, RiderPaymentMethod, SurgeZone, DispatchOffer, DriverIncentive,
-    AuditLog,
+    AuditLog, Cashout,
 )
+
+# Process uptime anchor — set once at module import
+_SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import AdminStatsResponse
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
@@ -1404,6 +1407,152 @@ async def admin_system_health(db: AsyncSession = Depends(get_db)):
         "active_trips": active_trips,
         "firebase_failures": _watchdog_stats.get("firebase_failures", 0),
     }
+
+
+# ══════════════════════════════════════════════════════════
+#  OPERATIONAL HEALTH DASHBOARD (dispatch panel)
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/health/dashboard", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_health_dashboard(db: AsyncSession = Depends(get_db)):
+    """Single-shot operational snapshot for the dispatch panel.
+
+    Returns JSON with server uptime, driver/trip counts, money totals for
+    today (UTC), and a handful of critical alerts (stuck trips, ghost
+    trips, drivers with stale FCM tokens). All DB work is done in a
+    handful of aggregate queries — no full-table scans into memory.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        uptime = now - _SERVER_START_TIME
+        today_start = func.cast(func.now(), Date)
+
+        # ---- Drivers ----------------------------------------------------
+        active_statuses = [
+            "requested", "accepted", "driver_en_route",
+            "arrived", "in_trip",
+            "scheduled_accepted", "scheduled_active",
+        ]
+
+        drivers_online = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver", User.is_online == True,
+            )
+        )).scalar() or 0
+
+        drivers_online_with_trip = (await db.execute(
+            select(func.count(func.distinct(User.id))).select_from(User).join(
+                Trip, Trip.driver_id == User.id,
+            ).where(
+                User.role == "driver",
+                User.is_online == True,
+                Trip.status.in_(active_statuses),
+            )
+        )).scalar() or 0
+
+        drivers_offline = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver",
+                or_(User.is_online == False, User.is_online.is_(None)),
+            )
+        )).scalar() or 0
+
+        # ---- Trips ------------------------------------------------------
+        trips_active = (await db.execute(
+            select(func.count(Trip.id)).where(Trip.status.in_(active_statuses))
+        )).scalar() or 0
+
+        # Today aggregates in one query using conditional SUMs
+        today_row = (await db.execute(
+            select(
+                func.count(case((Trip.status == "completed", 1))).label("completed"),
+                func.count(case((Trip.status == "cancelled", 1))).label("cancelled"),
+                func.count(case((
+                    and_(
+                        Trip.status == "cancelled",
+                        Trip.cancel_reason.like("auto:%"),
+                    ), 1,
+                ))).label("auto_cancelled"),
+                func.avg(case((Trip.status == "completed", Trip.fare))).label("avg_fare"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.fare))), 0.0).label("gross"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.driver_earnings))), 0.0).label("driver_earn"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.platform_fee))), 0.0).label("platform_earn"),
+            ).where(Trip.created_at >= today_start)
+        )).one()
+
+        completed_today = int(today_row.completed or 0)
+        cancelled_today = int(today_row.cancelled or 0)
+        auto_cancelled_today = int(today_row.auto_cancelled or 0)
+        avg_fare_today = round(float(today_row.avg_fare or 0.0), 2)
+        gross_today = round(float(today_row.gross or 0.0), 2)
+        driver_earn_today = round(float(today_row.driver_earn or 0.0), 2)
+        platform_earn_today = round(float(today_row.platform_earn or 0.0), 2)
+
+        # ---- Money: pending cashouts -----------------------------------
+        pending_cashouts = (await db.execute(
+            select(func.count(Cashout.id)).where(Cashout.status == "pending")
+        )).scalar() or 0
+
+        # ---- Alerts -----------------------------------------------------
+        stuck_cutoff = now - timedelta(minutes=10)
+        trips_stuck = (await db.execute(
+            select(func.count(Trip.id)).where(
+                Trip.status == "requested",
+                Trip.driver_id.is_(None),
+                Trip.scheduled_at.is_(None),
+                Trip.created_at < stuck_cutoff,
+            )
+        )).scalar() or 0
+
+        ghost_cutoff = now - timedelta(hours=3)
+        ghost_trips = (await db.execute(
+            select(func.count(Trip.id)).where(
+                Trip.status.in_(["driver_en_route", "arrived", "in_trip"]),
+                Trip.updated_at < ghost_cutoff,
+            )
+        )).scalar() or 0
+
+        stale_fcm = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver",
+                User.is_online == True,
+                or_(User.fcm_token.is_(None), User.fcm_token == ""),
+            )
+        )).scalar() or 0
+
+        return {
+            "timestamp": now.isoformat(),
+            "server": {
+                "status": "healthy",
+                "uptime_seconds": int(uptime.total_seconds()),
+            },
+            "drivers": {
+                "online": int(drivers_online),
+                "online_with_active_trip": int(drivers_online_with_trip),
+                "offline": int(drivers_offline),
+            },
+            "trips": {
+                "active_now": int(trips_active),
+                "completed_today": completed_today,
+                "cancelled_today": cancelled_today,
+                "auto_cancelled_today": auto_cancelled_today,
+                "avg_fare_today": avg_fare_today,
+            },
+            "money": {
+                "gross_fares_today": gross_today,
+                "driver_earnings_today": driver_earn_today,
+                "platform_earnings_today": platform_earn_today,
+                "pending_cashouts": int(pending_cashouts),
+            },
+            "alerts": {
+                "trips_stuck_requested": int(trips_stuck),
+                "ghost_trips": int(ghost_trips),
+                "drivers_with_stale_fcm": int(stale_fcm),
+            },
+        }
+    except Exception as e:
+        logging.error("[admin_health_dashboard] failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ══════════════════════════════════════════════════════════

@@ -21,10 +21,125 @@ class _CacheEntry {
   final dynamic data;
   final DateTime timestamp;
   final Duration ttl;
-  
+
   _CacheEntry(this.data, this.ttl) : timestamp = DateTime.now();
-  
+
   bool get isExpired => DateTime.now().difference(timestamp) > ttl;
+}
+
+/// ─── Circuit breaker for backend HTTP calls ──────────────────────────
+///
+/// Prevents the app from hammering a backend that is clearly down.
+/// After [failureThreshold] consecutive failures, the breaker trips
+/// OPEN and rejects further calls for [openDuration]. It then enters
+/// HALF_OPEN state and allows a single probe — if that succeeds the
+/// breaker closes, otherwise it re-opens for another cycle.
+///
+/// Failure modes detected:
+///  - HTTP 5xx response
+///  - Thrown exception (timeout, socket, TLS, etc.)
+///
+/// Success = HTTP < 500 from the underlying request (even 4xx counts
+/// as "the server is alive and answered us, just rejected the call").
+///
+/// This is a singleton keyed by host, so one breaker per backend URL.
+enum _CircuitState { closed, open, halfOpen }
+
+class _CircuitBreaker {
+  _CircuitBreaker({
+    this.failureThreshold = 4,
+    this.openDuration = const Duration(seconds: 30),
+    this.halfOpenRetryDelay = const Duration(seconds: 60),
+  });
+
+  final int failureThreshold;
+  final Duration openDuration;
+  final Duration halfOpenRetryDelay;
+
+  _CircuitState _state = _CircuitState.closed;
+  int _consecutiveFailures = 0;
+  DateTime? _openedAt;
+
+  _CircuitState get state => _state;
+
+  /// True while the breaker is rejecting calls. The UI can show a
+  /// "connection issues" banner while this returns true.
+  bool get isOpen {
+    _maybeTransitionFromOpen();
+    return _state == _CircuitState.open;
+  }
+
+  /// Call before attempting an HTTP request. Returns true if the
+  /// request is allowed to proceed, false if the breaker is open.
+  /// If false, the caller should fail fast without hitting the network.
+  bool allowRequest() {
+    _maybeTransitionFromOpen();
+    switch (_state) {
+      case _CircuitState.closed:
+        return true;
+      case _CircuitState.halfOpen:
+        // Let one request through as a probe.
+        return true;
+      case _CircuitState.open:
+        return false;
+    }
+  }
+
+  /// Report the outcome of an HTTP attempt back to the breaker.
+  /// [statusCode] is null when the call threw before receiving a
+  /// response (timeout, socket, DNS, etc.) — counts as failure.
+  void recordResult({int? statusCode, Object? error}) {
+    final isFailure = error != null || (statusCode != null && statusCode >= 500);
+    if (isFailure) {
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= failureThreshold) {
+        _state = _CircuitState.open;
+        _openedAt = DateTime.now();
+        debugPrint(
+          '[CircuitBreaker] OPEN — $_consecutiveFailures consecutive failures '
+          'statusCode=$statusCode error=$error',
+        );
+      }
+    } else {
+      // Success — fully close regardless of previous state.
+      if (_state != _CircuitState.closed || _consecutiveFailures > 0) {
+        debugPrint('[CircuitBreaker] CLOSED after success');
+      }
+      _state = _CircuitState.closed;
+      _consecutiveFailures = 0;
+      _openedAt = null;
+    }
+  }
+
+  /// If the breaker has been OPEN for [openDuration] seconds, move it
+  /// to HALF_OPEN so the next call can probe the backend.
+  void _maybeTransitionFromOpen() {
+    if (_state != _CircuitState.open || _openedAt == null) return;
+    final elapsed = DateTime.now().difference(_openedAt!);
+    if (elapsed >= openDuration) {
+      _state = _CircuitState.halfOpen;
+      debugPrint('[CircuitBreaker] HALF_OPEN — probing backend');
+    }
+  }
+
+  /// Test hook / manual reset.
+  void reset() {
+    _state = _CircuitState.closed;
+    _consecutiveFailures = 0;
+    _openedAt = null;
+  }
+}
+
+/// Thrown when the circuit breaker is OPEN and the request is
+/// rejected before hitting the network. Callers that are polling
+/// (rider tracking, driver heartbeat) can catch this specifically
+/// and simply skip the poll without logging a scary error.
+class _CircuitOpenException implements Exception {
+  _CircuitOpenException(this.url);
+  final String url;
+  @override
+  String toString() =>
+      'CircuitOpenException: backend degraded, request to $url skipped';
 }
 
 /// Communicates with the Cruise Ride backend (FastAPI + PostgreSQL).
@@ -51,7 +166,29 @@ class ApiService {
     _inFlightRequests.clear();
     debugPrint('[ApiService] Response cache cleared');
   }
-  
+
+  // ── Circuit breaker ────────────────────────────────────────────
+  /// Protects the client from hammering a backend that is clearly down.
+  /// Trips after 4 consecutive failures and stays open for 30 seconds,
+  /// then half-opens for a probe. See `_CircuitBreaker` above for the
+  /// full semantics.
+  static final _CircuitBreaker _breaker = _CircuitBreaker();
+
+  /// Exposed for UI banners (e.g. "connection issues") and tests.
+  /// The rider tracking controller polls this to decide when to show
+  /// the offline banner without having to catch exceptions everywhere.
+  static bool get backendDegraded => _breaker.isOpen;
+
+  /// Manual reset — primarily for tests and for pull-to-refresh gestures
+  /// that should give the breaker one more chance right away.
+  static void resetCircuitBreaker() => _breaker.reset();
+
+  /// Exception thrown when the circuit breaker is OPEN and a request
+  /// is rejected without hitting the network. Callers can catch this
+  /// specifically to avoid logging it as a real error.
+  static bool isCircuitOpenError(Object err) =>
+      err is _CircuitOpenException;
+
   /// Cache GET responses for a short time to reduce server load
   static Future<http.Response> _cachedGet(
     Uri url, {
@@ -60,7 +197,7 @@ class ApiService {
     bool useCache = true,
   }) async {
     final cacheKey = url.toString();
-    
+
     // Check cache first
     if (useCache && _responseCache.containsKey(cacheKey)) {
       final entry = _responseCache[cacheKey]!;
@@ -69,12 +206,19 @@ class ApiService {
       }
       _responseCache.remove(cacheKey);
     }
-    
+
     // Deduplicate concurrent requests for the same URL
     if (_inFlightRequests.containsKey(cacheKey)) {
       return await _inFlightRequests[cacheKey]!;
     }
-    
+
+    // Circuit breaker: if the backend is currently considered dead,
+    // fail fast WITHOUT touching the network. Callers already handle
+    // "returns null / falls back" semantics for transient errors.
+    if (!_breaker.allowRequest()) {
+      throw _CircuitOpenException(url.toString());
+    }
+
     // Make the request and track it
     final requestFuture = _client.get(url, headers: headers).timeout(
       const Duration(seconds: 4),
@@ -83,18 +227,24 @@ class ApiService {
         throw TimeoutException('Request to \${url.path} timed out');
       },
     );
-    
+
     _inFlightRequests[cacheKey] = requestFuture;
-    
+
     try {
       final response = await requestFuture;
-      
+
+      // Report the outcome to the breaker.
+      _breaker.recordResult(statusCode: response.statusCode);
+
       // Cache successful GET responses
       if (useCache && response.statusCode == 200) {
         _responseCache[cacheKey] = _CacheEntry(response, cacheTtl);
       }
-      
+
       return response;
+    } catch (e) {
+      _breaker.recordResult(error: e);
+      rethrow;
     } finally {
       _inFlightRequests.remove(cacheKey);
     }

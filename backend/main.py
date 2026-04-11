@@ -326,6 +326,8 @@ async def lifespan(app: FastAPI):
         logging.info("Scheduled Ride Reminder Loop ACTIVE -- driver/rider reminders every 60s")
         asyncio.create_task(_scheduled_rides_available_notify_loop())
         logging.info("Scheduled Rides Available Notifier ACTIVE -- notify online drivers every 15m")
+        asyncio.create_task(_nightly_reconcile_loop())
+        logging.info("Nightly Money Reconciliation ACTIVE -- runs every 24h after 5m warmup")
 
     asyncio.create_task(_bg_init())
     # Start SSE heartbeat + stale connection cleanup
@@ -1139,15 +1141,248 @@ async def _scheduled_ride_reminder_loop():
                         except Exception as _fcm_err:
                             logging.warning("[Reminder] FCM rider 15m notify failed for trip %d: %s", trip.id, _fcm_err)
 
+                # --------------------------------------------------
+                # RIDER ADVANCE NOTIFICATIONS — scheduled trips with
+                # NO driver assigned yet. Nudge the rider at 2h / 1h /
+                # 30min windows so they aren't surprised by a late
+                # failure to match.
+                # --------------------------------------------------
+                try:
+                    no_driver_result = await db.execute(
+                        select(Trip).where(
+                            and_(
+                                Trip.scheduled_at.isnot(None),
+                                Trip.driver_id.is_(None),
+                                Trip.status.in_(["scheduled", "requested"]),
+                                Trip.scheduled_at > now,
+                            )
+                        )
+                    )
+                    no_driver_trips = no_driver_result.scalars().all()
+                except Exception as _adv_q_err:
+                    logging.warning("[ScheduledAdvance] query error: %s", _adv_q_err)
+                    no_driver_trips = []
+
+                for adv_trip in no_driver_trips:
+                    adv_minutes = (adv_trip.scheduled_at - now).total_seconds() / 60
+                    adv_reminders = sent_reminders.setdefault(adv_trip.id, set())
+
+                    # Skip if outside any relevant window
+                    if not (
+                        (110 <= adv_minutes <= 130 and "rider_2h" not in adv_reminders)
+                        or (50 <= adv_minutes <= 70 and "rider_1h" not in adv_reminders)
+                        or (20 <= adv_minutes <= 40 and "rider_30min" not in adv_reminders)
+                    ):
+                        continue
+
+                    # Fetch rider
+                    try:
+                        adv_rider_r = await db.execute(
+                            select(User).where(User.id == adv_trip.rider_id)
+                        )
+                        adv_rider = adv_rider_r.scalar_one_or_none()
+                    except Exception as _rf:
+                        logging.warning("[ScheduledAdvance] rider fetch failed trip=%d: %s", adv_trip.id, _rf)
+                        continue
+                    if not adv_rider or not adv_rider.fcm_token:
+                        continue
+
+                    # 2-hour advance notification
+                    if 110 <= adv_minutes <= 130 and "rider_2h" not in adv_reminders:
+                        try:
+                            _send_fcm_push(
+                                token=adv_rider.fcm_token,
+                                title="Buscando conductor / Searching for driver",
+                                body=(
+                                    "Seguimos buscando un conductor para tu viaje reservado. "
+                                    "Still looking for a driver for your scheduled ride."
+                                ),
+                                data={
+                                    "type": "scheduled_searching",
+                                    "trip_id": str(adv_trip.id),
+                                    "window": "2h",
+                                },
+                            )
+                            adv_reminders.add("rider_2h")
+                            logging.info("[ScheduledAdvance] 2h trip=%d", adv_trip.id)
+                        except Exception as _fe:
+                            logging.warning("[ScheduledAdvance] 2h FCM failed trip=%d: %s", adv_trip.id, _fe)
+
+                    # 1-hour advance notification
+                    if 50 <= adv_minutes <= 70 and "rider_1h" not in adv_reminders:
+                        try:
+                            _send_fcm_push(
+                                token=adv_rider.fcm_token,
+                                title="Aún buscando conductor / Still searching",
+                                body=(
+                                    "Aún buscando conductor — si no encontramos te avisaremos. "
+                                    "Still searching — we'll let you know if we can't find one."
+                                ),
+                                data={
+                                    "type": "scheduled_searching",
+                                    "trip_id": str(adv_trip.id),
+                                    "window": "1h",
+                                },
+                            )
+                            adv_reminders.add("rider_1h")
+                            logging.info("[ScheduledAdvance] 1h trip=%d", adv_trip.id)
+                        except Exception as _fe:
+                            logging.warning("[ScheduledAdvance] 1h FCM failed trip=%d: %s", adv_trip.id, _fe)
+
+                    # 30-minute advance notification (HIGH priority prompt)
+                    if 20 <= adv_minutes <= 40 and "rider_30min" not in adv_reminders:
+                        try:
+                            _send_fcm_push(
+                                token=adv_rider.fcm_token,
+                                title="Sin conductor / No driver found",
+                                body=(
+                                    "No hemos encontrado conductor. ¿Quieres intentar de nuevo? "
+                                    "We couldn't find a driver. Want to try again?"
+                                ),
+                                data={
+                                    "type": "scheduled_no_driver_prompt",
+                                    "trip_id": str(adv_trip.id),
+                                    "action": "reschedule_or_immediate",
+                                },
+                                is_offer=True,
+                            )
+                            adv_reminders.add("rider_30min")
+                            logging.info("[ScheduledAdvance] 30min trip=%d", adv_trip.id)
+                        except Exception as _fe:
+                            logging.warning("[ScheduledAdvance] 30min FCM failed trip=%d: %s", adv_trip.id, _fe)
+
                 # ---- Memory cleanup ----
                 # Remove entries for trips no longer in the active batch
-                active_ids = {t.id for t in trips}
+                active_ids = {t.id for t in trips} | {t.id for t in no_driver_trips}
                 for tid in list(sent_reminders.keys()):
                     if tid not in active_ids:
                         sent_reminders.pop(tid, None)
 
         except Exception as e:
             logging.error("[Reminder] Scheduled ride reminder loop error: %s", e)
+
+
+# -------------------------------------------------------
+#  NIGHTLY MONEY RECONCILIATION (background task)
+# -------------------------------------------------------
+
+async def _nightly_reconcile_loop():
+    """Once every 24 hours, reconcile each driver's pending_balance against
+    the ground-truth computed from trips.driver_earnings and cashouts.
+
+    Reports drift but NEVER auto-fixes — a human must review because the
+    root cause could be refund clawback bugs, not a simple ledger drift.
+    If drift is significant (>= 3 drivers OR > $50 total), an admin_alerts
+    doc is written to Firestore.
+    """
+    # Warmup — let the server finish booting before hammering the DB
+    await asyncio.sleep(300)
+    while True:
+        try:
+            async with SessionLocal() as db:
+                # Single roundtrip: LEFT JOIN trips + cashouts per driver
+                sql = text(
+                    """
+                    SELECT
+                        u.id AS driver_id,
+                        u.first_name,
+                        u.last_name,
+                        COALESCE(u.pending_balance, 0.0) AS ledger,
+                        COALESCE(t.earned, 0.0) AS earned,
+                        COALESCE(c.paid, 0.0) AS paid,
+                        COALESCE(t.trip_count, 0) AS trip_count,
+                        COALESCE(c.cashout_count, 0) AS cashout_count
+                    FROM users u
+                    LEFT JOIN (
+                        SELECT driver_id,
+                               SUM(COALESCE(driver_earnings, 0.0)) AS earned,
+                               COUNT(*) AS trip_count
+                          FROM trips
+                         WHERE status = 'completed'
+                           AND driver_id IS NOT NULL
+                         GROUP BY driver_id
+                    ) t ON t.driver_id = u.id
+                    LEFT JOIN (
+                        SELECT user_id,
+                               SUM(COALESCE(amount, 0.0)) AS paid,
+                               COUNT(*) AS cashout_count
+                          FROM cashouts
+                         WHERE status != 'failed'
+                         GROUP BY user_id
+                    ) c ON c.user_id = u.id
+                    WHERE u.role = 'driver'
+                    """
+                )
+                rows = (await db.execute(sql)).all()
+
+                checked = 0
+                drifted: list[dict] = []
+                total_abs_drift = 0.0
+
+                for row in rows:
+                    trip_count = int(row.trip_count or 0)
+                    cashout_count = int(row.cashout_count or 0)
+                    # Skip brand new signups with zero activity
+                    if trip_count == 0 and cashout_count == 0:
+                        continue
+
+                    checked += 1
+                    ledger = float(row.ledger or 0.0)
+                    earned = float(row.earned or 0.0)
+                    paid = float(row.paid or 0.0)
+                    expected = round(earned - paid, 2)
+                    drift = round(ledger - expected, 2)
+
+                    if abs(drift) > 0.01:
+                        first = (row.first_name or "").strip()
+                        last = (row.last_name or "").strip()
+                        logging.warning(
+                            "[Reconcile] driver=%s name=%s %s ledger=%.2f expected=%.2f drift=%.2f",
+                            row.driver_id, first, last, ledger, expected, drift,
+                        )
+                        drifted.append({
+                            "driver_id": int(row.driver_id),
+                            "name": f"{first} {last}".strip(),
+                            "ledger": ledger,
+                            "expected": expected,
+                            "drift": drift,
+                        })
+                        total_abs_drift += abs(drift)
+
+                total_abs_drift = round(total_abs_drift, 2)
+                logging.info(
+                    "[Reconcile] nightly pass complete - checked=%d drifted=%d total_drift=$%.2f",
+                    checked, len(drifted), total_abs_drift,
+                )
+
+                # Raise Firestore alert if significant
+                if _HAS_FIRESTORE and (len(drifted) >= 3 or total_abs_drift > 50.0):
+                    try:
+                        alert_id = f"money_reconciliation_{int(datetime.now(timezone.utc).timestamp())}"
+                        firestore_sync._db.collection("admin_alerts").document(alert_id).set({
+                            "severity": "high",
+                            "type": "money_reconciliation",
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "checked": checked,
+                            "drifted_count": len(drifted),
+                            "total_abs_drift": total_abs_drift,
+                            "drivers": drifted,
+                        })
+                        logging.warning(
+                            "[Reconcile] Firestore admin_alert raised: %s (drifted=%d total=$%.2f)",
+                            alert_id, len(drifted), total_abs_drift,
+                        )
+                    except Exception as _fs_err:
+                        logging.error(
+                            "[Reconcile] Failed to write Firestore admin_alert: %s", _fs_err,
+                        )
+
+        except Exception as e:
+            logging.error("[Reconcile] Nightly reconcile loop error: %s", e)
+
+        # 24 hour interval
+        await asyncio.sleep(86400)
+
 
 async def _connection_watchdog():
     """Monitors DB + Firebase every 30 s and auto-reconnects on failure."""

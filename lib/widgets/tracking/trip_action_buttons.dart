@@ -178,7 +178,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(S.of(context).couldNotShareTrip(e.toString())),
+          content: Text(S.of(context).couldNotShareTripError(e.toString())),
           behavior: SnackBarBehavior.floating,
         ),
       );

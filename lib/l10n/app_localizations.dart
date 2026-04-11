@@ -3613,8 +3613,8 @@ class S {
   String get dropoffFallback => _es ? 'Destino' : 'Drop-off';
   String get riderFallback => _es ? 'Rider' : 'Rider';
 
-  // Trip-share error snackbar.
-  String couldNotShareTrip(String error) =>
+  // Trip-share error snackbar with the underlying error appended.
+  String couldNotShareTripError(String error) =>
       _es ? 'No se pudo compartir el viaje: $error' : 'Could not share trip: $error';
 
   // Driver scheduled trips screen.

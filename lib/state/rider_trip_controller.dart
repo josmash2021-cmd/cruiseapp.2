@@ -771,8 +771,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           _isRequesting = false;
           // Pull the real cancel_reason from the Firestore doc so the UI
           // can branch into the smooth-toast flow when it's an auto-cancel.
-          final rawReason = (_currentStatus['cancelReason'] ??
-                  _currentStatus['cancel_reason'])
+          // The snapshot data (`data`) is the raw Firestore map —
+          // `_currentStatus` is just the status string, not the doc.
+          final rawReason = (data['cancelReason'] ??
+                  data['cancel_reason'])
               ?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,

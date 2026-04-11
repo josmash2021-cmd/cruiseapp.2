@@ -2693,8 +2693,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          _cancelRow(isDark),
+          // Cancel policy 2026-04-11: driver can no longer directly
+          // cancel. The old _cancelRow textbutton was removed — any
+          // driver-initiated abort must go through "Contact Support".
         ],
       ),
     );
@@ -3715,19 +3716,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  Widget _cancelRow(bool isDark) => TextButton(
-    onPressed: _cancel,
-    child: Text(
-      S.of(context).cancelTrip,
-      style: TextStyle(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.25)
-            : Colors.black.withValues(alpha: 0.25),
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  );
+  // _cancelRow removed 2026-04-11 — driver cancel policy.
 
   Widget _sumStat(String v, String l, Color vColor, Color lColor) => Column(
     children: [

@@ -1281,24 +1281,12 @@ Widget _navHeader() {
                     ],
                   ),
                 ),
-                // Cancel button (pickup only)
-                if (toPickup)
-                  GestureDetector(
-                    onTap: _cancel,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  ),
+                // Cancel policy 2026-04-11: the driver can no longer
+                // directly cancel an active trip. The close button on
+                // the pickup-nav row is removed; if the driver needs
+                // to abort they must contact support (or the trip will
+                // eventually be dispatch-cancelled which resets the
+                // controller via _resetToSearchingOnRemoteCancel).
               ],
             ),
           ),

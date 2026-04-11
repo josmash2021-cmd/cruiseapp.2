@@ -239,6 +239,7 @@ Drivers con trips en estos estados NO deben ser forzados offline por el ghost ag
 - **Async guards:** `if (!mounted) return;` después de cada `await`
 - **Tema:** negro + gold + Poppins (no Material Design default)
 - **Debug logs:** `debugPrint('[NombreScreen] mensaje')` con prefijo de screen/controller
+- **GPS smoothing en map markers:** usar [lib/utils/smooth_motion.dart](lib/utils/smooth_motion.dart) — `SmoothMotion()` con `setTarget(lat, lng, bearing)` + `tick(dtSec)`. NO reintroducir decay exponencial (`_pow(1-decay, dt)`) — el viejo helper está eliminado. La excepción es [lib/controllers/rider_tracking_controller.dart](lib/controllers/rider_tracking_controller.dart) que tiene su propio interp route-projected.
 
 ---
 
@@ -256,9 +257,17 @@ Drivers con trips en estos estados NO deben ser forzados offline por el ghost ag
 
 ## Bugs Conocidos / Historial Reciente
 
-### v1.0.2+292 (actual) — fixes desplegados
+### v1.0.2+301 — 2026-04-11 (commit `ff0b4a7d`, pendiente build)
 
-1. **Ghost agent no kickea drivers con trip activo** — [backend/ghost_driver_agent.py](backend/ghost_driver_agent.py). Antes fortaba offline a drivers inactivos 20 min, incluso si estaban manejando un trip. Ahora consulta `_ACTIVE_TRIP_STATUSES` primero.
+1. **Rider overlay "confirmar pickup" se repetía después de tap** — [lib/screens/rider_tracking_screen.dart:529](lib/screens/rider_tracking_screen.dart#L529). El `onConfirmed` callback reseteaba `_confirmPickupShown = false` inmediatamente, pero el backend sigue con status `arrived` hasta que el driver tape Start Ride. El próximo poll volvía a mostrar el overlay. Fix: mantener el guard `true`, solo hide el overlay. El guard se resetea correctamente en `_transitionToOnTrip()` cuando llega `in_trip`.
+
+2. **Driver sliders (Arrived / Start Ride) se reseteaban al volver de Google Maps** — [lib/screens/driver/driver_home_screen.dart:2023](lib/screens/driver/driver_home_screen.dart#L2023). Cuando el driver abría Google Maps con `_openNativeMaps()` y volvía al app, `didChangeAppLifecycleState(resumed)` llamaba `_resumeActiveTrip()` → pusheaba una nueva `DriverTripAcceptScreen` encima de la existente con `arrivedAtPickup/rideStarted` derivados del status de Firestore (atrasado). Lo mismo con el poll de 15s. Fix: guard `ModalRoute.of(context)?.isCurrent != true` → skip si DriverHomeScreen no es el route visible.
+
+3. **Driver gold-dot / nav-car con "catch-up-then-stall"** — [lib/screens/driver/driver_online_controller.dart:966](lib/screens/driver/driver_online_controller.dart#L966). El `_onSmoothTick` usaba decay exponencial 14%/frame, lo cual decelera al acercarse al target. Se sentía drifty. Reemplazado por `SmoothMotion` (`lib/utils/smooth_motion.dart`) — constant-velocity advance + shortest-arc bearing low-pass + 4s extrapolation freeze. También subí el throttle RTDB del rider de 125ms → 66ms (8 Hz → 15 Hz) para alimentar mejor su `_interpolate` route-projected.
+
+### v1.0.2+292 — fixes desplegados
+
+1. **Ghost agent no kickea drivers con trip activo** — [backend/ghost_driver_agent.py](backend/ghost_driver_agent.py). Antes forzaba offline a drivers inactivos 20 min, incluso si estaban manejando un trip. Ahora consulta `_ACTIVE_TRIP_STATUSES` primero.
 
 2. **Driver-override bypass extendido a admin/dispatch** — [backend/routers/trips.py:675-690](backend/routers/trips.py#L675). Antes solo el driver podía forward-progression desde `cancelled`, ahora también admin/dispatch (el panel dispatch a veces cancela y luego necesita reabrir).
 
@@ -270,8 +279,9 @@ Drivers con trips en estos estados NO deben ser forzados offline por el ghost ag
 
 ### Issues abiertos
 
-- **Driver phone backgrounding** — cuando el driver bloquea el teléfono durante un trip, el heartbeat se detiene. El ghost agent ahora no lo kickea (fix #1), pero el GPS deja de actualizar. Posible solución: background isolate en Flutter para mantener GPS activo.
+- **Driver phone backgrounding** — cuando el driver bloquea el teléfono durante un trip, el heartbeat se detiene. El ghost agent ahora no lo kickea (fix ghost), pero el GPS deja de actualizar. Posible solución: background isolate en Flutter para mantener GPS activo.
 - **FCM token stale para driver #3** — push notifications fallan con "Requested entity was not found". Necesita refresh del token.
+- **v301 no tiene build publicado todavía** — los 3 fixes de arriba están en `main` pero NO en rider/driver phones hasta que corras Codemagic iOS + Shorebird Android.
 
 ---
 
@@ -393,6 +403,16 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 10. **Memory reconciliation:** el cron nocturno en `main.py` chequea drift de `pending_balance`. Si ves warnings `[Reconcile] drift=...` en logs, NO auto-fixear — loguear para review humano.
 
+11. **Overlay dedup rider pickup (v301):** el guard `_confirmPickupShown` en [rider_tracking_screen.dart](lib/screens/rider_tracking_screen.dart) debe mantenerse `true` desde el primer arrived hasta que el backend flipee a `in_trip`. NO resetearlo en el `onConfirmed` del overlay — el backend sigue con status `arrived` hasta Start Ride y polls subsecuentes re-disparan el overlay.
+
+12. **No re-pushear DriverTripAcceptScreen (v301):** `DriverHomeScreen._resumeActiveTrip()` debe bailar temprano si no es la ruta top (`ModalRoute.of(context)?.isCurrent != true`). Sin esto, cada `didChangeAppLifecycleState(resumed)` y cada poll de 15s pushea una pantalla nueva encima resetando los sliders locales del driver.
+
+13. **SmoothMotion, no decay exponencial (v301):** todo marcador GPS que no sea route-projected usa [lib/utils/smooth_motion.dart](lib/utils/smooth_motion.dart). El old `_pow(1-decay, dt)` se eliminó — si lo ves en un agent-generated diff, rechazar.
+
+14. **Commit workflow completo:** al cerrar un change set, `git status` primero y commitear TODOS los archivos pendientes agrupados en commits lógicos, no solo los que tocó la sesión actual. Ver [feedback_push_on_finish.md](../.claude/projects/c--Users-Puma-cruiseapp-2/memory/feedback_push_on_finish.md) en memoria.
+
+15. **Session start = ground in reality:** al arrancar una sesión (o después de compact), leer `CLAUDE.md` + `git status` + `git log -10` antes de la primera edición. Memoria se expira; no citar file:line sin verificar primero.
+
 ---
 
-**Última actualización:** 2026-04-11 (v1.0.2+300 + skills + hooks + Lote 2 backend features)
+**Última actualización:** 2026-04-11 (v1.0.2+301 — 3 bugs tracking fixes + SmoothMotion util + memory upgrade)

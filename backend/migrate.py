@@ -112,6 +112,7 @@ MIGRATIONS = [
     ("trips", "guest_last_name", "VARCHAR(100)"),
     ("trips", "guest_phone", "VARCHAR(30)"),
     ("trips", "guest_email", "VARCHAR(200)"),
+    ("trips", "guest_lang", "VARCHAR(5)"),
 ]
 
 

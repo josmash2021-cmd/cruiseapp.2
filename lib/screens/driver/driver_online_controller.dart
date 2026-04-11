@@ -1436,9 +1436,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Navigate to DriverHomeScreen with returnFromTrip so the Resume
       // button appears.  Do NOT call _cancel() — the trip must survive.
       _goBackToHomeWithTrip();
-    } else {
-      // Cancelled or back-pressed — return to searching
+    } else if (result == 'cancelled') {
+      // Explicit cancel from inside the trip screen — the driver tapped
+      // a cancel button. Run the cancel flow.
+      debugPrint('[DriverOnline] trip screen popped with result=cancelled — firing _cancel()');
       _cancel();
+    } else {
+      // Null or unexpected result — iOS swipe-back gesture, Android system
+      // back button, route override, etc.  **DO NOT** auto-cancel the trip:
+      // the driver may still be physically running it and we would kill the
+      // rider's ride just because the screen popped. Treat this exactly
+      // like 'back_to_home' — keep the trip alive and let the driver
+      // resume from DriverHomeScreen.
+      debugPrint('[DriverOnline] trip screen popped with result=$result — treating as back_to_home (trip preserved)');
+      _goBackToHomeWithTrip();
     }
   }
 

@@ -661,6 +661,24 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         # Same canonical status -- skip processing to avoid duplicate events
         return _trip_dict_for_user(trip, user)
 
+    # Cancel trace: log every request that transitions a trip TO cancelled
+    # with the full caller identity so we can finally track down the
+    # phantom-cancel bug that the rider keeps reporting. Shows up in
+    # Railway as "[CancelTrace]" — grep for it.
+    if canonical_new == "cancelled":
+        _caller_kind = (
+            "rider" if user.id == trip.rider_id
+            else "driver" if user.id == trip.driver_id
+            else user_role or "unknown"
+        )
+        logging.warning(
+            "[CancelTrace] trip=%d from=%r raw_status=%r caller_user=%d "
+            "caller_role=%s caller_kind=%s rider=%d driver=%s",
+            trip.id, canonical_current, status, user.id,
+            user_role or "(none)", _caller_kind,
+            trip.rider_id, trip.driver_id,
+        )
+
     # Guard: prevent rider (or stale client request) from cancelling a trip
     # that already has a driver assigned.  Only the assigned driver or an
     # admin/dispatch user may cancel after acceptance.

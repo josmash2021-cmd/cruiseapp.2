@@ -3,11 +3,14 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../../config/feature_flags.dart';
 import '../../config/mapbox_config.dart';
+import '../../config/page_transitions.dart';
 import '../../models/airport_models.dart' show AirportSelection;
+import '../../models/lat_lng.dart' as model_ll;
 import '../../services/directions_service.dart' show RouteResult;
 import '../../services/places_service.dart' show PlaceDetails;
 import '../../state/rider_trip_controller.dart';
 import '../ride_request_screen.dart';
+import '../rider_tracking_screen.dart';
 import 'rider_flow_cards.dart';
 import 'rider_flow_phase.dart';
 
@@ -82,6 +85,15 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   mapbox.PointAnnotation? _dropoffAnnot;
   bool _cameraFitted = false;
 
+  // ── Tracking handoff ────────────────────────────────────────────────
+  // Day 3: once the backend marks the driver as on-the-way, we push
+  // the existing RiderTrackingScreen on top of the shell so its
+  // battle-tested tracking logic (RTDB driver GPS, route erasing,
+  // arrived/in_trip/near-destination/completed state machine) runs
+  // unchanged. The shell is PRESENTATION-ONLY for P01-P05 — we do
+  // NOT reimplement the tracking screen, we just reuse it from here.
+  bool _trackingPushed = false;
+
   @override
   void initState() {
     super.initState();
@@ -130,6 +142,21 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   void _onTripStateChange() {
     if (!mounted) return;
     final innerPhase = _ctrl.state.phase;
+
+    // Handoff: once the backend marks the driver as on-the-way, we push
+    // the existing RiderTrackingScreen on top so its real-time RTDB GPS
+    // + state machine runs unchanged. This is intentionally the same
+    // handoff point the old RideRequestScreen uses.
+    if (!_trackingPushed &&
+        (innerPhase == RiderPhase.driverArriving ||
+            innerPhase == RiderPhase.onTrip)) {
+      _trackingPushed = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pushRiderTrackingScreen();
+      });
+      return;
+    }
+
     final next = _mapInnerPhaseToShellPhase(innerPhase);
     if (next != _shellPhase) {
       setState(() => _shellPhase = next);
@@ -138,6 +165,49 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
     // user edits the trip in the choose-vehicle phase. Re-sync on every
     // state change — the manager caches the annotations so this is cheap.
     _syncMapAnnotations();
+  }
+
+  /// Push the existing [RiderTrackingScreen] onto the shell's navigator.
+  /// Every field is read from the current [RiderTripController] state so
+  /// we hand off identical data to what the old flow used to pass. When
+  /// the tracking screen pops (trip completed, cancelled, or back-home),
+  /// the shell pops too — the user ends up back on the home screen.
+  Future<void> _pushRiderTrackingScreen() async {
+    final state = _ctrl.state;
+    final pickup = state.pickup;
+    final dropoff = state.dropoff;
+    if (pickup == null || dropoff == null) return;
+    final driver = state.driver;
+
+    final routePts = state.route?.points
+        .map((p) => model_ll.LatLng(p.latitude, p.longitude))
+        .toList();
+
+    await Navigator.of(context).push(
+      slideUpFadeRoute(
+        RiderTrackingScreen(
+          pickupLatLng: model_ll.LatLng(pickup.lat, pickup.lng),
+          dropoffLatLng: model_ll.LatLng(dropoff.lat, dropoff.lng),
+          routePoints: routePts,
+          driverName: driver?.name ?? 'Driver',
+          driverPhone: driver?.phone,
+          driverRating: driver?.rating ?? 0,
+          vehicleMake: driver?.vehicleMake ?? '',
+          vehicleModel: driver?.vehicleModel ?? '',
+          vehicleColor: driver?.vehicleColor ?? '',
+          vehiclePlate: driver?.vehiclePlate ?? '',
+          vehicleYear: driver?.vehicleYear ?? '',
+          pickupLabel: state.pickupLabel,
+          dropoffLabel: state.dropoffLabel,
+          tripId: state.tripId,
+          driverPhotoUrl: driver?.photoUrl,
+          driverId: driver?.id,
+        ),
+      ),
+    );
+    // Tracking screen popped — trip is either completed or cancelled,
+    // either way close the shell so the rider returns to home.
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   // ═══════════════════════════════════════════════════════════════

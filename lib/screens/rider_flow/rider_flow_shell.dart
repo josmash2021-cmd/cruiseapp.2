@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -137,6 +139,15 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
 
   RiderFlowPhase _shellPhase = RiderFlowPhase.chooseVehicle;
 
+  /// Minimum time a card must stay on screen before the shell swaps it
+  /// for another. Protects against the rider seeing three cards strobe
+  /// in 400 ms when the backend matches a driver very quickly
+  /// (searchingDriver → driverAssigned → driverArriving).
+  static const Duration _minPhaseDisplay = Duration(milliseconds: 900);
+  DateTime _lastPhaseSwitchAt =
+      DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _pendingPhaseSwitch;
+
   // ── Mapbox — single instance alive for the whole flow ──────────────
   mapbox.MapboxMap? _map;
   mapbox.PolylineAnnotationManager? _polylineMgr;
@@ -199,6 +210,7 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
 
   @override
   void dispose() {
+    _pendingPhaseSwitch?.cancel();
     if (_ctrlRef != null) {
       _ctrl.removeListener(_onTripStateChange);
       _ctrl.dispose();
@@ -217,25 +229,53 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
     // Handoff: once the backend marks the driver as on-the-way, we push
     // the existing RiderTrackingScreen on top so its real-time RTDB GPS
     // + state machine runs unchanged. This is intentionally the same
-    // handoff point the old RideRequestScreen uses.
+    // handoff point the old RideRequestScreen uses. Wait out any
+    // pending phase switch first so the driverFound / driverEnRoute
+    // cards don't get cut mid-fade by the push.
     if (!_trackingPushed &&
         (innerPhase == RiderPhase.driverArriving ||
             innerPhase == RiderPhase.onTrip)) {
       _trackingPushed = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Give P04/P05 (driverFound + driverEnRoute) a minimum of ~1.6 s
+      // total on screen before we push the tracking screen so the user
+      // sees the celebration + driver info land smoothly, not a rip.
+      Future.delayed(const Duration(milliseconds: 1600), () {
         if (mounted) _pushRiderTrackingScreen();
       });
       return;
     }
 
-    final next = _mapInnerPhaseToShellPhase(innerPhase);
-    if (next != _shellPhase) {
-      setState(() => _shellPhase = next);
-    }
-    // Route / pickup / dropoff may arrive after the initial seed if the
-    // user edits the trip in the choose-vehicle phase. Re-sync on every
-    // state change — the manager caches the annotations so this is cheap.
+    // Re-sync the map annotations on every state change — route,
+    // pickup, and dropoff can land after the initial seed.
     _syncMapAnnotations();
+
+    final next = _mapInnerPhaseToShellPhase(innerPhase);
+    if (next == _shellPhase) return;
+    _schedulePhaseSwitch(next);
+  }
+
+  /// Swap the visible card, but respect [_minPhaseDisplay] so no card
+  /// appears / disappears in less than one fade cycle. Prevents strobe
+  /// when the backend emits 3 phases in 400 ms.
+  void _schedulePhaseSwitch(RiderFlowPhase next) {
+    final now = DateTime.now();
+    final sinceLast = now.difference(_lastPhaseSwitchAt);
+    _pendingPhaseSwitch?.cancel();
+    if (sinceLast >= _minPhaseDisplay) {
+      setState(() => _shellPhase = next);
+      _lastPhaseSwitchAt = now;
+      return;
+    }
+    final delay = _minPhaseDisplay - sinceLast;
+    _pendingPhaseSwitch = Timer(delay, () {
+      if (!mounted) return;
+      // Re-derive "next" in case the inner controller has advanced
+      // further during the wait — we always show the latest phase.
+      final latest = _mapInnerPhaseToShellPhase(_ctrl.state.phase);
+      if (latest == _shellPhase) return;
+      setState(() => _shellPhase = latest);
+      _lastPhaseSwitchAt = DateTime.now();
+    });
   }
 
   /// Push the existing [RiderTrackingScreen] onto the shell's navigator.
@@ -458,6 +498,14 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
       backgroundColor: const Color(0xFF0A0D14),
       body: Stack(
         children: [
+          // ── Dark backdrop under the map ────────────────────────────
+          // Guarantees the bottom layer is always black-navy, so even
+          // if the Mapbox tiles take a frame to paint after style
+          // load, nothing ever flashes white/grey through.
+          const Positioned.fill(
+            child: ColoredBox(color: Color(0xFF0A0D14)),
+          ),
+
           // ── Shared map layer ───────────────────────────────────────
           Positioned.fill(
             child: RepaintBoundary(
@@ -478,31 +526,72 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
             ),
           ),
 
+          // ── Top gradient scrim (subtle, prevents icon flash) ──────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 140,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFF0A0D14).withValues(alpha: 0.85),
+                      const Color(0xFF0A0D14).withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           // ── Bottom sheet slot — AnimatedSwitcher with fade + slide ─
+          // Wrapped in AnimatedSize + Align so different-height cards
+          // smoothly resize their container instead of jumping. The
+          // switcher's layoutBuilder keeps outgoing + incoming cards
+          // bottom-aligned so they overlap cleanly during the fade.
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 320),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, anim) {
-                    final slide = Tween<Offset>(
-                      begin: const Offset(0, 0.08),
-                      end: Offset.zero,
-                    ).animate(anim);
-                    return FadeTransition(
-                      opacity: anim,
-                      child: SlideTransition(
-                        position: slide,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: _buildCardForPhase(_shellPhase),
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 380),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.bottomCenter,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 420),
+                    reverseDuration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    layoutBuilder: (current, previous) {
+                      return Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: <Widget>[
+                          ...previous,
+                          if (current != null) current,
+                        ],
+                      );
+                    },
+                    transitionBuilder: (child, anim) {
+                      final slide = Tween<Offset>(
+                        begin: const Offset(0, 0.06),
+                        end: Offset.zero,
+                      ).animate(anim);
+                      return FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: slide,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _buildCardForPhase(_shellPhase),
+                  ),
                 ),
               ),
             ),

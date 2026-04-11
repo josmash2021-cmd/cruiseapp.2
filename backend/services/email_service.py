@@ -43,13 +43,17 @@ def _shell(title: str, body_html: str) -> str:
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{BRAND_BG};padding:40px 14px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:{BRAND_CARD};border-radius:18px;overflow:hidden;border:1px solid rgba(232,197,71,.22);box-shadow:0 0 0 1px rgba(232,197,71,.08),0 12px 40px rgba(232,197,71,.18),0 24px 80px rgba(232,197,71,.12),0 40px 120px rgba(0,0,0,.6);">
-<tr><td style="padding:26px 30px;border-bottom:1px solid rgba(232,197,71,.12);background:linear-gradient(180deg,rgba(232,197,71,.04) 0%,rgba(232,197,71,0) 100%);">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td style="vertical-align:middle;padding-right:12px;">
-<div style="width:42px;height:42px;border-radius:50%;border:2px solid {BRAND_GOLD};display:inline-block;line-height:38px;text-align:center;font-size:22px;">🚗</div>
+<tr><td align="center" style="padding:30px 30px 24px;border-bottom:1px solid rgba(232,197,71,.14);background:linear-gradient(180deg,rgba(232,197,71,.06) 0%,rgba(232,197,71,0) 100%);">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
+<td style="vertical-align:middle;padding-right:14px;">
+<div style="width:56px;height:56px;border-radius:50%;border:2.5px solid {BRAND_GOLD};background:#000;display:inline-block;text-align:center;line-height:0;box-shadow:0 0 0 4px rgba(232,197,71,.08),0 6px 22px rgba(232,197,71,.25);">
+<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 64 64" style="display:inline-block;vertical-align:middle;margin-top:10px;">
+<path fill="{BRAND_GOLD}" d="M52.5 30.2l-2.8-8.4c-.7-2-2.5-3.4-4.6-3.4H18.9c-2.1 0-3.9 1.4-4.6 3.4l-2.8 8.4c-1.4.6-2.3 1.9-2.3 3.4v11c0 1.1.9 2 2 2h2.3c1.1 0 2-.9 2-2v-2h32.9v2c0 1.1.9 2 2 2h2.3c1.1 0 2-.9 2-2v-11c.1-1.5-.9-2.8-2.2-3.4zM18.9 22h26.2l2.7 8H16.2l2.7-8zM17.5 39.5c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5zm29 0c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5z"/>
+</svg>
+</div>
 </td>
 <td style="vertical-align:middle;">
-<div style="font-size:26px;font-weight:800;letter-spacing:2px;color:{BRAND_GOLD};font-family:Georgia,'Times New Roman',serif;">CRUISE</div>
+<div style="font-size:30px;font-weight:900;letter-spacing:3px;color:{BRAND_GOLD};font-family:Georgia,'Times New Roman',serif;text-shadow:0 0 20px rgba(232,197,71,.35);">CRUISE</div>
 </td>
 </tr></table>
 </td></tr>
@@ -64,11 +68,11 @@ Recibiste este correo porque reservaste un viaje con Cruise.
 
 
 def _h1(text: str) -> str:
-    return f'<h1 style="margin:0 0 12px 0;font-size:22px;font-weight:700;color:{BRAND_GOLD};">{text}</h1>'
+    return f'<h1 style="margin:0 0 14px 0;font-size:24px;font-weight:800;color:{BRAND_GOLD};letter-spacing:-.01em;text-shadow:0 0 18px rgba(232,197,71,.2);">{text}</h1>'
 
 
 def _p(text: str) -> str:
-    return f'<p style="margin:0 0 14px 0;font-size:15px;line-height:1.55;color:{BRAND_TEXT};">{text}</p>'
+    return f'<p style="margin:0 0 14px 0;font-size:15px;line-height:1.55;color:rgba(245,230,180,.92);">{text}</p>'
 
 
 def _kv_row(label: str, value: str) -> str:

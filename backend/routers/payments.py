@@ -860,6 +860,10 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     _web_key_check(request)
 
     body = await request.json()
+    logging.info(
+        "[WebBooking] RAW scheduled fields: scheduled_at=%r scheduled_date=%r scheduled_time=%r",
+        body.get("scheduled_at"), body.get("scheduled_date"), body.get("scheduled_time"),
+    )
     # Accept both flat and nested payload shapes (Shopify widget sends nested)
     pickup_obj = body.get("pickup") if isinstance(body.get("pickup"), dict) else {}
     dropoff_obj = body.get("dropoff") if isinstance(body.get("dropoff"), dict) else {}
@@ -885,6 +889,9 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     guest_last_name = (body.get("rider_last_name") or "").strip()
     guest_phone = (body.get("rider_phone") or "").strip()
     guest_email = (body.get("rider_email") or "").strip().lower()
+    guest_lang = (body.get("rider_lang") or "en").strip().lower()[:2]
+    if guest_lang not in ("en", "es"):
+        guest_lang = "en"
     if not guest_first_name and not guest_last_name and contact_name and contact_name != "Web Booking":
         _parts = contact_name.strip().split(" ", 1)
         guest_first_name = _parts[0]
@@ -954,29 +961,38 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     #   2) Hardcoding "+00:00" assumed the widget always sent UTC; we try
     #      a couple of timezone interpretations so local-time payloads do
     #      not end up shifted.
+    # Prefer the widget-computed ISO string (which carries the user's local
+    # timezone offset). Fall back to scheduled_date + scheduled_time, which
+    # the old widget sent without timezone info — we interpret those as UTC
+    # which is wrong but kept as a safety net for legacy clients.
     scheduled_at = None
-    if scheduled_date and scheduled_time:
+    raw_iso = (body.get("scheduled_at") or "").strip()
+    parsed: datetime | None = None
+    if raw_iso:
+        try:
+            parsed = datetime.fromisoformat(raw_iso.replace("Z", "+00:00"))
+        except Exception:
+            parsed = None
+    if parsed is None and scheduled_date and scheduled_time:
         raw = f"{scheduled_date}T{scheduled_time}"
-        parsed: datetime | None = None
-        # Accept: ISO with offset, ISO without offset (assume UTC), or HH:MM only
         for candidate in (raw, f"{raw}:00", f"{raw}:00+00:00"):
             try:
                 parsed = datetime.fromisoformat(candidate)
                 break
             except Exception:
                 continue
-        if parsed is not None:
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            now_utc = datetime.now(timezone.utc)
-            if parsed - now_utc < timedelta(minutes=3):
-                logging.info(
-                    "[WebBooking] scheduled_at %s is within 3 min of now — treating as immediate",
-                    parsed.isoformat(),
-                )
-                scheduled_at = None
-            else:
-                scheduled_at = parsed
+    if parsed is not None:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        if parsed - now_utc < timedelta(minutes=3):
+            logging.info(
+                "[WebBooking] scheduled_at %s is within 3 min of now — treating as immediate",
+                parsed.isoformat(),
+            )
+            scheduled_at = None
+        else:
+            scheduled_at = parsed
 
     fare = fare_cents / 100.0 if fare_cents else None
     notes_text = f"Web booking \u2014 {contact_name}"
@@ -1010,6 +1026,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             guest_last_name=guest_last_name or None,
             guest_phone=guest_phone or None,
             guest_email=guest_email or None,
+            guest_lang=guest_lang or "en",
             payment_status="held" if payment_intent_id else "unpaid",
         )
         db.add(trip)

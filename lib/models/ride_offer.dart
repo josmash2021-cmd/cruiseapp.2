@@ -103,9 +103,19 @@ class RideOffer {
       tripId: (json['trip_id'] as num?)?.toInt() ??
               (json['tripId'] as num?)?.toInt(),
       scheduledAt: json['scheduled_at'] != null
-          ? DateTime.tryParse(json['scheduled_at'].toString())
+          ? DateTime.tryParse(json['scheduled_at'].toString())?.toLocal()
           : null,
-      isScheduled: json['scheduled_at'] != null,
+      // A web booking for "right now" still ships with scheduled_at set,
+      // which used to flip every such offer into the reserved layout.
+      // Only flag as scheduled if the pickup is at least 3 minutes in the
+      // future — immediate bookings render as normal on-demand trips.
+      isScheduled: () {
+        final raw = json['scheduled_at'];
+        if (raw == null) return false;
+        final dt = DateTime.tryParse(raw.toString())?.toLocal();
+        if (dt == null) return false;
+        return dt.difference(DateTime.now()).inMinutes >= 3;
+      }(),
       isAirport: json['is_airport'] == true,
       airportCode: json['airport_code'] as String?,
     );

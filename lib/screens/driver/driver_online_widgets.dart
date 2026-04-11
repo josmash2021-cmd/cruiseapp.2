@@ -1086,11 +1086,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const rejectRed = Color(0xFFE53935);
 
     // ── Scheduled ride detection ──
+    // A web booking for "right now" still has `scheduled_at` set (to the
+    // current moment), but from the driver's perspective it is an on-demand
+    // trip and must NOT show the "VIAJE RESERVADO" badge. Only treat the
+    // offer as scheduled when the pickup time is at least 3 minutes in the
+    // future — truly-future bookings keep the reservation badge and the
+    // purple accent; immediate bookings fall through to the normal layout.
     final scheduledAtRaw = offer['scheduled_at'];
     final DateTime? scheduledAt = scheduledAtRaw != null
-        ? DateTime.tryParse(scheduledAtRaw.toString())
+        ? DateTime.tryParse(scheduledAtRaw.toString())?.toLocal()
         : null;
-    final bool isScheduled = scheduledAt != null;
+    final bool isScheduled = scheduledAt != null &&
+        scheduledAt.difference(DateTime.now()).inMinutes >= 3;
     final bool isAirportTrip = offer['is_airport'] == true;
 
     return Column(
@@ -1390,21 +1397,30 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   double _offerCardHeight(BuildContext context) {
     // Tight fit — no wasted space below the Accept button
     final botPad = MediaQuery.of(context).padding.bottom;
-    // Check if current offer is scheduled — needs extra height for badge + time
+    // Only reserve extra height for the schedule badge when the trip is
+    // actually in the future (same 3-minute threshold as the card UI).
+    // Immediate web bookings must use the standard height.
     double extra = 0;
     if (_pendingOffers.isNotEmpty) {
       final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
       final offer = _pendingOffers[safeIdx];
-      if (offer['scheduled_at'] != null) extra = 62;
+      final raw = offer['scheduled_at'];
+      if (raw != null) {
+        final dt = DateTime.tryParse(raw.toString())?.toLocal();
+        if (dt != null && dt.difference(DateTime.now()).inMinutes >= 3) {
+          extra = 62;
+        }
+      }
     }
     return 275 + extra + (botPad > 20 ? botPad - 10 : 0);
   }
 
-  /// Format a scheduled ride time relative to now.
+  /// Format a scheduled ride time relative to now — always 12-hour clock
+  /// with AM/PM suffix (e.g. "8:15 PM"), never 24-hour.
   String _formatScheduledTime(DateTime dt) {
     final now = DateTime.now();
     final diff = dt.difference(now);
-    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final timeStr = _format12Hour(dt);
     if (diff.isNegative) {
       return 'Hoy a las $timeStr (ahora)';
     } else if (diff.inMinutes <= 60) {
@@ -1415,6 +1431,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       return '${dt.day} ${months[dt.month - 1]} a las $timeStr';
     }
+  }
+
+  /// Returns "h:mm AM/PM" — 12-hour clock with zero-padded minutes.
+  String _format12Hour(DateTime dt) {
+    final int h24 = dt.hour;
+    final int h12 = h24 == 0 ? 12 : (h24 > 12 ? h24 - 12 : h24);
+    final String suffix = h24 < 12 ? 'AM' : 'PM';
+    final String mm = dt.minute.toString().padLeft(2, '0');
+    return '$h12:$mm $suffix';
   }
 
   /// Chip widget for time/distance display on offer card (compact).

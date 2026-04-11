@@ -1220,7 +1220,12 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   String _formatScheduledTime(DateTime dt) {
     final now = DateTime.now();
     final diff = dt.difference(now);
-    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    // Always use 12-hour clock with AM/PM — never 24-hour.
+    final h24 = dt.hour;
+    final h12 = h24 == 0 ? 12 : (h24 > 12 ? h24 - 12 : h24);
+    final suffix = h24 < 12 ? 'AM' : 'PM';
+    final mm = dt.minute.toString().padLeft(2, '0');
+    final timeStr = '$h12:$mm $suffix';
     if (diff.isNegative) {
       return 'Hoy a las $timeStr (ahora)';
     } else if (diff.inMinutes <= 60) {

@@ -245,11 +245,21 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
 
 
 async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
-    """Actually cancel the user's active trip and return confirmation message."""
+    """Cancel the user's active trip and return confirmation message.
+
+    Only touches on-demand trips in early phases (requested / accepted /
+    driver_en_route). Refuses to cancel a trip once the driver has arrived
+    at pickup or is mid-ride — at that point the rider must talk to the
+    driver or use the in-app cancel flow which applies fees. This prevents
+    a support chat slip-up from killing an active ride.
+    """
     result = await db.execute(
         select(Trip).where(
             Trip.rider_id == user_id,
-            Trip.status.notin_(["completed", "canceled"]),
+            # Canonical status uses double-L "cancelled" — the old one-L
+            # value was a legacy bug that let this query pick up trips
+            # that had already been cancelled.
+            Trip.status.notin_(["completed", "cancelled", "canceled"]),
         ).order_by(Trip.created_at.desc()).limit(1)
     )
     trip = result.scalar_one_or_none()
@@ -258,13 +268,40 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
             return "No tienes un viaje activo en este momento para cancelar."
         return "You don't have an active trip to cancel right now."
 
-    trip.status = "canceled"  # type: ignore[assignment]
-    trip.cancel_reason = "Canceled via support chat"  # type: ignore[assignment]
-    trip.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)  # type: ignore[assignment]
+    # Refuse to cancel a trip that has already progressed past dispatch.
+    if trip.status in ("arrived", "in_trip", "in_progress"):
+        logging.warning(
+            "[SupportBot] Refusing to cancel trip %d in status %r — user must use in-app flow",
+            trip.id, trip.status,
+        )
+        if lang.startswith("es"):
+            return (
+                f"Tu viaje #{trip.id} ya está en curso (el conductor está en el punto "
+                f"de recogida o manejando hacia el destino). Por seguridad no puedo "
+                f"cancelarlo desde aquí — por favor usa el botón de cancelar en la "
+                f"pantalla del viaje o habla directamente con el conductor."
+            )
+        return (
+            f"Your trip #{trip.id} has already progressed (the driver is at the "
+            f"pickup or driving). For safety I can't cancel it from here — please "
+            f"use the cancel button in the trip screen or talk to the driver directly."
+        )
+
+    trip.status = "cancelled"  # canonical double-L
+    trip.cancel_reason = "auto:support_chat_bot_confirmed"
+    trip.updated_at = datetime.now(timezone.utc)
     await db.flush()
+    logging.warning(
+        "[AutoCancel/SupportBot] trip=%d user=%d prev_status=%r — cancelled via support chat confirmation",
+        trip.id, user_id, trip.status,
+    )
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_trip_status(trip_id=int(trip.id), status="canceled", cancel_reason=str(trip.cancel_reason))
+            firestore_sync.sync_trip_status(
+                trip_id=int(trip.id),
+                status="cancelled",
+                cancel_reason=str(trip.cancel_reason),
+            )
         except Exception:
             pass
     if lang.startswith("es"):
@@ -1269,9 +1306,25 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         agent = chat.agent_name or "Agente"
         await asyncio.sleep(_rng.uniform(1.5, 3.0))
         t_lower = user_msg.lower().strip()
-        yes_words = ["si", "yes", "confirm", "confirmar", "confirmo", "ok", "dale", "proceed", "adelante", "cancelar", "cancel", "sure", "claro"]
-        no_words = ["no", "nope", "abort", "ya no", "no quiero", "never mind", "nevermind", "keep", "mantener", "conservar"]
-        if any(w in t_lower for w in yes_words):
+        # Split into tokens so "si" doesn't match "siento", "ok" doesn't match
+        # "okay broken clock", and "cancel" doesn't match a sentence like
+        # "no quiero cancel" — we check whole words, not substrings.
+        _tokens = set(re.findall(r"[a-záéíóúñ]+", t_lower))
+        yes_words = {"si", "sí", "yes", "yep", "yeah", "confirm", "confirmar",
+                     "confirmo", "ok", "okay", "dale", "proceed", "adelante",
+                     "sure", "claro", "por favor"}
+        no_words = {"no", "nope", "abort", "never", "nevermind", "keep",
+                    "mantener", "conservar"}
+        # Check NO first — "no quiero cancelar" must be treated as "no",
+        # not as yes because the sentence contains "cancelar".
+        if _tokens & no_words:
+            chat.bot_phase = "agent_active"
+            if lang.startswith("es"):
+                resp = f"Perfecto {user_name}, conservaremos tu viaje. Si necesitas algo más, aquí estoy."
+            else:
+                resp = f"Perfect {user_name}, I'll keep your trip active. If you need anything else, I'm here."
+            replies.append({"role": "bot", "message": resp, "sender_name": agent})
+        elif _tokens & yes_words:
             cancel_result = await _bot_cancel_trip(chat.user_id, db, lang)
             chat.bot_phase = "agent_active"
             if lang.startswith("es"):

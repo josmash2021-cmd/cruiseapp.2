@@ -335,11 +335,13 @@ class DataGuardian:
                 for row in stuck:
                     trip_id, status, created_at = row
                     logger.warning(
-                        f"⚠️ STUCK TRIP: id={trip_id} stuck in 'requested' for 30+ min — marking as timeout"
+                        "[AutoCancel/Guardian] STUCK trip=%d prev_status=%r created_at=%s "
+                        "(30+ min in 'requested' with no pending offer) — auto-cancel",
+                        trip_id, status, created_at,
                     )
                     await session.execute(text("""
-                        UPDATE trips 
-                        SET status = 'cancelled', cancel_reason = 'timeout_no_driver'
+                        UPDATE trips
+                        SET status = 'cancelled', cancel_reason = 'auto:guardian_timeout_no_driver'
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id})
                     self._trips_fixed += 1
@@ -374,12 +376,13 @@ class DataGuardian:
                 for row in ghosts:
                     trip_id, status, driver_id, updated_at = row
                     logger.warning(
-                        f"👻 GHOST TRIP: id={trip_id} status='{status}' driver={driver_id} "
-                        f"no update since {updated_at} — auto-cancelling"
+                        "[AutoCancel/Guardian-Ghost] trip=%d prev_status=%r driver=%s "
+                        "updated_at=%s (180+ min no update) — auto-cancel",
+                        trip_id, status, driver_id, updated_at,
                     )
                     await session.execute(text("""
                         UPDATE trips
-                        SET status = 'cancelled', cancel_reason = 'ghost_stale_no_update'
+                        SET status = 'cancelled', cancel_reason = 'auto:guardian_ghost_stale'
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id})
                     self._trips_fixed += 1

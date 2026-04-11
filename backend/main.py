@@ -704,12 +704,17 @@ async def _scheduled_ride_dispatcher():
                     # Expired: ride is more than 5 min past scheduled time
                     # --------------------------------------------------
                     if minutes_until < -5:
+                        _prev = trip.status
                         trip.status = "cancelled"
-                        trip.cancel_reason = "No driver found for your scheduled ride"
+                        trip.cancel_reason = "auto:scheduler_expired_no_driver"
+                        trip.updated_at = datetime.now(timezone.utc)
                         await db.commit()
-                        logging.info(
-                            "[Scheduler] Auto-cancelled expired scheduled trip %d (%.0f min past)",
-                            trip.id, abs(minutes_until),
+                        logging.warning(
+                            "[AutoCancel/Scheduler] trip=%d prev_status=%r driver_id=%s "
+                            "scheduled_at=%s (%.0f min past) — no driver picked it up",
+                            trip.id, _prev, trip.driver_id,
+                            trip.scheduled_at.isoformat() if trip.scheduled_at else None,
+                            abs(minutes_until),
                         )
                         # Notify rider
                         try:
@@ -990,12 +995,17 @@ async def _scheduled_ride_reminder_loop():
                     # No-show / expired: >5 min past with no pickup
                     # --------------------------------------------------
                     if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
+                        _prev = trip.status
                         trip.status = "cancelled"
-                        trip.cancel_reason = "No driver found for your scheduled ride"
+                        trip.cancel_reason = "auto:reminder_past_scheduled_no_pickup"
+                        trip.updated_at = datetime.now(timezone.utc)
                         await db.commit()
-                        logging.info(
-                            "[Reminder] Auto-cancelled past-due trip %d (%.0f min past)",
-                            trip.id, abs(minutes_until),
+                        logging.warning(
+                            "[AutoCancel/Reminder] trip=%d prev_status=%r driver_id=%s "
+                            "scheduled_at=%s (%.0f min past) — driver assigned but never picked up",
+                            trip.id, _prev, trip.driver_id,
+                            trip.scheduled_at.isoformat() if trip.scheduled_at else None,
+                            abs(minutes_until),
                         )
                         # Notify rider
                         try:

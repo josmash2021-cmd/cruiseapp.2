@@ -847,7 +847,7 @@ WEB_SYSTEM_USER_ID = int(os.getenv("WEB_SYSTEM_USER_ID", "0"))
 
 def _web_key_check(request: Request):
     auth = request.headers.get("authorization", "")
-    logging.warning("[WebKeyCheck] auth_header=%r key_set=%s", auth[:40] if auth else "", bool(WEB_CHECKOUT_KEY))
+    logging.debug("[WebKeyCheck] auth_header=%r key_set=%s", auth[:40] if auth else "", bool(WEB_CHECKOUT_KEY))
     if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
         raise HTTPException(401, "Unauthorized")
     received = auth.split(" ", 1)[1]
@@ -1165,7 +1165,7 @@ async def _web_dispatch_to_drivers(
             )
             all_drivers = result.scalars().all()
             if not all_drivers:
-                logging.warning("[WebDispatch] No online drivers for trip %d", trip_id)
+                logging.info("[WebDispatch] No online drivers for trip %d — rider will see searching state", trip_id)
                 return
 
             # Sort by distance

@@ -275,13 +275,15 @@ extension _RideRequestController on _RideRequestScreenState {
 
           if (!_cinematicDone && !_cinematicRunning) {
             _drawRoute();
-          } else if (isRealRoute && _routeAnnot == null) {
-            // Real route arrived after/during cinematic — draw polyline
+          } else if (isRealRoute && _routeAnnot == null && !_cinematicRunning) {
+            // Real route arrived AFTER the cinematic finished but the
+            // polyline was never drawn (cinematic ran on the estimated
+            // 2-point route). Draw it now. The !_cinematicRunning guard
+            // prevents a DUPLICATE draw if this fires while the
+            // cinematic's own _animateGoldRoute is still in progress.
             final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
             _buildRouteMarkers();
             _animateGoldRoute(pts).then((_) {
-              // Real route finished drawing after the cinematic — if
-              // the sheet still hasn't faded in, do it now.
               if (mounted &&
                   _sheetCtrl.status == AnimationStatus.dismissed) {
                 _sheetCtrl.forward();

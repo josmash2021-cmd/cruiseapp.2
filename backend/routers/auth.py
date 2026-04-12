@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
+    ChatMessage,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
@@ -1207,6 +1208,102 @@ async def web_get_trips(request: Request, db: AsyncSession = Depends(get_db)):
         td["driver_name"] = driver_map.get(t.driver_id, "")
         out.append(td)
     return out
+
+
+# -- Web Chat (JWT-only, no API key) --------------------
+
+@router.post("/auth/web/chat/{trip_id}")
+async def web_send_chat(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Send chat message from web -- JWT only."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+
+    r = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user_id != trip.rider_id and user_id != trip.driver_id:
+        raise HTTPException(403, "Not a participant in this trip")
+
+    receiver_id = trip.driver_id if user_id == trip.rider_id else trip.rider_id
+    if not receiver_id:
+        raise HTTPException(400, "No counterpart on this trip")
+
+    msg = ChatMessage(trip_id=trip_id, sender_id=user_id, receiver_id=receiver_id, message=msg_text)
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+
+    # FCM push to receiver
+    try:
+        recv_r = await db.execute(select(User).where(User.id == receiver_id))
+        recv_user = recv_r.scalar_one_or_none()
+        if recv_user and recv_user.fcm_token:
+            sender_r = await db.execute(select(User).where(User.id == user_id))
+            sender_user = sender_r.scalar_one_or_none()
+            sender_name = f"{sender_user.first_name or ''} {sender_user.last_name or ''}".strip() if sender_user else "Rider"
+            _send_fcm_push(
+                recv_user.fcm_token,
+                title=f"Message from {sender_name}",
+                body=msg_text[:200],
+                data={"type": "chat_message", "trip_id": str(trip_id), "sender_role": "rider"},
+            )
+    except Exception:
+        pass
+
+    return {
+        "id": msg.id, "trip_id": msg.trip_id, "sender_id": msg.sender_id,
+        "receiver_id": msg.receiver_id, "sender_role": "rider",
+        "message": msg.message, "is_read": msg.is_read,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
+@router.get("/auth/web/chat/{trip_id}")
+async def web_get_chat(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Get chat messages for a trip -- JWT only."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+
+    r = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = r.scalar_one_or_none()
+    if not trip or (user_id != trip.rider_id and user_id != trip.driver_id):
+        raise HTTPException(403, "Not a participant in this trip")
+
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.trip_id == trip_id).order_by(ChatMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+    for m in messages:
+        if m.receiver_id == user_id and not m.is_read:
+            m.is_read = True
+    await db.commit()
+    return [
+        {"id": m.id, "sender_id": m.sender_id, "receiver_id": m.receiver_id,
+         "sender_role": "driver" if m.sender_id == trip.driver_id else "rider",
+         "message": m.message, "is_read": m.is_read,
+         "created_at": m.created_at.isoformat() if m.created_at else None}
+        for m in messages
+    ]
 
 
 # -- Photo Upload / Serve ------------------------------

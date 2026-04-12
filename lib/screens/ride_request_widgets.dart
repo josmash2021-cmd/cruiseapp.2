@@ -1225,13 +1225,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       left: 16,
       right: 16,
       bottom: 24,
-      child: AnimatedSlide(
+      // Pure fade — no slide. The card fades in smoothly over 420ms
+      // so it feels connected to the SearchingDriverScreen cross-fade
+      // that's happening at the same time.
+      child: AnimatedOpacity(
         duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutCubic,
-        offset: _searchingShowMap ? Offset.zero : const Offset(0, 1.2),
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 320),
-          opacity: _searchingShowMap ? 1.0 : 0.0,
+        curve: Curves.easeInOutCubic,
+        opacity: _searchingShowMap ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !_searchingShowMap,
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(28),

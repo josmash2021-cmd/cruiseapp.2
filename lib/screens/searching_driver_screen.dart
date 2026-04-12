@@ -528,8 +528,11 @@ Route<bool> searchingDriverRoute({
 }) {
   return PageRouteBuilder<bool>(
     opaque: false,
-    transitionDuration: const Duration(milliseconds: 280),
-    reverseTransitionDuration: const Duration(milliseconds: 220),
+    // Slower transitions so the cross-fade between "Confirming your
+    // ride" and the underlying "Finding driver" card feels smooth
+    // and connected — not step-by-step.
+    transitionDuration: const Duration(milliseconds: 420),
+    reverseTransitionDuration: const Duration(milliseconds: 420),
     pageBuilder: (_, __, ___) => SearchingDriverScreen(
       onCancel: onCancel,
       paymentCallback: paymentCallback,
@@ -539,7 +542,11 @@ Route<bool> searchingDriverRoute({
     ),
     transitionsBuilder: (_, anim, __, child) {
       return FadeTransition(
-        opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+        opacity: CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeInOutCubic,
+          reverseCurve: Curves.easeInOutCubic,
+        ),
         child: child,
       );
     },

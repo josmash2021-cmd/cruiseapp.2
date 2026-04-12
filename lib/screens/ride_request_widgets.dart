@@ -193,14 +193,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       left: 12,
       right: 12,
       bottom: 8,
-      child: AnimatedBuilder(
-        animation: _sheetCtrl,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(0, _sheetSlide.value * sheetH),
-            child: child,
-          );
-        },
+      // Pure FADE-IN: panel opacity is driven by _sheetOpacity, the
+      // ride option rows below pull from _rowOpacity0/1/2 with a
+      // staggered Interval so the container appears first and the
+      // rows fade in after it, one by one. No slide, no scale.
+      child: FadeTransition(
+        opacity: _sheetOpacity,
         child: Container(
           constraints: BoxConstraints(maxHeight: sheetH),
           clipBehavior: Clip.antiAlias,
@@ -384,26 +382,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               _buildShimmerCard(),
                               if (i < 2) const SizedBox(height: 6),
                             ]
-                          // Real options — staggered slide-up entrance
+                          // Real options — pure fade stagger driven by
+                          // the shared _sheetCtrl intervals (see
+                          // _rowOpacity0/1/2 in the state class). No
+                          // slide, no scale — fade only, so every row
+                          // appears smoothly one after the other as the
+                          // sheet itself fades in.
                           else
                             for (int i = 0; i < displayOptions.length; i++) ...[
-                              TweenAnimationBuilder<double>(
+                              FadeTransition(
                                 key: ValueKey('ride_opt_${displayOptions[i].id}'),
-                                tween: Tween(begin: 0.0, end: 1.0),
-                                duration: const Duration(milliseconds: 350),
-                                curve: Curves.easeOutCubic,
-                                builder: (context, val, child) {
-                                  // Stagger: each card waits 80ms * index
-                                  final delay = i * 0.15; // 0.15 of total duration per card
-                                  final progress = ((val - delay) / (1.0 - delay)).clamp(0.0, 1.0);
-                                  return Transform.translate(
-                                    offset: Offset(0, 20 * (1.0 - progress)),
-                                    child: Opacity(
-                                      opacity: progress,
-                                      child: child,
-                                    ),
-                                  );
-                                },
+                                opacity: i == 0
+                                    ? _rowOpacity0
+                                    : (i == 1 ? _rowOpacity1 : _rowOpacity2),
                                 child: GestureDetector(
                                   onTap: () {
                                     _ctrl.selectRideOption(displayOptions[i]);

@@ -253,8 +253,19 @@ extension _RideRequestController on _RideRequestScreenState {
     switch (s.phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
-        // Show bottom sheet immediately
-        _sheetCtrl.forward();
+        // NOTE: _sheetCtrl.forward() is NOT called here anymore.
+        // The user asked for the choose-a-ride card to fade in
+        // AFTER the route line finishes drawing, not while the
+        // cinematic is still running. _drawRoute() / the real-route
+        // branch below fires _sheetCtrl.forward() themselves as the
+        // final step so the panel + rows cascade in once the rider
+        // can see the full gold route.
+        //
+        // Fallback: if the cinematic has already completed and we
+        // are revisiting this phase, nudge the sheet on directly.
+        if (_cinematicDone && _sheetCtrl.status == AnimationStatus.dismissed) {
+          _sheetCtrl.forward();
+        }
         // Start cinematic + route draw as soon as any route is available.
         // Estimated route (2 points) triggers markers+tilt; real route
         // (>15 points) triggers the gold polyline draw.
@@ -268,7 +279,14 @@ extension _RideRequestController on _RideRequestScreenState {
             // Real route arrived after/during cinematic — draw polyline
             final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
             _buildRouteMarkers();
-            _animateGoldRoute(pts);
+            _animateGoldRoute(pts).then((_) {
+              // Real route finished drawing after the cinematic — if
+              // the sheet still hasn't faded in, do it now.
+              if (mounted &&
+                  _sheetCtrl.status == AnimationStatus.dismissed) {
+                _sheetCtrl.forward();
+              }
+            });
           }
         }
         // Mark options as loaded when rideOptions arrive

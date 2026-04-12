@@ -703,6 +703,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Camera stays tilted at 55° — no reset to flat
     _cinematicDone = true;
     _cinematicRunning = false;
+
+    // 7. Once the gold route is fully drawn, fade the choose-a-ride
+    //    panel in. Small 200 ms beat gives the user time to see the
+    //    finished line before the card appears, as requested.
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+    if (_sheetCtrl.status == AnimationStatus.dismissed) {
+      _sheetCtrl.forward();
+    }
   }
 
   void _applyMapCamera() {

@@ -188,8 +188,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Animation<double>? _searchBearingAnim;
 
   // ── Bottom sheet ──
+  //
+  // _sheetCtrl drives a FADE-ONLY entrance for the choose-a-ride panel.
+  // The controller runs 0 → 1 over ~900 ms and the panel + each of the
+  // three ride option rows pull their opacity from staggered Intervals
+  // on it, so the container fades in first and the rows fade in after,
+  // one by one, in quick succession. No slide, no scale — pure fade.
   late AnimationController _sheetCtrl;
-  late Animation<double> _sheetSlide;
+  late Animation<double> _sheetOpacity;
+  late Animation<double> _rowOpacity0;
+  late Animation<double> _rowOpacity1;
+  late Animation<double> _rowOpacity2;
 
   // ── Current location address ──
   String _currentAddress = '';
@@ -295,12 +304,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
     _sheetCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 900),
     );
-    _sheetSlide = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(parent: _sheetCtrl, curve: Curves.easeOutBack));
+    _sheetOpacity = CurvedAnimation(
+      parent: _sheetCtrl,
+      curve: const Interval(0.0, 0.45, curve: Curves.easeInOutCubic),
+    );
+    // Row stagger — row 0 starts first, row 2 last.
+    _rowOpacity0 = CurvedAnimation(
+      parent: _sheetCtrl,
+      curve: const Interval(0.35, 0.72, curve: Curves.easeOutCubic),
+    );
+    _rowOpacity1 = CurvedAnimation(
+      parent: _sheetCtrl,
+      curve: const Interval(0.48, 0.85, curve: Curves.easeOutCubic),
+    );
+    _rowOpacity2 = CurvedAnimation(
+      parent: _sheetCtrl,
+      curve: const Interval(0.60, 0.97, curve: Curves.easeOutCubic),
+    );
 
     _priceShimmerCtrl = AnimationController(
       vsync: this,

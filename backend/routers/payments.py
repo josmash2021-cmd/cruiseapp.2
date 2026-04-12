@@ -847,9 +847,12 @@ WEB_SYSTEM_USER_ID = int(os.getenv("WEB_SYSTEM_USER_ID", "0"))
 
 def _web_key_check(request: Request):
     auth = request.headers.get("authorization", "")
+    logging.warning("[WebKeyCheck] auth_header=%r key_set=%s", auth[:40] if auth else "", bool(WEB_CHECKOUT_KEY))
     if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
         raise HTTPException(401, "Unauthorized")
-    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+    received = auth.split(" ", 1)[1]
+    if received != WEB_CHECKOUT_KEY:
+        logging.warning("[WebKeyCheck] MISMATCH received=%r expected_len=%d", received[:10], len(WEB_CHECKOUT_KEY))
         raise HTTPException(401, "Invalid web checkout key")
 
 

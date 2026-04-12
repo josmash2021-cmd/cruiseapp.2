@@ -28,7 +28,6 @@ import 'map_picker_screen.dart';
 import 'map_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
-import 'rider_flow/rider_flow_shell.dart';
 import 'rider_tracking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'schedule_picker_sheet.dart';
@@ -808,7 +807,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (!mounted) return;
       Navigator.of(
         context,
-      ).push(slideUpFadeRoute(riderFlowEntry(applyPromo: true)));
+      ).push(slideUpFadeRoute(const RideRequestScreen(applyPromo: true)));
     }
   }
 
@@ -1207,7 +1206,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     LocalDataService.incrementDestinationUsage(address);
     Navigator.of(context)
         .push(
-          scaleExpandRoute(riderFlowEntry(initialDropoffAddress: address)),
+          scaleExpandRoute(RideRequestScreen(initialDropoffAddress: address)),
         )
         .then((_) {
           if (mounted) _loadSavedData();
@@ -1237,7 +1236,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         if (!mounted) return;
         await Navigator.of(
           context,
-        ).push(slideUpFadeRoute(riderFlowEntry()));
+        ).push(slideUpFadeRoute(const RideRequestScreen()));
         if (mounted) {
           _loadSavedData();
           setState(() => _dockIndex = 0);
@@ -1288,7 +1287,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
       Navigator.of(context).push(
         slideUpFadeRoute(
-          riderFlowEntry(
+          RideRequestScreen(
             isAirportTrip: true,
             airportSelection: airportResult,
           ),
@@ -1359,7 +1358,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     Navigator.of(context).push(
       slideUpFadeRoute(
-        riderFlowEntry(
+        RideRequestScreen(
           scheduledAt: scheduledAt,
           isAirportTrip: isAirport,
           initialPickupDetails: effectivePickup,
@@ -1381,7 +1380,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (!mounted) return;
     LocalDataService.incrementDestinationUsage(query);
     Navigator.of(context).push(
-      scaleExpandRoute(riderFlowEntry(initialDropoffAddress: query)),
+      scaleExpandRoute(RideRequestScreen(initialDropoffAddress: query)),
     );
   }
 

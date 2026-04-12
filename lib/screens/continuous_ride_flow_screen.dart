@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -9,6 +10,7 @@ import '../config/api_keys.dart';
 import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
+import '../services/directions_service.dart';
 import '../services/places_service.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 
@@ -67,9 +69,15 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
 
   // ── Map ──────────────────────────────────────────────────────────
   mapbox.MapboxMap? _map;
+  mapbox.PointAnnotationManager? _pointMgr;
+  mapbox.PolylineAnnotationManager? _polylineMgr;
+  mapbox.PointAnnotation? _pickupAnnot;
+  mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PolylineAnnotation? _routeAnnot;
+  Uint8List? _pickupPinBytes;
+  Uint8List? _dropoffPinBytes;
 
   // ── Pick dropoff state ──────────────────────────────────────────
-  // ignore: prefer_final_fields  — mutated by _onConfirmDropoff in next commit
   _FlowPhase _phase = _FlowPhase.pickingDropoff;
   LatLng _center = const LatLng(33.5186, -86.8104); // Pelham AL fallback
   String _dropoffAddress = '';
@@ -79,11 +87,22 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
   Timer? _geocodeDebounce;
   int _geocodeGen = 0;
 
+  // ── Transition state ────────────────────────────────────────────
+  LatLng? _pickupLatLng;
+  List<LatLng> _routePoints = [];
+
   final _places = PlacesService(ApiKeys.webServices);
+  final _directions = DirectionsService(ApiKeys.webServices);
 
   // Pin settle bounce (tiny scale pulse on map idle)
   late final AnimationController _settleCtrl;
   late final Animation<double> _settleAnim;
+
+  // Progressive route draw (1.2 s ticker clamped to current slice)
+  late final AnimationController _routeDrawCtrl;
+
+  // Pickup pin pop (0 → 1.1 → 1.0 spring, 600 ms)
+  late final AnimationController _pickupPopCtrl;
 
   @override
   void initState() {
@@ -97,6 +116,16 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
       TweenSequenceItem(tween: Tween(begin: 1.05, end: 1.0), weight: 50),
     ]).animate(CurvedAnimation(parent: _settleCtrl, curve: Curves.easeOut));
 
+    _routeDrawCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..addListener(_onRouteDrawTick);
+
+    _pickupPopCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..addListener(_onPickupPopTick);
+
     if (widget.initialLat != null && widget.initialLng != null) {
       _center = LatLng(widget.initialLat!, widget.initialLng!);
     } else {
@@ -108,7 +137,49 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
   void dispose() {
     _geocodeDebounce?.cancel();
     _settleCtrl.dispose();
+    _routeDrawCtrl.dispose();
+    _pickupPopCtrl.dispose();
     super.dispose();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Pin icon rasterizer — draws a simple gold circle with white
+  //  border directly to bytes so Mapbox can show it as a
+  //  PointAnnotation icon. No dependency on Flutter-tree rendering.
+  // ═══════════════════════════════════════════════════════════════
+  Future<Uint8List?> _buildPinBytes({required Color color}) async {
+    const size = 64.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(
+      recorder,
+      const Rect.fromLTWH(0, 0, size, size),
+    );
+    const center = Offset(size / 2, size / 2);
+    // Soft outer glow
+    canvas.drawCircle(
+      center,
+      size / 2 - 2,
+      Paint()
+        ..color = color.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // White ring
+    canvas.drawCircle(
+      center,
+      size / 2 - 6,
+      Paint()..color = Colors.white,
+    );
+    // Gold core
+    canvas.drawCircle(
+      center,
+      size / 2 - 10,
+      Paint()..color = color,
+    );
+    final img = await recorder
+        .endRecording()
+        .toImage(size.toInt(), size.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
   }
 
   /// When no initial coordinates are provided, snap to the rider's
@@ -202,14 +273,194 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
     });
   }
 
-  /// Tap "Confirm Dropoff Location" — kicks off the transition
-  /// animation in the NEXT commit. For now this is a stub so the
-  /// skeleton compiles.
-  void _onConfirmDropoff() {
+  /// Tap "Confirm Dropoff Location" — runs the full transition
+  /// sequence on the SAME map, then moves into choosingVehicle
+  /// (the card renders in the next commit).
+  ///
+  /// Sequence:
+  ///   t=0     Dropoff pin anchors as a PointAnnotation at _center
+  ///   t=100   Pickup pin annotation created at GPS (scale 0) and
+  ///           pop ticker starts (0 → 1.1 → 1.0 spring, 600 ms)
+  ///   t=200   Route draw ticker starts (progressive polyline,
+  ///           1200 ms to full length)
+  ///   t=300   Camera easeTo (pitch 55° + fit pickup+dropoff with
+  ///           bottom 320 px inset) — 800 ms
+  ///   t=1300  Phase flips to choosingVehicle (card will fade in
+  ///           once Phase 3 adds it)
+  Future<void> _onConfirmDropoff() async {
     if (_addressIsPlaceholder || _dropoffAddress.isEmpty) return;
-    // TODO: next commit — pin pop, route draw, camera fit, card fade
-    debugPrint('[ContinuousRideFlow] confirm dropoff → $_dropoffAddress '
-        '(${_center.latitude}, ${_center.longitude})');
+    if (_phase != _FlowPhase.pickingDropoff) return;
+    if (_map == null || _pointMgr == null || _polylineMgr == null) return;
+
+    // Snapshot dropoff coordinates before the central pin disappears.
+    final dropoff = LatLng(_center.latitude, _center.longitude);
+
+    // Resolve rider GPS for pickup. Fall back to dropoff minus a small
+    // offset if GPS is unavailable so the animation still plays.
+    LatLng pickup;
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 4));
+      pickup = LatLng(pos.latitude, pos.longitude);
+    } catch (_) {
+      pickup = LatLng(
+        dropoff.latitude + 0.004,
+        dropoff.longitude + 0.004,
+      );
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _phase = _FlowPhase.transitioning;
+      _pickupLatLng = pickup;
+    });
+
+    // Fetch route. If fetching fails, synthesize a 2-point straight
+    // line so the draw animation still plays and the rider can proceed.
+    RouteResult? route;
+    try {
+      route = await _directions.getRoute(
+        origin: pickup,
+        destination: dropoff,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    _routePoints = (route?.points != null && route!.points.length >= 2)
+        ? List<LatLng>.from(route.points)
+        : [pickup, dropoff];
+
+    // ── t=0  Drop dropoff pin as a map-anchored annotation ──
+    try {
+      if (_dropoffPinBytes != null) {
+        _dropoffAnnot = await _pointMgr!.create(
+          mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+              coordinates:
+                  mapbox.Position(dropoff.longitude, dropoff.latitude),
+            ),
+            image: _dropoffPinBytes!,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconSize: 1.0,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ContinuousRideFlow] dropoff pin create: $e');
+    }
+
+    // ── t=100  Pickup pin at scale 0, then start the pop ticker ──
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+    try {
+      if (_pickupPinBytes != null) {
+        _pickupAnnot = await _pointMgr!.create(
+          mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+              coordinates:
+                  mapbox.Position(pickup.longitude, pickup.latitude),
+            ),
+            image: _pickupPinBytes!,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconSize: 0.01,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ContinuousRideFlow] pickup pin create: $e');
+    }
+    _pickupPopCtrl.forward(from: 0);
+
+    // ── t=200  Start progressive route draw ──
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+    _routeDrawCtrl.forward(from: 0);
+
+    // ── t=300  Animate camera to 55° fit ──
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+    try {
+      final cam = await _map!.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(
+            coordinates:
+                mapbox.Position(pickup.longitude, pickup.latitude),
+          ),
+          mapbox.Point(
+            coordinates:
+                mapbox.Position(dropoff.longitude, dropoff.latitude),
+          ),
+        ],
+        mapbox.CameraOptions(pitch: 55.0),
+        mapbox.MbxEdgeInsets(top: 120, left: 60, bottom: 320, right: 60),
+        null,
+        null,
+      );
+      await _map!.easeTo(
+        cam,
+        mapbox.MapAnimationOptions(duration: 800),
+      );
+    } catch (e) {
+      debugPrint('[ContinuousRideFlow] camera fit: $e');
+    }
+
+    // ── t=1300  Transition phase to choosingVehicle ──
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    setState(() => _phase = _FlowPhase.choosingVehicle);
+  }
+
+  /// Pickup pin pop animation tick. Spring 0 → 1.1 → 1.0 over 600 ms
+  /// pushing the iconSize of the existing PointAnnotation.
+  void _onPickupPopTick() {
+    final annot = _pickupAnnot;
+    final mgr = _pointMgr;
+    if (annot == null || mgr == null) return;
+    final t = _pickupPopCtrl.value;
+    double scale;
+    if (t < 0.7) {
+      scale = 1.1 * Curves.easeOutCubic.transform(t / 0.7);
+    } else {
+      scale = 1.1 - 0.1 * Curves.easeOut.transform((t - 0.7) / 0.3);
+    }
+    annot.iconSize = scale;
+    // Fire-and-forget — the Mapbox plugin handles throttling.
+    mgr.update(annot);
+  }
+
+  /// Route draw animation tick. Every frame takes the first
+  /// `ceil(t * len)` points of the full route and replaces the
+  /// polyline geometry so the line appears to draw itself.
+  void _onRouteDrawTick() {
+    final mgr = _polylineMgr;
+    if (mgr == null || _routePoints.length < 2) return;
+    final t = Curves.easeOutCubic.transform(_routeDrawCtrl.value);
+    final n = (t * _routePoints.length)
+        .ceil()
+        .clamp(2, _routePoints.length);
+    final slice = _routePoints.sublist(0, n);
+    final coords = slice
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+    final geometry = mapbox.LineString(coordinates: coords);
+    if (_routeAnnot == null) {
+      mgr
+          .create(
+        mapbox.PolylineAnnotationOptions(
+          geometry: geometry,
+          lineColor: 0xFFE8C547,
+          lineWidth: 5.5,
+          lineOpacity: 0.95,
+        ),
+      )
+          .then((a) {
+        if (mounted) _routeAnnot = a;
+      });
+    } else {
+      _routeAnnot!.geometry = geometry;
+      mgr.update(_routeAnnot!);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -251,7 +502,22 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
                         mapbox.AttributionSettings(enabled: false));
                     await ctrl.logo
                         .updateSettings(mapbox.LogoSettings(enabled: false));
-                  } catch (_) {}
+                    // Polyline manager BELOW road labels so street names stay
+                    // readable over the route. Point manager sits on top so
+                    // the pickup + dropoff pins are never hidden.
+                    _polylineMgr = await ctrl.annotations
+                        .createPolylineAnnotationManager(below: 'road-label');
+                    _pointMgr =
+                        await ctrl.annotations.createPointAnnotationManager();
+                  } catch (e) {
+                    debugPrint('[ContinuousRideFlow] map setup: $e');
+                  }
+                  // Rasterize both pin icons in the background so they are
+                  // ready by the time the rider taps Confirm Dropoff.
+                  _buildPinBytes(color: const Color(0xFFE8C547))
+                      .then((b) => _dropoffPinBytes = b);
+                  _buildPinBytes(color: const Color(0xFFE8C547))
+                      .then((b) => _pickupPinBytes = b);
                   Future.delayed(
                     const Duration(milliseconds: 800),
                     _runReverseGeocode,

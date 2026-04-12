@@ -29,5 +29,5 @@ class FeatureFlags {
   /// Safe to toggle: when OFF the shell code is never reached and the
   /// app behaves exactly as it did before 2026-04-11. See
   /// `lib/screens/rider_flow/` for the implementation.
-  static const bool useRiderFlowShell = false;
+  static const bool useRiderFlowShell = true;
 }

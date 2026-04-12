@@ -111,9 +111,14 @@ const _pageTransitions = PageTransitionsTheme(
   },
 );
 
-/// Smooth fade-in + fade-out page transition with a subtle slide.
-/// The outgoing page fades out while the incoming page fades in,
-/// creating a fluid, premium feel across all navigation.
+/// Pure cross-fade page transition for every route in the app.
+///
+/// The outgoing page fades out 1.0 → 0.0 while the incoming page
+/// fades in 0.0 → 1.0 on the same clock. Both use a slow easeInOut
+/// curve so the crossover never feels abrupt. No slide, no scale —
+/// the user explicitly asked for fade-in / fade-out without any
+/// horizontal or vertical motion so the map underneath (and any
+/// shared visual element) never jumps.
 class _CruiseFadeTransitionBuilder extends PageTransitionsBuilder {
   const _CruiseFadeTransitionBuilder();
 
@@ -125,24 +130,19 @@ class _CruiseFadeTransitionBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // Incoming page: fade in + subtle slide up
     final fadeIn = CurvedAnimation(
       parent: animation,
-      curve: const Cubic(0.25, 1, 0.5, 1),
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
     );
-    final slideIn = Tween<Offset>(
-      begin: const Offset(0, 0.03),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: animation,
-      curve: const Cubic(0.25, 1, 0.5, 1),
-    ));
-
-    // Outgoing page: subtle fade out + scale down slightly
-    final fadeOut = Tween<double>(begin: 1.0, end: 0.92).animate(
+    // Outgoing page fades all the way out (1 → 0) instead of holding
+    // at 0.92. That prevents the visible "ghost" of the previous
+    // screen showing through during the cross-fade.
+    final fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(
         parent: secondaryAnimation,
-        curve: Curves.easeInOut,
+        curve: Curves.easeInOutCubic,
+        reverseCurve: Curves.easeInOutCubic,
       ),
     );
 
@@ -150,10 +150,7 @@ class _CruiseFadeTransitionBuilder extends PageTransitionsBuilder {
       opacity: fadeOut,
       child: FadeTransition(
         opacity: fadeIn,
-        child: SlideTransition(
-          position: slideIn,
-          child: child,
-        ),
+        child: child,
       ),
     );
   }

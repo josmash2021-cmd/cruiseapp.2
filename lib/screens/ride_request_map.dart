@@ -878,9 +878,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     ));
 
     // Adaptive duration: short routes get enough time to look smooth,
-    // long routes draw a bit faster so the user doesn't wait.
+    // long routes draw a bit faster so the user doesn't wait. Clamps
+    // bumped so even the shortest route takes at least 2.4 s — user
+    // asked for the polyline to ease in, not to flash.
     final totalMs = duration?.inMilliseconds ??
-        (points.length * 10).clamp(1800, 3500);
+        (points.length * 14).clamp(2400, 4200);
 
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
@@ -1102,7 +1104,10 @@ extension _RideRequestMap on _RideRequestScreenState {
       mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),
       null, null,
     ).then((cam) {
-      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
+      // Longer cinematic fit so the reveal of pickup → dropoff feels
+      // gentle instead of a quick flick (user asked for smooth, not
+      // rapid camera motion).
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
     });
   }
 
@@ -1217,11 +1222,13 @@ extension _RideRequestMap on _RideRequestScreenState {
         coords, mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,
       );
-      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+      // Slower fit so the fly feels fluid instead of snappy.
+      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
     } else if (_userLocation != null) {
       _mapCtrl?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
-        mapbox.MapAnimationOptions(duration: 500),
+        // 500 ms → 900 ms so the re-center glide never feels like a snap.
+        mapbox.MapAnimationOptions(duration: 900),
       );
     }
   }

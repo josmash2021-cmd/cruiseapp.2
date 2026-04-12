@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
-const _fadeDuration = Duration(milliseconds: 280);
-const _fadeReverse = Duration(milliseconds: 220);
+// Slower, smoother defaults so every Navigator.push that uses one of
+// the helpers below reads as a gentle cross-fade instead of a quick
+// flick. User asked for "fluido y smooth, no de golpe": we pair 420 ms
+// forward with a slightly shorter reverse so the back gesture still
+// feels responsive.
+const _fadeDuration = Duration(milliseconds: 420);
+const _fadeReverse = Duration(milliseconds: 320);
 const _easeOutQuart = Cubic(0.25, 1, 0.5, 1);
 const _easeOutExpo = Cubic(0.16, 1, 0.3, 1);
 
@@ -12,10 +17,28 @@ Route<T> _fadeRoute<T>(Widget page, {int? durationMs}) {
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionDuration: dur,
     reverseTransitionDuration: rev,
+    opaque: true,
+    barrierDismissible: false,
+    // Cross-fade: outgoing fades 1→0 while incoming fades 0→1 on the
+    // same clock, both easeInOutCubic. No slide, no scale.
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final outOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+        CurvedAnimation(
+          parent: secondaryAnimation,
+          curve: Curves.easeInOutCubic,
+          reverseCurve: Curves.easeInOutCubic,
+        ),
+      );
       return FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-        child: child,
+        opacity: outOpacity,
+        child: FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeInOutCubic,
+            reverseCurve: Curves.easeInOutCubic,
+          ),
+          child: child,
+        ),
       );
     },
   );

@@ -1444,7 +1444,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         anchor: cam.anchor,
       );
       // Single flyTo — no further camera animations after this.
-      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 800));
+      // 800 → 1300 ms so the cinematic fit never snaps into place.
+      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 1300));
     });
   }
 
@@ -1469,11 +1470,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         null,
         null,
       );
-      await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 650));
+      // 650 → 1100 ms so the arrival recenter glides instead of snaps.
+      await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
     } catch (_) {
       await _map!.flyTo(
         mapbox.CameraOptions(center: point, zoom: 16.4, bearing: 0, pitch: 0),
-        mapbox.MapAnimationOptions(duration: 650),
+        mapbox.MapAnimationOptions(duration: 1100),
       );
     }
   }

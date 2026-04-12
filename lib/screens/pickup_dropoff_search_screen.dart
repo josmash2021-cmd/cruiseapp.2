@@ -11,6 +11,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
+import 'continuous_ride_flow_screen.dart';
 import 'map_picker_screen.dart';
 
 /// Uber-like pickup / dropoff search screen.
@@ -624,37 +625,21 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         });
         _returnResults();
       } else {
-        // ── Dropoff field active → pick dropoff only ──
-        final result = await Navigator.of(context).push<Map<String, dynamic>>(
+        // ── Dropoff field active → push the continuous rider flow ──
+        // User explicitly asked for the whole dropoff → choose ride →
+        // request flow to run on a single shared map with no screen
+        // cuts. ContinuousRideFlowScreen owns that entire journey, so
+        // we pushReplacement into it and drop this search screen
+        // from the stack — when the trip finishes (or is cancelled)
+        // the rider pops back directly to home.
+        Navigator.of(context).pushReplacement(
           slideFromRightRoute(
-            MapPickerScreen(
+            ContinuousRideFlowScreen(
               initialLat: _resolvedLat ?? widget.initialPickupLat,
               initialLng: _resolvedLng ?? widget.initialPickupLng,
-              isPickup: false,
             ),
           ),
         );
-        if (result == null || !mounted) return;
-        final addr = result['address'] as String;
-        final lat = result['lat'] as double;
-        final lng = result['lng'] as double;
-        setState(() {
-          _dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
-          _dropoffLabel = addr;
-          _dropoffCtrl.text = addr;
-        });
-
-        // If pickup already set, return results immediately
-        if (_pickupDetails != null) {
-          _returnResults();
-        } else {
-          // Switch to pickup field
-          setState(() {
-            _editingPickup = true;
-            _editingDropoff = false;
-          });
-          _pickupFocus.requestFocus();
-        }
       }
       return;
     }

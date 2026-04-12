@@ -499,6 +499,38 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  Bottom card dispatcher
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Picks which bottom-sheet card to render for the current phase.
+  /// The returned widget has a unique [ValueKey] so the enclosing
+  /// AnimatedSwitcher treats phase transitions as widget replacements
+  /// and cross-fades between them.
+  Widget _buildBottomCardForPhase() {
+    switch (_phase) {
+      case _FlowPhase.choosingVehicle:
+        return KeyedSubtree(
+          key: const ValueKey(_FlowPhase.choosingVehicle),
+          child: _buildChooseRideCard(),
+        );
+      case _FlowPhase.confirmingPayment:
+        return KeyedSubtree(
+          key: const ValueKey(_FlowPhase.confirmingPayment),
+          child: _buildConfirmingCard(),
+        );
+      case _FlowPhase.searchingDriver:
+        return KeyedSubtree(
+          key: const ValueKey(_FlowPhase.searchingDriver),
+          child: _buildSearchingDriverCard(),
+        );
+      case _FlowPhase.pickingDropoff:
+      case _FlowPhase.transitioning:
+        return const SizedBox.shrink(
+            key: ValueKey('empty'));
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  Choose-a-ride card (P03)
   // ═══════════════════════════════════════════════════════════════
 
@@ -611,10 +643,178 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
     );
   }
 
-  /// Stub — Phase 4 replaces this with the real Stripe flow + inline
-  /// confirming card + inline searching driver card.
-  void _onRequestRide() {
-    debugPrint('[ContinuousRideFlow] request ride → ${_selectedOption?.name}');
+  // ═══════════════════════════════════════════════════════════════
+  //  Confirming your ride card (P04a)
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Inline "Confirming your ride…" card rendered while the Stripe
+  /// hold + backend create-trip round-trip runs. Replaces the old
+  /// SearchingDriverScreen Navigator.push — no screen change.
+  Widget _buildConfirmingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1218),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.6,
+              color: Color(0xFFE8C547),
+            ),
+          ),
+          SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              'Confirming your ride…',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Finding the best driver for you card (P04b)
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Inline "Finding the best driver for you…" card — the one in
+  /// the user's reference screenshot: gold car icon, title, pickup
+  /// → dropoff summary, and a Cancel button.
+  Widget _buildSearchingDriverCard() {
+    final pickup = _pickupLatLng;
+    final pickupLabel = pickup == null
+        ? 'Pickup'
+        : 'Pickup (${pickup.latitude.toStringAsFixed(4)}, '
+            '${pickup.longitude.toStringAsFixed(4)})';
+    final dropoffLabel =
+        _dropoffAddress.isNotEmpty ? _dropoffAddress : 'Dropoff';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1218),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.35),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.directions_car_rounded,
+                  color: Color(0xFFE8C547),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'Almost there, looking for driver…',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '$pickupLabel → $dropoffLabel',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: Color(0x22FFFFFF), height: 1),
+          Center(
+            child: TextButton(
+              onPressed: _onCancelSearching,
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tap "Request Ride" — run the payment/dispatch sequence inline.
+  ///
+  /// Phase 4a: visual-only stub so the rider sees the card fade
+  /// chain (choose a ride → confirming your ride → finding the best
+  /// driver for you). Phase 4b (next commit) wires this to the real
+  /// Stripe + RiderTripController.requestRide backend path.
+  Future<void> _onRequestRide() async {
+    if (_selectedOption == null) return;
+    if (_phase != _FlowPhase.choosingVehicle) return;
+    setState(() => _phase = _FlowPhase.confirmingPayment);
+    // Pretend Stripe is running for ~1.8 s so the "Confirming your
+    // ride…" card gets a real moment on screen (matches real hold time).
+    await Future.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+    setState(() => _phase = _FlowPhase.searchingDriver);
+  }
+
+  /// Cancel button on the searching driver card. For now it walks
+  /// back to choosingVehicle so the rider can retry. Phase 4b wires
+  /// the real dispatch-cancel call.
+  void _onCancelSearching() {
+    if (!mounted) return;
+    setState(() => _phase = _FlowPhase.choosingVehicle);
   }
 
   /// Pickup pin pop animation tick. Spring 0 → 1.1 → 1.0 over 600 ms
@@ -802,11 +1002,14 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
             ),
           ),
 
-          // ── Bottom card — Choose a ride (fade in only) ─────────
-          // Rendered when the shell leaves pickingDropoff. The whole
-          // card fades in together and every option row stagger-
-          // fades after the container appears (no slide on any of
-          // them — the user specifically asked for pure fade).
+          // ── Bottom card slot — cross-fades between phase cards ──
+          // Rendered once the shell leaves pickingDropoff.  A single
+          // AnimatedSwitcher cross-fades between:
+          //   choosingVehicle    → _buildChooseRideCard
+          //   confirmingPayment  → _buildConfirmingCard
+          //   searchingDriver    → _buildSearchingDriverCard
+          // Pure FadeTransition on both sides (no slide) — the user
+          // asked for only fade, cada uno smooth.
           if (_phase == _FlowPhase.choosingVehicle ||
               _phase == _FlowPhase.confirmingPayment ||
               _phase == _FlowPhase.searchingDriver)
@@ -816,14 +1019,21 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
               bottom: 16,
               child: SafeArea(
                 top: false,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
+                child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 420),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, t, child) {
-                    return Opacity(opacity: t, child: child);
-                  },
-                  child: _buildChooseRideCard(),
+                  reverseDuration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      ...previous,
+                      if (current != null) current,
+                    ],
+                  ),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: _buildBottomCardForPhase(),
                 ),
               ),
             ),

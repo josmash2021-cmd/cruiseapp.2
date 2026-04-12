@@ -610,10 +610,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     _labelPopCtrl?.stop();
     _routeDrawTicker?.stop();
 
-    // Start camera already tilted (30°) — never snap to flat (0°) because
-    // the user explicitly asked for no visible "top-down" frame.
+    // Camera starts top-down (0°) at the dropoff pin. The cinematic
+    // sequence then tilts 0° → 55° smoothly. _startCinematicSequence
+    // handles the full camera setup so we only clear the old state here.
     if (_mapCtrl != null) {
-      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 30.0, bearing: 0));
+      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
     }
 
     // Clear existing route annotations so they redraw fresh (fire-and-forget)
@@ -648,73 +649,145 @@ extension _RideRequestMap on _RideRequestScreenState {
     _startCinematicSequence(pts);
   }
 
-  /// Cinematic map animation — NO top-down start. Camera begins
-  /// already tilted at 30° and eases to 55° (smooth, never flat).
-  /// Pins pop, route draws progressively, sheet fades in at the end.
+  /// Cinematic map animation — ONE unified camera animation that
+  /// controls pitch + zoom + center simultaneously so there are
+  /// ZERO competing flyTo / setCamera calls.
   ///
-  /// CRITICAL: the final _fitRoute always uses a LARGE bottom inset
-  /// so the ENTIRE route is visible ABOVE the Choose-a-ride card.
+  /// Sequence the user asked for:
+  ///   1. Camera starts at the DROPOFF pin, top-down (pitch 0°),
+  ///      zoomed in (~16).
+  ///   2. Slowly tilts 0° → 55° while zooming out to fit the full
+  ///      route above the choose-a-ride card. (2.2 s, easeInOutCubic)
+  ///   3. Pins pop during the first 600 ms.
+  ///   4. Route draws progressively during the tilt/zoom.
+  ///   5. Labels unroll halfway through.
+  ///   6. Sheet fades in after everything settles.
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
     // _cinematicRunning is already true — set by _drawRoute() caller.
 
-    // Generate random bearing 5-12° left or right
     final rng = math.Random();
     final degrees = 5.0 + rng.nextDouble() * 7.0;
     _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
 
-    // 1. Pin pop FIRST — show markers immediately so there's no blank
-    //    second. Fit camera in parallel (the 30° pitch is already set
-    //    by _resetCinematic).
-    _startPinPop();
-    _fitRoute(pts, preserveCamera: true);
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!mounted) { _cinematicRunning = false; return; }
-
-    // 2. Tilt 30° → 55° + bearing 0° → random — slow, ultra smooth
-    //    (1.8 s easeInOutCubic). Fires in parallel with route draw.
-    _tiltAnim?.removeListener(_applyMapCamera);
-    _tiltCtrl?.dispose();
-    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
-    _tiltAnim = Tween<double>(begin: 30.0, end: 55.0).animate(
-      CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _bearingCtrl?.dispose();
-    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
-    _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
-      CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _tiltAnim!.addListener(_applyMapCamera);
-    _tiltCtrl!.forward(from: 0);
-    _bearingCtrl!.forward(from: 0);
-
-    // 3. Label bubbles unroll (overlaps with tilt)
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) { _cinematicRunning = false; return; }
-    _unrollLabels();
-
-    // 4. Gold route draws — fires for ALL routes (not just >15 pts)
-    //    so short routes also get a smooth animation instead of
-    //    appearing de golpe.
-    await Future.delayed(const Duration(milliseconds: 150));
-    if (!mounted) { _cinematicRunning = false; return; }
-    await _animateGoldRoute(pts);
-    if (!mounted) { _cinematicRunning = false; return; }
-
-    // Wait for the tilt to finish if the route draw was very fast
-    if (_tiltCtrl != null && _tiltCtrl!.isAnimating) {
-      await _tiltCtrl!.forward();
-    }
-
-    // 5. FINAL FIT — uses a BIG bottom inset so the COMPLETE route
-    //    is always visible ABOVE the choose-a-ride card. The user was
-    //    emphatic: "SIEMPRE" — the route must never be hidden behind
-    //    the card on any device or route length.
+    // ── Compute the FINAL camera we want to arrive at ──
+    // This is the framed view with pitch 55°, big bottom inset for
+    // the card, and the route fully visible above it.
     if (!mounted) { _cinematicRunning = false; return; }
     final mq = MediaQuery.of(context);
     final cardInset = (mq.size.height * 0.42).clamp(300.0, 420.0) +
         mq.padding.bottom + 24;
-    _fitRouteWithInset(pts, bottomInset: cardInset);
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in pts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    mapbox.CameraState? finalCam;
+    try {
+      final cam = await _mapCtrl!.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+          mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+        ],
+        mapbox.CameraOptions(pitch: 55.0, bearing: _randomBearing),
+        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: cardInset, right: 50),
+        null,
+        null,
+      );
+      // Read the computed camera so we can interpolate toward it.
+      await _mapCtrl!.setCamera(cam);
+      finalCam = await _mapCtrl!.getCameraState();
+    } catch (e) {
+      debugPrint('[Cinematic] final camera compute failed: $e');
+    }
+    if (!mounted || finalCam == null) { _cinematicRunning = false; return; }
+
+    final targetZoom = finalCam.zoom;
+    final targetCenter = finalCam.center.coordinates;
+
+    // ── Start camera at the DROPOFF pin, top-down, zoomed in ──
+    final dropoff = pts.last;
+    _mapCtrl!.setCamera(mapbox.CameraOptions(
+      center: mapbox.Point(
+        coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude),
+      ),
+      pitch: 0.0,
+      bearing: 0.0,
+      zoom: 16.0,
+    ));
+
+    // Small beat so the initial frame renders the dropoff view.
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) { _cinematicRunning = false; return; }
+
+    // ── Pin pop (concurrent) ──
+    _startPinPop();
+
+    // ── UNIFIED tilt + zoom + center animation ──
+    // One controller drives ALL camera axes so nothing fights.
+    _tiltAnim?.removeListener(_applyMapCamera);
+    _tiltCtrl?.dispose();
+    _tiltCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    );
+
+    final startLat = dropoff.latitude;
+    final startLng = dropoff.longitude;
+    const startPitch = 0.0;
+    const startZoom = 16.0;
+    const startBearing = 0.0;
+    final endLat = targetCenter.lat.toDouble();
+    final endLng = targetCenter.lng.toDouble();
+    const endPitch = 55.0;
+    final endZoom = targetZoom;
+    final endBearing = _randomBearing;
+
+    void onUnifiedTick() {
+      if (_mapCtrl == null || !mounted) return;
+      final t = Curves.easeInOutCubic.transform(_tiltCtrl!.value);
+      _mapCtrl!.setCamera(mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(
+            startLng + (endLng - startLng) * t,
+            startLat + (endLat - startLat) * t,
+          ),
+        ),
+        pitch: startPitch + (endPitch - startPitch) * t,
+        zoom: startZoom + (endZoom - startZoom) * t,
+        bearing: startBearing + (endBearing - startBearing) * t,
+      ));
+    }
+
+    _tiltCtrl!.addListener(onUnifiedTick);
+    _tiltCtrl!.forward(from: 0);
+
+    // Dispose old bearing controller — no longer needed, unified handles it.
+    _bearingCtrl?.dispose();
+    _bearingCtrl = null;
+
+    // ── Labels unroll at 40% of the tilt animation ──
+    Future.delayed(const Duration(milliseconds: 880), () {
+      if (mounted) _unrollLabels();
+    });
+
+    // ── Route draws starting at 25% of the tilt animation ──
+    await Future.delayed(const Duration(milliseconds: 550));
+    if (!mounted) { _cinematicRunning = false; return; }
+    // Fire route draw concurrently — don't await, let it overlap with tilt.
+    final routeFuture = _animateGoldRoute(pts);
+
+    // ── Wait for BOTH tilt and route to finish ──
+    await Future.wait([
+      _tiltCtrl!.forward(),
+      routeFuture,
+    ]);
+    if (!mounted) { _cinematicRunning = false; return; }
+
+    // Clean up the unified listener.
+    _tiltCtrl!.removeListener(onUnifiedTick);
 
     _cinematicDone = true;
     _cinematicRunning = false;

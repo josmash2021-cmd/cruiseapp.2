@@ -9,9 +9,12 @@ import '../l10n/app_localizations.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../models/lat_lng.dart';
+import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
 import 'map_picker_screen.dart';
+import 'ride_request_screen.dart';
 
 /// Uber-like pickup / dropoff search screen.
 ///
@@ -239,13 +242,78 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     }
   }
 
-  void _returnResults() {
-    Navigator.of(context).pop({
-      'pickup': _pickupDetails,
-      'dropoff': _dropoffDetails,
-      'pickupLabel': _pickupLabel,
-      'dropoffLabel': _dropoffLabel,
-    });
+  /// Push RideRequestScreen DIRECTLY via pushReplacement so the rider
+  /// NEVER sees the home screen flash between confirming dropoff and
+  /// seeing the route + choose-a-ride card. Pre-fetches the route
+  /// with a 200 ms timeout for cache hits (same logic the home screen
+  /// used to do).
+  Future<void> _returnResults() async {
+    if (_dropoffDetails == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    // Use current GPS as pickup if none was explicitly set.
+    PlaceDetails? effectivePickup = _pickupDetails;
+    if (effectivePickup == null) {
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings:
+              const LocationSettings(accuracy: LocationAccuracy.high),
+        ).timeout(const Duration(seconds: 3));
+        effectivePickup = PlaceDetails(
+          address: _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
+          lat: pos.latitude,
+          lng: pos.longitude,
+        );
+      } catch (_) {
+        // Fall back to the initial lat/lng the home screen provided.
+        if (widget.initialPickupLat != null &&
+            widget.initialPickupLng != null) {
+          effectivePickup = PlaceDetails(
+            address:
+                _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
+            lat: widget.initialPickupLat!,
+            lng: widget.initialPickupLng!,
+          );
+        }
+      }
+    }
+
+    final dropoff = _dropoffDetails!;
+    final dropLabel =
+        _dropoffLabel.isNotEmpty ? _dropoffLabel : dropoff.address;
+
+    // Quick route pre-fetch — cache hit is instant.
+    RouteResult? preloaded;
+    if (effectivePickup != null) {
+      try {
+        preloaded = await DirectionsService(ApiKeys.webServices)
+            .getRoute(
+              origin: LatLng(effectivePickup.lat, effectivePickup.lng),
+              destination: LatLng(dropoff.lat, dropoff.lng),
+            )
+            .timeout(const Duration(milliseconds: 200));
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    // pushReplacement: removes this search screen from the stack so
+    // the home screen underneath is never briefly visible. When
+    // RideRequestScreen eventually pops, the rider lands on home.
+    Navigator.of(context).pushReplacement(
+      slideUpFadeRoute(
+        RideRequestScreen(
+          initialPickupDetails: effectivePickup,
+          initialDropoffDetails: dropoff,
+          initialPickupLabel: _pickupLabel,
+          initialDropoffLabel: dropLabel,
+          initialDropoffAddress: dropLabel,
+          preloadedRoute: preloaded,
+        ),
+      ),
+    );
   }
 
   /// Called when user presses Enter/Done without selecting a suggestion.

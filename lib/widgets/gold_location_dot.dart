@@ -85,9 +85,11 @@ class GoldLocationDot {
     final vStepLat = _velLatSec * dt;
     final vStepLng = _velLngSec * dt;
 
-    // Fallback: very gentle proportional correction (3% per tick)
-    final cStepLat = dLat * 0.03;
-    final cStepLng = dLng * 0.03;
+    // Fallback: ultra-gentle proportional correction (1.5% per tick)
+    // so the dot glides at constant velocity and almost never
+    // "catches up" visibly — just like Google Maps blue dot.
+    final cStepLat = dLat * 0.015;
+    final cStepLng = dLng * 0.015;
 
     // Move in correct direction — pick larger of velocity vs correction.
     // Clamp so we never overshoot past the target.
@@ -106,8 +108,9 @@ class GoldLocationDot {
     _currentLat = _currentLat! + stepLat;
     _currentLng = _currentLng! + stepLng;
 
-    // Velocity decay: retain ~98% per second
-    final decay = math.pow(0.98, dt * 60);
+    // Velocity decay: retain ~99.5% per second — sustains glide much
+    // longer between GPS fixes so the dot never visibly stalls.
+    final decay = math.pow(0.995, dt * 60);
     _velLatSec *= decay;
     _velLngSec *= decay;
 

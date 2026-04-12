@@ -1334,7 +1334,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
     // Predict ahead using driver's real speed so car glides at same pace.
-    final predicted = _tgtTraveledM + _velocityMps * 0.6;
+    // 1.0 s lookahead (was 0.6 s) — gives the car enough runway to glide
+    // through 1-second GPS gaps without any visible deceleration.
+    final predicted = _tgtTraveledM + _velocityMps * 1.0;
     final effectiveTarget = math.min(predicted, _segDist.last);
     final diff = effectiveTarget - _traveledM;
 
@@ -1342,9 +1344,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // This distributes movement EVENLY across ALL frames between GPS updates
     // instead of proportional catch-up which reaches target in 200ms then stalls.
     final velStep = _velocityMps * dt;
-    // Fallback: gentle proportional correction (5%/frame at 60fps)
-    // for catching up when stopped or accumulated drift.
-    final corrStep = diff * tf(0.05);
+    // Fallback: ultra-gentle proportional correction (3%/frame at 60fps,
+    // was 5%) so the correction never outpaces the velocity — the car
+    // always GLIDES rather than "catches up" visibly.
+    final corrStep = diff * tf(0.03);
     // Use whichever produces more forward movement — velocity dominates while
     // driving, correction dominates when stopped.
     if (diff > 0.05) {
@@ -1353,17 +1356,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } else if (diff.abs() <= 0.05) {
       _traveledM = _tgtTraveledM;
     }
-    // Velocity decay: retain ~99% per second — sustains glide for 5+ sec GPS gaps
-    // Real driver speed is refreshed every ~1-2s from RTDB, so barely decays in practice
-    _velocityMps *= math.pow(0.99, dt);
+    // Velocity decay: retain ~99.7% per second — sustains glide for 8+ sec
+    // GPS gaps so the car NEVER stalls even in tunnels or GPS shadows.
+    // Real driver speed is refreshed every ~1-2s from RTDB, so barely decays.
+    _velocityMps *= math.pow(0.997, dt);
 
     final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
 
     // ── Bearing: time-based rotation for smooth car nose direction ──
+    // 0.35 per frame (was 0.50) — slower rotation gives a cinematic
+    // feel on curves instead of snappy heading changes.
     double db = brg - _animBearing;
     if (db > 180) db -= 360;
     if (db < -180) db += 360;
-    final brgFactor = tf(0.50);
+    final brgFactor = tf(0.35);
     final newBearing = (_animBearing + db * brgFactor) % 360;
 
     _animPos = pos;

@@ -684,7 +684,11 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    mapbox.CameraState? finalCam;
+    // Compute the target camera WITHOUT setting it — avoids the flash
+    // where the map jumps to the final view then snaps back to start.
+    double targetZoom = 14.0;
+    double targetCenterLat = (minLat + maxLat) / 2;
+    double targetCenterLng = (minLng + maxLng) / 2;
     try {
       final cam = await _mapCtrl!.cameraForCoordinatesPadding(
         [
@@ -696,16 +700,16 @@ extension _RideRequestMap on _RideRequestScreenState {
         null,
         null,
       );
-      // Read the computed camera so we can interpolate toward it.
-      await _mapCtrl!.setCamera(cam);
-      finalCam = await _mapCtrl!.getCameraState();
+      // Read values directly from CameraOptions — NO setCamera round-trip.
+      targetZoom = cam.zoom ?? 14.0;
+      if (cam.center != null) {
+        targetCenterLat = cam.center!.coordinates.lat.toDouble();
+        targetCenterLng = cam.center!.coordinates.lng.toDouble();
+      }
     } catch (e) {
       debugPrint('[Cinematic] final camera compute failed: $e');
     }
-    if (!mounted || finalCam == null) { _cinematicRunning = false; return; }
-
-    final targetZoom = finalCam.zoom;
-    final targetCenter = finalCam.center.coordinates;
+    if (!mounted) { _cinematicRunning = false; return; }
 
     // ── Start camera at the DROPOFF pin, top-down, zoomed in ──
     final dropoff = pts.last;
@@ -739,8 +743,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     const startPitch = 0.0;
     const startZoom = 16.0;
     const startBearing = 0.0;
-    final endLat = targetCenter.lat.toDouble();
-    final endLng = targetCenter.lng.toDouble();
+    final endLat = targetCenterLat;
+    final endLng = targetCenterLng;
     const endPitch = 55.0;
     final endZoom = targetZoom;
     final endBearing = _randomBearing;
@@ -1001,14 +1005,18 @@ extension _RideRequestMap on _RideRequestScreenState {
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      // easeInOutCubic so the line STARTS slow, speeds up in the
-      // middle, and SLOWS DOWN near the end — buttery on curves.
-      final eased = Curves.easeInOutCubic.transform(progress);
+      // easeOutCubic: starts drawing IMMEDIATELY (fast at the start)
+      // and decelerates smoothly at the end. This fixes short routes
+      // where easeInOutCubic's slow start made the line appear frozen
+      // for the first 15% of the animation.
+      final eased = Curves.easeOutCubic.transform(progress);
       final targetDist = eased * totalDist;
 
-      // Push a Mapbox update if we've advanced by at least 3 m
-      // (prevents IPC thrashing while keeping curves smooth on short routes).
-      if ((targetDist - lastDistDrawn).abs() < 3 && progress < 1.0) return;
+      // Advance threshold scales with total distance: 1m for short
+      // routes (<500m), up to 5m for long routes. Prevents IPC
+      // thrashing while keeping every curve segment smooth.
+      final advanceThreshold = (totalDist * 0.005).clamp(1.0, 5.0);
+      if ((targetDist - lastDistDrawn).abs() < advanceThreshold && progress < 1.0) return;
       lastDistDrawn = targetDist;
 
       // Find the point index where cumDist >= targetDist

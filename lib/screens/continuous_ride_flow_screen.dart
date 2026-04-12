@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/places_service.dart';
+import '../state/rider_trip_controller.dart' show RideOption;
 import '../widgets/map/circular_pin_renderer.dart';
 
 /// Continuous single-map rider flow that replaces the
@@ -90,6 +91,11 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
   // ── Transition state ────────────────────────────────────────────
   LatLng? _pickupLatLng;
   List<LatLng> _routePoints = [];
+  RouteResult? _route;
+
+  // ── Choose vehicle state ────────────────────────────────────────
+  List<RideOption> _rideOptions = [];
+  RideOption? _selectedOption;
 
   final _places = PlacesService(ApiKeys.webServices);
   final _directions = DirectionsService(ApiKeys.webServices);
@@ -327,9 +333,11 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
       );
     } catch (_) {}
     if (!mounted) return;
+    _route = route;
     _routePoints = (route?.points != null && route!.points.length >= 2)
         ? List<LatLng>.from(route.points)
         : [pickup, dropoff];
+    _rideOptions = _buildRideOptions(route);
 
     // ── t=0  Drop dropoff pin as a map-anchored annotation ──
     try {
@@ -409,6 +417,204 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() => _phase = _FlowPhase.choosingVehicle);
+  }
+
+  /// Generate the 3 ride options (VIP, Sedan, Comfort) from a route.
+  /// Mirrors RiderTripController._generateRideOptions so we get the
+  /// same pricing the rest of the app uses, without depending on the
+  /// whole controller for the choose-vehicle phase.
+  List<RideOption> _buildRideOptions(RouteResult? route) {
+    if (route == null) return [];
+    final mins = route.durationSeconds != null && route.durationSeconds! > 0
+        ? (route.durationSeconds! / 60.0).ceil()
+        : 8;
+    final miles = route.distanceMeters / 1609.344;
+    final baseFare = 2.50 + (miles * 1.50) + (mins * 0.25);
+    final baseDuration = mins.clamp(1, 120);
+    double r(double v) => (v * 100).roundToDouble() / 100;
+    return [
+      RideOption(
+        id: 'suburban',
+        name: 'VIP',
+        description: 'Spacious • Leather • Snacks & Drinks',
+        priceEstimate: r(baseFare * 2.20),
+        etaMinutes: baseDuration + 3,
+        icon: '🚐',
+        capacity: 7,
+      ),
+      RideOption(
+        id: 'camry',
+        name: 'Premium',
+        description: 'Comfort • Climate • Charger',
+        priceEstimate: r(baseFare * 1.35),
+        etaMinutes: baseDuration + 2,
+        icon: '🚙',
+        capacity: 4,
+      ),
+      RideOption(
+        id: 'fusion',
+        name: 'Comfort',
+        description: 'Clean • Safe • Efficient',
+        priceEstimate: r(baseFare),
+        etaMinutes: baseDuration,
+        icon: '🚗',
+        capacity: 4,
+      ),
+    ];
+  }
+
+  /// Select a ride option from the card. Animates the camera from
+  /// pitch 55° down to 15° over 600 ms, keeping the route framed
+  /// above the card (bottom 320 px inset).
+  Future<void> _onSelectRide(RideOption option) async {
+    if (_map == null) return;
+    setState(() => _selectedOption = option);
+    final pickup = _pickupLatLng;
+    if (pickup == null) return;
+    final dropoff = LatLng(_center.latitude, _center.longitude);
+    try {
+      final cam = await _map!.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(
+            coordinates:
+                mapbox.Position(pickup.longitude, pickup.latitude),
+          ),
+          mapbox.Point(
+            coordinates:
+                mapbox.Position(dropoff.longitude, dropoff.latitude),
+          ),
+        ],
+        mapbox.CameraOptions(pitch: 15.0),
+        mapbox.MbxEdgeInsets(top: 120, left: 60, bottom: 320, right: 60),
+        null,
+        null,
+      );
+      await _map!.easeTo(
+        cam,
+        mapbox.MapAnimationOptions(duration: 600),
+      );
+    } catch (e) {
+      debugPrint('[ContinuousRideFlow] tilt camera: $e');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Choose-a-ride card (P03)
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Returns the bottom sheet card shown during the choosingVehicle
+  /// phase. Pure fade in (no slide), with each option row
+  /// stagger-fading in after the container so the card feels alive.
+  Widget _buildChooseRideCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1218),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Choose a ride',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_rideOptions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFFE8C547),
+                  ),
+                ),
+              )
+            else
+              ..._rideOptions.asMap().entries.map((entry) {
+                final i = entry.key;
+                final opt = entry.value;
+                return TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: Duration(milliseconds: 300 + i * 80),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) {
+                    return Opacity(opacity: t, child: child);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _RideOptionRow(
+                      option: opt,
+                      selected: _selectedOption?.id == opt.id,
+                      onTap: () => _onSelectRide(opt),
+                    ),
+                  ),
+                );
+              }),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8C547),
+                  foregroundColor: Colors.black,
+                  disabledBackgroundColor:
+                      const Color(0xFFE8C547).withValues(alpha: 0.35),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: _selectedOption == null
+                    ? null
+                    : _onRequestRide,
+                child: const Text(
+                  'Request Ride',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Stub — Phase 4 replaces this with the real Stripe flow + inline
+  /// confirming card + inline searching driver card.
+  void _onRequestRide() {
+    debugPrint('[ContinuousRideFlow] request ride → ${_selectedOption?.name}');
   }
 
   /// Pickup pin pop animation tick. Spring 0 → 1.1 → 1.0 over 600 ms
@@ -596,6 +802,32 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
             ),
           ),
 
+          // ── Bottom card — Choose a ride (fade in only) ─────────
+          // Rendered when the shell leaves pickingDropoff. The whole
+          // card fades in together and every option row stagger-
+          // fades after the container appears (no slide on any of
+          // them — the user specifically asked for pure fade).
+          if (_phase == _FlowPhase.choosingVehicle ||
+              _phase == _FlowPhase.confirmingPayment ||
+              _phase == _FlowPhase.searchingDriver)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(
+                top: false,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 420),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) {
+                    return Opacity(opacity: t, child: child);
+                  },
+                  child: _buildChooseRideCard(),
+                ),
+              ),
+            ),
+
           // ── Bottom card — pick dropoff confirm ─────────────────
           if (_phase == _FlowPhase.pickingDropoff)
             Positioned(
@@ -704,6 +936,96 @@ class _ContinuousRideFlowScreenState extends State<ContinuousRideFlowScreen>
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Single ride-option row inside the Choose a ride card.
+///
+/// Tap animates the container's border to gold and hands control
+/// back to [_onSelectRide] so the shell can run its camera tilt.
+class _RideOptionRow extends StatelessWidget {
+  final RideOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RideOptionRow({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFE8C547);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? gold.withValues(alpha: 0.12)
+              : const Color(0xFF151820),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? gold : Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Row(
+          children: [
+            Text(option.icon, style: const TextStyle(fontSize: 26)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    option.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    option.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '\$${option.priceEstimate.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: gold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  '${option.etaMinutes} min',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

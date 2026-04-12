@@ -606,9 +606,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     _labelPopCtrl?.stop();
     _routeDrawTicker?.stop();
 
-    // Reset camera to flat BEFORE any async work so cinematic starts clean
+    // Start camera already tilted (30°) — never snap to flat (0°) because
+    // the user explicitly asked for no visible "top-down" frame.
     if (_mapCtrl != null) {
-      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
+      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 30.0, bearing: 0));
     }
 
     // Clear existing route annotations so they redraw fresh (fire-and-forget)
@@ -643,70 +644,80 @@ extension _RideRequestMap on _RideRequestScreenState {
     _startCinematicSequence(pts);
   }
 
-  /// Cinematic map animation: fit → pin pop → camera tilt/bearing → gold route draw
+  /// Cinematic map animation — NO top-down start. Camera begins
+  /// already tilted at 30° and eases to 55° (smooth, never flat).
+  /// Pins pop, route draws progressively, sheet fades in at the end.
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
-    if (_cinematicRunning) return; // prevent duplicate concurrent sequences
+    if (_cinematicRunning) return;
     _cinematicRunning = true;
 
-    // Generate random bearing 5-15° left or right
+    // Generate random bearing 5-12° left or right
     final rng = math.Random();
-    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    final degrees = 5.0 + rng.nextDouble() * 7.0;
     _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
 
-    // 1. Fit camera to full route (flat, no tilt yet)
-    _fitRoute(pts);
-    await Future.delayed(const Duration(milliseconds: 420));
+    // 1. Fit camera starting at 30° pitch (NOT flat/0°) so there is
+    //    no visible "top-down → tilt" snap. The tilt then eases to 55°
+    //    gently in step 3.
+    if (_mapCtrl != null) {
+      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 30.0, bearing: 0));
+    }
+    _fitRoute(pts, preserveCamera: true);
+    await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) { _cinematicRunning = false; return; }
 
-    // 2. Pin pop first so markers establish visual focus
+    // 2. Pin pop
     _startPinPop();
-    await Future.delayed(const Duration(milliseconds: 560));
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) { _cinematicRunning = false; return; }
 
-    // 3. Tilt 0° → 55° + bearing 0° → random, simultaneously (slightly slower)
+    // 3. Tilt 30° → 55° + bearing 0° → random — slow and ultra smooth
+    //    (1.8 s easeInOutCubic so the camera glide is barely noticeable)
     _tiltAnim?.removeListener(_applyMapCamera);
     _tiltCtrl?.dispose();
-    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+    _tiltAnim = Tween<double>(begin: 30.0, end: 55.0).animate(
       CurvedAnimation(parent: _tiltCtrl!, curve: Curves.easeInOutCubic),
     );
     _bearingCtrl?.dispose();
-    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1050));
+    _bearingCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
     _bearingAnim = Tween<double>(begin: 0.0, end: _randomBearing).animate(
       CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
     );
     _tiltAnim!.addListener(_applyMapCamera);
-    await Future.wait([
-      _tiltCtrl!.forward(from: 0),
-      _bearingCtrl!.forward(from: 0),
-    ]);
-    if (!mounted) { _cinematicRunning = false; return; }
+    // Fire in parallel — don't await so the route draws while the
+    // camera is still easing to 55°. The overlap makes everything
+    // feel like one continuous movement.
+    _tiltCtrl!.forward(from: 0);
+    _bearingCtrl!.forward(from: 0);
 
-    // 4. Label bubbles unroll after camera settles
-    await Future.delayed(const Duration(milliseconds: 120));
+    // 4. Label bubbles unroll early (overlaps with tilt motion)
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) { _cinematicRunning = false; return; }
     _unrollLabels();
 
-    // 5. Gold route draws last — only if we have a real route (>15 points).
-    //    If still on estimated route, skip draw — it will trigger when real route arrives.
+    // 5. Gold route draws — starts while the tilt is still easing so
+    //    the route and camera movement merge into one smooth gesture.
     if (pts.length > 15) {
-      await Future.delayed(const Duration(milliseconds: 180));
+      await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) { _cinematicRunning = false; return; }
       await _animateGoldRoute(pts);
       if (!mounted) { _cinematicRunning = false; return; }
     }
 
-    // 6. Refit route with panel padding so full route is visible above panel
+    // Wait for the tilt to finish if the route was short
+    if (_tiltCtrl != null && _tiltCtrl!.isAnimating) {
+      await _tiltCtrl!.forward();
+    }
+
+    // 6. Refit route with panel padding
     _fitRoute(pts, preserveCamera: true);
 
-    // Camera stays tilted at 55° — no reset to flat
     _cinematicDone = true;
     _cinematicRunning = false;
 
-    // 7. Once the gold route is fully drawn, fade the choose-a-ride
-    //    panel in. Small 200 ms beat gives the user time to see the
-    //    finished line before the card appears, as requested.
+    // 7. Beat + sheet fade in
     await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
     if (_sheetCtrl.status == AnimationStatus.dismissed) {
@@ -886,16 +897,32 @@ extension _RideRequestMap on _RideRequestScreenState {
       lineJoin: mapbox.LineJoin.ROUND,
     ));
 
-    // Adaptive duration: short routes get enough time to look smooth,
-    // long routes draw a bit faster so the user doesn't wait. Clamps
-    // bumped so even the shortest route takes at least 2.4 s — user
-    // asked for the polyline to ease in, not to flash.
+    // ── Distance-based interpolation for ultra-smooth curves ──
+    //
+    // Instead of advancing by point count (which produces uneven speed
+    // on curves where Mapbox packs many short segments), we precompute
+    // the cumulative distance along the route and advance at constant
+    // metres-per-frame. The line never jumps or stutters, even on tight
+    // curves and near the endpoints.
+    //
+    // Duration adapts to route length. Min 2.8 s / max 4.5 s.
     final totalMs = duration?.inMilliseconds ??
-        (points.length * 14).clamp(2400, 4200);
+        (points.length * 14).clamp(2800, 4500);
+
+    // Pre-compute cumulative distances (meters along the polyline).
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < points.length; i++) {
+      final dlat = (points[i].latitude - points[i - 1].latitude) * 111320;
+      final dlng = (points[i].longitude - points[i - 1].longitude) *
+          111320 *
+          math.cos(points[i].latitude * math.pi / 180);
+      cumDist.add(cumDist.last + math.sqrt(dlat * dlat + dlng * dlng));
+    }
+    final totalDist = cumDist.last;
 
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    int lastCount = 2;
+    double lastDistDrawn = 0;
     bool updating = false;
 
     _routeDrawTicker?.stop();
@@ -910,12 +937,26 @@ extension _RideRequestMap on _RideRequestScreenState {
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final eased = Curves.easeOutCubic.transform(progress);
-      final count = (eased * points.length).round().clamp(2, points.length);
+      // easeInOutCubic so the line STARTS slow, speeds up in the
+      // middle, and SLOWS DOWN near the end — buttery on curves.
+      final eased = Curves.easeInOutCubic.transform(progress);
+      final targetDist = eased * totalDist;
 
-      if (count != lastCount && _routeAnnot != null) {
-        lastCount = count;
-        final subset = points.sublist(0, count);
+      // Only push a Mapbox update if we've advanced by at least 8 m
+      // (prevents IPC thrashing on short segments).
+      if ((targetDist - lastDistDrawn).abs() < 8 && progress < 1.0) return;
+      lastDistDrawn = targetDist;
+
+      // Find the point index where cumDist >= targetDist
+      int idx = 2;
+      for (int i = 1; i < cumDist.length; i++) {
+        if (cumDist[i] >= targetDist) { idx = i + 1; break; }
+        idx = i + 1;
+      }
+      idx = idx.clamp(2, points.length);
+
+      if (_routeAnnot != null) {
+        final subset = points.sublist(0, idx);
         final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
         _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
         updating = true;

@@ -397,7 +397,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],
 )
 
@@ -407,6 +407,9 @@ _BROWSER_PATHS = ("/dispatch", "/photos", "/uploads")
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    # Let CORS middleware handle OPTIONS preflight requests
+    if request.method == "OPTIONS":
+        return await call_next(request)
     response = await call_next(request)
     _path = request.url.path
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -444,6 +447,9 @@ _MAX_RATE_BUCKETS = 10000  # cap bucket dict to prevent memory leak
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
+    # Let CORS middleware handle OPTIONS preflight requests
+    if request.method == "OPTIONS":
+        return await call_next(request)
     global _rate_cleanup_ts
     client_ip = request.client.host if request.client else "unknown"
     # IP blacklist check (merged — avoid extra middleware hop)
@@ -498,8 +504,8 @@ _LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/doc
 
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):
-    # GET/HEAD/hot paths never have meaningful bodies — skip entirely
-    if request.method in ("GET", "HEAD") or _is_hot_path(request.url.path):
+    # GET/HEAD/OPTIONS/hot paths never have meaningful bodies — skip entirely
+    if request.method in ("GET", "HEAD", "OPTIONS") or _is_hot_path(request.url.path):
         return await call_next(request)
     limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
     content_length = request.headers.get("content-length")

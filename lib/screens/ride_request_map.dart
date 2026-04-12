@@ -582,8 +582,12 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _drawRoute() {
     final s = _ctrl.state;
     if (s.route == null) return;
-    // Prevent resetting a cinematic that is already in progress
     if (_cinematicRunning) return;
+    // Claim the lock BEFORE resetting so a second _onStateChange that
+    // fires between _resetCinematic() and _startCinematicSequence()
+    // sees _cinematicRunning == true and bails. This was the cause of
+    // the "double tilt" the user saw — two sequences ran in parallel.
+    _cinematicRunning = true;
     _showPinLabels = true;
     final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
     _buildRouteMarkers();
@@ -647,33 +651,28 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Cinematic map animation — NO top-down start. Camera begins
   /// already tilted at 30° and eases to 55° (smooth, never flat).
   /// Pins pop, route draws progressively, sheet fades in at the end.
+  ///
+  /// CRITICAL: the final _fitRoute always uses a LARGE bottom inset
+  /// so the ENTIRE route is visible ABOVE the Choose-a-ride card.
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
-    if (_cinematicRunning) return;
-    _cinematicRunning = true;
+    // _cinematicRunning is already true — set by _drawRoute() caller.
 
     // Generate random bearing 5-12° left or right
     final rng = math.Random();
     final degrees = 5.0 + rng.nextDouble() * 7.0;
     _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
 
-    // 1. Fit camera starting at 30° pitch (NOT flat/0°) so there is
-    //    no visible "top-down → tilt" snap. The tilt then eases to 55°
-    //    gently in step 3.
-    if (_mapCtrl != null) {
-      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 30.0, bearing: 0));
-    }
-    _fitRoute(pts, preserveCamera: true);
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) { _cinematicRunning = false; return; }
-
-    // 2. Pin pop
+    // 1. Pin pop FIRST — show markers immediately so there's no blank
+    //    second. Fit camera in parallel (the 30° pitch is already set
+    //    by _resetCinematic).
     _startPinPop();
-    await Future.delayed(const Duration(milliseconds: 400));
+    _fitRoute(pts, preserveCamera: true);
+    await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) { _cinematicRunning = false; return; }
 
-    // 3. Tilt 30° → 55° + bearing 0° → random — slow and ultra smooth
-    //    (1.8 s easeInOutCubic so the camera glide is barely noticeable)
+    // 2. Tilt 30° → 55° + bearing 0° → random — slow, ultra smooth
+    //    (1.8 s easeInOutCubic). Fires in parallel with route draw.
     _tiltAnim?.removeListener(_applyMapCamera);
     _tiltCtrl?.dispose();
     _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
@@ -686,33 +685,36 @@ extension _RideRequestMap on _RideRequestScreenState {
       CurvedAnimation(parent: _bearingCtrl!, curve: Curves.easeInOutCubic),
     );
     _tiltAnim!.addListener(_applyMapCamera);
-    // Fire in parallel — don't await so the route draws while the
-    // camera is still easing to 55°. The overlap makes everything
-    // feel like one continuous movement.
     _tiltCtrl!.forward(from: 0);
     _bearingCtrl!.forward(from: 0);
 
-    // 4. Label bubbles unroll early (overlaps with tilt motion)
-    await Future.delayed(const Duration(milliseconds: 400));
+    // 3. Label bubbles unroll (overlaps with tilt)
+    await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) { _cinematicRunning = false; return; }
     _unrollLabels();
 
-    // 5. Gold route draws — starts while the tilt is still easing so
-    //    the route and camera movement merge into one smooth gesture.
-    if (pts.length > 15) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      if (!mounted) { _cinematicRunning = false; return; }
-      await _animateGoldRoute(pts);
-      if (!mounted) { _cinematicRunning = false; return; }
-    }
+    // 4. Gold route draws — fires for ALL routes (not just >15 pts)
+    //    so short routes also get a smooth animation instead of
+    //    appearing de golpe.
+    await Future.delayed(const Duration(milliseconds: 150));
+    if (!mounted) { _cinematicRunning = false; return; }
+    await _animateGoldRoute(pts);
+    if (!mounted) { _cinematicRunning = false; return; }
 
-    // Wait for the tilt to finish if the route was short
+    // Wait for the tilt to finish if the route draw was very fast
     if (_tiltCtrl != null && _tiltCtrl!.isAnimating) {
       await _tiltCtrl!.forward();
     }
 
-    // 6. Refit route with panel padding
-    _fitRoute(pts, preserveCamera: true);
+    // 5. FINAL FIT — uses a BIG bottom inset so the COMPLETE route
+    //    is always visible ABOVE the choose-a-ride card. The user was
+    //    emphatic: "SIEMPRE" — the route must never be hidden behind
+    //    the card on any device or route length.
+    if (!mounted) { _cinematicRunning = false; return; }
+    final mq = MediaQuery.of(context);
+    final cardInset = (mq.size.height * 0.42).clamp(300.0, 420.0) +
+        mq.padding.bottom + 24;
+    _fitRouteWithInset(pts, bottomInset: cardInset);
 
     _cinematicDone = true;
     _cinematicRunning = false;
@@ -905,9 +907,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     // metres-per-frame. The line never jumps or stutters, even on tight
     // curves and near the endpoints.
     //
-    // Duration adapts to route length. Min 2.8 s / max 4.5 s.
+    // Duration adapts to route length. Short routes (few points)
+    // still get a visible draw over 2.0 s so they never flash.
+    // Long routes cap at 4.0 s so the user doesn't wait forever.
     final totalMs = duration?.inMilliseconds ??
-        (points.length * 14).clamp(2800, 4500);
+        (points.length * 16).clamp(2000, 4000);
 
     // Pre-compute cumulative distances (meters along the polyline).
     final cumDist = <double>[0.0];
@@ -942,9 +946,9 @@ extension _RideRequestMap on _RideRequestScreenState {
       final eased = Curves.easeInOutCubic.transform(progress);
       final targetDist = eased * totalDist;
 
-      // Only push a Mapbox update if we've advanced by at least 8 m
-      // (prevents IPC thrashing on short segments).
-      if ((targetDist - lastDistDrawn).abs() < 8 && progress < 1.0) return;
+      // Push a Mapbox update if we've advanced by at least 3 m
+      // (prevents IPC thrashing while keeping curves smooth on short routes).
+      if ((targetDist - lastDistDrawn).abs() < 3 && progress < 1.0) return;
       lastDistDrawn = targetDist;
 
       // Find the point index where cumDist >= targetDist
@@ -1158,6 +1162,29 @@ extension _RideRequestMap on _RideRequestScreenState {
       // gentle instead of a quick flick (user asked for smooth, not
       // rapid camera motion).
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
+    });
+  }
+
+  /// Like [_fitRoute] but with an EXPLICIT bottom inset (in pixels)
+  /// so the cinematic's final fit ALWAYS frames the route above the
+  /// choose-a-ride card regardless of device size.
+  void _fitRouteWithInset(List<LatLng> pts, {required double bottomInset}) {
+    if (pts.isEmpty || _mapCtrl == null) return;
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in pts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    _mapCtrl!.cameraForCoordinatesPadding(
+      [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+       mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
+      mapbox.CameraOptions(pitch: 55.0, bearing: _randomBearing),
+      mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
+      null, null,
+    ).then((cam) {
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1200));
     });
   }
 

@@ -160,6 +160,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Uint8List? _carPngBytes;       // PNG bytes for PointAnnotation image
   mapbox.PointAnnotation? _carAnnot;  // The car annotation on the map
   bool _carAnnotCreating = false; // guard: prevents async race
+  bool _carUpdateInFlight = false; // guard: prevents IPC flooding on car position
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
 

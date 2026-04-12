@@ -891,19 +891,30 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
     if (_carPngBytes == null) return;
+    // Busy guard: if the previous Mapbox IPC call hasn't returned yet,
+    // SKIP this frame entirely. The NEXT frame will pick up the latest
+    // _animPos which is always current because the ticker keeps
+    // advancing the interpolation on every vsync. Without this guard
+    // the platform channel queues up dozens of concurrent updates and
+    // Mapbox applies them all at once → visible "jump forward" instead
+    // of smooth glide.
+    if (_carUpdateInFlight) return;
 
     final mgr = _carAnnotMgr;
     if (mgr == null) return;
 
     if (_carAnnot != null) {
-      // Fast path: update position AND rotation every frame
       try {
         _carAnnot!.geometry = mapbox.Point(
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
-        // car_*.png assets all face UP (north) by default — no bearing offset needed.
         _carAnnot!.iconRotate = _animBearing;
-        mgr.update(_carAnnot!);
+        _carUpdateInFlight = true;
+        mgr.update(_carAnnot!).then((_) {
+          _carUpdateInFlight = false;
+        }).catchError((_) {
+          _carUpdateInFlight = false;
+        });
       } catch (e) {
         debugPrint('[CarIcon] update failed: $e — will recreate');
         _carAnnot = null;

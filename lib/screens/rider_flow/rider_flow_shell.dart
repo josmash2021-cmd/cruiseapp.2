@@ -157,6 +157,15 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   mapbox.PointAnnotation? _dropoffAnnot;
   bool _cameraFitted = false;
 
+  // Cached geometry so _syncMapAnnotations does NOT thrash the Mapbox
+  // plugin — the listener fires on every controller notifyListeners
+  // (phase change, selectedOption change, tripId landing, ...), which
+  // would otherwise rebuild the route polyline dozens of times per trip.
+  int _lastRoutePointsHash = 0;
+  double? _lastPickupLat, _lastPickupLng;
+  double? _lastDropoffLat, _lastDropoffLng;
+  bool _syncInFlight = false;
+
   // ── Tracking handoff ────────────────────────────────────────────────
   // Day 3: once the backend marks the driver as on-the-way, we push
   // the existing RiderTrackingScreen on top of the shell so its
@@ -165,6 +174,7 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   // unchanged. The shell is PRESENTATION-ONLY for P01-P05 — we do
   // NOT reimplement the tracking screen, we just reuse it from here.
   bool _trackingPushed = false;
+  Timer? _trackingPushTimer;
 
   @override
   void initState() {
@@ -211,6 +221,7 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
   @override
   void dispose() {
     _pendingPhaseSwitch?.cancel();
+    _trackingPushTimer?.cancel();
     if (_ctrlRef != null) {
       _ctrl.removeListener(_onTripStateChange);
       _ctrl.dispose();
@@ -239,9 +250,22 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
       // Give P04/P05 (driverFound + driverEnRoute) a minimum of ~1.6 s
       // total on screen before we push the tracking screen so the user
       // sees the celebration + driver info land smoothly, not a rip.
-      Future.delayed(const Duration(milliseconds: 1600), () {
-        if (mounted) _pushRiderTrackingScreen();
-      });
+      // Cancellable so a rider cancel mid-wait aborts the push.
+      _trackingPushTimer?.cancel();
+      _trackingPushTimer = Timer(
+        const Duration(milliseconds: 1600),
+        () {
+          if (!mounted) return;
+          // Re-verify the controller phase — if the user cancelled
+          // during the wait we never want to push the tracking screen.
+          final p = _ctrl.state.phase;
+          if (p == RiderPhase.cancelled || p == RiderPhase.completed) {
+            _trackingPushed = false; // allow a later retry if needed
+            return;
+          }
+          _pushRiderTrackingScreen();
+        },
+      );
       return;
     }
 
@@ -346,100 +370,124 @@ class _RiderFlowShellState extends State<RiderFlowShell> {
 
   /// Draw / refresh pickup + dropoff markers and the route polyline
   /// based on the current [RiderTripState]. Cheap — only hits Mapbox
-  /// when the coordinates actually change between calls.
+  /// when the coordinates actually change between calls. Guarded by
+  /// [_syncInFlight] so concurrent listeners do not race each other.
   Future<void> _syncMapAnnotations() async {
     if (_map == null || _polylineMgr == null || _pointMgr == null) return;
-    final state = _ctrl.state;
-    final pickup = state.pickup;
-    final dropoff = state.dropoff;
-    final route = state.route;
-
-    // ── Route polyline ────────────────────────────────────────────
-    if (route != null && route.points.length >= 2) {
-      final coords = route.points
-          .map((p) => mapbox.Position(p.longitude, p.latitude))
-          .toList();
-      try {
-        if (_routeAnnot != null) {
-          await _polylineMgr!.delete(_routeAnnot!);
-          _routeAnnot = null;
-        }
-        _routeAnnot = await _polylineMgr!.create(
-          mapbox.PolylineAnnotationOptions(
-            geometry: mapbox.LineString(coordinates: coords),
-            lineColor: 0xFFE8C547,
-            lineWidth: 5.5,
-            lineOpacity: 0.95,
-          ),
-        );
-      } catch (e) {
-        debugPrint('[RiderFlowShell] route draw error: $e');
-      }
-    }
-
-    // ── Pickup + dropoff point annotations ────────────────────────
+    if (_syncInFlight) return;
+    _syncInFlight = true;
     try {
-      if (pickup != null) {
-        final p = mapbox.Point(
-          coordinates: mapbox.Position(pickup.lng, pickup.lat),
-        );
-        if (_pickupAnnot != null) {
-          _pickupAnnot!.geometry = p;
-          await _pointMgr!.update(_pickupAnnot!);
-        } else {
-          _pickupAnnot = await _pointMgr!.create(
-            mapbox.PointAnnotationOptions(
-              geometry: p,
-              iconAnchor: mapbox.IconAnchor.BOTTOM,
-              iconSize: 1.0,
-            ),
-          );
-        }
-      }
-      if (dropoff != null) {
-        final p = mapbox.Point(
-          coordinates: mapbox.Position(dropoff.lng, dropoff.lat),
-        );
-        if (_dropoffAnnot != null) {
-          _dropoffAnnot!.geometry = p;
-          await _pointMgr!.update(_dropoffAnnot!);
-        } else {
-          _dropoffAnnot = await _pointMgr!.create(
-            mapbox.PointAnnotationOptions(
-              geometry: p,
-              iconAnchor: mapbox.IconAnchor.BOTTOM,
-              iconSize: 1.0,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('[RiderFlowShell] point annot error: $e');
-    }
+      final state = _ctrl.state;
+      final pickup = state.pickup;
+      final dropoff = state.dropoff;
+      final route = state.route;
 
-    // ── First-fit camera to pickup + dropoff ──────────────────────
-    if (!_cameraFitted && pickup != null && dropoff != null) {
-      try {
-        final camera = await _map!.cameraForCoordinatesPadding(
-          [
-            mapbox.Point(
-                coordinates: mapbox.Position(pickup.lng, pickup.lat)),
-            mapbox.Point(
-                coordinates: mapbox.Position(dropoff.lng, dropoff.lat)),
-          ],
-          mapbox.CameraOptions(pitch: 35.0),
-          mapbox.MbxEdgeInsets(top: 140, left: 60, bottom: 320, right: 60),
-          null,
-          null,
+      // ── Route polyline ────────────────────────────────────────────
+      if (route != null && route.points.length >= 2) {
+        // Hash the full point list so we only rebuild the polyline when
+        // the actual geometry changes. Without this guard the route is
+        // deleted + recreated on every notifyListeners tick, which can
+        // thrash Mapbox with dozens of IPC calls per trip.
+        final hash = Object.hashAll(
+          route.points.map((p) => p.latitude.hashCode ^ p.longitude.hashCode),
         );
-        await _map!.easeTo(
-          camera,
-          mapbox.MapAnimationOptions(duration: 800),
-        );
-        _cameraFitted = true;
-      } catch (e) {
-        debugPrint('[RiderFlowShell] camera fit error: $e');
+        if (hash != _lastRoutePointsHash) {
+          _lastRoutePointsHash = hash;
+          final coords = route.points
+              .map((p) => mapbox.Position(p.longitude, p.latitude))
+              .toList();
+          try {
+            if (_routeAnnot != null) {
+              await _polylineMgr!.delete(_routeAnnot!);
+              _routeAnnot = null;
+            }
+            _routeAnnot = await _polylineMgr!.create(
+              mapbox.PolylineAnnotationOptions(
+                geometry: mapbox.LineString(coordinates: coords),
+                lineColor: 0xFFE8C547,
+                lineWidth: 5.5,
+                lineOpacity: 0.95,
+              ),
+            );
+          } catch (e) {
+            debugPrint('[RiderFlowShell] route draw error: $e');
+          }
+        }
       }
+
+      // ── Pickup + dropoff point annotations ────────────────────────
+      try {
+        if (pickup != null &&
+            (pickup.lat != _lastPickupLat || pickup.lng != _lastPickupLng)) {
+          _lastPickupLat = pickup.lat;
+          _lastPickupLng = pickup.lng;
+          final p = mapbox.Point(
+            coordinates: mapbox.Position(pickup.lng, pickup.lat),
+          );
+          if (_pickupAnnot != null) {
+            _pickupAnnot!.geometry = p;
+            await _pointMgr!.update(_pickupAnnot!);
+          } else {
+            _pickupAnnot = await _pointMgr!.create(
+              mapbox.PointAnnotationOptions(
+                geometry: p,
+                iconAnchor: mapbox.IconAnchor.BOTTOM,
+                iconSize: 1.0,
+              ),
+            );
+          }
+        }
+        if (dropoff != null &&
+            (dropoff.lat != _lastDropoffLat ||
+                dropoff.lng != _lastDropoffLng)) {
+          _lastDropoffLat = dropoff.lat;
+          _lastDropoffLng = dropoff.lng;
+          final p = mapbox.Point(
+            coordinates: mapbox.Position(dropoff.lng, dropoff.lat),
+          );
+          if (_dropoffAnnot != null) {
+            _dropoffAnnot!.geometry = p;
+            await _pointMgr!.update(_dropoffAnnot!);
+          } else {
+            _dropoffAnnot = await _pointMgr!.create(
+              mapbox.PointAnnotationOptions(
+                geometry: p,
+                iconAnchor: mapbox.IconAnchor.BOTTOM,
+                iconSize: 1.0,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[RiderFlowShell] point annot error: $e');
+      }
+
+      // ── First-fit camera to pickup + dropoff ──────────────────────
+      if (!_cameraFitted && pickup != null && dropoff != null) {
+        try {
+          final camera = await _map!.cameraForCoordinatesPadding(
+            [
+              mapbox.Point(
+                  coordinates: mapbox.Position(pickup.lng, pickup.lat)),
+              mapbox.Point(
+                  coordinates: mapbox.Position(dropoff.lng, dropoff.lat)),
+            ],
+            mapbox.CameraOptions(pitch: 35.0),
+            mapbox.MbxEdgeInsets(top: 140, left: 60, bottom: 320, right: 60),
+            null,
+            null,
+          );
+          await _map!.easeTo(
+            camera,
+            mapbox.MapAnimationOptions(duration: 800),
+          );
+          _cameraFitted = true;
+        } catch (e) {
+          debugPrint('[RiderFlowShell] camera fit error: $e');
+        }
+      }
+    } finally {
+      _syncInFlight = false;
     }
   }
 

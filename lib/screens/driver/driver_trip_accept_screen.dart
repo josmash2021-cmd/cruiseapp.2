@@ -691,6 +691,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           setState(() => _riderConfirmedPickup = true);
         }
       }
+    }, onError: (e) {
+      debugPrint('[Driver] trip listener error: $e');
+      // permission-denied → Firebase Auth expired. Re-auth silently
+      // so the snapshot listener recovers on the next server push.
+      if (e.toString().contains('permission-denied')) {
+        FirebaseAuth.instance.signInAnonymously().ignore();
+      }
     });
   }
 

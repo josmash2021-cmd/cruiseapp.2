@@ -35,7 +35,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
           _setState(() => _connectionLost = true);
         }
-        // Firestore error — poll continues at its normal 2s interval.
+        // permission-denied → Firebase Auth session expired. Re-auth
+        // and the listener will auto-reconnect on the next server push.
+        if (error.toString().contains('permission-denied')) {
+          FirebaseAuth.instance.signInAnonymously().ignore();
+        }
       },
     );
 
@@ -836,6 +840,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
       _rtdbFailCount++;
+      // permission-denied → session expired. Re-auth so the reconnect
+      // attempt (below) succeeds with a fresh token.
+      if (e.toString().contains('permission-denied')) {
+        FirebaseAuth.instance.signInAnonymously().ignore();
+      }
       if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
         _setState(() => _connectionLost = true);
       }

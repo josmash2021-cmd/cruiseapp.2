@@ -24,6 +24,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/map_cache_service.dart';
 import '../../services/local_cache.dart';
 import '../../services/analytics_service.dart';

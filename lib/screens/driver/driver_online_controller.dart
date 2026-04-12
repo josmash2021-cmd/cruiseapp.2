@@ -2153,8 +2153,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _handleExternalTripCancel();
         }
       },
-      onError: (e) =>
-          debugPrint('[DriverOnline] cancel watcher error for $tripId: $e'),
+      onError: (e) {
+        debugPrint('[DriverOnline] cancel watcher error for $tripId: $e');
+        if (e.toString().contains('permission-denied')) {
+          FirebaseAuth.instance.signInAnonymously().ignore();
+        }
+      },
     );
     debugPrint('[DriverOnline] cancel watcher armed on $docId');
   }

@@ -8,7 +8,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
-    get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip,
+    get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
@@ -23,7 +23,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import utc_now, _user_dict, _haversine
+from utils.helpers import utc_now, _user_dict, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
@@ -902,7 +902,26 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
         except Exception:
             pass
 
-    return _user_dict(user)
+    data = _user_dict(user)
+    try:
+        cnt_q = await db.execute(
+            select(func.count(Rating.id)).where(Rating.to_user_id == user.id)
+        )
+        cnt = cnt_q.scalar() or 0
+        if cnt:
+            avg_q = await db.execute(
+                select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id)
+            )
+            avg = avg_q.scalar()
+            data["average_rating"] = round(float(avg), 2) if avg is not None else None
+        else:
+            data["average_rating"] = None
+        data["ratings_count"] = int(cnt)
+    except Exception as e:
+        logging.warning("[/auth/me] rating stats failed: %s", e)
+        data["average_rating"] = None
+        data["ratings_count"] = 0
+    return data
 
 @router.post("/auth/offline", dependencies=[Depends(_verify_api_key)])
 async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1009,6 +1028,186 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
             logging.error("Firestore profile sync failed: %s", e)
 
     return _user_dict(db_user)
+
+
+@router.patch("/auth/web/profile")
+async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db)):
+    """Web widget profile edit. JWT-authenticated (no API key) so it can be
+    called directly from the Shopify widget. Unlike /auth/me this allows
+    first_name / last_name edits."""
+    try:
+        from routers.payments import _verify_web_origin as _vwo
+        _vwo(request)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except (JWTError, ValueError):
+        raise HTTPException(401, "Invalid or expired token")
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+
+    r = await db.execute(select(User).where(User.id == user_id))
+    db_user = r.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be an object")
+
+    _ALLOWED = ("first_name", "last_name", "phone", "email", "photo_url")
+    cleaned: dict = {}
+    for key in _ALLOWED:
+        if key not in body:
+            continue
+        val = body.get(key)
+        if val is None:
+            continue
+        if not isinstance(val, str):
+            raise HTTPException(400, f"{key} must be a string")
+        val = val.strip()
+        if key in ("first_name", "last_name") and not val:
+            raise HTTPException(400, f"{key} cannot be empty")
+        # photo_url must be a real http(s) URL; skip silently if bad
+        if key == "photo_url" and not val.startswith("http"):
+            continue
+        cleaned[key] = val
+
+    if "email" in cleaned and cleaned["email"].lower() != (db_user.email or "").lower():
+        dup = await db.execute(
+            select(User.id).where(func.lower(User.email) == cleaned["email"].lower(), User.id != db_user.id)
+        )
+        if dup.first():
+            raise HTTPException(400, "Email already in use")
+        cleaned["email"] = cleaned["email"].lower()
+
+    if "phone" in cleaned and cleaned["phone"] != (db_user.phone or ""):
+        dup = await db.execute(
+            select(User.id).where(User.phone == cleaned["phone"], User.id != db_user.id)
+        )
+        if dup.first():
+            raise HTTPException(400, "Phone already in use")
+
+    for key, val in cleaned.items():
+        setattr(db_user, key, val)
+    db_user.last_active_at = datetime.now(timezone.utc)
+
+    try:
+        await db.commit()
+        await db.refresh(db_user)
+    except IntegrityError as e:
+        await db.rollback()
+        logging.warning("[/auth/web/profile] integrity error user=%s: %s", user_id, e)
+        raise HTTPException(400, "Duplicate email or phone")
+
+    try:
+        invalidate_user_cache(db_user.id)
+    except Exception:
+        pass
+
+    logging.info("[/auth/web/profile] user=%s updated fields=%s", db_user.id, list(cleaned.keys()))
+
+    data = _user_dict(db_user)
+    try:
+        cnt_q = await db.execute(
+            select(func.count(Rating.id)).where(Rating.to_user_id == db_user.id)
+        )
+        cnt = cnt_q.scalar() or 0
+        if cnt:
+            avg_q = await db.execute(
+                select(func.avg(Rating.stars)).where(Rating.to_user_id == db_user.id)
+            )
+            avg = avg_q.scalar()
+            data["average_rating"] = round(float(avg), 2) if avg is not None else None
+        else:
+            data["average_rating"] = None
+        data["ratings_count"] = int(cnt)
+    except Exception as e:
+        logging.warning("[/auth/web/profile] rating stats failed: %s", e)
+        data["average_rating"] = None
+        data["ratings_count"] = 0
+    return data
+
+
+@router.get("/auth/web/me")
+async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
+    """Web-safe /auth/me — JWT only, no HMAC/API key."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+    r = await db.execute(select(User).where(User.id == user_id))
+    user = r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    data = {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "email": user.email, "phone": user.phone, "role": user.role,
+        "photo_url": user.photo_url, "status": user.status or "active",
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
+    try:
+        cnt_q = await db.execute(select(func.count()).select_from(Rating).where(Rating.to_user_id == user.id))
+        cnt = cnt_q.scalar() or 0
+        if cnt:
+            avg_q = await db.execute(select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id))
+            avg = avg_q.scalar()
+            data["average_rating"] = round(float(avg), 2) if avg is not None else None
+        else:
+            data["average_rating"] = None
+        data["ratings_count"] = int(cnt)
+    except Exception:
+        data["average_rating"] = None
+        data["ratings_count"] = 0
+    return data
+
+
+@router.get("/auth/web/trips")
+async def web_get_trips(request: Request, db: AsyncSession = Depends(get_db)):
+    """Web-safe rider trips — JWT only, no HMAC/API key."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+    result = await db.execute(
+        select(Trip).where(Trip.rider_id == user_id).order_by(Trip.created_at.desc()).limit(100)
+    )
+    trips = result.scalars().all()
+    driver_ids = {t.driver_id for t in trips if t.driver_id}
+    driver_map: dict[int, str] = {}
+    if driver_ids:
+        d_res = await db.execute(select(User.id, User.first_name, User.last_name).where(User.id.in_(driver_ids)))
+        for d_id, d_first, d_last in d_res.all():
+            driver_map[d_id] = f"{d_first or ''} {d_last or ''}".strip()
+    out = []
+    for t in trips:
+        td = _trip_dict(t)
+        td["driver_name"] = driver_map.get(t.driver_id, "")
+        out.append(td)
+    return out
+
 
 # -- Photo Upload / Serve ------------------------------
 PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photos")

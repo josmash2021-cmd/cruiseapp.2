@@ -768,8 +768,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     _bearingCtrl?.dispose();
     _bearingCtrl = null;
 
-    // ── Labels unroll at 40% of the tilt animation ──
-    Future.delayed(const Duration(milliseconds: 880), () {
+    // ── Labels fade in near the END of the route draw (~80%) ──
+    // so the rider sees the route almost complete, then the pickup
+    // and dropoff address labels appear smoothly next to their pins.
+    Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted) _unrollLabels();
     });
 
@@ -890,32 +892,17 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Swap annotations to pin+label bitmaps
     _swapToLabelBitmaps();
 
-    // Spring animation: shrink slightly then pop to full size
+    // Smooth fade in — scale from 0.0 → 0.65 over 700 ms
+    // (easeOutCubic so the reveal decelerates gently).
+    // NO spring, NO pop — just a clean, fluid appearance.
     _labelPopCtrl?.dispose();
     _labelPopCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 700),
     );
-    _labelPopAnim = TweenSequence<double>([
-      // Shrink from current scale to accommodate wider bitmap
-      TweenSequenceItem(
-        tween: Tween(begin: 0.32, end: 0.72)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 55,
-      ),
-      // Overshoot
-      TweenSequenceItem(
-        tween: Tween(begin: 0.72, end: 0.62)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 20,
-      ),
-      // Settle
-      TweenSequenceItem(
-        tween: Tween(begin: 0.62, end: 0.65)
-            .chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 25,
-      ),
-    ]).animate(_labelPopCtrl!);
+    _labelPopAnim = Tween<double>(begin: 0.0, end: 0.65).animate(
+      CurvedAnimation(parent: _labelPopCtrl!, curve: Curves.easeOutCubic),
+    );
     _labelPopAnim!.addListener(_updateLabelScales);
     _labelPopCtrl!.forward(from: 0);
   }
@@ -1124,7 +1111,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       text: s.pickupLabel.isNotEmpty ? s.pickupLabel : 'Pickup',
       isPickup: true,
       icon: _PinIcon.person,
-      labelOnLeft: false, // label on RIGHT of pickup pin
+      labelOnLeft: true, // label on LEFT of pickup pin
     );
     _dropoffPinOnly = await _buildStandalonePin(
       icon: dropoffIcon,

@@ -95,3 +95,20 @@ backend/                # FastAPI server
 | Rider ride request | `Rider Ride Request` |
 | Rider confirming screen | `Rider Confirming Screen` |
 | Rider tracking screen | `Rider Tracking Screen` |
+| Shopify widget modules | `shopify-module-dev` |
+| Shopify landing page HTML/CSS | `shopify-landing-design` |
+| Shopify widget audit | `shopify-widget-audit` |
+| Shopify CDN deploy | `shopify-deploy` |
+
+## Learned Patterns (Avoid Regressions)
+
+1. **Cancel rule**: only rider (without driver) + admin/dispatch can cancel. Drivers get 403
+2. **Lock order PostgreSQL**: `trips` before `dispatch_offers`. Use `FOR UPDATE SKIP LOCKED`
+3. **State machine forward-only**: `_VALID_TRANSITIONS` — no status regression
+4. **Auth guard defensivo**: call `_ensureFirebaseAuth()` before Firestore writes
+5. **Circuit breaker**: `_CircuitBreaker` in api_service.dart — 4 fails → 30s open
+6. **Localization 100%**: all strings via `S.of(context).xxx`, never hardcode
+7. **SmoothMotion only**: no decay exponential — use `lib/utils/smooth_motion.dart`
+8. **Overlay dedup**: `_confirmPickupShown` stays true until backend flips to `in_trip`
+9. **No re-push screens**: check `ModalRoute.of(context)?.isCurrent` before pushing
+10. **Commit workflow**: push after every change, never batch

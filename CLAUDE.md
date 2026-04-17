@@ -364,6 +364,10 @@ En [.claude/agents/](.claude/agents/):
 | **`ui-ux-designer`** | Review de layouts, accesibilidad, usabilidad, critical de screens/widgets. Invocar cuando el user comparte screenshot o pide "review design". |
 | **`Explore`** | Búsquedas codebase de 3+ queries o investigaciones multi-archivo. Usar en vez de grep manual cuando el alcance es amplio. |
 | **`general-purpose`** | Tareas que no encajan en los anteriores. |
+| **`shopify-module-dev`** | Crear/editar módulos del widget Shopify VIP Ride. Conoce el patrón VR.register, event bus, null-safe queries, backward compat. Invocar para cualquier cambio en `vip-ride-mod-*.js`. |
+| **`shopify-landing-design`** | Modificar landing page HTML/CSS de Shopify. Conoce qué data-attributes son requeridos, el tema (dark+gold), y qué NO tocar. Invocar para cambios visuales del landing. |
+| **`shopify-widget-audit`** | Auditar los 14 módulos del widget: conflictos de eventos, missing wiring, null-safety, ES5 compliance, flujos completos. Invocar antes de deploy grande. |
+| **`shopify-deploy`** | Upload archivos a Shopify CDN + actualizar URLs en el Liquid. Conoce el store (cruise-8575), el orden de carga, y el patrón de URLs. |
 
 ### Reglas de uso pro
 - **Paraleliza cuando puedas.** Si necesitas 2 tareas independientes (ej: ghost recovery + money reconciliation), lanza 2 agentes python-pro en el mismo mensaje en vez de secuencial.

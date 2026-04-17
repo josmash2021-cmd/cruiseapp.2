@@ -204,7 +204,23 @@ async def get_rider_trips(rider_id: int, user: User = Depends(_get_current_user)
     if user.id != rider_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.rider_id == rider_id).order_by(Trip.created_at.desc()).limit(100))
-    return [_trip_dict(t) for t in result.scalars().all()]
+    trips = result.scalars().all()
+
+    driver_ids = {t.driver_id for t in trips if t.driver_id}
+    driver_map: dict[int, str] = {}
+    if driver_ids:
+        d_res = await db.execute(
+            select(User.id, User.first_name, User.last_name).where(User.id.in_(driver_ids))
+        )
+        for d_id, d_first, d_last in d_res.all():
+            driver_map[d_id] = f"{d_first or ''} {d_last or ''}".strip()
+
+    out = []
+    for t in trips:
+        trip_dict = _trip_dict(t)
+        trip_dict["driver_name"] = driver_map.get(t.driver_id, "")
+        out.append(trip_dict)
+    return out
 
 @router.get("/drivers/{driver_id}/trips", dependencies=[Depends(_verify_api_key)])
 async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

@@ -40,10 +40,12 @@ def _get_pg_url() -> str | None:
     if '.pooler.supabase.com' in url:
         direct = os.getenv('DATABASE_DIRECT_URL', '').strip() or os.getenv('SUPABASE_DB_URL', '').strip()
         if direct:
-            # Normalize to postgresql://
             direct = re.sub(r'^postgres://', 'postgresql://', direct)
             return direct
-        logger.warning('[Backup] Using pooler URL — set DATABASE_DIRECT_URL for reliable backups')
+        # Session-mode pooler (port 5432) supports pg_dump reliably, unlike
+        # transaction-mode (6543). Only warn for transaction mode.
+        if ':6543' in url:
+            logger.warning('[Backup] Using transaction-mode pooler URL — set DATABASE_DIRECT_URL for reliable backups')
     return url
 
 

@@ -105,4 +105,27 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
         _fcm.send(msg)
         logging.info("[FCM] Push sent to ...%s (channel=%s)", token[-8:], channel_id)
     except Exception as _e:
-        logging.warning("[FCM] Push failed: %s", _e)
+        _msg = str(_e)
+        if "Requested entity was not found" in _msg or "registration-token-not-registered" in _msg.lower():
+            # Stale token — clean it from any User row so we stop trying it.
+            try:
+                import asyncio as _asyncio
+                from sqlalchemy import update as _upd
+                from models.database import SessionLocal as _SL, User as _U
+                async def _clear():
+                    async with _SL() as _db:
+                        await _db.execute(_upd(_U).where(_U.fcm_token == token).values(fcm_token=None))
+                        await _db.commit()
+                try:
+                    _loop = _asyncio.get_event_loop()
+                    if _loop.is_running():
+                        _asyncio.create_task(_clear())
+                    else:
+                        _loop.run_until_complete(_clear())
+                except Exception:
+                    pass
+                logging.info("[FCM] stale token cleared (...%s)", token[-8:] if token else "?")
+            except Exception as _clean_err:
+                logging.warning("[FCM] stale-token cleanup failed: %s", _clean_err)
+        else:
+            logging.warning("[FCM] Push failed: %s", _msg)

@@ -560,9 +560,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       );
       // Lock camera during animation to prevent overlapping animations
       _cameraAnimating = true;
-      // Always use easeTo for buttery smooth transitions (flyTo jumps/bounces)
-      const dur = 2000;
-      _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 100));
+      // Short easeTo for fluid tracking — 600ms finishes before next 800ms follow tick
+      const dur = 600;
+      _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
       _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
       Future.delayed(const Duration(milliseconds: dur), () {
         _cameraAnimating = false;
@@ -572,11 +572,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   void _throttleBoundsFit() {
     final now = DateTime.now();
-    if (now.difference(_lastBoundsFit).inMilliseconds < 2000) return;
+    if (now.difference(_lastBoundsFit).inMilliseconds < 800) return;
     _lastBoundsFit = now;
     _fitRouteBounds();
   }
-  
+
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);
   }
@@ -600,10 +600,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_phase == _TrackPhase.arrived) return;
 
     final now = DateTime.now();
-    // Chase mode: follow driver — throttle at 2.5s to match camera follow timer
-    // and avoid overlapping easeTo animations that cause camera jitter.
+    // Chase mode: follow driver — throttle at 800ms to match camera follow timer.
+    // 600ms animation finishes before next tick, preventing overlap jitter.
     if (_shouldFollowDriver && _animPos.latitude != 0) {
-      if (now.difference(_lastBoundsFit).inMilliseconds < 2500) return;
+      if (now.difference(_lastBoundsFit).inMilliseconds < 800) return;
       _lastBoundsFit = now;
       _followDriver(_animPos, _animBearing);
       return;

@@ -1353,10 +1353,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // This distributes movement EVENLY across ALL frames between GPS updates
     // instead of proportional catch-up which reaches target in 200ms then stalls.
     final velStep = _velocityMps * dt;
-    // Fallback: ultra-gentle proportional correction (3%/frame at 60fps,
-    // was 5%) so the correction never outpaces the velocity — the car
-    // always GLIDES rather than "catches up" visibly.
-    final corrStep = diff * tf(0.03);
+    // Proportional correction (8%/frame at 60fps) — strong enough to
+    // absorb GPS jumps within ~0.5s, weak enough to stay invisible
+    // during smooth driving.
+    final corrStep = diff * tf(0.08);
     // Use whichever produces more forward movement — velocity dominates while
     // driving, correction dominates when stopped.
     if (diff > 0.05) {
@@ -1475,9 +1475,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Skips during arrived phase — driver is stationary, camera should be stable.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
-    // Follow every 2.5s — longer interval prevents overlapping easeTo animations
-    // which cause camera jitter when a new flyTo starts mid-animation.
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+    // Follow every 800ms — short enough to feel fluid, long enough to avoid
+    // overlapping easeTo animations (600ms animation + 200ms settle).
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       // During arrived phase the driver is at the pickup — no camera movement.
       if (_phase == _TrackPhase.arrived) return;

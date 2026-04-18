@@ -31,6 +31,7 @@ import '../../services/user_session.dart';
 import '../home_screen.dart';
 import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
+import '../../services/complimentary_drink_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../navigation/nav_state_machine.dart';
@@ -130,6 +131,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late String _dropoffAddr;
   String? _riderPhotoUrl;
   bool _resolvingAddresses = false;
+
+  // ── VIP complimentary drink (null = not VIP or rider hasn't chosen yet) ──
+  String? _complimentaryDrink;
 
   // ── Tilt animation ──
   late final AnimationController _tiltCtrl;
@@ -235,6 +239,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);
     _resolveGenericAddresses();
     _resolveRiderPhotoFromTrip();
+    _loadComplimentaryDrinkIfVip();
 
     // If returning from nav (trip already started), skip slide-to-confirm
     if (widget.arrivedAtPickup) {
@@ -477,6 +482,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<void> _loadComplimentaryDrinkIfVip() async {
+    // Only VIP trips have a complimentary drink menu
+    final vt = widget.vehicleType.toLowerCase();
+    if (!vt.contains('vip')) return;
+    final drink = await ComplimentaryDrinkService.fetchForRider(
+      phone: widget.riderPhone,
+    );
+    if (!mounted) return;
+    if (drink != null && drink.isNotEmpty) {
+      setState(() => _complimentaryDrink = drink);
+    }
   }
 
   Future<void> _resolveGenericAddresses() async {
@@ -1007,6 +1025,60 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           child: Icon(icon, color: _gold, size: 18),
         ),
       );
+
+  Widget _complimentaryDrinkCard() {
+    final drink = _complimentaryDrink ?? '';
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: Responsive.w(14),
+        vertical: Responsive.h(12),
+      ),
+      decoration: BoxDecoration(
+        color: _gold.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _gold.withValues(alpha: 0.45), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.local_bar_rounded, color: _gold, size: 20),
+          ),
+          SizedBox(width: Responsive.w(12)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Complimentary drink',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: Responsive.sp(11),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  drink,
+                  style: TextStyle(
+                    color: _gold,
+                    fontSize: Responsive.sp(16),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _copyAddress(String label, String address) {
     final value = address.trim();
@@ -2238,6 +2310,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       _msgBtnWithBadge(),
                     ],
                   ),
+                  if (_complimentaryDrink != null) ...[
+                    SizedBox(height: Responsive.h(14)),
+                    _complimentaryDrinkCard(),
+                  ],
                 ],
               ),
             ),

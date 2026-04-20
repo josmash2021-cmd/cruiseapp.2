@@ -1240,7 +1240,30 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
         driver = dr.scalar_one_or_none()
         if driver:
             resp["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip()
+            resp["driver_phone"] = driver.phone or ""
             resp["driver_photo_url"] = _abs_photo_url(driver.photo_url) or ""
+
+            # Live ETA + distance based on driver's last known GPS vs the
+            # relevant destination (pickup if en route/arrived, dropoff if in trip).
+            try:
+                if driver.lat is not None and driver.lng is not None:
+                    raw_lower = (trip.status or "").lower()
+                    if raw_lower in ("in_trip", "on_trip", "in_progress") and trip.dropoff_lat is not None:
+                        tgt_lat, tgt_lng = float(trip.dropoff_lat), float(trip.dropoff_lng or 0)
+                    elif trip.pickup_lat is not None:
+                        tgt_lat, tgt_lng = float(trip.pickup_lat), float(trip.pickup_lng or 0)
+                    else:
+                        tgt_lat = tgt_lng = None
+                    if tgt_lat is not None:
+                        km = _haversine(float(driver.lat), float(driver.lng), tgt_lat, tgt_lng)
+                        resp["distance_km"] = round(km, 2)
+                        resp["distance_miles"] = round(km * 0.621371, 2)
+                        # Assume 40 km/h average city speed; floor at 1 min so
+                        # the UI never shows "0 min" while the driver is still moving.
+                        eta_min = max(1, int(round((km / 40.0) * 60.0)))
+                        resp["eta_minutes"] = eta_min
+            except Exception:
+                pass
             # Only expose the driver rating if they have been rated at least once
             drv_cnt_res = await db.execute(
                 select(func.count(Rating.id)).where(Rating.to_user_id == driver.id)
@@ -1284,6 +1307,85 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
                 resp["vehicle_color"] = vehicle.color or ""
 
     return resp
+
+
+@router.get("/bookings/web/{booking_id}/chat")
+async def web_booking_chat_get(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Fetch all chat messages for a web-booked trip. Guest side only — the
+    rider (guest) can read all messages in the trip conversation."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    from models.database import ChatMessage
+    trip_res = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = trip_res.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    msgs_res = await db.execute(
+        select(ChatMessage).where(ChatMessage.trip_id == booking_id).order_by(ChatMessage.created_at.asc())
+    )
+    msgs = msgs_res.scalars().all()
+    out = []
+    for m in msgs:
+        out.append({
+            "id": m.id,
+            "sender_role": "driver" if (trip.driver_id and m.sender_id == trip.driver_id) else "rider",
+            "message": m.message,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        })
+    return {"messages": out}
+
+
+@router.post("/bookings/web/{booking_id}/chat")
+async def web_booking_chat_post(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Send a chat message as the guest rider on a web-booked trip.
+    The sender is the trip's rider_id (shared web@cruiseinride.com system user);
+    the driver app's existing chat UI will render it seamlessly."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+    if len(msg_text) > 2000:
+        msg_text = msg_text[:2000]
+    from models.database import ChatMessage
+    trip_res = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = trip_res.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    if not trip.driver_id:
+        raise HTTPException(409, "No driver assigned yet")
+    if not trip.rider_id:
+        raise HTTPException(500, "Trip has no rider_id; cannot send message")
+    msg = ChatMessage(
+        trip_id=booking_id,
+        sender_id=trip.rider_id,
+        receiver_id=trip.driver_id,
+        message=msg_text,
+    )
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    # FCM push to driver so the chat bubble pops in the driver app
+    try:
+        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        drv = drv_res.scalar_one_or_none()
+        if drv and drv.fcm_token:
+            guest_name = (getattr(trip, "guest_first_name", None) or "Rider").strip()
+            _send_fcm_push(
+                drv.fcm_token,
+                title=f"Message from {guest_name}",
+                body=msg_text[:200],
+                data={"type": "chat_message", "trip_id": str(booking_id), "sender_role": "rider"},
+            )
+    except Exception:
+        pass
+    return {
+        "id": msg.id,
+        "sender_role": "rider",
+        "message": msg.message,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
 
 
 @router.post("/bookings/web/{booking_id}/cancel")

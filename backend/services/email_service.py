@@ -65,33 +65,33 @@ def _shell(title: str, preheader: str, body_html: str) -> str:
 <tr><td align="center" bgcolor="#f6f3ee">
 
 <!-- Main card -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" class="card" style="max-width:560px;background-color:#ffffff !important;border-radius:20px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 40px rgba(0,0,0,.06);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#e8c547" class="card" style="max-width:560px;background-color:#e8c547 !important;border-radius:20px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 40px rgba(200,160,50,.18);">
 
 <!-- Header -->
-<tr><td align="center" bgcolor="#ffffff" style="padding:36px 30px 22px;">
+<tr><td align="center" bgcolor="#e8c547" style="padding:36px 30px 22px;">
 <img src="{LOGO_URL}" alt="Cruise" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;border-radius:12px;">
 <div style="margin-top:14px;font-size:24px;font-weight:800;letter-spacing:3px;color:#1a1a1a !important;font-family:Georgia,'Times New Roman',serif;">CRUISE</div>
-<div style="margin-top:4px;font-size:10px;font-weight:600;letter-spacing:2.5px;color:#a08b3f !important;text-transform:uppercase;">Premium Ride Service</div>
+<div style="margin-top:4px;font-size:10px;font-weight:600;letter-spacing:2.5px;color:#6b5a1a !important;text-transform:uppercase;">Premium Ride Service</div>
 </td></tr>
 
 <!-- Divider -->
-<tr><td bgcolor="#ffffff" style="padding:0 30px;">
-<div style="height:1px;background:#eee8db;"></div>
+<tr><td bgcolor="#e8c547" style="padding:0 30px;">
+<div style="height:1px;background:rgba(26,26,26,.15);"></div>
 </td></tr>
 
 <!-- Body -->
-<tr><td bgcolor="#ffffff" class="pad-lg" style="padding:28px 34px 12px;">{body_html}</td></tr>
+<tr><td bgcolor="#e8c547" class="pad-lg" style="padding:28px 34px 12px;">{body_html}</td></tr>
 
 <!-- CTA -->
-<tr><td align="center" bgcolor="#ffffff" style="padding:10px 30px 28px;">
+<tr><td align="center" bgcolor="#e8c547" style="padding:10px 30px 28px;">
 <a href="https://cruiseinride.com" class="big-pill" style="display:inline-block;padding:13px 28px;background:#1a1a1a;border-radius:999px;color:#ffffff !important;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:.08em;text-transform:uppercase;">Visit cruiseinride.com</a>
 </td></tr>
 
 <!-- Support -->
-<tr><td bgcolor="#fafaf6" style="padding:20px 30px;font-size:12px;color:#6b6b6b !important;line-height:1.6;text-align:center;border-top:1px solid #eee8db;border-radius:0 0 20px 20px;">
+<tr><td bgcolor="#dab732" style="padding:20px 30px;font-size:12px;color:#3a2e00 !important;line-height:1.6;text-align:center;border-top:1px solid rgba(26,26,26,.15);border-radius:0 0 20px 20px;">
 <strong style="color:#1a1a1a !important;">Need help?</strong>
 &nbsp;·&nbsp;
-<a href="mailto:{SUPPORT_EMAIL}" style="color:#a08b3f !important;text-decoration:none;font-weight:600;">{SUPPORT_EMAIL}</a>
+<a href="mailto:{SUPPORT_EMAIL}" style="color:#1a1a1a !important;text-decoration:none;font-weight:700;">{SUPPORT_EMAIL}</a>
 </td></tr>
 
 </table>
@@ -118,44 +118,45 @@ def _h1(text: str) -> str:
 
 def _h2(text: str) -> str:
     return (
-        f'<div style="margin:20px 0 8px;font-size:11px;font-weight:700;'
-        f'letter-spacing:.16em;color:#a08b3f !important;text-transform:uppercase;">{text}</div>'
+        f'<div style="margin:20px 0 8px;font-size:11px;font-weight:800;'
+        f'letter-spacing:.16em;color:#6b5a1a !important;text-transform:uppercase;">{text}</div>'
     )
 
 
 def _p(text: str) -> str:
     return (
         f'<p style="margin:0 0 14px 0;font-size:15px;line-height:1.65;'
-        f'color:#4a4a4a !important;">{text}</p>'
+        f'color:#3a2e00 !important;">{text}</p>'
     )
 
 
-def _badge(text: str, color: str = "#a08b3f") -> str:
+def _badge(text: str, color: str = "#1a1a1a") -> str:
     return (
         f'<div style="display:inline-block;padding:7px 16px;border-radius:999px;'
-        f'background:#faf6ea;border:1px solid #e8dcb0;'
-        f'color:{color} !important;font-size:11px;font-weight:700;'
+        f'background:#1a1a1a;border:1px solid #1a1a1a;'
+        f'color:#e8c547 !important;font-size:11px;font-weight:700;'
         f'letter-spacing:.1em;text-transform:uppercase;">{text}</div>'
     )
 
 
 def _info_card(rows_html: str) -> str:
-    """Minimal light card with subtle border for structured info."""
+    """Gold info card with subtle darker border for structured info."""
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'bgcolor="#f2d566" '
         f'style="border-collapse:separate;border-spacing:0;margin:14px 0 18px;'
-        f'background:#fafaf6;border:1px solid #eee8db;'
+        f'background-color:#f2d566;border:1px solid rgba(26,26,26,.12);'
         f'border-radius:14px;overflow:hidden;">'
         f'{rows_html}</table>'
     )
 
 
 def _row(label: str, value: str, last: bool = False) -> str:
-    border = "" if last else 'border-bottom:1px solid #eee8db;'
+    border = "" if last else 'border-bottom:1px solid rgba(26,26,26,.12);'
     return (
         f'<tr><td style="padding:14px 18px;{border}">'
         f'<div style="font-size:10px;font-weight:700;letter-spacing:.14em;'
-        f'color:#a08b3f !important;text-transform:uppercase;margin-bottom:4px;">{label}</div>'
+        f'color:#6b5a1a !important;text-transform:uppercase;margin-bottom:4px;">{label}</div>'
         f'<div style="font-size:15px;font-weight:600;color:#1a1a1a !important;">{value}</div>'
         f'</td></tr>'
     )
@@ -166,7 +167,7 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
     lbl_pickup = "Recogida" if lang == "es" else "Pickup"
     lbl_dropoff = "Destino" if lang == "es" else "Dropoff"
     return f"""
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 18px;background:#fafaf6;border:1px solid #eee8db;border-radius:14px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f2d566" style="margin:14px 0 18px;background-color:#f2d566;border:1px solid rgba(26,26,26,.12);border-radius:14px;">
 <tr><td style="padding:16px 18px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr>
@@ -174,16 +175,16 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 <div style="width:10px;height:10px;border-radius:50%;background:#1a1a1a;margin:0 auto;"></div>
 </td>
 <td valign="top" style="padding:0 0 14px 10px;">
-<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#a08b3f !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#6b5a1a !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
 <div style="font-size:14px;font-weight:600;color:#1a1a1a !important;margin-top:3px;word-break:break-word;line-height:1.45;">{pickup}</div>
 </td>
 </tr>
 <tr>
 <td width="14" align="center" valign="top" style="padding:2px 0 0 0;line-height:0;font-size:0;width:14px;">
-<div style="width:10px;height:10px;background:#c9a236;border-radius:2px;margin:0 auto;"></div>
+<div style="width:10px;height:10px;background:#1a1a1a;border-radius:2px;margin:0 auto;"></div>
 </td>
 <td valign="top" style="padding:0 0 0 10px;">
-<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#a08b3f !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#6b5a1a !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>
 <div style="font-size:14px;font-weight:600;color:#1a1a1a !important;margin-top:3px;word-break:break-word;line-height:1.45;">{dropoff}</div>
 </td>
 </tr>
@@ -367,7 +368,7 @@ def _build_driver_assigned(driver_name, vehicle_year, vehicle_make, vehicle_mode
         _row(lbl_driver, driver_name)
         + _row(lbl_vehicle, vehicle_full)
         + _row(lbl_color, vehicle_color or "—")
-        + _row(lbl_plate, f"<span style='font-family:monospace;letter-spacing:.08em;background:#faf6ea;padding:3px 8px;border-radius:5px;border:1px solid #e8dcb0;color:#1a1a1a;'>{vehicle_plate}</span>" if vehicle_plate else "—")
+        + _row(lbl_plate, f"<span style='font-family:monospace;letter-spacing:.08em;background:#1a1a1a;padding:3px 8px;border-radius:5px;color:#e8c547;'>{vehicle_plate}</span>" if vehicle_plate else "—")
         + _row(lbl_phone, f"<a href='tel:{driver_phone}' style='color:#a08b3f !important;text-decoration:none;font-weight:600;'>{driver_phone}</a>" if driver_phone else "—", last=True)
     )
 
@@ -422,7 +423,7 @@ def _build_driver_en_route(driver_name: str, trip, lang: str) -> tuple[str, str,
 def _build_driver_arrived(driver_name: str, vehicle_color: str, vehicle_plate: str, trip, lang: str) -> tuple[str, str, str]:
     tid = _trip_id_short(trip)
     plate_html = (
-        f"<span style='font-family:monospace;letter-spacing:.08em;background:#faf6ea;padding:3px 8px;border-radius:5px;border:1px solid #e8dcb0;color:#1a1a1a;'>{vehicle_plate}</span>"
+        f"<span style='font-family:monospace;letter-spacing:.08em;background:#1a1a1a;padding:3px 8px;border-radius:5px;color:#e8c547;'>{vehicle_plate}</span>"
         if vehicle_plate else "—"
     )
 

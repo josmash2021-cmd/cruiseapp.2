@@ -1050,11 +1050,18 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         logging.error("[get_driver_pending] Stale offer cleanup failed for driver %d: %s", driver_id, e)
 
     # Single JOIN query -- fetch offers + trips + riders in ONE roundtrip (fixes N+1)
+    # Safety filter: only surface offers whose trip is still in a dispatchable state.
+    # If the rider cancels while the offer row is still "pending" (rare race), the
+    # trip.status check below hides the dead offer so the driver app never shows it.
     result = await db.execute(
         select(DispatchOffer, Trip, User)
         .join(Trip, DispatchOffer.trip_id == Trip.id)
         .outerjoin(User, Trip.rider_id == User.id)
-        .where(and_(DispatchOffer.driver_id == driver_id, DispatchOffer.status == "pending"))
+        .where(and_(
+            DispatchOffer.driver_id == driver_id,
+            DispatchOffer.status == "pending",
+            Trip.status == "requested",
+        ))
     )
     offers = []
     for offer, trip, rider in result.all():

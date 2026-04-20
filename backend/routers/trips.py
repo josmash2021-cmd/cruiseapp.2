@@ -1178,8 +1178,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             DispatchOffer.status == "pending"
         )
     )
+    _affected_driver_ids: set[int] = set()
     for stale_offer in pending_offers.scalars().all():
         stale_offer.status = "canceled"
+        _affected_driver_ids.add(stale_offer.driver_id)
         logging.info("[Dispatch] Cancelled stale offer id=%d for cancelled trip %d", stale_offer.id, trip.id)
 
     # ---"= REFUND LOGIC ==="=
@@ -1201,6 +1203,25 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     
     await db.commit()
     await db.refresh(trip)
+
+    # Evict pending-offer cache + push empty offers list via SSE to every driver
+    # that had a live offer on this trip. Without this the driver app keeps
+    # showing the ride card until its next poll (up to ~5s) even though the
+    # trip is dead.
+    if _affected_driver_ids:
+        try:
+            from routers.dispatch import _pending_cache as _dispatch_pending_cache
+            for _drv_id in _affected_driver_ids:
+                _dispatch_pending_cache.pop(_drv_id, None)
+        except Exception:
+            pass
+        try:
+            from services.event_bus import event_bus as _ev_bus
+            for _drv_id in _affected_driver_ids:
+                asyncio.create_task(_ev_bus.push_driver_offer(_drv_id, []))
+        except Exception as _ev_err:
+            logging.warning("[Dispatch] SSE offer-cleared push failed for trip %d: %s", trip.id, _ev_err)
+
     if _HAS_FIRESTORE:
         try:
             cancelled_by = "driver" if user.id == trip.driver_id else "rider"

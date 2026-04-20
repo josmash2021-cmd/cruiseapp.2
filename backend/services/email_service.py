@@ -188,10 +188,10 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 </td>
 </tr>
 <tr>
-<td width="14" align="center" style="padding:0;line-height:0;font-size:0;width:14px;height:1px;">
-<div style="width:2px;height:22px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-11px auto -11px;"></div>
+<td width="14" align="center" style="padding:0;line-height:0;font-size:0;width:14px;height:0;mso-line-height-rule:exactly;">
+<div style="width:2px;height:60px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-30px auto;display:block;"></div>
 </td>
-<td style="padding:0;line-height:0;font-size:0;height:1px;">&nbsp;</td>
+<td style="padding:0;line-height:0;font-size:0;height:0;mso-line-height-rule:exactly;">&nbsp;</td>
 </tr>
 <tr>
 <td width="14" align="center" valign="top" style="padding:1px 0 0 0;line-height:0;font-size:0;width:14px;">

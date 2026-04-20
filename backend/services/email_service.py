@@ -163,39 +163,45 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
     """Visual pickup → dropoff block with dots and line."""
     lbl_pickup = "Recogida" if lang == "es" else "Pickup"
     lbl_dropoff = "Destino" if lang == "es" else "Dropoff"
-    # Layout strategy: 3-row table where each figure shares a row with its label.
-    # - Row 1 (PICKUP): circle + label column. Circle is top-aligned at the
-    #   exact height of the label's cap line (padding-top:1px inside a 10px
-    #   div that sits beside a 10px-line-height uppercase label).
-    # - Row 2 (connector): line-only row. The line extends vertically using
-    #   large negative vertical margins that make it bleed INTO both
-    #   neighbour rows so it visually touches the circle bottom AND the
-    #   square top.
-    # - Row 3 (DROPOFF): square + label column, same alignment as row 1.
-    # This keeps the circle anchored at PICKUP and the square anchored at
-    # DROPOFF regardless of how many lines the addresses wrap to.
+    # Layout strategy: 2-row table. Each row has a left "icon stack" cell
+    # and a right "label block" cell. The icon stack uses a nested single-
+    # column table so the figure and its adjoining line segment are rendered
+    # as a continuous block — no negative margins (which mobile email
+    # clients strip), no floating connector row. The circle sits on top of
+    # a line that fills the rest of the PICKUP row, and the square sits
+    # below a line that fills the top of the DROPOFF row. Since the two
+    # line segments meet at the row boundary, they appear as a single
+    # continuous line touching both figures on any client.
     return f"""
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 18px;background:#0d0d0d;border:1px solid rgba(232,197,71,.22);border-radius:14px;">
 <tr><td style="padding:16px 18px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr>
-<td width="14" align="center" valign="top" style="padding:1px 0 0 0;line-height:0;font-size:0;width:14px;">
-<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);margin:0 auto;"></div>
+<td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
+<table role="presentation" width="10" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;width:10px;margin:0 auto;">
+<tr><td align="center" style="padding:1px 0 0 0;line-height:0;font-size:0;">
+<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);display:block;"></div>
+</td></tr>
+<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
+<div style="width:2px;height:16px;background:#E8C547;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+</td></tr>
+</table>
 </td>
-<td valign="top" style="padding:0 0 14px 10px;">
+<td valign="top" style="padding:0 0 16px 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
 <div style="font-size:14px;font-weight:600;color:#E8C547 !important;margin-top:3px;word-break:break-word;line-height:1.35;">{pickup}</div>
 </td>
 </tr>
 <tr>
-<td width="14" align="center" style="padding:0;line-height:0;font-size:0;width:14px;height:0;mso-line-height-rule:exactly;">
-<div style="width:2px;height:60px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-30px auto;display:block;"></div>
-</td>
-<td style="padding:0;line-height:0;font-size:0;height:0;mso-line-height-rule:exactly;">&nbsp;</td>
-</tr>
-<tr>
-<td width="14" align="center" valign="top" style="padding:1px 0 0 0;line-height:0;font-size:0;width:14px;">
-<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;margin:0 auto;"></div>
+<td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
+<table role="presentation" width="10" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;width:10px;margin:0 auto;">
+<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
+<div style="width:2px;height:16px;background:#E8C547;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+</td></tr>
+<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
+<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;display:block;"></div>
+</td></tr>
+</table>
 </td>
 <td valign="top" style="padding:0 0 0 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>

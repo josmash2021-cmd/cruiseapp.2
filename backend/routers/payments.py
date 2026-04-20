@@ -1278,6 +1278,151 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
     return resp
 
 
+@router.post("/bookings/web/{booking_id}/cancel")
+async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Cancel a web booking end-to-end:
+    - Mark trip cancelled in Postgres
+    - Expire any pending DispatchOffers for this trip (so driver app stops showing it)
+    - Invalidate pending-offer cache for affected drivers
+    - Push empty offer list + trip_update via SSE so the driver app reflects the
+      cancellation instantly (no polling delay)
+    - Send FCM "booking_cancelled" push to drivers who had pending offers OR to
+      the driver who already accepted
+    - Refund Stripe payment intent if the booking was on hold
+    - Sync status to Firestore so any other listeners see it
+    """
+    _verify_web_origin(request)
+    _web_key_check(request)
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id).with_for_update())
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+
+    # Idempotent: already cancelled/completed is a no-op success response
+    _current = (trip.status or "").lower()
+    if _current in ("cancelled", "canceled", "completed"):
+        return {"ok": True, "status": _current, "already": True}
+
+    # Can't cancel if the ride is already in progress — refund window closed
+    if _current in ("in_trip", "in_progress", "on_trip"):
+        raise HTTPException(409, "Cannot cancel a ride that is in progress")
+
+    previous_status = trip.status
+    previous_driver_id = trip.driver_id
+
+    # Gather drivers to notify BEFORE we expire offers (needed for FCM fan-out)
+    affected_driver_ids: set[int] = set()
+    if previous_driver_id:
+        affected_driver_ids.add(previous_driver_id)
+    try:
+        from models.database import DispatchOffer
+        pending_q = await db.execute(
+            select(DispatchOffer).where(
+                DispatchOffer.trip_id == trip.id,
+                DispatchOffer.status == "pending",
+            )
+        )
+        for off in pending_q.scalars().all():
+            affected_driver_ids.add(off.driver_id)
+            off.status = "canceled"
+    except Exception as _off_err:
+        logging.warning("[WebCancel] Failed to expire pending offers for trip %d: %s", trip.id, _off_err)
+
+    # Stripe refund (best-effort — fall back to pending_refund for manual review)
+    refunded = False
+    new_payment_status = trip.payment_status
+    if trip.stripe_payment_intent_id and trip.payment_status in ("held", "paid"):
+        try:
+            import stripe as _stripe_mod
+            if _HAS_STRIPE:
+                _stripe_mod.Refund.create(
+                    payment_intent=trip.stripe_payment_intent_id,
+                    reason="requested_by_customer",
+                )
+                refunded = True
+                new_payment_status = "refunded"
+                logging.info("[WebCancel] trip=%d refunded via Stripe", trip.id)
+        except Exception as _refund_err:
+            new_payment_status = "pending_refund"
+            logging.warning("[WebCancel] trip=%d refund failed, marking pending_refund: %s", trip.id, _refund_err)
+
+    trip.status = "cancelled"
+    trip.cancel_reason = "rider_web_cancel"
+    trip.payment_status = new_payment_status
+    trip.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    # Invalidate cache + SSE push to affected drivers
+    try:
+        from routers.dispatch import _pending_cache as _dispatch_pending_cache
+        for drv_id in affected_driver_ids:
+            _dispatch_pending_cache.pop(drv_id, None)
+    except Exception:
+        pass
+
+    try:
+        from services.event_bus import event_bus as _ev_bus
+        for drv_id in affected_driver_ids:
+            asyncio.create_task(_ev_bus.push_driver_offer(drv_id, []))
+        # Also push a trip_update so rider-tracking-style listeners notice
+        asyncio.create_task(_ev_bus.push_trip_update(trip.id, {
+            "status": "cancelled",
+            "cancel_reason": "rider_web_cancel",
+            "cancelled_by": "rider",
+        }))
+    except Exception as _ev_err:
+        logging.warning("[WebCancel] SSE broadcast failed for trip %d: %s", trip.id, _ev_err)
+
+    # FCM push to each affected driver so the driver app banner/toast appears
+    # even if they don't have an SSE session open.
+    try:
+        from services.fcm_service import _send_fcm_push_async
+        if affected_driver_ids:
+            drv_q = await db.execute(select(User).where(User.id.in_(list(affected_driver_ids))))
+            for drv in drv_q.scalars().all():
+                if not drv.fcm_token:
+                    continue
+                asyncio.create_task(_send_fcm_push_async(
+                    drv.fcm_token,
+                    title="Ride cancelled",
+                    body="The rider cancelled this trip.",
+                    data={
+                        "type": "booking_cancelled",
+                        "trip_id": str(trip.id),
+                        "cancelled_by": "rider",
+                    },
+                ))
+    except Exception as _fcm_err:
+        logging.warning("[WebCancel] FCM fan-out failed for trip %d: %s", trip.id, _fcm_err)
+
+    # Firestore sync so any mirroring listeners pick it up
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            firestore_sync.sync_trip_status(
+                trip_id=trip.id,
+                status="cancelled",
+                cancel_reason="rider_web_cancel",
+                cancelled_by="rider",
+                payment_status=new_payment_status,
+            )
+        except Exception as _fs_err:
+            logging.warning("[WebCancel] Firestore sync failed for trip %d: %s", trip.id, _fs_err)
+
+    logging.info(
+        "[WebCancel] trip=%d previous_status=%r driver=%s affected_drivers=%s refunded=%s",
+        trip.id, previous_status, previous_driver_id, sorted(affected_driver_ids), refunded,
+    )
+
+    return {
+        "ok": True,
+        "status": "cancelled",
+        "refunded": refunded,
+        "payment_status": new_payment_status,
+        "affected_drivers": len(affected_driver_ids),
+    }
+
+
 # -------------------------------------------------------
 #  WEB AUTH — Register / Login / Social (for Shopify widget)
 #  Uses WEB_CHECKOUT_KEY instead of HMAC-based _verify_api_key

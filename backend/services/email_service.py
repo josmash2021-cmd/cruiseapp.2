@@ -38,69 +38,71 @@ SUPPORT_PHONE = "+1 (205) 555-0100"  # placeholder — update if needed
 # ═══════════════ Shell / Layout helpers ═══════════════
 
 def _shell(title: str, preheader: str, body_html: str) -> str:
-    """Premium email shell with logo header, body, footer, social links."""
+    """Minimal light email shell — soft cream background, gold accents, clean typography."""
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<meta name="color-scheme" content="dark">
-<meta name="supported-color-schemes" content="dark">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
 <title>{title}</title>
 <style>
-  :root {{ color-scheme: dark; supported-color-schemes: dark; }}
-  body, table, td {{ background-color: #000000 !important; }}
-  .gold {{ color: #E8C547 !important; }}
+  :root {{ color-scheme: light; supported-color-schemes: light; }}
+  body {{ background-color: #f6f3ee !important; }}
   @media (max-width: 480px) {{
-    .card {{ border-radius: 14px !important; }}
-    .pad-lg {{ padding: 24px 22px !important; }}
+    .card {{ border-radius: 16px !important; }}
+    .pad-lg {{ padding: 26px 22px !important; }}
     .h1 {{ font-size: 22px !important; }}
-    .big-pill {{ font-size: 13px !important; padding: 12px 20px !important; }}
+    .big-pill {{ font-size: 13px !important; padding: 12px 22px !important; }}
   }}
 </style>
 </head>
-<body bgcolor="#000000" style="margin:0;padding:0;background:#000000 !important;font-family:'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif;color:#E8C547;">
-<!-- Preheader (hidden in most clients) -->
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;visibility:hidden;opacity:0;font-size:1px;line-height:1px;color:#000;">{preheader}</div>
+<body bgcolor="#f6f3ee" style="margin:0;padding:0;background:#f6f3ee !important;font-family:'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a1a;">
+<!-- Preheader (hidden) -->
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;visibility:hidden;opacity:0;font-size:1px;line-height:1px;color:#f6f3ee;">{preheader}</div>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#000000" style="background-color:#000000 !important;padding:40px 14px;">
-<tr><td align="center" bgcolor="#000000">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f6f3ee" style="background-color:#f6f3ee !important;padding:36px 14px;">
+<tr><td align="center" bgcolor="#f6f3ee">
 
 <!-- Main card -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#000000" class="card" style="max-width:580px;background-color:#000000 !important;border-radius:20px;border:1px solid rgba(232,197,71,.28);box-shadow:0 0 0 1px rgba(232,197,71,.08),0 12px 40px rgba(232,197,71,.16),0 40px 120px rgba(0,0,0,.85);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" class="card" style="max-width:560px;background-color:#ffffff !important;border-radius:20px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 40px rgba(0,0,0,.06);">
 
 <!-- Header -->
-<tr><td align="center" bgcolor="#000000" style="padding:38px 30px 22px;border-bottom:1px solid rgba(232,197,71,.18);">
-<img src="{LOGO_URL}" alt="Cruise" width="68" height="68" style="display:block;width:68px;height:68px;border:0;outline:none;border-radius:14px;">
-<div style="margin-top:12px;font-size:28px;font-weight:900;letter-spacing:4px;color:#E8C547 !important;font-family:Georgia,'Times New Roman',serif;">CRUISE</div>
-<div style="margin-top:4px;font-size:10px;font-weight:600;letter-spacing:2.5px;color:#8a7e4e !important;text-transform:uppercase;">Premium Ride Service</div>
-</td></tr>
-
-<!-- Body -->
-<tr><td bgcolor="#000000" class="pad-lg" style="padding:30px 34px 10px;">{body_html}</td></tr>
-
-<!-- CTA -->
-<tr><td align="center" bgcolor="#000000" style="padding:12px 30px 22px;">
-<a href="https://cruiseinride.com" class="big-pill" style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#F5DC7A,#E8C547,#B08800);border-radius:999px;color:#0a0a0a !important;font-size:13px;font-weight:800;text-decoration:none;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 4px 14px rgba(232,197,71,.35);">Visit cruiseinride.com</a>
+<tr><td align="center" bgcolor="#ffffff" style="padding:36px 30px 22px;">
+<img src="{LOGO_URL}" alt="Cruise" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;border-radius:12px;">
+<div style="margin-top:14px;font-size:24px;font-weight:800;letter-spacing:3px;color:#1a1a1a !important;font-family:Georgia,'Times New Roman',serif;">CRUISE</div>
+<div style="margin-top:4px;font-size:10px;font-weight:600;letter-spacing:2.5px;color:#a08b3f !important;text-transform:uppercase;">Premium Ride Service</div>
 </td></tr>
 
 <!-- Divider -->
-<tr><td bgcolor="#000000" style="padding:0 30px;">
-<div style="height:1px;background:rgba(232,197,71,.18);"></div>
+<tr><td bgcolor="#ffffff" style="padding:0 30px;">
+<div style="height:1px;background:#eee8db;"></div>
 </td></tr>
 
-<!-- Support row -->
-<tr><td bgcolor="#000000" style="padding:18px 30px 8px;font-size:12px;color:#8a7e4e !important;line-height:1.6;text-align:center;">
-<strong style="color:#d9c98b !important;">Need help?</strong><br>
-<a href="mailto:{SUPPORT_EMAIL}" style="color:#E8C547 !important;text-decoration:none;font-weight:600;">{SUPPORT_EMAIL}</a>
+<!-- Body -->
+<tr><td bgcolor="#ffffff" class="pad-lg" style="padding:28px 34px 12px;">{body_html}</td></tr>
+
+<!-- CTA -->
+<tr><td align="center" bgcolor="#ffffff" style="padding:10px 30px 28px;">
+<a href="https://cruiseinride.com" class="big-pill" style="display:inline-block;padding:13px 28px;background:#1a1a1a;border-radius:999px;color:#ffffff !important;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:.08em;text-transform:uppercase;">Visit cruiseinride.com</a>
 </td></tr>
 
-<!-- Footer -->
-<tr><td bgcolor="#000000" style="padding:12px 30px 26px;font-size:11px;color:#6b5e2e !important;text-align:center;line-height:1.6;">
-© Cruise · All rights reserved<br>
-<a href="https://cruiseinride.com" style="color:#8a7e4e !important;text-decoration:none;">cruiseinride.com</a>
+<!-- Support -->
+<tr><td bgcolor="#fafaf6" style="padding:20px 30px;font-size:12px;color:#6b6b6b !important;line-height:1.6;text-align:center;border-top:1px solid #eee8db;border-radius:0 0 20px 20px;">
+<strong style="color:#1a1a1a !important;">Need help?</strong>
+&nbsp;·&nbsp;
+<a href="mailto:{SUPPORT_EMAIL}" style="color:#a08b3f !important;text-decoration:none;font-weight:600;">{SUPPORT_EMAIL}</a>
 </td></tr>
 
 </table>
+
+<!-- Outer footer -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+<tr><td align="center" style="padding:18px 30px 4px;font-size:11px;color:#999 !important;text-align:center;line-height:1.6;">
+© Cruise · <a href="https://cruiseinride.com" style="color:#999 !important;text-decoration:none;">cruiseinride.com</a>
+</td></tr>
+</table>
+
 </td></tr></table>
 </body></html>"""
 
@@ -109,52 +111,52 @@ def _shell(title: str, preheader: str, body_html: str) -> str:
 
 def _h1(text: str) -> str:
     return (
-        f'<h1 class="h1" style="margin:0 0 10px 0;font-size:26px;font-weight:800;'
-        f'color:#E8C547 !important;letter-spacing:-.01em;line-height:1.25;">{text}</h1>'
+        f'<h1 class="h1" style="margin:0 0 10px 0;font-size:24px;font-weight:700;'
+        f'color:#1a1a1a !important;letter-spacing:-.01em;line-height:1.3;">{text}</h1>'
     )
 
 
 def _h2(text: str) -> str:
     return (
-        f'<div style="margin:18px 0 8px;font-size:11px;font-weight:800;'
-        f'letter-spacing:.18em;color:#8a7e4e !important;text-transform:uppercase;">{text}</div>'
+        f'<div style="margin:20px 0 8px;font-size:11px;font-weight:700;'
+        f'letter-spacing:.16em;color:#a08b3f !important;text-transform:uppercase;">{text}</div>'
     )
 
 
 def _p(text: str) -> str:
     return (
-        f'<p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;'
-        f'color:#d9c98b !important;">{text}</p>'
+        f'<p style="margin:0 0 14px 0;font-size:15px;line-height:1.65;'
+        f'color:#4a4a4a !important;">{text}</p>'
     )
 
 
-def _badge(text: str, color: str = "#E8C547") -> str:
+def _badge(text: str, color: str = "#a08b3f") -> str:
     return (
-        f'<div style="display:inline-block;padding:8px 16px;border-radius:999px;'
-        f'background:rgba(232,197,71,.1);border:1px solid {color};'
-        f'color:{color} !important;font-size:12px;font-weight:700;'
-        f'letter-spacing:.06em;text-transform:uppercase;">{text}</div>'
+        f'<div style="display:inline-block;padding:7px 16px;border-radius:999px;'
+        f'background:#faf6ea;border:1px solid #e8dcb0;'
+        f'color:{color} !important;font-size:11px;font-weight:700;'
+        f'letter-spacing:.1em;text-transform:uppercase;">{text}</div>'
     )
 
 
 def _info_card(rows_html: str) -> str:
-    """Dark card with rounded corners + gold border for structured info."""
+    """Minimal light card with subtle border for structured info."""
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="border-collapse:separate;border-spacing:0;margin:14px 0 18px;'
-        f'background:#0d0d0d;border:1px solid rgba(232,197,71,.22);'
+        f'background:#fafaf6;border:1px solid #eee8db;'
         f'border-radius:14px;overflow:hidden;">'
         f'{rows_html}</table>'
     )
 
 
 def _row(label: str, value: str, last: bool = False) -> str:
-    border = "" if last else 'border-bottom:1px solid rgba(232,197,71,.12);'
+    border = "" if last else 'border-bottom:1px solid #eee8db;'
     return (
-        f'<tr><td style="padding:13px 18px;{border}">'
-        f'<div style="font-size:11px;font-weight:700;letter-spacing:.1em;'
-        f'color:#8a7e4e !important;text-transform:uppercase;margin-bottom:3px;">{label}</div>'
-        f'<div style="font-size:15px;font-weight:600;color:#E8C547 !important;">{value}</div>'
+        f'<tr><td style="padding:14px 18px;{border}">'
+        f'<div style="font-size:10px;font-weight:700;letter-spacing:.14em;'
+        f'color:#a08b3f !important;text-transform:uppercase;margin-bottom:4px;">{label}</div>'
+        f'<div style="font-size:15px;font-weight:600;color:#1a1a1a !important;">{value}</div>'
         f'</td></tr>'
     )
 
@@ -164,25 +166,25 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
     lbl_pickup = "Recogida" if lang == "es" else "Pickup"
     lbl_dropoff = "Destino" if lang == "es" else "Dropoff"
     return f"""
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 18px;background:#0d0d0d;border:1px solid rgba(232,197,71,.22);border-radius:14px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 18px;background:#fafaf6;border:1px solid #eee8db;border-radius:14px;">
 <tr><td style="padding:16px 18px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr>
-<td width="14" align="center" valign="top" style="padding:1px 0 0 0;line-height:0;font-size:0;width:14px;">
-<div style="width:10px;height:10px;border-radius:50%;background:#ffffff;margin:0 auto;"></div>
+<td width="14" align="center" valign="top" style="padding:2px 0 0 0;line-height:0;font-size:0;width:14px;">
+<div style="width:10px;height:10px;border-radius:50%;background:#1a1a1a;margin:0 auto;"></div>
 </td>
 <td valign="top" style="padding:0 0 14px 10px;">
-<div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
-<div style="font-size:14px;font-weight:600;color:#E8C547 !important;margin-top:3px;word-break:break-word;line-height:1.35;">{pickup}</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#a08b3f !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
+<div style="font-size:14px;font-weight:600;color:#1a1a1a !important;margin-top:3px;word-break:break-word;line-height:1.45;">{pickup}</div>
 </td>
 </tr>
 <tr>
-<td width="14" align="center" valign="top" style="padding:1px 0 0 0;line-height:0;font-size:0;width:14px;">
-<div style="width:10px;height:10px;background:#E8C547;border-radius:2px;box-shadow:0 0 8px rgba(232,197,71,.5);margin:0 auto;"></div>
+<td width="14" align="center" valign="top" style="padding:2px 0 0 0;line-height:0;font-size:0;width:14px;">
+<div style="width:10px;height:10px;background:#c9a236;border-radius:2px;margin:0 auto;"></div>
 </td>
 <td valign="top" style="padding:0 0 0 10px;">
-<div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>
-<div style="font-size:14px;font-weight:600;color:#ffffff !important;margin-top:3px;word-break:break-word;line-height:1.35;">{dropoff}</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:.14em;color:#a08b3f !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>
+<div style="font-size:14px;font-weight:600;color:#1a1a1a !important;margin-top:3px;word-break:break-word;line-height:1.45;">{dropoff}</div>
 </td>
 </tr>
 </table>
@@ -336,7 +338,7 @@ def _build_driver_assigned(driver_name, vehicle_year, vehicle_make, vehicle_mode
         subject = f"🚗 Conductor asignado — {tid}"
         preheader = f"Tu conductor {driver_name} está listo y en camino hacia ti."
         heading = "¡Conductor asignado!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> ha aceptado tu viaje y estará contigo pronto."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> ha aceptado tu viaje y estará contigo pronto."
         status_badge = _badge("Conductor en camino", BRAND_GOLD)
         lbl_driver = "Conductor"
         lbl_vehicle = "Vehículo"
@@ -350,7 +352,7 @@ def _build_driver_assigned(driver_name, vehicle_year, vehicle_make, vehicle_mode
         subject = f"🚗 Driver assigned — {tid}"
         preheader = f"Your driver {driver_name} is ready and heading to you."
         heading = "Driver assigned!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> has accepted your ride and will be with you shortly."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> has accepted your ride and will be with you shortly."
         status_badge = _badge("Driver on the way", BRAND_GOLD)
         lbl_driver = "Driver"
         lbl_vehicle = "Vehicle"
@@ -365,8 +367,8 @@ def _build_driver_assigned(driver_name, vehicle_year, vehicle_make, vehicle_mode
         _row(lbl_driver, driver_name)
         + _row(lbl_vehicle, vehicle_full)
         + _row(lbl_color, vehicle_color or "—")
-        + _row(lbl_plate, f"<span style='font-family:monospace;letter-spacing:.08em;background:#1a1a1a;padding:3px 8px;border-radius:5px;border:1px solid rgba(232,197,71,.3);'>{vehicle_plate}</span>" if vehicle_plate else "—")
-        + _row(lbl_phone, f"<a href='tel:{driver_phone}' style='color:#E8C547 !important;text-decoration:none;'>{driver_phone}</a>" if driver_phone else "—", last=True)
+        + _row(lbl_plate, f"<span style='font-family:monospace;letter-spacing:.08em;background:#faf6ea;padding:3px 8px;border-radius:5px;border:1px solid #e8dcb0;color:#1a1a1a;'>{vehicle_plate}</span>" if vehicle_plate else "—")
+        + _row(lbl_phone, f"<a href='tel:{driver_phone}' style='color:#a08b3f !important;text-decoration:none;font-weight:600;'>{driver_phone}</a>" if driver_phone else "—", last=True)
     )
 
     body = (
@@ -395,14 +397,14 @@ def _build_driver_en_route(driver_name: str, trip, lang: str) -> tuple[str, str,
         subject = f"🚕 Tu conductor va en camino — {tid}"
         preheader = f"{driver_name} se dirige a tu recogida."
         heading = "¡Tu conductor va en camino!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> está manejando hacia tu punto de recogida."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> está manejando hacia tu punto de recogida."
         status_badge = _badge("En camino", BRAND_GOLD)
         tip_body = "Ve a la puerta para no hacer esperar al conductor. ¡Te vemos pronto!"
     else:
         subject = f"🚕 Your driver is on the way — {tid}"
         preheader = f"{driver_name} is heading to your pickup."
         heading = "Your driver is on the way!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> is now driving to your pickup location."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> is now driving to your pickup location."
         status_badge = _badge("En route", BRAND_GOLD)
         tip_body = "Step outside so your driver doesn't have to wait. See you soon!"
 
@@ -410,7 +412,7 @@ def _build_driver_en_route(driver_name: str, trip, lang: str) -> tuple[str, str,
         f'<div style="text-align:center;margin-bottom:20px;">{status_badge}</div>'
         + _h1(heading)
         + _p(intro)
-        + _p(f'<span style="color:#8a7e4e !important;font-size:13px;">📍 {pickup}</span>')
+        + _p(f'<span style="color:#6b6b6b !important;font-size:13px;">📍 {pickup}</span>')
         + _p(tip_body)
     )
     text = f"{heading}\n\n{intro}\n\nPickup: {pickup}\n\n{tip_body}"
@@ -420,7 +422,7 @@ def _build_driver_en_route(driver_name: str, trip, lang: str) -> tuple[str, str,
 def _build_driver_arrived(driver_name: str, vehicle_color: str, vehicle_plate: str, trip, lang: str) -> tuple[str, str, str]:
     tid = _trip_id_short(trip)
     plate_html = (
-        f"<span style='font-family:monospace;letter-spacing:.08em;background:#1a1a1a;padding:3px 8px;border-radius:5px;border:1px solid rgba(232,197,71,.3);'>{vehicle_plate}</span>"
+        f"<span style='font-family:monospace;letter-spacing:.08em;background:#faf6ea;padding:3px 8px;border-radius:5px;border:1px solid #e8dcb0;color:#1a1a1a;'>{vehicle_plate}</span>"
         if vehicle_plate else "—"
     )
 
@@ -428,7 +430,7 @@ def _build_driver_arrived(driver_name: str, vehicle_color: str, vehicle_plate: s
         subject = f"📍 Tu conductor ha llegado — {tid}"
         preheader = f"{driver_name} está afuera esperándote."
         heading = "¡Tu conductor ha llegado!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> está en el punto de recogida y te está esperando."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> está en el punto de recogida y te está esperando."
         status_badge = _badge("Ha llegado", "#6ee589")
         look_for = "Busca:"
         lbl_color = "Color del vehículo"
@@ -438,7 +440,7 @@ def _build_driver_arrived(driver_name: str, vehicle_color: str, vehicle_plate: s
         subject = f"📍 Your driver has arrived — {tid}"
         preheader = f"{driver_name} is outside waiting for you."
         heading = "Your driver has arrived!"
-        intro = f"<strong style=\"color:#E8C547 !important;\">{driver_name}</strong> is at the pickup location and is waiting for you."
+        intro = f"<strong style=\"color:#1a1a1a !important;font-weight:700;\">{driver_name}</strong> is at the pickup location and is waiting for you."
         status_badge = _badge("Arrived", "#6ee589")
         look_for = "Look for:"
         lbl_color = "Vehicle color"
@@ -456,7 +458,7 @@ def _build_driver_arrived(driver_name: str, vehicle_color: str, vehicle_plate: s
         + _p(intro)
         + _h2(look_for)
         + _info_card(info_rows)
-        + _p(f'<em style="color:#d9c98b !important;">{safety}</em>')
+        + _p(f'<em style="color:#6b6b6b !important;">{safety}</em>')
     )
     text = f"{heading}\n\n{intro}\n\nColor: {vehicle_color}\nPlate: {vehicle_plate}\n\n{safety}"
     return subject, _shell(subject, preheader, body), text

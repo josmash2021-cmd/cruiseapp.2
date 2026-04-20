@@ -21,7 +21,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
-    _user_dict, _trip_dict, _haversine,
+    _user_dict, _trip_dict, _haversine, _resolve_rider_display,
 )
 from services.fcm_service import _send_fcm_push
 from config import (
@@ -144,20 +144,28 @@ async def admin_list_trips(
     all_user_ids = rider_ids | driver_ids
 
     users_map = {}
+    users_obj_map = {}
     if all_user_ids:
         users_r = await db.execute(
-            select(User.id, User.first_name, User.last_name, User.phone)
-            .where(User.id.in_(all_user_ids))
+            select(User).where(User.id.in_(all_user_ids))
         )
-        for uid, fn, ln, phone in users_r.all():
-            users_map[uid] = (f"{fn} {ln}", phone or "")
+        for u in users_r.scalars().all():
+            users_obj_map[u.id] = u
+            users_map[u.id] = (f"{u.first_name or ''} {u.last_name or ''}".strip(), u.phone or "")
 
     out = []
     for t in trips:
         td = _trip_dict(t)
-        if t.rider_id and t.rider_id in users_map:
-            td["rider_name"] = users_map[t.rider_id][0]
-            td["rider_phone"] = users_map[t.rider_id][1]
+        # Rider: prefer guest_* fields (web bookings) so dispatch sees the real
+        # booker's name instead of the shared "Web Booking" system user.
+        rider_obj = users_obj_map.get(t.rider_id) if t.rider_id else None
+        _rn, _rp = _resolve_rider_display(t, rider_obj)
+        td["rider_name"] = _rn
+        td["rider_phone"] = _rp
+        # Flag so dispatch UI can tag web bookings visually if it wants to.
+        td["is_web_booking"] = bool(
+            (getattr(t, "guest_first_name", None) or getattr(t, "guest_last_name", None) or getattr(t, "guest_phone", None))
+        )
         if t.driver_id and t.driver_id in users_map:
             td["driver_name"] = users_map[t.driver_id][0]
             td["driver_phone"] = users_map[t.driver_id][1]
@@ -919,11 +927,13 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
     """Get all active trips with driver and rider info. Requires dispatch auth."""
     try:
-        # Single query with LEFT JOIN for driver — eliminates N+1
+        # LEFT JOIN rider too — guest web bookings have rider_id pointing to
+        # a shared system user which may be missing/null. We need those trips
+        # to show up in the dispatch panel regardless.
         RiderAlias = aliased(User)
         DriverAlias = aliased(User)
         result = await db.execute(
-            select(Trip, RiderAlias, DriverAlias).join(
+            select(Trip, RiderAlias, DriverAlias).outerjoin(
                 RiderAlias, RiderAlias.id == Trip.rider_id
             ).outerjoin(
                 DriverAlias, DriverAlias.id == Trip.driver_id
@@ -938,11 +948,18 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
             if driver:
                 driver_info = {
                     "id": driver.id,
-                    "name": f"{driver.first_name} {driver.last_name}",
+                    "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
                     "phone": driver.phone,
                     "lat": driver.lat,
                     "lng": driver.lng,
                 }
+
+            # Prefer guest_* fields for web bookings so dispatch shows the real
+            # booker's name instead of "Web Booking" (the system user).
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            is_web = bool(
+                (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_last_name", None) or getattr(trip, "guest_phone", None))
+            )
 
             trips.append({
                 "id": trip.id,
@@ -958,14 +975,17 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
                     "lng": trip.dropoff_lng,
                 },
                 "rider": {
-                    "id": rider.id,
-                    "name": f"{rider.first_name} {rider.last_name}",
-                    "phone": rider.phone,
+                    "id": rider.id if rider else None,
+                    "name": rider_name or "Rider",
+                    "phone": rider_phone or "",
+                    "is_guest": is_web,
                 },
                 "driver": driver_info,
                 "fare": trip.fare,
                 "created_at": trip.created_at.isoformat() if trip.created_at else None,
                 "vehicle_type": trip.vehicle_type,
+                "is_web_booking": is_web,
+                "source": "web" if is_web else ("app" if rider else "system"),
             })
 
         return {"trips": trips}

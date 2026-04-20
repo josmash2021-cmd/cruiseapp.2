@@ -1111,6 +1111,43 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         except Exception as _fcm_err:
             logging.warning("[WebBooking] FCM scheduled-ride broadcast failed: %s", _fcm_err)
     else:
+        # Mirror the rider-app path: sync immediate web bookings to Firestore
+        # so the dispatch panel and any other real-time listeners see them
+        # appear as soon as they're created — with the guest's real name.
+        try:
+            _rn_imm, _rp_imm = _resolve_rider_display(trip, None)
+            _trip_imm_snap = {
+                "id": trip.id, "rider_id": trip.rider_id or 0,
+                "rider_name": _rn_imm, "rider_phone": _rp_imm,
+                "pickup_address": trip.pickup_address, "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+                "dropoff_address": trip.dropoff_address, "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
+                "status": trip.status, "fare": trip.fare, "vehicle_type": trip.vehicle_type,
+                "created_at": trip.created_at, "scheduled_at": None,
+                "is_airport": getattr(trip, "is_airport", False) or False,
+                "airport_code": getattr(trip, "airport_code", None),
+                "terminal": getattr(trip, "terminal", None),
+                "pickup_zone": getattr(trip, "pickup_zone", None),
+                "notes": trip.notes,
+            }
+            async def _bg_imm_firestore_sync():
+                try:
+                    if _HAS_FIRESTORE and firestore_sync:
+                        firestore_sync.sync_trip(
+                            trip_id=_trip_imm_snap["id"], rider_id=_trip_imm_snap["rider_id"],
+                            rider_name=_trip_imm_snap["rider_name"], rider_phone=_trip_imm_snap["rider_phone"],
+                            pickup_address=_trip_imm_snap["pickup_address"], pickup_lat=_trip_imm_snap["pickup_lat"], pickup_lng=_trip_imm_snap["pickup_lng"],
+                            dropoff_address=_trip_imm_snap["dropoff_address"], dropoff_lat=_trip_imm_snap["dropoff_lat"], dropoff_lng=_trip_imm_snap["dropoff_lng"],
+                            status=_trip_imm_snap["status"], fare=_trip_imm_snap["fare"], vehicle_type=_trip_imm_snap["vehicle_type"],
+                            created_at=_trip_imm_snap["created_at"], scheduled_at=_trip_imm_snap["scheduled_at"],
+                            is_airport=_trip_imm_snap["is_airport"], airport_code=_trip_imm_snap["airport_code"],
+                            terminal=_trip_imm_snap["terminal"], pickup_zone=_trip_imm_snap["pickup_zone"], notes=_trip_imm_snap["notes"],
+                        )
+                except Exception as _e:
+                    logging.warning("[WebBooking] Firestore sync immediate trip %d failed: %s", trip.id, _e)
+            asyncio.create_task(_bg_imm_firestore_sync())
+        except Exception as _fs_err:
+            logging.warning("[WebBooking] Failed to schedule Firestore sync for trip %d: %s", trip.id, _fs_err)
+
         # Immediate booking — dispatch to nearest driver INLINE so the offer
         # hits the driver app before the widget's first poll. Auto-cascade to
         # subsequent drivers (if the first doesn't accept) still runs in the

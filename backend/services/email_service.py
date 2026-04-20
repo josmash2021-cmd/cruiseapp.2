@@ -168,10 +168,18 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 <tr><td style="padding:16px 18px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr>
-<td width="22" valign="top" rowspan="2" style="padding:0;line-height:0;font-size:0;vertical-align:top;">
-<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);display:block;"></div>
-<div style="width:2px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-1px 0 -1px 4px;height:48px;display:block;"></div>
-<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;display:block;"></div>
+<td width="14" valign="top" rowspan="2" style="padding:0;line-height:0;font-size:0;vertical-align:top;width:14px;">
+<table role="presentation" width="10" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:10px;">
+<tr><td style="padding:0;line-height:0;font-size:0;width:10px;">
+<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);"></div>
+</td></tr>
+<tr><td align="center" style="padding:0;line-height:0;font-size:0;width:10px;">
+<div style="width:2px;height:50px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-1px auto;"></div>
+</td></tr>
+<tr><td style="padding:0;line-height:0;font-size:0;width:10px;">
+<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;"></div>
+</td></tr>
+</table>
 </td>
 <td valign="top" style="padding:0 0 18px 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>

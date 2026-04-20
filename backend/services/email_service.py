@@ -717,3 +717,92 @@ async def email_guest_trip_completed(db, trip) -> None:
         await _dispatch(db, trip.id, "trip_completed", email, subject, html, text)
     except Exception as e:
         _log.warning("[EMAIL] email_guest_trip_completed failed for trip %s: %s", getattr(trip, "id", "?"), e)
+
+
+def _build_no_driver(trip, lang: str, refunded: bool) -> tuple[str, str, str]:
+    pickup = _trip_pickup(trip)
+    dropoff = _trip_dropoff(trip)
+    fare = _trip_fare(trip)
+    tid = _trip_id_short(trip)
+
+    if lang == "es":
+        subject = f"No pudimos encontrar conductor — {tid}"
+        preheader = "Te reembolsamos el total. Intenta nuevamente en unos minutos."
+        heading = "No encontramos un conductor disponible"
+        intro = ("Lo sentimos mucho. No pudimos asignar un conductor para tu viaje en este momento. "
+                 "Sabemos lo frustrante que es esto y te pedimos disculpas.")
+        status_badge = _badge("Sin conductor", "#ff6b6b")
+        lbl_summary = "Detalles del viaje"
+        lbl_trip = "Viaje"
+        lbl_total = "Total"
+        refund_hdr = "Reembolso emitido" if refunded else "Reembolso"
+        refund_body = (
+            "Te reembolsamos el total a tu método de pago original. El reembolso aparecerá "
+            "en 5-10 días hábiles dependiendo de tu banco."
+            if refunded else
+            "No se te cobró nada. Si ves un cargo pendiente, desaparecerá automáticamente en 1-3 días."
+        )
+        retry_hdr = "¿Intentamos de nuevo?"
+        retry_body = ("Nuestra flota puede estar ocupada. Te recomendamos intentar nuevamente en "
+                      "unos minutos. También puedes programar tu viaje con anticipación para "
+                      "garantizar disponibilidad.")
+        thanks = "Gracias por tu paciencia. Estamos aquí para servirte."
+    else:
+        subject = f"We couldn't find a driver — {tid}"
+        preheader = "You've been fully refunded. Please try again in a few minutes."
+        heading = "No driver available right now"
+        intro = ("We're very sorry. We couldn't match your ride with a driver at this time. "
+                 "We know how frustrating this is and we apologize.")
+        status_badge = _badge("No driver", "#ff6b6b")
+        lbl_summary = "Ride details"
+        lbl_trip = "Trip"
+        lbl_total = "Total"
+        refund_hdr = "Refund issued" if refunded else "Refund"
+        refund_body = (
+            "A full refund has been issued to your original payment method. It will appear "
+            "within 5-10 business days depending on your bank."
+            if refunded else
+            "No charge was processed. Any pending hold will clear automatically in 1-3 days."
+        )
+        retry_hdr = "Want to try again?"
+        retry_body = ("Our fleet may be busy. We recommend trying again in a few minutes. "
+                      "You can also schedule your ride in advance to guarantee availability.")
+        thanks = "Thank you for your patience. We're here to serve you."
+
+    info_rows = _row(lbl_trip, tid)
+    if fare != "—":
+        info_rows += _row(lbl_total, fare, last=True)
+    else:
+        info_rows = _row(lbl_trip, tid, last=True)
+
+    body = (
+        f'<div style="text-align:center;margin-bottom:20px;">{status_badge}</div>'
+        + _h1(heading)
+        + _p(intro)
+        + _route_block(pickup, dropoff, lang)
+        + _h2(lbl_summary)
+        + _info_card(info_rows)
+        + _h2(refund_hdr)
+        + _p(refund_body)
+        + _h2(retry_hdr)
+        + _p(retry_body)
+        + _p(thanks)
+    )
+    text = (
+        f"{heading}\n\n{intro}\n\n"
+        f"Trip: {tid}\nFrom: {pickup}\nTo: {dropoff}\n"
+        + (f"Total: {fare}\n" if fare != "—" else "")
+        + f"\n{refund_hdr}\n{refund_body}\n\n{retry_hdr}\n{retry_body}\n\n{thanks}"
+    )
+    return subject, _shell(subject, preheader, body), text
+
+
+async def email_guest_no_driver(db, trip, refunded: bool = False) -> None:
+    try:
+        email = _guest_email(trip)
+        if not email:
+            return
+        subject, html, text = _build_no_driver(trip, _guest_lang(trip), refunded)
+        await _dispatch(db, trip.id, "no_driver", email, subject, html, text)
+    except Exception as e:
+        _log.warning("[EMAIL] email_guest_no_driver failed for trip %s: %s", getattr(trip, "id", "?"), e)

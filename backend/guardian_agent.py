@@ -329,7 +329,8 @@ class DataGuardian:
                 # Scheduled trips are handled in _check_scheduled_deadlines()
                 # — this loop only touches on-demand (scheduled_at IS NULL).
                 result = await session.execute(text("""
-                    SELECT t.id, t.status, t.created_at, t.rider_id
+                    SELECT t.id, t.status, t.created_at, t.rider_id,
+                           t.payment_status, t.stripe_payment_intent_id, t.fare
                     FROM trips t
                     WHERE t.status = 'requested'
                       AND t.scheduled_at IS NULL
@@ -339,19 +340,47 @@ class DataGuardian:
                 stuck = result.fetchall()
 
                 for row in stuck:
-                    trip_id, status, created_at, rider_id = row
+                    trip_id, status, created_at, rider_id, pay_status, pi_id, fare = row
                     logger.warning(
                         "[AutoCancel/Guardian] ON-DEMAND trip=%d prev_status=%r created_at=%s "
                         "rider=%s (10+ min with no driver) — auto-cancel",
                         trip_id, status, created_at, rider_id,
                     )
+
+                    # Try to refund if the rider was charged/held. Best-effort:
+                    # if Stripe rejects, mark pending_refund so ops can follow up.
+                    refunded = False
+                    new_payment_status = pay_status
+                    if pi_id and pay_status in ("held", "paid"):
+                        try:
+                            from config import _HAS_STRIPE
+                            import stripe as _stripe_mod
+                            if _HAS_STRIPE:
+                                _stripe_mod.Refund.create(
+                                    payment_intent=pi_id,
+                                    reason="requested_by_customer",
+                                )
+                                refunded = True
+                                new_payment_status = "refunded"
+                                logger.info(
+                                    "[AutoCancel/Guardian] trip=%d refunded %.2f via Stripe",
+                                    trip_id, float(fare or 0.0),
+                                )
+                        except Exception as _refund_err:
+                            new_payment_status = "pending_refund"
+                            logger.warning(
+                                "[AutoCancel/Guardian] trip=%d refund failed, marking pending_refund: %s",
+                                trip_id, _refund_err,
+                            )
+
                     await session.execute(text("""
                         UPDATE trips
                         SET status = 'cancelled',
                             cancel_reason = 'auto:no_driver_found_10min',
+                            payment_status = :pay_status,
                             updated_at = NOW()
                         WHERE id = :trip_id
-                    """), {"trip_id": trip_id})
+                    """), {"trip_id": trip_id, "pay_status": new_payment_status})
                     self._trips_fixed += 1
                     # Sync cancellation to Firestore so the rider app picks it up
                     try:
@@ -362,9 +391,36 @@ class DataGuardian:
                                 status="cancelled",
                                 cancel_reason="auto:no_driver_found_10min",
                                 cancelled_by="system",
+                                payment_status=new_payment_status,
                             )
                     except Exception as fs_err:
                         logger.error(f"Firestore sync for stuck trip {trip_id} failed: {fs_err}")
+
+                    # Notify guest (web booking) via email + SMS.
+                    # Rider-app bookings are notified via Firestore listener.
+                    try:
+                        from models.database import Trip
+                        from sqlalchemy import select as _select
+                        _trip_row = await session.execute(
+                            _select(Trip).where(Trip.id == trip_id)
+                        )
+                        _trip_obj = _trip_row.scalar_one_or_none()
+                        if _trip_obj and (getattr(_trip_obj, "guest_email", None) or getattr(_trip_obj, "guest_phone", None)):
+                            try:
+                                from services.email_service import email_guest_no_driver
+                                asyncio.create_task(email_guest_no_driver(session, _trip_obj, refunded))
+                            except Exception as _e_err:
+                                logger.warning("[AutoCancel/Guardian] email_guest_no_driver failed: %s", _e_err)
+                            try:
+                                from services.sms_service import notify_guest_no_driver
+                                asyncio.create_task(notify_guest_no_driver(session, _trip_obj, refunded))
+                            except Exception as _s_err:
+                                logger.warning("[AutoCancel/Guardian] notify_guest_no_driver failed: %s", _s_err)
+                    except Exception as _n_err:
+                        logger.warning(
+                            "[AutoCancel/Guardian] no-driver notification dispatch failed for trip=%d: %s",
+                            trip_id, _n_err,
+                        )
 
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)

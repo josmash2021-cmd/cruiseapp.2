@@ -53,6 +53,18 @@ TRIP_COMPLETED_TEMPLATE = (
     "Para más información visita cruiseinride.com"
 )
 
+NO_DRIVER_REFUND_TEMPLATE = (
+    "Cruise: lo sentimos, no pudimos encontrar un conductor disponible. "
+    "Te reembolsamos el total. Intenta de nuevo en unos minutos o "
+    "programa tu viaje con anticipación. Gracias por tu paciencia."
+)
+
+NO_DRIVER_NO_CHARGE_TEMPLATE = (
+    "Cruise: lo sentimos, no pudimos encontrar un conductor disponible. "
+    "No se te cobró nada. Intenta de nuevo en unos minutos o programa "
+    "tu viaje con anticipación."
+)
+
 
 def _normalize_phone(phone: str) -> str:
     # Twilio needs E.164. We default non-prefixed numbers to US (+1) because
@@ -254,3 +266,11 @@ async def notify_guest_trip_completed(db, trip) -> None:
     if not phone:
         return
     await _dispatch(db, trip.id, "trip_completed", phone, TRIP_COMPLETED_TEMPLATE)
+
+
+async def notify_guest_no_driver(db, trip, refunded: bool = False) -> None:
+    phone = _guest_phone(trip)
+    if not phone:
+        return
+    template = NO_DRIVER_REFUND_TEMPLATE if refunded else NO_DRIVER_NO_CHARGE_TEMPLATE
+    await _dispatch(db, trip.id, "no_driver", phone, template)

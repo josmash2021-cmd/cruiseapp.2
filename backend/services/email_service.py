@@ -179,15 +179,17 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 <tr>
 <td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
 <table role="presentation" width="10" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;width:10px;margin:0 auto;">
-<tr><td align="center" style="padding:1px 0 0 0;line-height:0;font-size:0;">
-<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);display:block;"></div>
+<tr><td align="center" height="10" style="padding:0;line-height:0;font-size:0;height:10px;">
+<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);display:block;font-size:0;line-height:0;"></div>
 </td></tr>
-<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
-<div style="width:2px;height:16px;background:#E8C547;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+<tr><td align="center" height="20" bgcolor="#0d0d0d" style="padding:0;line-height:0;font-size:0;height:20px;">
+<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;"><tr>
+<td width="2" height="20" bgcolor="#E8C547" style="width:2px;height:20px;line-height:0;font-size:0;padding:0;background-color:#E8C547;">&nbsp;</td>
+</tr></table>
 </td></tr>
 </table>
 </td>
-<td valign="top" style="padding:0 0 16px 10px;">
+<td valign="top" style="padding:0 0 14px 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
 <div style="font-size:14px;font-weight:600;color:#E8C547 !important;margin-top:3px;word-break:break-word;line-height:1.35;">{pickup}</div>
 </td>
@@ -195,11 +197,13 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 <tr>
 <td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
 <table role="presentation" width="10" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;width:10px;margin:0 auto;">
-<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
-<div style="width:2px;height:16px;background:#E8C547;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+<tr><td align="center" height="20" bgcolor="#0d0d0d" style="padding:0;line-height:0;font-size:0;height:20px;">
+<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="border-collapse:collapse;"><tr>
+<td width="2" height="20" bgcolor="#E8C547" style="width:2px;height:20px;line-height:0;font-size:0;padding:0;background-color:#E8C547;">&nbsp;</td>
+</tr></table>
 </td></tr>
-<tr><td align="center" style="padding:0;line-height:0;font-size:0;">
-<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;display:block;"></div>
+<tr><td align="center" height="10" style="padding:0;line-height:0;font-size:0;height:10px;">
+<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;display:block;font-size:0;line-height:0;"></div>
 </td></tr>
 </table>
 </td>

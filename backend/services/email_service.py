@@ -639,7 +639,12 @@ async def _dispatch(
 
 async def email_guest_welcome(db, trip) -> None:
     try:
+        raw = getattr(trip, "guest_email", None)
         email = _guest_email(trip)
+        _log.info(
+            "[EMAIL] email_guest_welcome trip=%s raw_email=%r valid=%r",
+            getattr(trip, "id", "?"), raw, email,
+        )
         if not email:
             return
         subject, html, text = _build_welcome(_guest_first_name(trip), trip, _guest_lang(trip))

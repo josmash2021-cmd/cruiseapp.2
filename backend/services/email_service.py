@@ -168,25 +168,24 @@ def _route_block(pickup: str, dropoff: str, lang: str) -> str:
 <tr><td style="padding:16px 18px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr>
-<td width="14" valign="top" rowspan="2" style="padding:0;line-height:0;font-size:0;vertical-align:top;width:14px;">
-<table role="presentation" width="10" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:10px;">
-<tr><td style="padding:0;line-height:0;font-size:0;width:10px;">
-<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);"></div>
-</td></tr>
-<tr><td align="center" style="padding:0;line-height:0;font-size:0;width:10px;">
-<div style="width:2px;height:50px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-1px auto;"></div>
-</td></tr>
-<tr><td style="padding:0;line-height:0;font-size:0;width:10px;">
-<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;"></div>
-</td></tr>
-</table>
+<td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
+<div style="width:10px;height:10px;border-radius:50%;background:#E8C547;box-shadow:0 0 8px rgba(232,197,71,.5);margin:0 auto;"></div>
 </td>
-<td valign="top" style="padding:0 0 18px 10px;">
+<td valign="top" style="padding:0 0 0 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_pickup}</div>
 <div style="font-size:14px;font-weight:600;color:#E8C547 !important;margin-top:3px;word-break:break-word;line-height:1.35;">{pickup}</div>
 </td>
 </tr>
 <tr>
+<td width="14" align="center" style="padding:0;line-height:0;font-size:0;width:14px;">
+<div style="width:2px;height:28px;background:linear-gradient(180deg,#E8C547,rgba(232,197,71,.55));margin:-2px auto;"></div>
+</td>
+<td style="padding:0;line-height:0;font-size:0;">&nbsp;</td>
+</tr>
+<tr>
+<td width="14" align="center" valign="top" style="padding:0;line-height:0;font-size:0;width:14px;">
+<div style="width:10px;height:10px;background:#ffffff;border-radius:2px;margin:0 auto;"></div>
+</td>
 <td valign="top" style="padding:0 0 0 10px;">
 <div style="font-size:10px;font-weight:800;letter-spacing:.14em;color:#8a7e4e !important;text-transform:uppercase;line-height:1;">{lbl_dropoff}</div>
 <div style="font-size:14px;font-weight:600;color:#ffffff !important;margin-top:3px;word-break:break-word;line-height:1.35;">{dropoff}</div>

@@ -1108,12 +1108,13 @@ async def driver_pending_sse(
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                    # 10s keepalive (was 20s) — fewer silent drops on mobile
+                    # networks that close idle sockets between 15-30s.
+                    event = await asyncio.wait_for(queue.get(), timeout=10.0)
                     evt_type = event.get('type', 'message')
                     evt_data = event.get('data', event)
                     yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"
                 except asyncio.TimeoutError:
-                    # Send keepalive ping every 20s to prevent proxy timeout
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
         finally:
             event_bus.unsubscribe_driver(driver_id, queue)

@@ -1159,7 +1159,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNewFirstOffer = nextFirstId != null && nextFirstId != prevFirstId;
 
     if (isNewFirstOffer) {
+      // Escalating haptic burst — 3 heavy pulses spaced 160ms so the driver
+      // can't miss the offer even with the phone flat on a table.
       HapticFeedback.heavyImpact();
+      Future.delayed(const Duration(milliseconds: 160), () {
+        if (!mounted) return;
+        HapticFeedback.heavyImpact();
+      });
+      Future.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted) return;
+        HapticFeedback.heavyImpact();
+      });
       final firstOffer = filtered.first;
       if (_appInForeground) {
         NotificationService.playOfferSound();

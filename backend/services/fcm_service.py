@@ -82,24 +82,45 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
     """
     if not _HAS_FIREBASE or not token:
         return
+    # Auto-detect offer push from data payload so callers that don't pass the
+    # is_offer flag still get the priority behaviour (FCM channels, sound, etc.)
+    try:
+        _typ = (data or {}).get("type", "")
+        if _typ in ("new_offer", "ride_offer", "offer"):
+            is_offer = True
+    except Exception:
+        pass
     try:
         from firebase_admin import messaging as _fcm
+        from datetime import timedelta as _td
         channel_id = "cruise_offers" if is_offer else "cruise_premium"
         msg = _fcm.Message(
             notification=_fcm.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
             token=token,
             android=_fcm.AndroidConfig(
+                # Offers are time-critical — `high` priority + short TTL bypass Doze
+                # mode and App Standby buckets on Android, minimising delivery delay.
                 priority="high",
+                ttl=_td(seconds=45 if is_offer else 600),
+                direct_boot_ok=True,
                 notification=_fcm.AndroidNotification(
                     sound="cruise_online",
                     channel_id=channel_id,
                     visibility="public",
+                    default_vibrate_timings=True,
+                    notification_priority="PRIORITY_MAX" if is_offer else "PRIORITY_HIGH",
                 ),
             ),
             apns=_fcm.APNSConfig(
-                headers={"apns-priority": "10"},
-                payload=_fcm.APNSPayload(aps=_fcm.Aps(sound="cruise_online.wav", badge=1)),
+                # apns-priority 10 = immediate delivery, interrupts low-power mode
+                headers={"apns-priority": "10", "apns-push-type": "alert"},
+                payload=_fcm.APNSPayload(aps=_fcm.Aps(
+                    sound="cruise_online.wav",
+                    badge=1,
+                    content_available=True if is_offer else None,
+                    mutable_content=True if is_offer else None,
+                )),
             ),
         )
         _fcm.send(msg)

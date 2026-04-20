@@ -306,8 +306,8 @@ def _driver_name(driver, lang: str) -> str:
 async def notify_guest_welcome(db, trip) -> None:
     raw = getattr(trip, "guest_phone", None)
     phone = _guest_phone(trip)
-    _log.info(
-        "[SMS] notify_guest_welcome trip=%s raw_phone=%r normalized=%r",
+    _log.warning(
+        "[SMS-DIAG] notify_guest_welcome trip=%s raw_phone=%r normalized=%r",
         getattr(trip, "id", "?"), raw, phone,
     )
     if not phone:

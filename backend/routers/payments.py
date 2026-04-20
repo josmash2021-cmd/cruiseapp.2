@@ -1042,6 +1042,14 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
 
     # Guest SMS: welcome message (no-op if trip.guest_phone is empty).
     # Fired AFTER commit so a rolled-back transaction cannot trigger an SMS.
+    logging.warning(
+        "[WebBooking-DIAG] trip=%d guest_first=%r guest_last=%r guest_email=%r guest_phone=%r",
+        trip.id,
+        getattr(trip, "guest_first_name", None),
+        getattr(trip, "guest_last_name", None),
+        getattr(trip, "guest_email", None),
+        getattr(trip, "guest_phone", None),
+    )
     try:
         await notify_guest_welcome(db, trip)
     except Exception as _sms_err:

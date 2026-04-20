@@ -925,14 +925,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                         trip.id, _email_err,
                     )
             else:  # arrived
-                try:
-                    await notify_guest_driver_arrived(db, trip, _drv_for_sms)
-                except Exception as _sms_err:
-                    logging.warning(
-                        "[SMS] notify_guest_driver_arrived failed for trip %s: %s",
-                        trip.id, _sms_err,
-                    )
-                # Fetch vehicle to include color + plate in arrival email
+                # Fetch vehicle first so both SMS and email can include color + plate
                 _veh_arr = None
                 try:
                     from models.database import Vehicle as _V
@@ -942,6 +935,13 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                     _veh_arr = _vr.scalar_one_or_none()
                 except Exception:
                     _veh_arr = None
+                try:
+                    await notify_guest_driver_arrived(db, trip, _drv_for_sms, _veh_arr)
+                except Exception as _sms_err:
+                    logging.warning(
+                        "[SMS] notify_guest_driver_arrived failed for trip %s: %s",
+                        trip.id, _sms_err,
+                    )
                 try:
                     await email_guest_driver_arrived(db, trip, _drv_for_sms, _veh_arr)
                 except Exception as _email_err:

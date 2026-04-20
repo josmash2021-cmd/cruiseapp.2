@@ -272,7 +272,7 @@ async def _dispatch(
         send_error = str(e)
 
     if send_error is None:
-        _log.info("[SMS] sent %s to %s", event_type, phone_number)
+        _log.warning("[SMS-DIAG] sent %s to %s sid=%s", event_type, phone_number, twilio_sid)
         await _write_log(
             db,
             trip_id=trip_id,
@@ -282,7 +282,7 @@ async def _dispatch(
             twilio_sid=twilio_sid,
         )
     else:
-        _log.warning("[SMS] failed %s to %s: %s", event_type, phone_number, send_error)
+        _log.warning("[SMS-DIAG] failed %s to %s: %s", event_type, phone_number, send_error)
         await _write_log(
             db,
             trip_id=trip_id,

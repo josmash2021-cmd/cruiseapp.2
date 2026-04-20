@@ -196,8 +196,8 @@ def _send_sms(phone_number: str, message: str):
             from_=TWILIO_PHONE_NUMBER,
             to=phone_number
         )
-        logging.info("[SMS] Sent to %s (SID: %s)", phone_number, sms.sid)
+        logging.warning("[SMS-DIAG] Twilio accepted SMS to %s (SID: %s)", phone_number, sms.sid)
         return sms.sid
     except Exception as e:
-        logging.error("[SMS] Failed to send to %s: %s", phone_number, e)
+        logging.error("[SMS-DIAG] Twilio rejected SMS to %s: %s", phone_number, e)
         return None

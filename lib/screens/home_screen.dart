@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'airport_terminal_sheet.dart';
+import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
 import 'map_picker_screen.dart';
 import 'map_screen.dart';
@@ -1258,12 +1259,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _showScheduleSheet() async {
-    // First show Airport/Schedule choice
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) =>
-          _LaterOptionsSheet(isDark: AppColors.of(context).isDark),
+    // First show Airport/Schedule choice — now a full-screen picker
+    // with animated cards and dynamic calendar date.
+    final choice = await Navigator.of(context).push<String>(
+      slideUpFadeRoute(const ChooseRideTypeScreen()),
     );
 
     // If cancelled or no choice, revert to Now
@@ -1661,132 +1660,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 // ─────────────────────────────────────────────
 // Later Options Sheet - Airport or Schedule
 // ─────────────────────────────────────────────
-class _LaterOptionsSheet extends StatelessWidget {
-  final bool isDark;
-  const _LaterOptionsSheet({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: c.panel,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle
-            Container(
-              width: 40,
-              height: 4.5,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(40),
-              ),
-            ),
-            Text(
-              S.of(context).chooseRideType,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Airport option
-            _optionCard(
-              context: context,
-              icon: Icons.flight_takeoff_rounded,
-              title: S.of(context).airportLabel,
-              subtitle: S.of(context).airportSubtitle,
-              onTap: () => Navigator.pop(context, 'airport'),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Schedule option
-            _optionCard(
-              context: context,
-              icon: Icons.schedule_rounded,
-              title: S.of(context).schedule,
-              subtitle: S.of(context).scheduleSubtitle,
-              onTap: () => Navigator.pop(context, 'schedule'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _optionCard({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    final c = AppColors.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE8C547), Color(0xFFFBE47A)],
-                ),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: Colors.black87, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(color: c.textSecondary, fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: c.textSecondary,
-              size: 16,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ─────────────────────────────────────────────
 // Animated glow border painter for Where-to card
 // Uses PathMetrics on a real RRect path for pixel-perfect smooth corners.

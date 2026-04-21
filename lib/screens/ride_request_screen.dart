@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -101,6 +102,12 @@ class RideRequestScreen extends StatefulWidget {
   final double? handoffZoom;
   final double? handoffBearing;
   final double? handoffPitch;
+  /// When true, boots in the in-place map picker mode (RiderPhase.pickingLocation).
+  /// The same Mapbox canvas stays alive through picker → confirm → route preview
+  /// so there's no visible handoff between two separate maps (matches the
+  /// Shopify widget's behavior).
+  final bool pickerMode;
+  final bool pickerIsPickup;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -120,6 +127,8 @@ class RideRequestScreen extends StatefulWidget {
     this.handoffZoom,
     this.handoffBearing,
     this.handoffPitch,
+    this.pickerMode = false,
+    this.pickerIsPickup = false,
   });
 
   @override
@@ -129,6 +138,8 @@ class RideRequestScreen extends StatefulWidget {
 
 const _gold = Color(0xFFE8C547);
 const _cardGold = Color(0xFFE8C547);
+const double _pickerRippleDurationMs = 1200.0;
+const int _pickerRippleWaveCount = 3;
 List<String> _getSearchStatusMessages(BuildContext context) {
   final s = S.of(context);
   return [
@@ -281,6 +292,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Offset? _dropoffScreenOffset;
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
+
+  // ── In-place map picker state (RiderPhase.pickingLocation) ──
+  // Mirrors the Shopify widget's drop-a-pin mode but inside the same
+  // Mapbox canvas — no Navigator push, no second map instance.
+  bool _pickerIsPickup = false;
+  String _pickerAddress = '';
+  bool _pickerAddressIsPlaceholder = true;
+  bool _pickerGeocodeFailed = false;
+  bool _pickerLoading = false;
+  bool _pickerConfirming = false;
+  int _pickerGeocodeGen = 0;
+  Timer? _pickerDebounce;
+  AnimationController? _pickerSettleCtrl;
+  Animation<double>? _pickerSettleAnim;
+  AnimationController? _pickerAnchorCtrl;
+  Animation<double>? _pickerAnchorAnim;
+  Ticker? _pickerRippleTicker;
+  double _pickerRippleElapsed = 0.0;
+  final _pickerPlaces = PlacesService(ApiKeys.webServices);
 
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
@@ -471,6 +501,33 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     // GoldLocationDot replaced by LocationPuck — no dot annotation needed
     _loadLinkedPayments();
     _loadPinIcon();
+
+    // ── In-place map picker bootstrap ─────────────────────────────────
+    // When pickerMode is true, arrive straight in the picking-location
+    // phase so the same Mapbox canvas drives both the pin-drop UX and
+    // the route preview — matching the Shopify widget's single-canvas
+    // behavior.
+    _pickerIsPickup = widget.pickerIsPickup;
+    _pickerSettleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _pickerSettleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.05), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.05, end: 1.0), weight: 50),
+    ]).animate(
+      CurvedAnimation(parent: _pickerSettleCtrl!, curve: Curves.easeOut),
+    );
+    if (widget.pickerMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ctrl.startPickingLocation();
+        // Kick off a first geocode after the map has a moment to settle.
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) _pickerOnCameraIdle();
+        });
+      });
+    }
   }
 
 
@@ -499,6 +556,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _badgePremiumCtrl.dispose();
     _badgeComfortCtrl.dispose();
     _activeCardGlowCtrl.dispose();
+    _pickerDebounce?.cancel();
+    _pickerSettleCtrl?.dispose();
+    _pickerAnchorCtrl?.dispose();
+    _pickerRippleTicker?.dispose();
     _shakeCtrl.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
@@ -612,7 +673,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   onScrollListener: (_) {
                     if (!_programmaticCam) setState(() => _userMovedMap = true);
                   },
-                  onCameraChangeListener: (_) => _syncLabelOffsets(),
+                  onCameraChangeListener: (_) {
+                    _syncLabelOffsets();
+                    if (_ctrl.state.phase == RiderPhase.pickingLocation) {
+                      _pickerScheduleGeocode();
+                    }
+                  },
+                  onMapIdleListener: (_) {
+                    if (_ctrl.state.phase == RiderPhase.pickingLocation) {
+                      _pickerSettleCtrl?.forward(from: 0);
+                      _pickerScheduleGeocode();
+                    }
+                  },
                 ),
               ),
 
@@ -623,6 +695,81 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             if (phase == RiderPhase.previewRoute ||
                 phase == RiderPhase.selectingRide)
               ..._buildFloatingLabels(),
+
+            // ── In-place map picker overlays ──
+            if (phase == RiderPhase.pickingLocation) ...[
+              // Centered teardrop pin with settle bounce + drop anchor.
+              Center(
+                child: Transform.translate(
+                  offset: Offset(
+                    0,
+                    -(46 * 1.0 / 2) + (_pickerAnchorAnim?.value ?? 0.0),
+                  ),
+                  child: ScaleTransition(
+                    scale: _pickerSettleAnim ??
+                        const AlwaysStoppedAnimation(1.0),
+                    child: CircularMapPin(
+                      size: 46,
+                      icon: _pickerIsPickup
+                          ? CircularPinIcon.person
+                          : CircularPinIcon.flag,
+                      isPickup: _pickerIsPickup,
+                    ),
+                  ),
+                ),
+              ),
+              // Top pill: "Move map to set dropoff/pickup location".
+              Positioned(
+                top: topPad + 10,
+                left: 0,
+                right: 0,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 54),
+                    Expanded(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          constraints: BoxConstraints(
+                            maxWidth:
+                                MediaQuery.of(context).size.width * 0.72,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC0A0E1A),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: const Color(0x33E8C547)),
+                          ),
+                          child: Text(
+                            _pickerIsPickup
+                                ? S.of(context).moveMapToSetPickup
+                                : S.of(context).moveMapToSetDropoff,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white.withValues(alpha: 0.78),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 54),
+                  ],
+                ),
+              ),
+              // Bottom floating "Set your drop-off" card.
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: _buildPickerFooter(),
+              ),
+            ],
 
             // ── Back button ──
             Positioned(
@@ -734,6 +881,176 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Searching bottom card — premium animated "Looking for ride" ──
 
+  // ── In-place map picker footer — same layout as the old MapPickerScreen
+  //    footer, now living inside RideRequestScreen so the map stays alive.
+  Widget _buildPickerFooter() {
+    final s = S.of(context);
+    final canConfirm = !_pickerLoading &&
+        !_pickerConfirming &&
+        !_pickerAddressIsPlaceholder &&
+        _pickerAddress.isNotEmpty;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          20, 22, 20, 22 + MediaQuery.of(context).padding.bottom),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 40,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.05),
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _pickerIsPickup ? s.setYourPickup : s.setYourDropoff,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _pickerIsPickup
+                ? s.moveMapToPreferredPickup
+                : s.moveMapToPreferredDropoff,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: _pickerGeocodeFailed ? _pickerOnCameraIdle : null,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0x1FE8C547),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.search_rounded,
+                        color: Color(0xFFE8C547), size: 16),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.locationCaps,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: const Color(0xFFE8C547)
+                                .withValues(alpha: 0.75),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _pickerAddressIsPlaceholder || _pickerAddress.isEmpty
+                              ? (_pickerLoading
+                                  ? s.findingAddress
+                                  : s.pinnedLocation)
+                              : _pickerAddress,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white.withValues(
+                                alpha: (_pickerAddressIsPlaceholder ||
+                                        _pickerAddress.isEmpty)
+                                    ? 0.45
+                                    : 1.0),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_pickerGeocodeFailed)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.refresh_rounded,
+                          color: Color(0xFFE8C547), size: 18),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: canConfirm ? _pickerConfirm : null,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 160),
+              opacity: canConfirm ? 1.0 : 0.35,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFF5DC7A),
+                      Color(0xFFE8C547),
+                      Color(0xFFD4A800),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(100),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x40E8C547),
+                      blurRadius: 16,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  s.confirmLabel,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFF0A0E1A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Draws a gold circle + animated checkmark tick.

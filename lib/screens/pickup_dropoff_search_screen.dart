@@ -336,6 +336,31 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     HapticFeedback.lightImpact();
     final lat = _resolvedLat ?? widget.initialPickupLat;
     final lng = _resolvedLng ?? widget.initialPickupLng;
+
+    // ── Single-canvas map picker (matches the Shopify widget) ──
+    // Instead of pushing a separate MapPickerScreen that creates its
+    // own Mapbox instance and then pushReplacement'ing back, we
+    // pushReplacement straight into RideRequestScreen's pickingLocation
+    // phase. The same Mapbox canvas then drives picker → confirm →
+    // route preview with zero teleports.
+    setState(() => _handoffCover = true);
+    Navigator.of(context).pushReplacement(
+      slideUpFadeRoute(
+        RideRequestScreen(
+          initialPickupDetails: _pickupDetails,
+          initialDropoffDetails: _dropoffDetails,
+          initialPickupLabel: _pickupLabel,
+          initialDropoffLabel: _dropoffLabel,
+          handoffLat: lat,
+          handoffLng: lng,
+          pickerMode: true,
+          pickerIsPickup: _editingPickup,
+        ),
+      ),
+    );
+    return;
+    // Unreachable (kept for reference / fallback path — auto-stripped).
+    // ignore: dead_code
     final raw = await Navigator.of(context).push<Map<String, dynamic>>(
       slideUpFadeRoute(
         MapPickerScreen(
@@ -354,8 +379,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     );
     if (result.address.isEmpty) return;
 
-    // Remember the map picker's final camera state so the ride-request
-    // screen can boot its own map in the same place — no flash.
     _handoffLat = result.lat;
     _handoffLng = result.lng;
     _handoffZoom = (raw['zoom'] as num?)?.toDouble();

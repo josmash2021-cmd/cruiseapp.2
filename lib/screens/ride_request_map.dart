@@ -1415,4 +1415,242 @@ extension _RideRequestMap on _RideRequestScreenState {
       );
     }
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  IN-PLACE MAP PICKER (RiderPhase.pickingLocation)
+  //  Ported from map_picker_screen.dart so the same Mapbox canvas is
+  //  reused for picker → confirm → route preview without re-mounting.
+  // ═════════════════════════════════════════════════════════════════
+
+  void _pickerScheduleGeocode() {
+    _pickerDebounce?.cancel();
+    _pickerDebounce = Timer(const Duration(milliseconds: 500), _pickerOnCameraIdle);
+  }
+
+  Future<void> _pickerOnCameraIdle() async {
+    _pickerDebounce?.cancel();
+    if (!mounted || _mapCtrl == null) return;
+    final gen = ++_pickerGeocodeGen;
+
+    // Read current camera center — that's where the fixed pin tip is.
+    LatLng? snap;
+    try {
+      final cam = await _mapCtrl!.getCameraState();
+      final c = cam.center.coordinates;
+      snap = LatLng(c.lat.toDouble(), c.lng.toDouble());
+    } catch (_) {}
+    if (snap == null || !mounted || gen != _pickerGeocodeGen) return;
+
+    if (_pickerAddressIsPlaceholder || _pickerGeocodeFailed) {
+      _setState(() {
+        _pickerLoading = true;
+        _pickerGeocodeFailed = false;
+      });
+    }
+
+    String? addr;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+      if (!mounted || gen != _pickerGeocodeGen) return;
+      try {
+        addr = await _pickerPlaces.reverseGeocode(
+          lat: snap.latitude,
+          lng: snap.longitude,
+        );
+        if (addr != null && addr.isNotEmpty) break;
+      } catch (_) {}
+    }
+    if (!mounted || gen != _pickerGeocodeGen) return;
+    _setState(() {
+      if (addr != null && addr.isNotEmpty) {
+        _pickerAddress = addr;
+        _pickerAddressIsPlaceholder = false;
+        _pickerGeocodeFailed = false;
+      } else {
+        _pickerAddressIsPlaceholder = true;
+        _pickerGeocodeFailed = true;
+      }
+      _pickerLoading = false;
+    });
+  }
+
+  /// Picker confirm button — plays the pin drop bounce + native map
+  /// ripple, then internally transitions to the route-preview phase
+  /// WITHOUT re-mounting the map.
+  Future<void> _pickerConfirm() async {
+    if (_pickerAddressIsPlaceholder || _pickerAddress.isEmpty || _pickerConfirming) {
+      return;
+    }
+    _setState(() => _pickerConfirming = true);
+
+    // 1. Drop-bounce on the center pin.
+    _pickerAnchorCtrl?.dispose();
+    _pickerAnchorCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _pickerAnchorAnim = TweenSequence<double>([
+      TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: -18.0).chain(CurveTween(curve: Curves.easeOut)),
+          weight: 25),
+      TweenSequenceItem(
+          tween: Tween(begin: -18.0, end: 4.0).chain(CurveTween(curve: Curves.easeIn)),
+          weight: 40),
+      TweenSequenceItem(
+          tween: Tween(begin: 4.0, end: -2.0).chain(CurveTween(curve: Curves.easeOut)),
+          weight: 20),
+      TweenSequenceItem(
+          tween: Tween(begin: -2.0, end: 0.0).chain(CurveTween(curve: Curves.easeInOut)),
+          weight: 15),
+    ]).animate(_pickerAnchorCtrl!);
+    _pickerAnchorCtrl!.addListener(() {
+      _setState(() {});
+    });
+    _pickerAnchorCtrl!.forward(from: 0);
+
+    // 2. Native map ripple at the pin tip.
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      _pickerStartRipple();
+    });
+
+    // 3. After the settle, read the camera + commit the picked place.
+    Future.delayed(const Duration(milliseconds: 1000), () async {
+      if (!mounted || _mapCtrl == null) return;
+      LatLng? center;
+      try {
+        final cam = await _mapCtrl!.getCameraState();
+        final c = cam.center.coordinates;
+        center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      } catch (_) {}
+      if (!mounted || center == null) return;
+
+      final place = PlaceDetails(
+        address: _pickerAddress,
+        lat: center.latitude,
+        lng: center.longitude,
+      );
+
+      if (_pickerIsPickup) {
+        _ctrl.setPickup(place, _pickerAddress);
+      } else {
+        _ctrl.setDropoff(place, _pickerAddress);
+      }
+
+      // Phase exits pickingLocation — setPickup/setDropoff will push the
+      // controller into previewRoute once both endpoints are known. If
+      // only one is set so far, we bounce back to idle so the "Where to?"
+      // pill can be tapped for the other leg.
+      final s = _ctrl.state;
+      if (s.pickup != null && s.dropoff != null) {
+        // previewRoute is triggered by setDropoff's _tryFetchRoute chain.
+      } else {
+        _ctrl.startLocationSelection();
+      }
+
+      if (mounted) {
+        _setState(() {
+          _pickerConfirming = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _pickerStartRipple() async {
+    final map = _mapCtrl;
+    if (map == null) return;
+    LatLng center;
+    try {
+      final cam = await map.getCameraState();
+      final c = cam.center.coordinates;
+      center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+    } catch (_) {
+      return;
+    }
+    final geojson = jsonEncode({
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [center.longitude, center.latitude],
+          },
+          'properties': {},
+        }
+      ],
+    });
+    try {
+      await map.style.addSource(
+          mapbox.GeoJsonSource(id: 'picker-ripple-src', data: geojson));
+    } catch (_) {}
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      try {
+        await map.style.addLayer(mapbox.CircleLayer(
+          id: 'picker-ripple-wave-$i',
+          sourceId: 'picker-ripple-src',
+          circleRadius: 0.0,
+          circleColor: 0xFFD4A843,
+          circleOpacity: 0.0,
+          circleStrokeWidth: 2.5,
+          circleStrokeColor: 0xFFE8C547,
+          circleStrokeOpacity: 0.0,
+        ));
+      } catch (_) {}
+    }
+    _pickerRippleElapsed = 0.0;
+    _pickerRippleTicker?.dispose();
+    _pickerRippleTicker = createTicker((elapsed) {
+      _pickerRippleElapsed = elapsed.inMilliseconds.toDouble();
+      if (_pickerRippleElapsed > _pickerRippleDurationMs) {
+        _pickerRippleTicker?.stop();
+        _pickerCleanupRipple();
+        return;
+      }
+      _pickerUpdateRippleLayers();
+    })..start();
+  }
+
+  void _pickerUpdateRippleLayers() {
+    final map = _mapCtrl;
+    if (map == null) return;
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      final layerId = 'picker-ripple-wave-$i';
+      final waveOffset = i * 150.0;
+      final waveTime = (_pickerRippleElapsed - waveOffset)
+          .clamp(0.0, _pickerRippleDurationMs - waveOffset);
+      final progress = (waveTime / (_pickerRippleDurationMs - waveOffset))
+          .clamp(0.0, 1.0);
+      if (progress <= 0) continue;
+      final eased = 1.0 - (1.0 - progress) * (1.0 - progress);
+      final maxRadius = 80.0 + (i * 30.0);
+      final radius = maxRadius * eased;
+      final opacity = progress < 0.15
+          ? (progress / 0.15) * 0.35
+          : 0.35 * (1.0 - ((progress - 0.15) / 0.85));
+      final fillOpacity = opacity * 0.25;
+      final strokeOpacity = opacity;
+      final strokeWidth = (3.0 * (1.0 - eased * 0.5)).clamp(0.5, 3.0);
+      map.style.setStyleLayerProperty(layerId, 'circle-radius', radius);
+      map.style.setStyleLayerProperty(layerId, 'circle-opacity', fillOpacity);
+      map.style
+          .setStyleLayerProperty(layerId, 'circle-stroke-opacity', strokeOpacity);
+      map.style.setStyleLayerProperty(layerId, 'circle-stroke-width', strokeWidth);
+    }
+  }
+
+  Future<void> _pickerCleanupRipple() async {
+    final map = _mapCtrl;
+    if (map == null) return;
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      try {
+        await map.style.removeStyleLayer('picker-ripple-wave-$i');
+      } catch (_) {}
+    }
+    try {
+      await map.style.removeStyleSource('picker-ripple-src');
+    } catch (_) {}
+  }
 }

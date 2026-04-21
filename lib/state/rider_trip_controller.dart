@@ -16,6 +16,7 @@ import '../config/api_keys.dart';
 enum RiderPhase {
   idle, // Home screen — "Where to?"
   selectingLocations, // Typing pickup / dropoff
+  pickingLocation, // Dragging the map to drop a pin (map picker mode)
   previewRoute, // Map shows route preview
   selectingRide, // Ride options (X, Comfort, XL, Black)
   requesting, // "Looking for a driver…"
@@ -377,6 +378,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   void startLocationSelection() {
     _state = _state.copyWith(phase: RiderPhase.selectingLocations);
+    notifyListeners();
+  }
+
+  /// Drop into the in-place map picker — keeps the same Mapbox canvas
+  /// alive while the user drags the map under a fixed center pin.
+  void startPickingLocation() {
+    _state = _state.copyWith(phase: RiderPhase.pickingLocation);
     notifyListeners();
   }
 

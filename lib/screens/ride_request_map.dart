@@ -610,12 +610,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     _labelPopCtrl?.stop();
     _routeDrawTicker?.stop();
 
-    // Camera starts top-down (0°) at the dropoff pin. The cinematic
-    // sequence then tilts 0° → 55° smoothly. _startCinematicSequence
-    // handles the full camera setup so we only clear the old state here.
-    if (_mapCtrl != null) {
-      _mapCtrl!.setCamera(mapbox.CameraOptions(pitch: 0, bearing: 0));
-    }
+    // NOTE: we no longer force the camera to pitch:0/bearing:0 here —
+    // _startCinematicSequence now reads the map's ACTUAL current camera
+    // and interpolates from there, which keeps the handoff from the
+    // map picker smooth (no snap to top-down before the tilt starts).
 
     // Clear existing route annotations so they redraw fresh (fire-and-forget)
     final polyMgr = _polylineAnnotMgr;
@@ -711,18 +709,30 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     if (!mounted) { _cinematicRunning = false; return; }
 
-    // ── Start camera at the DROPOFF pin, top-down, zoomed in ──
+    // ── Read the map's CURRENT camera as the animation start ──
+    // When we arrive here from the map-picker handoff the camera is
+    // already centered on the drop-off pin at the picker's zoom/pitch,
+    // so we use that as the starting frame and interpolate smoothly
+    // to the final route-framed view. No setCamera reset — no flash.
     final dropoff = pts.last;
-    _mapCtrl!.setCamera(mapbox.CameraOptions(
-      center: mapbox.Point(
-        coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude),
-      ),
-      pitch: 0.0,
-      bearing: 0.0,
-      zoom: 16.0,
-    ));
+    double startLat = dropoff.latitude;
+    double startLng = dropoff.longitude;
+    double startPitch = 0.0;
+    double startZoom = 16.0;
+    double startBearing = 0.0;
+    try {
+      final cur = await _mapCtrl!.getCameraState();
+      final coords = cur.center.coordinates;
+      startLng = coords.lng.toDouble();
+      startLat = coords.lat.toDouble();
+      startPitch = cur.pitch;
+      startZoom = cur.zoom;
+      startBearing = cur.bearing;
+    } catch (_) {
+      // Fallback keeps the old dropoff-centric defaults.
+    }
 
-    // Small beat so the initial frame renders the dropoff view.
+    // Small beat so the initial frame renders before animating.
     await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) { _cinematicRunning = false; return; }
 
@@ -738,11 +748,6 @@ extension _RideRequestMap on _RideRequestScreenState {
       duration: const Duration(milliseconds: 2200),
     );
 
-    final startLat = dropoff.latitude;
-    final startLng = dropoff.longitude;
-    const startPitch = 0.0;
-    const startZoom = 16.0;
-    const startBearing = 0.0;
     final endLat = targetCenterLat;
     final endLng = targetCenterLng;
     const endPitch = 55.0;

@@ -1518,80 +1518,84 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ),
                         const SizedBox(height: 20),
 
-                        // ── Radar animation + car + route info row ──
+                        // ── Web .vipRide__testSheet__icon port ──
+                        //
+                        //   48×48 gold circle icon (bg rgba(232,197,71,.1),
+                        //   border 1.5px rgba(232,197,71,.35), box-shadow
+                        //   0 0 16px rgba(232,197,71,.15)) with two pseudo-
+                        //   element rings ::before (58×58) and ::after
+                        //   (72×72, delay 0.9s) running vipTestPulse 2.8s
+                        //   cubic-bezier(.4,0,.2,1) infinite, scale .6 → 1.25,
+                        //   opacity 0 → .55 @15% → 0.
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Radar pulse stack
                             SizedBox(
-                              width: 80,
-                              height: 80,
+                              width: 72,
+                              height: 72,
                               child: AnimatedBuilder(
                                 animation: _radarCtrl,
                                 builder: (context, _) {
-                                  return Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      // 3 expanding rings
-                                      ...List.generate(3, (i) {
-                                        final offset = i / 3.0;
-                                        final t = (_radarCtrl.value + offset) % 1.0;
-                                        final size = 28.0 + t * 60.0;
-                                        final alpha = (1.0 - t) * 0.45;
-                                        return Container(
-                                          width: size,
-                                          height: size,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: const Color(0xFFE8C547)
-                                                  .withValues(alpha: alpha),
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                        );
-                                      }),
-                                      // Gold glow core
-                                      Container(
-                                        width: 50,
-                                        height: 50,
+                                  Widget ring(double baseSize, double delay) {
+                                    // _radarCtrl runs 2400ms; normalize to 2.8s
+                                    // and offset by delay (0 or 0.9s).
+                                    final t = ((_radarCtrl.value * 2400 - delay * 1000) /
+                                            2800)
+                                        .clamp(0.0, 1.0);
+                                    final scale = 0.6 + (1.25 - 0.6) * t;
+                                    final opacity = t < 0.15
+                                        ? (t / 0.15) * 0.55
+                                        : 0.55 * (1 - (t - 0.15) / 0.85);
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        width: baseSize,
+                                        height: baseSize,
                                         decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          gradient: RadialGradient(
-                                            colors: [
-                                              const Color(0xFFE8C547)
-                                                  .withValues(alpha: 0.25),
-                                              const Color(0xFFE8C547)
-                                                  .withValues(alpha: 0.0),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      // Car icon circle
-                                      Container(
-                                        width: 42,
-                                        height: 42,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF1C1C24),
                                           shape: BoxShape.circle,
                                           border: Border.all(
                                             color: const Color(0xFFE8C547)
-                                                .withValues(alpha: 0.55),
+                                                .withValues(alpha: opacity.clamp(0.0, 1.0)),
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // ::after — 72×72, 0.9s delay
+                                      ring(72, 0.9),
+                                      // ::before — 58×58, no delay
+                                      ring(58, 0),
+                                      // 48×48 icon circle
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFE8C547)
+                                              .withValues(alpha: 0.10),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFE8C547)
+                                                .withValues(alpha: 0.35),
                                             width: 1.5,
                                           ),
                                           boxShadow: [
                                             BoxShadow(
                                               color: const Color(0xFFE8C547)
-                                                  .withValues(alpha: 0.30),
+                                                  .withValues(alpha: 0.15),
                                               blurRadius: 16,
-                                              spreadRadius: 2,
                                             ),
                                           ],
                                         ),
+                                        alignment: Alignment.center,
                                         child: const Icon(
                                           Icons.local_taxi_rounded,
                                           color: Color(0xFFE8C547),
-                                          size: 20,
+                                          size: 22,
                                         ),
                                       ),
                                     ],
@@ -1599,7 +1603,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 },
                               ),
                             ),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 14),
 
                             // ── Status + route ──
                             Expanded(
@@ -1755,29 +1759,26 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
                         const SizedBox(height: 20),
 
-                        // ── Cancel button ──
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: TextButton(
-                            onPressed: _confirmCancelSearching,
-                            style: TextButton.styleFrom(
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.06),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.10),
-                                ),
-                              ),
-                            ),
+                        // ── .vipRide__testCancelBtn port ──
+                        //   background:none; border:none;
+                        //   font-size: 14-16px; color: rgba(255,255,255,.45);
+                        //   padding: 12px 28px; transition: color 200ms;
+                        //   :active color: rgba(255,255,255,.8);
+                        InkWell(
+                          onTap: _confirmCancelSearching,
+                          borderRadius: BorderRadius.circular(8),
+                          splashColor: Colors.transparent,
+                          highlightColor: Colors.white.withValues(alpha: 0.04),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 28, vertical: 12),
                             child: Text(
                               S.of(context).cancel,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white60,
-                                letterSpacing: 0.2,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.45),
+                                letterSpacing: 0.1,
                               ),
                             ),
                           ),

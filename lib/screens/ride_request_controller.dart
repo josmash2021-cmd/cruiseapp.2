@@ -322,7 +322,9 @@ extension _RideRequestController on _RideRequestScreenState {
           _searchStatusIdx = 0;
           _searchElapsedSec = 0;
           _searchStatusTimer?.cancel();
-          _searchStatusTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+          // 3500ms rotation — matches the Shopify widget's __vrRotateMsg
+          // cadence so the message cycles identically.
+          _searchStatusTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) {
             if (mounted) {
               _setState(() => _searchStatusIdx++);
               _animateSearchCameraToAngle(_searchStatusIdx);

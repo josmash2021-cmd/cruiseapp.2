@@ -3324,10 +3324,12 @@ class S {
   String get cancelRideBody => _es
       ? 'El viaje volverá al marketplace y otro conductor podrá tomarlo.'
       : 'The ride will return to the marketplace and another driver can take it.';
-  String get searchStatusMsg1 => _es ? 'Buscando tu conductor…' : 'Looking for your driver…';
-  String get searchStatusMsg2 => _es ? 'Conectando con conductores cercanos…' : 'Connecting to nearby drivers…';
-  String get searchStatusMsg3 => _es ? 'Casi listo…' : 'Almost there…';
-  String get searchStatusMsg4 => _es ? 'Confirmando tu viaje…' : 'Confirming your ride…';
+  // Exact texts from the Shopify widget's __vrSearchMsgs rotation
+  // (snippets-ride-request-airport.liquid:286).
+  String get searchStatusMsg1 => _es ? 'Casi listo...' : 'Almost there...';
+  String get searchStatusMsg2 => _es ? 'Buscando tu chofer...' : 'Looking for your driver...';
+  String get searchStatusMsg3 => _es ? 'Buscando choferes cercanos...' : 'Searching nearby drivers...';
+  String get searchStatusMsg4 => _es ? 'Conectándote con un viaje premium...' : 'Matching you with a premium ride...';
 
   // ── Driver Trip Accept Screen — new localization keys ─────────────────────
   String get fetchingAddress => _es ? 'Obteniendo dirección...' : 'Getting address...';

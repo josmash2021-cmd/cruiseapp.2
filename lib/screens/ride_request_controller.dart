@@ -1631,6 +1631,35 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   void _showPaymentMethodPicker(AppColors c, RideOption? option) {
+    // Full-screen payment method picker (2×2 grid) — matches the
+    // Shopify widget's pay overlay.
+    //
+    // Maps between the new screen's canonical ids (`apple_pay`,
+    // `google_pay`, `card`, `test_mode`) and the app's existing storage
+    // id `credit_card` — they're the same thing under the hood.
+    final current =
+        _selectedPaymentMethod == 'credit_card' ? 'card' : _selectedPaymentMethod;
+    () async {
+      final picked = await showRidePaymentMethodPicker(
+        context,
+        currentMethod: current,
+        showTestMode: true,
+      );
+      if (picked == null || !mounted) return;
+      final mapped = picked == 'card' ? 'credit_card' : picked;
+      _setState(() => _selectedPaymentMethod = mapped);
+      if (mapped == 'credit_card' &&
+          !_linkedPaymentMethods.contains('credit_card')) {
+        // No card on file yet — jump straight to the credit-card entry screen.
+        await _openCreditCardScreen(c, option);
+      }
+    }();
+  }
+
+  // Kept for backwards-compat — no longer used but referenced by older
+  // call sites; leave in place until a dedicated cleanup pass.
+  // ignore: unused_element
+  void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
       if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),

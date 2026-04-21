@@ -19,7 +19,6 @@ import 'ride_request_screen.dart';
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
-const _goldLight = Color(0xFFFBE47A);
 const _bg = Color(0xFF0A0E1A);
 const _cardBg = Color(0xFF1A1D24);
 
@@ -483,11 +482,34 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
 
                 const SizedBox(height: 16),
 
-                // ── Body: suggestions OR shortcuts ──
+                // ── Body: suggestions OR shortcuts (cross-fade) ──
                 Expanded(
-                  child: _suggestions.isNotEmpty || _loading
-                      ? _buildSuggestionsList()
-                      : _buildShortcuts(),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: const Cubic(0, 0, 0.2, 1),
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, anim) {
+                      return FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, -0.03),
+                            end: Offset.zero,
+                          ).animate(anim),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: (_suggestions.isNotEmpty || _loading)
+                        ? KeyedSubtree(
+                            key: const ValueKey('suggestions'),
+                            child: _buildSuggestionsList(),
+                          )
+                        : KeyedSubtree(
+                            key: const ValueKey('shortcuts'),
+                            child: _buildShortcuts(),
+                          ),
+                  ),
                 ),
               ],
             ),
@@ -609,41 +631,52 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          dot,
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              onChanged: onChanged,
-              onSubmitted: onSubmitted,
-              onTap: onTap,
-              cursorColor: _gold,
-              textInputAction: TextInputAction.search,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: active ? _gold : Colors.white,
-                fontSize: 15,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                hintText: placeholderHint,
-                hintStyle: TextStyle(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          // Focus tint — matches .vipRide__locPicker__field:focus-within on the web
+          color: active
+              ? Colors.white.withValues(alpha: 0.04)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            dot,
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                onChanged: onChanged,
+                onSubmitted: onSubmitted,
+                onTap: onTap,
+                cursorColor: _gold,
+                textInputAction: TextInputAction.search,
+                style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: Colors.white.withValues(alpha: 0.35),
+                  color: active ? _gold : Colors.white,
                   fontSize: 15,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  hintText: placeholderHint,
+                  hintStyle: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -725,7 +758,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
       itemBuilder: (_, i) {
         final s = _suggestions[i];
         return _SuggestionRow(
+          key: ValueKey('sug_${s.placeId}'),
           suggestion: s,
+          staggerIndex: i,
           onTap: () => _onSuggestionTap(s),
         );
       },
@@ -1062,15 +1097,45 @@ class _RecentRowState extends State<_RecentRow> {
 
 class _SuggestionRow extends StatefulWidget {
   final PlaceSuggestion suggestion;
+  final int staggerIndex;
   final VoidCallback onTap;
-  const _SuggestionRow({required this.suggestion, required this.onTap});
+  const _SuggestionRow({
+    super.key,
+    required this.suggestion,
+    required this.staggerIndex,
+    required this.onTap,
+  });
 
   @override
   State<_SuggestionRow> createState() => _SuggestionRowState();
 }
 
-class _SuggestionRowState extends State<_SuggestionRow> {
+class _SuggestionRowState extends State<_SuggestionRow>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
+  late final AnimationController _entryCtl;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    // Stagger: first 5 rows cascade at 45ms each; later rows show instantly.
+    final delay = widget.staggerIndex < 5
+        ? Duration(milliseconds: 30 + 45 * widget.staggerIndex)
+        : Duration.zero;
+    Future.delayed(delay, () {
+      if (mounted) _entryCtl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entryCtl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1079,66 +1144,95 @@ class _SuggestionRowState extends State<_SuggestionRow> {
     final primary = comma > 0 ? desc.substring(0, comma) : desc;
     final secondary = comma > 0 ? desc.substring(comma + 1).trim() : '';
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        margin: const EdgeInsets.only(bottom: 2),
-        decoration: BoxDecoration(
-          color: _pressed
-              ? const Color(0x14E8C547)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0x1FE8C547),
+    return AnimatedBuilder(
+      animation: _entryCtl,
+      builder: (_, child) {
+        final t = Curves.easeOutCubic.transform(_entryCtl.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - t)),
+            child: child,
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onTap();
+        },
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTapUp: (_) => setState(() => _pressed = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: EdgeInsets.only(
+            // Press slides content 4px right (matches web's padding-left shift)
+            left: _pressed ? 16 : 12,
+            right: 12,
+            top: 14,
+            bottom: 14,
+          ),
+          margin: const EdgeInsets.only(bottom: 2),
+          decoration: BoxDecoration(
+            color: _pressed
+                ? const Color(0x23D4AF37)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            // Left-border gold accent on press (matches web border-left-color).
+            border: Border(
+              left: BorderSide(
+                color: _pressed ? _gold : Colors.transparent,
+                width: 3,
               ),
-              child: const Icon(Icons.place_rounded, color: _gold, size: 16),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    primary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (secondary.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0x1FE8C547),
+                ),
+                child: const Icon(Icons.place_rounded, color: _gold, size: 16),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      secondary,
+                      primary,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    if (secondary.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        secondary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

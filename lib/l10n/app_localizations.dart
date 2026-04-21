@@ -3440,6 +3440,9 @@ class S {
   String get moveMapToPreferredDropoff => _es ? 'Mueve el mapa hasta tu punto preferido de destino.' : 'Move map to your preferred drop-off location.';
   String get moveMapToPreferredPickup => _es ? 'Mueve el mapa hasta tu punto preferido de origen.' : 'Move map to your preferred pickup location.';
   String get locationCaps => _es ? 'UBICACIÓN' : 'LOCATION';
+  String get cardPaymentLabel => _es ? 'Tarjeta Débito / Crédito' : 'Debit/Credit Card';
+  String get testModeLabel => _es ? 'Modo de Prueba' : 'Test Mode';
+  String get simulatePayment => _es ? 'Simular pago' : 'Simulate payment';
 
   // ── Login Screen ──────────────────────────────────────────────────────────
   String get googleSignInCancelled => _es ? 'Inicio de sesión con Google cancelado' : 'Google Sign In was cancelled';

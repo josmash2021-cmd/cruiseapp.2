@@ -669,43 +669,58 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       scale: selected ? 1.0 : 0.97,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: const Cubic(0, 0, 0.2, 1),
-        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0x14E8C547)
-              : Colors.white.withValues(alpha: 0.02),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected
-                ? _cardGold.withValues(alpha: 0.70)
-                : Colors.white.withValues(alpha: 0.08),
-            width: selected ? 1.5 : 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: _cardGold.withValues(alpha: 0.35),
-                    blurRadius: 18,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 6),
-                  ),
-                  BoxShadow(
-                    color: _cardGold.withValues(alpha: 0.18),
-                    blurRadius: 32,
-                    spreadRadius: -2,
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
+      child: AnimatedBuilder(
+        // Only drives the pulse when the card is active; at rest we
+        // still rebuild with a static listenable so we don't waste
+        // frames on inactive cards.
+        animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
+        builder: (_, child) {
+          // Triangle wave 0 → 1 → 0 over 2.8s — matches rideGlow CSS
+          // 0%/100% vs 50% midpoint keyframe pair.
+          final t = selected ? _activeCardGlowCtrl.value : 0.0;
+          final glow = 0.18 + 0.17 * t; // 0.18 → 0.35
+          final outerGlow = 0.10 + 0.12 * t; // 0.10 → 0.22
+          final borderAlpha = 0.55 + 0.20 * t; // 0.55 → 0.75
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: const Cubic(0, 0, 0.2, 1),
+            padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? const Color(0x14E8C547)
+                  : Colors.white.withValues(alpha: 0.02),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? _cardGold.withValues(alpha: borderAlpha)
+                    : Colors.white.withValues(alpha: 0.08),
+                width: selected ? 1.5 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: _cardGold.withValues(alpha: glow),
+                        blurRadius: 18 + 6 * t,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 6),
+                      ),
+                      BoxShadow(
+                        color: _cardGold.withValues(alpha: outerGlow),
+                        blurRadius: 32 + 8 * t,
+                        spreadRadius: -2,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: child,
+          );
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -775,15 +790,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
     final arrivalStr = '$h12:${m.toString().padLeft(2, '0')} $ampm';
 
+    // 650ms cubic-bezier(.4,0,.2,1) slide-down 6px — matches the web's
+    // .vipRide__rideDetail animation keyframe vipRideDetailIn.
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 650),
       switchInCurve: const Cubic(0.4, 0, 0.2, 1),
       transitionBuilder: (child, anim) {
         return FadeTransition(
           opacity: anim,
           child: SlideTransition(
             position: Tween<Offset>(
-              begin: const Offset(0, -0.06),
+              // -6px in CSS translates to approximately -0.04 of the
+              // container height on average — close enough visually.
+              begin: const Offset(0, -0.04),
               end: Offset.zero,
             ).animate(anim),
             child: child,

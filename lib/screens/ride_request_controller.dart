@@ -1643,6 +1643,9 @@ extension _RideRequestController on _RideRequestScreenState {
       final picked = await showRidePaymentMethodPicker(
         context,
         currentMethod: current,
+        // Test mode always visible — matches the web widget where the
+        // Modo de Prueba tile is always in the picker so operators can
+        // simulate a payment without a real card on file.
         showTestMode: true,
       );
       if (picked == null || !mounted) return;
@@ -1905,7 +1908,7 @@ extension _RideRequestController on _RideRequestScreenState {
       case 'paypal':
         return 'PayPal';
       case 'test_mode':
-        return 'Test Mode';
+        return loc.testModeLabel;
       default:
         return Platform.isIOS ? 'Apple Pay' : 'Google Pay';
     }

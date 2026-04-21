@@ -270,6 +270,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   late AnimationController _badgePremiumCtrl;
   late AnimationController _badgeComfortCtrl;
 
+  // ── Active ride-card glow pulse (matches vipRide rideGlow 2.8s) ──
+  late AnimationController _activeCardGlowCtrl;
+
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
   Timer? _driverFoundTimer;
@@ -353,6 +356,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat();
+
+    // Pulsing gold glow on the active ride card (matches .vipRide
+    // rideGlow CSS keyframes: 2.8s ease-in-out infinite).
+    _activeCardGlowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat(reverse: true);
 
     // Max 1 second shimmer timeout — force show options after 1s
     _shimmerTimeoutTimer = Timer(const Duration(seconds: 1), () {
@@ -479,6 +489,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _priceShimmerCtrl.dispose();
     _badgePremiumCtrl.dispose();
     _badgeComfortCtrl.dispose();
+    _activeCardGlowCtrl.dispose();
     _shakeCtrl.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();

@@ -739,8 +739,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 6),
-            // Pixel-perfect tier badge matching ride_options_sheet
-            _step3TierBadge(tierLabel),
+            // Pixel-perfect tier badge — shared widget with animated VIP
+            VehicleTierBadge(
+              tier: tierLabel == 'VIP'
+                  ? VehicleTier.vip
+                  : tierLabel == 'PREMIUM'
+                      ? VehicleTier.premium
+                      : VehicleTier.comfort,
+            ),
           ],
         ),
       ),
@@ -834,100 +840,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // Tier badge for the compact step-3 grid cards. Mirrors the three
-  // variants from ride_options_sheet.dart (VIP dark / PREMIUM gold /
-  // COMFORT silver) but in a static form-factor.
-  Widget _step3TierBadge(String tier) {
-    Gradient gradient;
-    Color iconColor;
-    Color textColor;
-    IconData icon;
-    Border? border;
-    List<BoxShadow> shadow;
-    switch (tier) {
-      case 'VIP':
-        gradient = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
-        );
-        iconColor = const Color(0xFFE8C547);
-        textColor = Colors.white;
-        icon = Icons.auto_awesome;
-        border = Border.all(
-          color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-          width: 1,
-        );
-        shadow = const [
-          BoxShadow(
-            color: Color(0x59E8C547),
-            blurRadius: 10,
-            spreadRadius: 0.5,
-          ),
-        ];
-        break;
-      case 'PREMIUM':
-        gradient = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
-        );
-        iconColor = Colors.black;
-        textColor = Colors.black;
-        icon = Icons.star_rounded;
-        shadow = const [
-          BoxShadow(color: Color(0x66D4AF37), blurRadius: 8, offset: Offset(0, 2)),
-          BoxShadow(color: Color(0x40E8C547), blurRadius: 14),
-        ];
-        break;
-      case 'COMFORT':
-      default:
-        gradient = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-        );
-        iconColor = const Color(0xFF1A1A1A);
-        textColor = const Color(0xFF1A1A1A);
-        icon = Icons.auto_awesome_rounded;
-        shadow = const [
-          BoxShadow(color: Color(0x4DC0C0C0), blurRadius: 8, offset: Offset(0, 2)),
-          BoxShadow(color: Color(0x26C8C8C8), blurRadius: 12),
-        ];
-        break;
-    }
-    return Container(
-      height: 20,
-      constraints: const BoxConstraints(minWidth: 70),
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(6),
-        border: border,
-        boxShadow: shadow,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 10, color: iconColor),
-          const SizedBox(width: 3),
-          Text(
-            tier,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              color: textColor,
-              letterSpacing: 0.9,
-              height: 1.0,
-            ),
-          ),
-        ],
       ),
     );
   }

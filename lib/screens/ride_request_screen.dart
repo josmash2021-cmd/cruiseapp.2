@@ -38,6 +38,7 @@ import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
+import '../widgets/vehicle_tier_badge.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';

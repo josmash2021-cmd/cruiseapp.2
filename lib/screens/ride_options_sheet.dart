@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
+import '../widgets/vehicle_tier_badge.dart';
 
 /// Premium ride options bottom sheet with card-based layout.
 class RideOptionsSheet extends StatelessWidget {
@@ -273,16 +274,16 @@ class RideOptionsSheet extends StatelessWidget {
     //   Suburban → VIP    (dark gradient + gold halo)
     //   Camry    → PREMIUM (gold gradient)
     //   Fusion   → COMFORT (silver gradient)
-    final _BadgeTier tier;
+    final VehicleTier tier;
     final String displayName;
     if (isSuv) {
-      tier = _BadgeTier.vip;
+      tier = VehicleTier.vip;
       displayName = 'SUV';
     } else if (isCamry) {
-      tier = _BadgeTier.premium;
+      tier = VehicleTier.premium;
       displayName = 'Comfort';
     } else {
-      tier = _BadgeTier.comfort;
+      tier = VehicleTier.comfort;
       displayName = 'Regular';
     }
 
@@ -362,7 +363,7 @@ class RideOptionsSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        _TierBadge(tier: tier),
+                        VehicleTierBadge(tier: tier),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -869,182 +870,3 @@ class _CarSilhouettePainter extends CustomPainter {
       old.type != type || old.color != color;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  Tier badge — pixel-matches the Shopify booking widget
-//  (vipRide__badge--vip / --premium / --comfort)
-// ═══════════════════════════════════════════════════════════════════
-
-enum _BadgeTier { vip, premium, comfort }
-
-class _TierBadge extends StatefulWidget {
-  final _BadgeTier tier;
-  const _TierBadge({required this.tier});
-
-  @override
-  State<_TierBadge> createState() => _TierBadgeState();
-}
-
-class _TierBadgeState extends State<_TierBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _haloCtl;
-
-  @override
-  void initState() {
-    super.initState();
-    // 6s pulsing halo — matches vipHalo CSS keyframes.
-    _haloCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _haloCtl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _haloCtl,
-      builder: (_, __) {
-        final t = _haloCtl.value;
-        // ease-in-out cubic-bezier(.4,0,.6,1) approximation.
-        final ease = 0.5 - 0.5 * math.cos(t * 2 * math.pi);
-        return _buildBadge(ease);
-      },
-    );
-  }
-
-  Widget _buildBadge(double ease) {
-    switch (widget.tier) {
-      case _BadgeTier.vip:
-        return _badgeShell(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
-          ),
-          border: Border.all(
-            color: const Color(0xFFE8C547).withValues(alpha: 0.30),
-            width: 1,
-          ),
-          shadow: [
-            BoxShadow(
-              color: const Color(0xFFE8C547)
-                  .withValues(alpha: 0.20 + 0.25 * ease),
-              blurRadius: 14 + 8 * ease,
-              spreadRadius: 0.5,
-            ),
-          ],
-          icon: _vipSparkleIcon,
-          iconColor: const Color(0xFFE8C547),
-          label: 'VIP',
-          labelColor: Colors.white,
-        );
-
-      case _BadgeTier.premium:
-        return _badgeShell(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF5DC7A),
-              Color(0xFFE8C547),
-              Color(0xFFB08800),
-            ],
-          ),
-          shadow: const [
-            BoxShadow(
-              color: Color(0x66D4AF37),
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-            BoxShadow(
-              color: Color(0x40E8C547),
-              blurRadius: 14,
-            ),
-          ],
-          icon: Icons.star_rounded,
-          iconColor: Colors.black,
-          label: 'PREMIUM',
-          labelColor: Colors.black,
-        );
-
-      case _BadgeTier.comfort:
-        return _badgeShell(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-          ),
-          shadow: const [
-            BoxShadow(
-              color: Color(0x4DC0C0C0),
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-            BoxShadow(
-              color: Color(0x26C8C8C8),
-              blurRadius: 12,
-            ),
-          ],
-          icon: Icons.auto_awesome_rounded,
-          iconColor: const Color(0xFF1A1A1A),
-          label: 'COMFORT',
-          labelColor: const Color(0xFF1A1A1A),
-        );
-    }
-  }
-
-  Widget _badgeShell({
-    required Gradient gradient,
-    BoxBorder? border,
-    required List<BoxShadow> shadow,
-    required dynamic icon, // IconData or Widget
-    required Color iconColor,
-    required String label,
-    required Color labelColor,
-  }) {
-    return Container(
-      height: 22,
-      constraints: const BoxConstraints(minWidth: 78),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        gradient: gradient,
-        border: border,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: shadow,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (icon is IconData)
-            Icon(icon, size: 11, color: iconColor)
-          else
-            SizedBox(width: 12, height: 12, child: icon as Widget),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              color: labelColor,
-              letterSpacing: 1.0,
-              height: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Custom sparkle (matches the VIP crown/sparkle SVG on the web).
-  Widget get _vipSparkleIcon => const Icon(
-        Icons.auto_awesome,
-        size: 11,
-        color: Color(0xFFE8C547),
-      );
-}

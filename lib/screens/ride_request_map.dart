@@ -664,9 +664,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (!mounted || _mapCtrl == null) return;
     // _cinematicRunning is already true — set by _drawRoute() caller.
 
-    final rng = math.Random();
-    final degrees = 5.0 + rng.nextDouble() * 7.0;
-    _randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+    // Fixed 15° bearing — matches the Shopify widget's static camera
+    // angle during step 3. Previously randomized ±5–12°, but the web is
+    // intentionally consistent so every ride looks the same.
+    _randomBearing = 15.0;
 
     // ── Compute the FINAL camera we want to arrive at ──
     // This is the framed view with pitch 55°, big bottom inset for
@@ -963,7 +964,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: mapbox.LineString(coordinates: initCoords),
-      lineColor: const Color(0xFFFFD700).toARGB32(),
+      // Warm gold — averages the web's 3-stop gradient
+      // (#D4AF37 → #FFD700 → #E8C547). Solid #F0CA3E reads close to
+      // the middle-weighted visual of the CSS gradient on a dark map.
+      lineColor: const Color(0xFFF0CA3E).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));

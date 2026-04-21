@@ -20,7 +20,11 @@ import 'ride_request_screen.dart';
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
-const _bg = Color(0xFF0A0E1A);
+// .vipRide__locPicker { background: rgba(10,17,40,.75); backdrop-filter: blur(28px) }
+// The widget is always opaque on phone (no content behind the route), so
+// we render the effective solid color #0A1128 — the same navy the web
+// shows once the blur settles on the dark page body.
+const _bg = Color(0xFF0A1128);
 const _cardBg = Color(0xFF1A1D24);
 
 // ═══════════════════════════════════════════════════════════════════

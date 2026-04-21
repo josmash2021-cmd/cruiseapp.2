@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/ambient_star_field.dart';
 
 /// Full-screen "Choose ride type" picker — replaces the old bottom sheet.
 ///
@@ -59,9 +58,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
                 child: CustomPaint(painter: _AmbientGlowPainter()),
               ),
             ),
-
-            // ─── Twinkling gold star field (matches vipRide__testStar) ───
-            const Positioned.fill(child: AmbientStarField()),
 
             Column(
               children: [

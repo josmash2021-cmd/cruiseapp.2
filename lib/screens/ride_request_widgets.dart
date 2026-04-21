@@ -546,72 +546,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 ),
                                 const SizedBox(height: 10),
                                 // ── Request Ride button ──
-                                GestureDetector(
-                                  onTap: (_isProcessingPayment || !_hasAnyPaymentMethod)
-                                      ? null
-                                      : () {
-                                          HapticFeedback.mediumImpact();
-                                          _startRideDirectly(c, option);
-                                        },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 350),
-                                    curve: Curves.easeInOut,
-                                    width: double.infinity,
-                                    height: 52,
-                                    decoration: BoxDecoration(
-                                      gradient: _hasAnyPaymentMethod
-                                          ? const LinearGradient(
-                                              colors: [
-                                                Color(0xFFE8C547),
-                                                Color(0xFFD4A520),
-                                              ],
-                                            )
-                                          : LinearGradient(
-                                              colors: [
-                                                const Color(0xFFE8C547).withValues(alpha: 0.35),
-                                                const Color(0xFFD4A520).withValues(alpha: 0.35),
-                                              ],
-                                            ),
-                                      borderRadius: BorderRadius.circular(14),
-                                      boxShadow: _hasAnyPaymentMethod
-                                          ? [
-                                              BoxShadow(
-                                                color: const Color(0xFFD4A520)
-                                                    .withValues(alpha: 0.35),
-                                                blurRadius: 12,
-                                                offset: const Offset(0, 4),
-                                              ),
-                                            ]
-                                          : [],
-                                    ),
-                                    child: Center(
-                                      child: _isProcessingPayment
-                                          ? const SizedBox(
-                                              width: 22,
-                                              height: 22,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.5,
-                                                color: Colors.black,
-                                              ),
-                                            )
-                                          : AnimatedDefaultTextStyle(
-                                              duration: const Duration(milliseconds: 350),
-                                              style: TextStyle(
-                                                color: _hasAnyPaymentMethod
-                                                    ? Colors.black
-                                                    : Colors.black.withValues(alpha: 0.4),
-                                                fontSize: 17,
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: -0.3,
-                                              ),
-                                              child: Text(
-                                                widget.scheduledAt != null
-                                                    ? S.of(context).bookScheduledRide
-                                                    : S.of(context).requestRide,
-                                              ),
-                                            ),
-                                    ),
-                                  ),
+                                // .vipRide__requestBtn port:
+                                //   background:#E8C547 (solid, no gradient)
+                                //   padding:16px; border-radius:12px
+                                //   box-shadow: 0 2px 8px rgba(232,197,71,.25),
+                                //               0 6px 20px rgba(0,0,0,.2)
+                                //   active:scale(.97); disabled:opacity:.35
+                                _WebRequestButton(
+                                  enabled: !_isProcessingPayment && _hasAnyPaymentMethod,
+                                  isLoading: _isProcessingPayment,
+                                  label: widget.scheduledAt != null
+                                      ? S.of(context).bookScheduledRide
+                                      : S.of(context).requestRide,
+                                  onTap: () {
+                                    HapticFeedback.mediumImpact();
+                                    _startRideDirectly(c, option);
+                                  },
                                 ),
                               ],
                             ),
@@ -2471,6 +2421,108 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Icon(icon, size: 24, color: Colors.white),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Web Request Button — direct port of .vipRide__requestBtn
+//  (005_09-28-46_260627b.liquid:804).
+//    width: 100%; padding: 16px; border-radius: 12px;
+//    background: #E8C547 (solid, no gradient);
+//    font-size: 16px; font-weight: 800; color: #0a0e1a;
+//    box-shadow:
+//      0 2px 8px rgba(232,197,71,.25),
+//      0 6px 20px rgba(0,0,0,.2);
+//    :active:not(:disabled) → transform: scale(.97);
+//    :disabled → opacity: .35;
+// ═══════════════════════════════════════════════════════════════════
+
+class _WebRequestButton extends StatefulWidget {
+  final bool enabled;
+  final bool isLoading;
+  final String label;
+  final VoidCallback onTap;
+
+  const _WebRequestButton({
+    required this.enabled,
+    required this.isLoading,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  State<_WebRequestButton> createState() => _WebRequestButtonState();
+}
+
+class _WebRequestButtonState extends State<_WebRequestButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.enabled && !widget.isLoading;
+    return GestureDetector(
+      onTap: enabled ? widget.onTap : null,
+      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        // .vipRide__requestBtn:active:not(:disabled) { transform: scale(.97); }
+        scale: (_pressed && enabled) ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: AnimatedOpacity(
+          // :disabled { opacity: .35; }
+          opacity: enabled ? 1.0 : 0.35,
+          duration: const Duration(milliseconds: 160),
+          child: Container(
+            width: double.infinity,
+            // padding: 16px;
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+            decoration: BoxDecoration(
+              // background: #E8C547 (solid, no gradient)
+              color: const Color(0xFFE8C547),
+              // border-radius: 12px
+              borderRadius: BorderRadius.circular(12),
+              // box-shadow:
+              //   0 2px 8px rgba(232,197,71,.25),
+              //   0 6px 20px rgba(0,0,0,.2);
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x40E8C547),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 20,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: widget.isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Color(0xFF0A0E1A),
+                    ),
+                  )
+                : Text(
+                    widget.label,
+                    style: const TextStyle(
+                      // font-size: 16px; font-weight: 800; color: #0a0e1a;
+                      fontFamily: 'Poppins',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0A0E1A),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/ambient_star_field.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared constants & helpers
@@ -118,17 +117,14 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: AmbientStarField()),
-          SafeArea(
-            child: Column(
-              children: [
-                _Header(
-                  title: isEs ? 'Programar un Viaje' : 'Schedule a Ride',
-                  subtitle: s.chooseDateForRide,
-                  trailingIcon: Icons.calendar_today_rounded,
-                  onBack: () => Navigator.pop(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _Header(
+              title: isEs ? 'Programar un Viaje' : 'Schedule a Ride',
+              subtitle: s.chooseDateForRide,
+              trailingIcon: Icons.calendar_today_rounded,
+              onBack: () => Navigator.pop(context),
             ),
 
             const SizedBox(height: 4),
@@ -222,10 +218,8 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
                 ],
               ),
             ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -561,13 +555,10 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: AmbientStarField()),
-          SafeArea(
-            child: Column(
-              children: [
-                _Header(
+      body: SafeArea(
+        child: Column(
+          children: [
+            _Header(
               title: s.selectTimeTitle,
               subtitle: s.pickPreferredTime,
               trailingIcon: Icons.access_time_rounded,
@@ -672,10 +663,8 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
                 onTap: _confirm,
               ),
             ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

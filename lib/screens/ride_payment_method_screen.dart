@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
+import '../widgets/ambient_star_field.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Payment method selection — matches the Shopify widget's pay overlay
@@ -111,15 +112,19 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(
-              title: s.paymentMethodTitle,
-              onBack: () => Navigator.of(context).pop(),
-            ),
+      body: Stack(
+        children: [
+          // Ambient twinkling gold stars (matches vipRide__testStars)
+          const Positioned.fill(child: AmbientStarField()),
+          SafeArea(
+            child: Column(
+              children: [
+                _Header(
+                  title: s.paymentMethodTitle,
+                  onBack: () => Navigator.of(context).pop(),
+                ),
 
-            Expanded(
+                Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
                 child: GridView.count(
@@ -178,8 +183,10 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                 ),
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

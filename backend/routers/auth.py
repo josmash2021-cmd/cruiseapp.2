@@ -736,10 +736,22 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         try:
             from google.oauth2 import id_token as google_id_token
             from google.auth.transport import requests as google_requests
-            _google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+            # Accept tokens from any of our OAuth clients (iOS, Android, Web).
+            # google_sign_in on iOS emits tokens audienced at the iOS client,
+            # Android emits at the Android client, web at the Web client —
+            # all three are legitimate for this backend.
+            _allowed = [
+                c.strip()
+                for c in os.getenv("GOOGLE_CLIENT_IDS", os.getenv("GOOGLE_CLIENT_ID", "")).split(",")
+                if c.strip()
+            ]
+            # Verify signature/expiry once (audience=None skips aud check).
             idinfo = google_id_token.verify_oauth2_token(
-                body.id_token, google_requests.Request(), audience=_google_client_id
+                body.id_token, google_requests.Request()
             )
+            _aud = idinfo.get("aud")
+            if _allowed and _aud not in _allowed:
+                raise ValueError(f"Token audience {_aud} not in allowed list")
             email = idinfo.get("email")
             given_name = given_name or idinfo.get("given_name", "")
             family_name = family_name or idinfo.get("family_name", "")
@@ -761,9 +773,15 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
                 if _key_data:
                     from jwt.algorithms import RSAAlgorithm
                     _public_key = RSAAlgorithm.from_jwk(_key_data)
+                    # Accept tokens from multiple Apple audiences (native app + web Sign in with Apple).
+                    _apple_auds = [
+                        c.strip()
+                        for c in os.getenv("APPLE_CLIENT_IDS", os.getenv("APPLE_CLIENT_ID", "")).split(",")
+                        if c.strip()
+                    ] or ["com.cruiseinride.app"]
                     claims = _jwt.decode(
                         body.id_token, _public_key, algorithms=["RS256"],
-                        audience=os.getenv("APPLE_CLIENT_ID", ""),
+                        audience=_apple_auds,
                         issuer="https://appleid.apple.com",
                     )
                 else:

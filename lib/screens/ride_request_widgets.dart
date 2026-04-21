@@ -382,67 +382,70 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               _buildShimmerCard(),
                               if (i < 2) const SizedBox(height: 6),
                             ]
-                          // Real options — pure fade stagger driven by
-                          // the shared _sheetCtrl intervals (see
-                          // _rowOpacity0/1/2 in the state class). No
-                          // slide, no scale — fade only, so every row
-                          // appears smoothly one after the other as the
-                          // sheet itself fades in.
+                          // Real options — 3-column grid layout (matches the
+                          // Shopify widget's step 3: one vertical card per
+                          // tier). Each card still fades in with its own
+                          // interval so the stagger reads the same way.
                           else
-                            for (int i = 0; i < displayOptions.length; i++) ...[
-                              FadeTransition(
-                                key: ValueKey('ride_opt_${displayOptions[i].id}'),
-                                opacity: i == 0
-                                    ? _rowOpacity0
-                                    : (i == 1 ? _rowOpacity1 : _rowOpacity2),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    _ctrl.selectRideOption(displayOptions[i]);
-                                    // Auto-collapse immediately after selecting
-                                    _setState(
-                                      () => _rideOptionsExpanded = false,
-                                    );
-                                    // Refit route above the collapsed bottom panel,
-                                    // but only after cinematic finishes to avoid
-                                    // conflicting flyTo vs setCamera animations.
-                                    if (_mapCtrl != null && !_cinematicRunning) {
-                                      final s = _ctrl.state;
-                                      if (s.pickup != null && s.dropoff != null) {
-                                        final pts = s.route?.points ?? [
-                                          LatLng(s.pickup!.lat, s.pickup!.lng),
-                                          LatLng(s.dropoff!.lat, s.dropoff!.lng),
-                                        ];
-                                        // Delay to let the panel collapse animate first
-                                        Future.delayed(const Duration(milliseconds: 350), () {
-                                          if (mounted && !_cinematicRunning) {
-                                            _fitRoute(pts, preserveCamera: true);
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (int i = 0; i < displayOptions.length; i++) ...[
+                                  Expanded(
+                                    child: FadeTransition(
+                                      key: ValueKey('ride_opt_${displayOptions[i].id}'),
+                                      opacity: i == 0
+                                          ? _rowOpacity0
+                                          : (i == 1 ? _rowOpacity1 : _rowOpacity2),
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          HapticFeedback.selectionClick();
+                                          _ctrl.selectRideOption(displayOptions[i]);
+                                          _setState(
+                                            () => _rideOptionsExpanded = false,
+                                          );
+                                          if (_mapCtrl != null && !_cinematicRunning) {
+                                            final s = _ctrl.state;
+                                            if (s.pickup != null && s.dropoff != null) {
+                                              final pts = s.route?.points ?? [
+                                                LatLng(s.pickup!.lat, s.pickup!.lng),
+                                                LatLng(s.dropoff!.lat, s.dropoff!.lng),
+                                              ];
+                                              Future.delayed(const Duration(milliseconds: 350), () {
+                                                if (mounted && !_cinematicRunning) {
+                                                  _fitRoute(pts, preserveCamera: true);
+                                                }
+                                              });
+                                            }
                                           }
-                                        });
-                                      }
-                                    }
-                                  },
-                                  child: _buildRideOptionCard(
-                                    c,
-                                    displayOptions[i],
-                                    option?.id == displayOptions[i].id,
+                                        },
+                                        child: _buildRideOptionCard(
+                                          c,
+                                          displayOptions[i],
+                                          option?.id == displayOptions[i].id,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              if (i < displayOptions.length - 1)
-                                const SizedBox(height: 4),
-                            ],
+                                  if (i < displayOptions.length - 1)
+                                    const SizedBox(width: 8),
+                                ],
+                              ],
+                            ),
                         ],
                       ),
                     ),
+                    // Collapsed view — detail panel for the selected tier
+                    // (matches the .vipRide__rideDetail in the web widget).
                     secondChild: option != null
                         ? GestureDetector(
-                            onTap: () =>
-                                _setState(() => _rideOptionsExpanded = true),
+                            onTap: () => _setState(
+                                () => _rideOptionsExpanded = true),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                               ),
-                              child: _buildRideOptionCard(c, option, true),
+                              child: _buildRideDetailPanel(c, option),
                             ),
                           )
                         : const SizedBox.shrink(),
@@ -645,7 +648,293 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return 'assets/images/cruise_6.png';
   }
 
+  // Vertical grid card — matches the Shopify widget's .vipRide__rideCard:
+  // image on top, tier name, small badge below, subtle gold glow when active.
   Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
+    final isSuv = opt.id == 'suburban';
+    final isFusion = opt.id == 'fusion';
+
+    final bool isVIP = isSuv;
+    final bool isPremium = !isSuv && !isFusion;
+    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
+    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+
+    return AnimatedScale(
+      scale: selected ? 1.0 : 0.97,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: const Cubic(0, 0, 0.2, 1),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0x14E8C547)
+              : Colors.white.withValues(alpha: 0.02),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected
+                ? _cardGold.withValues(alpha: 0.70)
+                : Colors.white.withValues(alpha: 0.08),
+            width: selected ? 1.5 : 1,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: _cardGold.withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 6),
+                  ),
+                  BoxShadow(
+                    color: _cardGold.withValues(alpha: 0.18),
+                    blurRadius: 32,
+                    spreadRadius: -2,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Car image
+            SizedBox(
+              height: 56,
+              child: AnimatedOpacity(
+                opacity: selected ? 1.0 : 0.85,
+                duration: const Duration(milliseconds: 180),
+                child: Image.asset(
+                  _carAssetForOption(opt.name),
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  isAntiAlias: true,
+                  cacheWidth: 240,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.directions_car_rounded,
+                    size: 36,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Tier display name
+            Text(
+              displayName,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.2,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            // Pixel-perfect tier badge matching ride_options_sheet
+            _step3TierBadge(tierLabel),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Detail panel shown below the 3-card grid once the user has picked a
+  // tier. Matches .vipRide__rideDetail from the web (description + eta
+  // row + big price).
+  Widget _buildRideDetailPanel(AppColors c, RideOption opt) {
+    final routeMins = _ctrl.state.route != null
+        ? _parseDurationMins(_ctrl.state.route!.durationText)
+        : 0;
+    final arrival = DateTime.now().add(
+      Duration(minutes: opt.etaMinutes + routeMins),
+    );
+    final h = arrival.hour;
+    final m = arrival.minute;
+    final ampm = h >= 12 ? 'PM' : 'AM';
+    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+    final arrivalStr = '$h12:${m.toString().padLeft(2, '0')} $ampm';
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: const Cubic(0.4, 0, 0.2, 1),
+      transitionBuilder: (child, anim) {
+        return FadeTransition(
+          opacity: anim,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, -0.06),
+              end: Offset.zero,
+            ).animate(anim),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        key: ValueKey('detail_${opt.id}'),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _cardGold.withValues(alpha: 0.06),
+              Colors.white.withValues(alpha: 0.02),
+            ],
+          ),
+          border: Border.all(
+            color: _cardGold.withValues(alpha: 0.18),
+          ),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              opt.description,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _chipWidget(Icons.schedule_rounded, '${opt.etaMinutes} min'),
+                const SizedBox(width: 6),
+                _chipWidget(Icons.access_time_filled_rounded, arrivalStr),
+                const SizedBox(width: 6),
+                _chipWidget(Icons.person_rounded, '${opt.capacity}'),
+                const Spacer(),
+                if (_ctrl.state.route == null)
+                  _buildPriceShimmer(width: 68, height: 22)
+                else
+                  Text(
+                    '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Tier badge for the compact step-3 grid cards. Mirrors the three
+  // variants from ride_options_sheet.dart (VIP dark / PREMIUM gold /
+  // COMFORT silver) but in a static form-factor.
+  Widget _step3TierBadge(String tier) {
+    Gradient gradient;
+    Color iconColor;
+    Color textColor;
+    IconData icon;
+    Border? border;
+    List<BoxShadow> shadow;
+    switch (tier) {
+      case 'VIP':
+        gradient = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
+        );
+        iconColor = const Color(0xFFE8C547);
+        textColor = Colors.white;
+        icon = Icons.auto_awesome;
+        border = Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+          width: 1,
+        );
+        shadow = const [
+          BoxShadow(
+            color: Color(0x59E8C547),
+            blurRadius: 10,
+            spreadRadius: 0.5,
+          ),
+        ];
+        break;
+      case 'PREMIUM':
+        gradient = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
+        );
+        iconColor = Colors.black;
+        textColor = Colors.black;
+        icon = Icons.star_rounded;
+        shadow = const [
+          BoxShadow(color: Color(0x66D4AF37), blurRadius: 8, offset: Offset(0, 2)),
+          BoxShadow(color: Color(0x40E8C547), blurRadius: 14),
+        ];
+        break;
+      case 'COMFORT':
+      default:
+        gradient = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+        );
+        iconColor = const Color(0xFF1A1A1A);
+        textColor = const Color(0xFF1A1A1A);
+        icon = Icons.auto_awesome_rounded;
+        shadow = const [
+          BoxShadow(color: Color(0x4DC0C0C0), blurRadius: 8, offset: Offset(0, 2)),
+          BoxShadow(color: Color(0x26C8C8C8), blurRadius: 12),
+        ];
+        break;
+    }
+    return Container(
+      height: 20,
+      constraints: const BoxConstraints(minWidth: 70),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(6),
+        border: border,
+        boxShadow: shadow,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 10, color: iconColor),
+          const SizedBox(width: 3),
+          Text(
+            tier,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              color: textColor,
+              letterSpacing: 0.9,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── OLD card kept for reference during migration — now unused ──
+  // ignore: unused_element
+  Widget _buildRideOptionCardLegacy(AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
 

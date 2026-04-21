@@ -376,12 +376,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           // Route failed → show retry
                           if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                             _buildRouteFailedRetry()
-                          // Loading → shimmer placeholders
+                          // Loading → 3-column shimmer placeholders (matches
+                          // the real grid layout so we don't see a vertical
+                          // → horizontal jump when the options arrive)
                           else if (displayOptions.isEmpty)
-                            for (int i = 0; i < 3; i++) ...[
-                              _buildShimmerCard(),
-                              if (i < 2) const SizedBox(height: 6),
-                            ]
+                            Row(
+                              children: [
+                                for (int i = 0; i < 3; i++) ...[
+                                  Expanded(child: _buildShimmerCard()),
+                                  if (i < 2) const SizedBox(width: 8),
+                                ],
+                              ],
+                            )
                           // Real options — 3-column grid layout (matches the
                           // Shopify widget's step 3: one vertical card per
                           // tier). Each card still fades in with its own
@@ -1288,45 +1294,54 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           begin: Alignment(-1.0 + 2.0 * _priceShimmerCtrl.value, 0),
           end: Alignment(1.0 + 2.0 * _priceShimmerCtrl.value, 0),
           colors: const [
+            Color(0xFF1A1A1A),
             Color(0xFF2A2A2A),
-            Color(0xFF3A3A3A),
-            Color(0xFF2A2A2A),
+            Color(0xFF1A1A1A),
           ],
           stops: const [0.0, 0.5, 1.0],
         );
+        // Vertical placeholder that mirrors the real 3-column grid
+        // card: car image on top, tier name in the middle, badge at
+        // the bottom. Keeps the layout stable while options load.
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
+            color: Colors.white.withValues(alpha: 0.02),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Icon placeholder
+              // Car image placeholder
               Container(
-                width: 44, height: 44,
+                height: 48,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   gradient: gradient,
                 ),
               ),
-              const SizedBox(width: 10),
-              // Text placeholders
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(width: 80, height: 14, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
-                    const SizedBox(height: 6),
-                    Container(width: 120, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
-                    const SizedBox(height: 6),
-                    Container(width: 100, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
-                  ],
+              const SizedBox(height: 10),
+              // Name placeholder
+              Container(
+                width: 60,
+                height: 12,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  gradient: gradient,
                 ),
               ),
-              // Price placeholder
-              Container(width: 54, height: 18, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4), gradient: gradient)),
+              const SizedBox(height: 8),
+              // Badge placeholder
+              Container(
+                width: 70,
+                height: 20,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  gradient: gradient,
+                ),
+              ),
             ],
           ),
         );

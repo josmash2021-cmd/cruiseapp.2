@@ -328,40 +328,47 @@ class _MapPickerScreenState extends State<MapPickerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     final s = S.of(context);
+    final canConfirm = !_loading &&
+        !_confirming &&
+        !_addressIsPlaceholder &&
+        _address.isNotEmpty;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0A1128),
       body: Stack(
         children: [
-          // Map — Mapbox on both iOS and Android
+          // ── Map ──
           RepaintBoundary(
             child: mapbox.MapWidget(
-            styleUri: MapboxConfig.styleDark,
-            cameraOptions: mapbox.CameraOptions(
-              center: mapbox.Point(coordinates: mapbox.Position(_center.longitude, _center.latitude)),
-              zoom: 15.0,
+              styleUri: MapboxConfig.styleDark,
+              cameraOptions: mapbox.CameraOptions(
+                center: mapbox.Point(
+                    coordinates: mapbox.Position(
+                        _center.longitude, _center.latitude)),
+                zoom: 15.0,
+              ),
+              onMapCreated: (ctrl) async {
+                _mapCtrl = ctrl;
+                ctrl.scaleBar.updateSettings(
+                    mapbox.ScaleBarSettings(enabled: false));
+                ctrl.compass
+                    .updateSettings(mapbox.CompassSettings(enabled: false));
+                ctrl.attribution.updateSettings(
+                    mapbox.AttributionSettings(enabled: false));
+                ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                Future.delayed(
+                    const Duration(milliseconds: 800), _onCameraIdle);
+              },
+              onStyleLoadedListener: (_) async {
+                if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
+              },
+              onCameraChangeListener: _onCameraChanged,
+              onMapIdleListener: _onMapIdle,
             ),
-            onMapCreated: (ctrl) async {
-              _mapCtrl = ctrl;
-              ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-              ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-              ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-              ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-              Future.delayed(
-                const Duration(milliseconds: 800),
-                _onCameraIdle,
-              );
-            },
-            onStyleLoadedListener: (_) async {
-              if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
-            },
-            onCameraChangeListener: _onCameraChanged,
-            onMapIdleListener: _onMapIdle,
-          ),
           ),
 
-          // Center pin — tip sits at exact screen center (map coordinate)
+          // ── Floating center pin (teardrop with bounce + settle) ──
           Center(
             child: Transform.translate(
               offset: Offset(0, -(46 * 1.0 / 2) + (_anchorAnim?.value ?? 0.0)),
@@ -369,180 +376,326 @@ class _MapPickerScreenState extends State<MapPickerScreen>
                 scale: _settleAnim,
                 child: CircularMapPin(
                   size: 46,
-                  icon: widget.isPickup ? CircularPinIcon.person : CircularPinIcon.flag,
+                  icon: widget.isPickup
+                      ? CircularPinIcon.person
+                      : CircularPinIcon.flag,
                   isPickup: widget.isPickup,
                 ),
               ),
             ),
           ),
 
-          // Back button
+          // ── Top bar: back button + context title pill ──
           Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: c.bg.withValues(alpha: 0.9),
-                  shape: BoxShape.circle,
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 0,
+            right: 0,
+            child: Row(
+              children: [
+                const SizedBox(width: 14),
+                _MapBackBtn(onTap: () => Navigator.of(context).pop()),
+                Expanded(
+                  child: Center(
+                    child: _MapTitlePill(
+                      text: widget.isPickup
+                          ? s.moveMapToSetPickup
+                          : s.moveMapToSetDropoff,
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.arrow_back_rounded,
-                  color: c.textPrimary,
-                  size: 22,
-                ),
-              ),
+                const SizedBox(width: 54), // balance back button width
+              ],
             ),
           ),
 
-          // Context hint pill
+          // ── Bottom floating card (matches web #vipMpFooter) ──
           Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: c.bg.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _gold.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Text(
-                  widget.isPickup ? s.setPickupOnMap : s.setDropoffOnMap,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+            left: 10,
+            right: 10,
+            bottom: 10,
+            child: _FooterCard(
+              title: widget.isPickup ? s.setYourPickup : s.setYourDropoff,
+              subtitle: widget.isPickup
+                  ? s.moveMapToPreferredPickup
+                  : s.moveMapToPreferredDropoff,
+              address: _addressIsPlaceholder || _address.isEmpty
+                  ? (_loading ? s.findingAddress : s.pinnedLocation)
+                  : _address,
+              addressDim: _addressIsPlaceholder || _address.isEmpty,
+              geocodeFailed: _geocodeFailed,
+              onRetry: _geocodeFailed ? _onCameraIdle : null,
+              canConfirm: canConfirm,
+              onConfirm: _confirm,
+              confirmLabel: s.confirmLabel,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
 
-          // Bottom card with address + confirm
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
+// ═══════════════════════════════════════════════════════════════════
+//  Top bar widgets (back button + title pill)
+// ═══════════════════════════════════════════════════════════════════
+
+class _MapBackBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  const _MapBackBtn({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.arrow_back_rounded,
+              color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _MapTitlePill extends StatelessWidget {
+  final String text;
+  const _MapTitlePill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.72,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xCC0A0E1A),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: const Color(0x33E8C547)),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          color: Colors.white.withValues(alpha: 0.78),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Footer card (title + subtitle + address card + gold confirm)
+// ═══════════════════════════════════════════════════════════════════
+
+class _FooterCard extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final String address;
+  final bool addressDim;
+  final bool geocodeFailed;
+  final VoidCallback? onRetry;
+  final bool canConfirm;
+  final VoidCallback onConfirm;
+  final String confirmLabel;
+
+  const _FooterCard({
+    required this.title,
+    required this.subtitle,
+    required this.address,
+    required this.addressDim,
+    required this.geocodeFailed,
+    required this.onRetry,
+    required this.canConfirm,
+    required this.onConfirm,
+    required this.confirmLabel,
+  });
+
+  @override
+  State<_FooterCard> createState() => _FooterCardState();
+}
+
+class _FooterCardState extends State<_FooterCard> {
+  bool _btnPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          20,
+          22,
+          20,
+          22 + MediaQuery.of(context).padding.bottom),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 40,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.05),
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.title,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.subtitle,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Address card
+          GestureDetector(
+            onTap: widget.onRetry,
             child: Container(
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: c.panel,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, -4),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0x1FE8C547),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.search_rounded,
+                        color: Color(0xFFE8C547), size: 16),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          S.of(context).locationCaps,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: const Color(0xFFE8C547)
+                                .withValues(alpha: 0.75),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.address,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white.withValues(
+                                alpha: widget.addressDim ? 0.45 : 1.0),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.geocodeFailed)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.refresh_rounded,
+                          color: Color(0xFFE8C547), size: 18),
+                    ),
                 ],
               ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Handle
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Address
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.location_on_rounded,
-                            color: _gold,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _loading
-                                ? Text(
-                                    s.findingAddress,
-                                    style: TextStyle(
-                                      color: c.textTertiary,
-                                      fontSize: 15,
-                                    ),
-                                  )
-                                : GestureDetector(
-                                    onTap: _geocodeFailed
-                                        ? _onCameraIdle
-                                        : null,
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            _addressIsPlaceholder
-                                                ? s.pinnedLocation
-                                                : _address,
-                                            style: TextStyle(
-                                              color: c.textPrimary,
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (_geocodeFailed)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              left: 8,
-                                            ),
-                                            child: Icon(
-                                              Icons.refresh_rounded,
-                                              color: _gold,
-                                              size: 20,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Confirm button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _gold,
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 0,
-                          ),
-                          onPressed: (_loading || _confirming) ? null : _confirm,
-                          child: Text(
-                            widget.isPickup
-                                ? s.confirmPickupLocation
-                                : s.confirmDropoffLocation,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Confirm button (gold gradient)
+          GestureDetector(
+            onTap: widget.canConfirm ? widget.onConfirm : null,
+            onTapDown: widget.canConfirm
+                ? (_) => setState(() => _btnPressed = true)
+                : null,
+            onTapCancel: () => setState(() => _btnPressed = false),
+            onTapUp: (_) => setState(() => _btnPressed = false),
+            child: AnimatedScale(
+              scale: _btnPressed ? 0.97 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 160),
+                opacity: widget.canConfirm ? 1.0 : 0.35,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFF5DC7A),
+                        Color(0xFFE8C547),
+                        Color(0xFFD4A800),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(100),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x40E8C547),
+                        blurRadius: 16,
+                        offset: Offset(0, 4),
                       ),
                     ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.confirmLabel,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF0A0E1A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                 ),
               ),

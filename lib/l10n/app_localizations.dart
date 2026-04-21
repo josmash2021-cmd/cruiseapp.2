@@ -3428,6 +3428,19 @@ class S {
   String get airportTripLabel => _es ? 'Viaje al aeropuerto' : 'Airport trip';
   String get confirmAndBook => _es ? 'Confirmar y Reservar' : 'Confirm & Book';
 
+  // ── Pickup/Dropoff Search Screen (locpicker) ─────────────────────────────
+  String get dropPinAtExactSpot => _es ? 'Coloca un pin en tu punto exacto' : 'Drop a pin at your exact spot';
+  String get savedPlaces => _es ? 'Lugares guardados' : 'Saved places';
+  String get recentLabel => _es ? 'Recientes' : 'Recent';
+  String get enterPickupAddress => _es ? 'Ingresa la dirección de origen' : 'Enter pickup address';
+  String get moveMapToSetDropoff => _es ? 'Mueve el mapa para elegir destino' : 'Move map to set dropoff location';
+  String get moveMapToSetPickup => _es ? 'Mueve el mapa para elegir origen' : 'Move map to set pickup location';
+  String get setYourDropoff => _es ? 'Define tu destino' : 'Set your drop-off';
+  String get setYourPickup => _es ? 'Define tu origen' : 'Set your pickup';
+  String get moveMapToPreferredDropoff => _es ? 'Mueve el mapa hasta tu punto preferido de destino.' : 'Move map to your preferred drop-off location.';
+  String get moveMapToPreferredPickup => _es ? 'Mueve el mapa hasta tu punto preferido de origen.' : 'Move map to your preferred pickup location.';
+  String get locationCaps => _es ? 'UBICACIÓN' : 'LOCATION';
+
   // ── Login Screen ──────────────────────────────────────────────────────────
   String get googleSignInCancelled => _es ? 'Inicio de sesión con Google cancelado' : 'Google Sign In was cancelled';
   String get googleNoEmail => _es ? 'No se pudo obtener el email de Google. Intenta de nuevo.' : 'Could not get email from Google. Please try again.';

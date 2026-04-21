@@ -1,14 +1,12 @@
 import 'dart:async';
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../l10n/app_localizations.dart';
-
 import '../config/api_keys.dart';
-import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
@@ -16,13 +14,19 @@ import '../services/places_service.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
 
-/// Uber-like pickup / dropoff search screen.
-///
-/// Returns a `Map<String, dynamic>` with keys:
-///  - `pickup`: [PlaceDetails]
-///  - `dropoff`: [PlaceDetails]
-///  - `pickupLabel`: [String]
-///  - `dropoffLabel`: [String]
+// ═══════════════════════════════════════════════════════════════════
+//  Design tokens (match Shopify "vipRide__locPicker")
+// ═══════════════════════════════════════════════════════════════════
+
+const _gold = Color(0xFFE8C547);
+const _goldLight = Color(0xFFFBE47A);
+const _bg = Color(0xFF0A0E1A);
+const _cardBg = Color(0xFF1A1D24);
+
+// ═══════════════════════════════════════════════════════════════════
+//  PickupDropoffSearchScreen — locpicker port
+// ═══════════════════════════════════════════════════════════════════
+
 class PickupDropoffSearchScreen extends StatefulWidget {
   final String initialPickupText;
   final double? initialPickupLat;
@@ -40,7 +44,8 @@ class PickupDropoffSearchScreen extends StatefulWidget {
       _PickupDropoffSearchScreenState();
 }
 
-class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
+class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
+    with SingleTickerProviderStateMixin {
   final _placesService = PlacesService(ApiKeys.webServices);
 
   final _pickupCtrl = TextEditingController();
@@ -52,8 +57,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   bool _loading = false;
   Timer? _debounce;
   List<FavoritePlace> _favorites = [];
+  List<String> _recents = [];
 
-  // Which field is active
   bool _editingPickup = false;
   bool _editingDropoff = true;
 
@@ -65,9 +70,17 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   double? _resolvedLat;
   double? _resolvedLng;
 
+  // Swap button rotation
+  late final AnimationController _swapCtl;
+
   @override
   void initState() {
     super.initState();
+    _swapCtl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+
     _pickupCtrl.text = widget.initialPickupText;
     _pickupLabel = widget.initialPickupText;
 
@@ -79,16 +92,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         lat: widget.initialPickupLat!,
         lng: widget.initialPickupLng!,
       );
-      // Reverse-geocode to get real address for the coords
       _resolveAddressFromCoords(widget.initialPickupLat!, widget.initialPickupLng!);
     } else {
-      // No GPS coords passed — resolve from device location
       _resolveGpsPickup();
     }
 
-    // Auto-focus dropoff
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _dropoffFocus.requestFocus();
+      if (mounted) _dropoffFocus.requestFocus();
     });
     _loadFavorites();
   }
@@ -96,7 +106,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   Future<void> _resolveGpsPickup() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
       ).timeout(const Duration(seconds: 5));
       if (!mounted) return;
       _resolvedLat = pos.latitude;
@@ -116,7 +127,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           _pickupCtrl.text = address;
         });
       } else {
-        // At least store coords so "Choose on map" uses GPS center
         _pickupDetails = PlaceDetails(
           address: widget.initialPickupText,
           lat: pos.latitude,
@@ -124,12 +134,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         );
       }
     } catch (_) {
-      // GPS unavailable — keep "Current location" text
+      // GPS unavailable — keep placeholder text
     }
   }
 
-  /// Reverse-geocode coordinates to get a real street address.
-  /// Updates pickup details/label so tapping the field reveals the real address.
   Future<void> _resolveAddressFromCoords(double lat, double lng) async {
     try {
       final address = await _placesService
@@ -138,34 +146,43 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       if (!mounted) return;
       if (address != null && address.isNotEmpty) {
         setState(() {
-          _pickupDetails = PlaceDetails(
-            address: address,
-            lat: lat,
-            lng: lng,
-          );
+          _pickupDetails = PlaceDetails(address: address, lat: lat, lng: lng);
           _pickupLabel = address;
-          // Keep showing "Current location" in the field until user taps it
         });
       }
-    } catch (_) {
-      // Geocoding failed — keep original text
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadFavorites() async {
     final favs = await LocalDataService.getFavorites();
-    if (mounted) setState(() => _favorites = favs);
+    final recents = await LocalDataService.getRecentSearches();
+    if (mounted) {
+      setState(() {
+        _favorites = favs;
+        _recents = recents;
+      });
+    }
+  }
+
+  FavoritePlace? _findFavoriteByKey(String key) {
+    for (final f in _favorites) {
+      if (f.label.toLowerCase() == key.toLowerCase()) return f;
+    }
+    return null;
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _swapCtl.dispose();
     _pickupCtrl.dispose();
     _dropoffCtrl.dispose();
     _pickupFocus.dispose();
     _dropoffFocus.dispose();
     super.dispose();
   }
+
+  // ── Input handling ──
 
   void _onTextChanged(String text) {
     _debounce?.cancel();
@@ -208,12 +225,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _dropoffCtrl.text = suggestion.description;
         _suggestions = [];
       });
-
-      // If pickup is also set, return results
       if (_pickupDetails != null) {
         _returnResults();
       } else {
-        // Switch to pickup field
         setState(() {
           _editingPickup = true;
           _editingDropoff = false;
@@ -227,12 +241,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _pickupCtrl.text = suggestion.description;
         _suggestions = [];
       });
-
-      // If dropoff is also set, return results
       if (_dropoffDetails != null) {
         _returnResults();
       } else {
-        // Switch to dropoff field
         setState(() {
           _editingPickup = false;
           _editingDropoff = true;
@@ -240,20 +251,159 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _dropoffFocus.requestFocus();
       }
     }
+    // Record recent
+    if (suggestion.description.isNotEmpty) {
+      await LocalDataService.addRecentSearch(suggestion.description);
+      if (mounted) _loadFavorites();
+    }
   }
 
-  /// Push RideRequestScreen DIRECTLY via pushReplacement so the rider
-  /// NEVER sees the home screen flash between confirming dropoff and
-  /// seeing the route + choose-a-ride card. Pre-fetches the route
-  /// with a 200 ms timeout for cache hits (same logic the home screen
-  /// used to do).
+  Future<void> _onFieldSubmitted(String value) async {
+    final query = value.trim();
+    if (query.isEmpty) return;
+
+    setState(() => _loading = true);
+
+    try {
+      final results = await _placesService.autocomplete(
+        query,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
+      );
+      if (results.isNotEmpty && mounted) {
+        await _onSuggestionTap(results.first);
+        return;
+      }
+
+      final exact = await _placesService.geocodeAddress(
+        query,
+        latitude: _resolvedLat ?? widget.initialPickupLat,
+        longitude: _resolvedLng ?? widget.initialPickupLng,
+      );
+      if (exact != null && mounted) {
+        final exactSuggestion = PlaceSuggestion(
+          description: exact.address.isEmpty ? query : exact.address,
+          placeId: 'exact:${exact.lat},${exact.lng}',
+          lat: exact.lat,
+          lng: exact.lng,
+        );
+        await _onSuggestionTap(exactSuggestion);
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) setState(() => _loading = false);
+  }
+
+  void _swapFields() {
+    HapticFeedback.selectionClick();
+    _swapCtl.forward(from: 0);
+
+    final tmpDetails = _pickupDetails;
+    final tmpLabel = _pickupLabel;
+    final tmpText = _pickupCtrl.text;
+
+    setState(() {
+      _pickupDetails = _dropoffDetails;
+      _pickupLabel = _dropoffLabel;
+      _pickupCtrl.text = _dropoffCtrl.text;
+
+      _dropoffDetails = tmpDetails;
+      _dropoffLabel = tmpLabel;
+      _dropoffCtrl.text = tmpText;
+    });
+
+    if (_pickupDetails != null && _dropoffDetails != null) {
+      _returnResults();
+    }
+  }
+
+  Future<void> _openMapPicker() async {
+    HapticFeedback.lightImpact();
+    final lat = _resolvedLat ?? widget.initialPickupLat;
+    final lng = _resolvedLng ?? widget.initialPickupLng;
+    final raw = await Navigator.of(context).push<Map<String, dynamic>>(
+      slideUpFadeRoute(
+        MapPickerScreen(
+          initialLat: lat,
+          initialLng: lng,
+          isPickup: _editingPickup,
+        ),
+      ),
+    );
+    if (raw == null || !mounted) return;
+
+    final result = PlaceDetails(
+      address: (raw['address'] as String?) ?? '',
+      lat: (raw['lat'] as num?)?.toDouble() ?? 0,
+      lng: (raw['lng'] as num?)?.toDouble() ?? 0,
+    );
+    if (result.address.isEmpty) return;
+
+    if (_editingDropoff) {
+      setState(() {
+        _dropoffDetails = result;
+        _dropoffLabel = result.address;
+        _dropoffCtrl.text = result.address;
+      });
+      if (_pickupDetails != null) _returnResults();
+    } else {
+      setState(() {
+        _pickupDetails = result;
+        _pickupLabel = result.address;
+        _pickupCtrl.text = result.address;
+      });
+      if (_dropoffDetails != null) _returnResults();
+    }
+  }
+
+  Future<void> _onSavedPlaceTap(String key) async {
+    HapticFeedback.selectionClick();
+    final fav = _findFavoriteByKey(key);
+    if (fav == null || fav.address.isEmpty) {
+      // Not saved yet — open map picker so the user can pick & save later
+      await _openMapPicker();
+      return;
+    }
+    final addr = fav.address;
+    final lat = fav.lat ?? 0;
+    final lng = fav.lng ?? 0;
+    if (_editingDropoff) {
+      setState(() {
+        _dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
+        _dropoffLabel = addr;
+        _dropoffCtrl.text = addr;
+      });
+      if (_pickupDetails != null) _returnResults();
+    } else {
+      setState(() {
+        _pickupDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
+        _pickupLabel = addr;
+        _pickupCtrl.text = addr;
+      });
+      if (_dropoffDetails != null) _returnResults();
+    }
+  }
+
+  Future<void> _onRecentTap(String recent) async {
+    HapticFeedback.selectionClick();
+    if (_editingDropoff) {
+      _dropoffCtrl.text = recent;
+      _onTextChanged(recent);
+      _dropoffFocus.requestFocus();
+    } else {
+      _pickupCtrl.text = recent;
+      _onTextChanged(recent);
+      _pickupFocus.requestFocus();
+    }
+  }
+
   Future<void> _returnResults() async {
     if (_dropoffDetails == null) {
       Navigator.of(context).pop();
       return;
     }
 
-    // Use current GPS as pickup if none was explicitly set.
     PlaceDetails? effectivePickup = _pickupDetails;
     if (effectivePickup == null) {
       try {
@@ -262,12 +412,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               const LocationSettings(accuracy: LocationAccuracy.high),
         ).timeout(const Duration(seconds: 3));
         effectivePickup = PlaceDetails(
-          address: _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
+          address:
+              _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
           lat: pos.latitude,
           lng: pos.longitude,
         );
       } catch (_) {
-        // Fall back to the initial lat/lng the home screen provided.
         if (widget.initialPickupLat != null &&
             widget.initialPickupLng != null) {
           effectivePickup = PlaceDetails(
@@ -284,7 +434,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     final dropLabel =
         _dropoffLabel.isNotEmpty ? _dropoffLabel : dropoff.address;
 
-    // Quick route pre-fetch — cache hit is instant.
     RouteResult? preloaded;
     if (effectivePickup != null) {
       try {
@@ -299,9 +448,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 
     if (!mounted) return;
 
-    // pushReplacement: removes this search screen from the stack so
-    // the home screen underneath is never briefly visible. When
-    // RideRequestScreen eventually pops, the rider lands on home.
     Navigator.of(context).pushReplacement(
       slideUpFadeRoute(
         RideRequestScreen(
@@ -316,818 +462,684 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     );
   }
 
-  /// Called when user presses Enter/Done without selecting a suggestion.
-  /// Auto-searches and picks the best matching result.
-  Future<void> _onFieldSubmitted(String value) async {
-    final query = value.trim();
-    if (query.isEmpty) return;
-
-    setState(() => _loading = true);
-
-    try {
-      // First try autocomplete to get the best match
-      final results = await _placesService.autocomplete(
-        query,
-        latitude: _resolvedLat ?? widget.initialPickupLat,
-        longitude: _resolvedLng ?? widget.initialPickupLng,
-      );
-
-      if (results.isNotEmpty && mounted) {
-        // Auto-select the first (best) result
-        await _onSuggestionTap(results.first);
-        return;
-      }
-
-      // Fallback: direct geocode if autocomplete returned nothing
-      final exact = await _placesService.geocodeAddress(
-        query,
-        latitude: _resolvedLat ?? widget.initialPickupLat,
-        longitude: _resolvedLng ?? widget.initialPickupLng,
-      );
-
-      if (exact != null && mounted) {
-        final exactSuggestion = PlaceSuggestion(
-          description: exact.address.isEmpty ? query : exact.address,
-          placeId: 'exact:${exact.lat},${exact.lng}',
-          lat: exact.lat,
-          lng: exact.lng,
-        );
-        await _onSuggestionTap(exactSuggestion);
-        return;
-      }
-    } catch (_) {}
-
-    if (mounted) setState(() => _loading = false);
-  }
+  // ═════════════════════════════════════════════════════════════════
+  //  Build
+  // ═════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final isDark = c.isDark;
-    final topPad = MediaQuery.of(context).padding.top;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Column(
-          children: [
-            // ── Header with fields (frosted glass) ──
-            ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(
-              padding: EdgeInsets.only(
-                top: topPad + 8,
-                left: 16,
-                right: 16,
-                bottom: 16,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Back + fields row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Back button
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          margin: const EdgeInsets.only(top: 6),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: c.surface,
-                          ),
-                          child: Icon(
-                            Icons.arrow_back,
-                            size: 20,
-                            color: c.textPrimary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-
-                      // Dots column
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            Container(
-                              width: 1.5,
-                              height: 46,
-                              color: c.textTertiary,
-                            ),
-                            Icon(Icons.square, size: 8, color: c.gold),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-
-                      // Text fields
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _searchField(
-                              controller: _pickupCtrl,
-                              focusNode: _pickupFocus,
-                              hint: S.of(context).pickupLocation,
-                              c: c,
-                              textInputAction: TextInputAction.next,
-                              onTap: () {
-                                setState(() {
-                                  _editingPickup = true;
-                                  _editingDropoff = false;
-                                });
-                                // Show real address in field when tapped
-                                if (_pickupCtrl.text == 'Current location' ||
-                                    _pickupCtrl.text == widget.initialPickupText) {
-                                  if (_pickupDetails != null &&
-                                      _pickupDetails!.address.isNotEmpty &&
-                                      _pickupDetails!.address != 'Current location') {
-                                    _pickupCtrl.text = _pickupDetails!.address;
-                                    _pickupCtrl.selection = TextSelection(
-                                      baseOffset: 0,
-                                      extentOffset: _pickupCtrl.text.length,
-                                    );
-                                  }
-                                }
-                              },
-                              onChanged: _onTextChanged,
-                              onSubmitted: (value) {
-                                if (value.trim().isNotEmpty) {
-                                  _onFieldSubmitted(value);
-                                } else {
-                                  _dropoffFocus.requestFocus();
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            _searchField(
-                              controller: _dropoffCtrl,
-                              focusNode: _dropoffFocus,
-                              hint: S.of(context).whereTo,
-                              c: c,
-                              textInputAction: TextInputAction.done,
-                              onTap: () {
-                                setState(() {
-                                  _editingPickup = false;
-                                  _editingDropoff = true;
-                                });
-                              },
-                              onChanged: _onTextChanged,
-                              onSubmitted: _onFieldSubmitted,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            ),
-            ),
-            // ── Loading bar ──
-            if (_loading)
-              LinearProgressIndicator(
-                backgroundColor: c.border,
-                valueColor: AlwaysStoppedAnimation(c.gold),
-                minHeight: 2,
-              ),
-
-            // ── Suggestions list (glassmorphism) ──
-            Expanded(
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    child: _suggestions.isEmpty
-                        ? _buildRecentPlaces(c)
-                        : ListView.builder(
-                            padding: EdgeInsets.zero,
-                            itemCount: _suggestions.length,
-                            itemBuilder: (context, idx) {
-                              final s = _suggestions[idx];
-                              return _buildSuggestionTile(c, s);
-                            },
-                          ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _searchField({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String hint,
-    required AppColors c,
-    required VoidCallback onTap,
-    required ValueChanged<String> onChanged,
-    ValueChanged<String>? onSubmitted,
-    TextInputAction textInputAction = TextInputAction.done,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          onTap: onTap,
-          onChanged: onChanged,
-          onSubmitted: onSubmitted,
-          textInputAction: textInputAction,
-          style: TextStyle(
-            fontSize: 15,
-            color: c.textPrimary,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              fontSize: 15,
-              color: c.textTertiary,
-              fontWeight: FontWeight.w400,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-            border: InputBorder.none,
-            suffixIcon: controller.text.isNotEmpty
-                ? GestureDetector(
-                    onTap: () {
-                      controller.clear();
-                      setState(() => _suggestions = []);
-                    },
-                    child: Icon(Icons.close, size: 18, color: c.textTertiary),
-                  )
-                : null,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSuggestionTile(AppColors c, PlaceSuggestion s) {
-    return InkWell(
-      onTap: () => _onSuggestionTap(s),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: c.border, width: 1)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                s.icon,
-                size: 18,
-                color: const Color(0xFFD4AF37),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                s.description,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: c.textPrimary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _onQuickPlaceTap(
-    _QuickPlace item,
-    FavoritePlace? homeAddr,
-    FavoritePlace? workAddr,
-  ) async {
-    // ── Choose on map ──
-    if (item.title == S.of(context).chooseOnMap) {
-      if (_editingPickup) {
-        // ── Pickup field active → pick pickup first, then auto-open dropoff ──
-        final pickupResult = await Navigator.of(context).push<Map<String, dynamic>>(
-          slideFromRightRoute(
-            MapPickerScreen(
-              initialLat: _resolvedLat ?? widget.initialPickupLat,
-              initialLng: _resolvedLng ?? widget.initialPickupLng,
-              isPickup: true,
-            ),
-          ),
-        );
-        if (pickupResult == null || !mounted) return;
-        final pAddr = pickupResult['address'] as String;
-        final pLat = pickupResult['lat'] as double;
-        final pLng = pickupResult['lng'] as double;
-        setState(() {
-          _pickupDetails = PlaceDetails(address: pAddr, lat: pLat, lng: pLng);
-          _pickupLabel = pAddr;
-          _pickupCtrl.text = pAddr;
-        });
-
-        // Auto-open dropoff map
-        if (!mounted) return;
-        final dropoffResult = await Navigator.of(context).push<Map<String, dynamic>>(
-          slideFromRightRoute(
-            MapPickerScreen(
-              initialLat: _resolvedLat ?? widget.initialPickupLat,
-              initialLng: _resolvedLng ?? widget.initialPickupLng,
-              isPickup: false,
-            ),
-          ),
-        );
-        if (dropoffResult == null || !mounted) return;
-        final dAddr = dropoffResult['address'] as String;
-        final dLat = dropoffResult['lat'] as double;
-        final dLng = dropoffResult['lng'] as double;
-        setState(() {
-          _dropoffDetails = PlaceDetails(address: dAddr, lat: dLat, lng: dLng);
-          _dropoffLabel = dAddr;
-          _dropoffCtrl.text = dAddr;
-        });
-        _returnResults();
-      } else {
-        // ── Dropoff field active → pick dropoff only ──
-        final result = await Navigator.of(context).push<Map<String, dynamic>>(
-          slideFromRightRoute(
-            MapPickerScreen(
-              initialLat: _resolvedLat ?? widget.initialPickupLat,
-              initialLng: _resolvedLng ?? widget.initialPickupLng,
-              isPickup: false,
-            ),
-          ),
-        );
-        if (result == null || !mounted) return;
-        final addr = result['address'] as String;
-        final lat = result['lat'] as double;
-        final lng = result['lng'] as double;
-        setState(() {
-          _dropoffDetails = PlaceDetails(address: addr, lat: lat, lng: lng);
-          _dropoffLabel = addr;
-          _dropoffCtrl.text = addr;
-        });
-
-        // If pickup already set, return results immediately
-        if (_pickupDetails != null) {
-          _returnResults();
-        } else {
-          // Switch to pickup field
-          setState(() {
-            _editingPickup = true;
-            _editingDropoff = false;
-          });
-          _pickupFocus.requestFocus();
-        }
-      }
-      return;
-    }
-
-    // ── Home or Work ──
-    final savedAddress = item.title == S.of(context).homeLabel
-        ? homeAddr?.address
-        : workAddr?.address;
-
-    // If address already saved → geocode and use as dropoff
-    if (savedAddress != null && savedAddress.isNotEmpty) {
-      await _useAddressAsDropoff(savedAddress);
-      return;
-    }
-
-    // No saved address → open Google Places autocomplete to save one
-    final pickedAddress = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _PlacesAutocompleteSheet(
-        title: S.of(context).setAddressTitle(item.title),
-        hint: S.of(context).searchAddressFor(item.title.toLowerCase()),
-        initialLat: _resolvedLat ?? widget.initialPickupLat,
-        initialLng: _resolvedLng ?? widget.initialPickupLng,
-      ),
-    );
-    if (pickedAddress == null || pickedAddress.isEmpty || !mounted) return;
-
-    // Save the address as a favorite
-    await LocalDataService.saveFavorite(
-      FavoritePlace(label: item.title, address: pickedAddress),
-    );
-
-    // Now use it as dropoff
-    await _useAddressAsDropoff(pickedAddress);
-  }
-
-  Future<void> _useAddressAsDropoff(String address) async {
-    try {
-      final details = await _placesService.geocodeAddress(
-        address,
-        latitude: _resolvedLat ?? widget.initialPickupLat,
-        longitude: _resolvedLng ?? widget.initialPickupLng,
-      );
-      if (details != null && mounted) {
-        setState(() {
-          _dropoffDetails = details;
-          _dropoffLabel = address;
-          _dropoffCtrl.text = address;
-          _suggestions = [];
-        });
-        if (_pickupDetails != null) {
-          _returnResults();
-        } else {
-          setState(() {
-            _editingPickup = true;
-            _editingDropoff = false;
-          });
-          _pickupFocus.requestFocus();
-        }
-      }
-    } catch (_) {}
-  }
-
-  Widget _buildRecentPlaces(AppColors c) {
-    // Show some quick access items
-    final quickItems = [
-      _QuickPlace(
-        Icons.home_rounded,
-        S.of(context).homeLabel,
-        S.of(context).setHomeAddress,
-      ),
-      _QuickPlace(
-        Icons.work_rounded,
-        S.of(context).workLabel,
-        S.of(context).setWorkAddress,
-      ),
-      _QuickPlace(
-        Icons.map_rounded,
-        S.of(context).chooseOnMap,
-        S.of(context).pickLocationOnMap,
-      ),
-    ];
-
-    final favorites = _favorites;
-    final homeAddr = favorites
-        .where((f) => f.label.toLowerCase() == 'home')
-        .firstOrNull;
-    final workAddr = favorites
-        .where((f) => f.label.toLowerCase() == 'work')
-        .firstOrNull;
-
-    // Update subtitles if addresses are saved
-    if (homeAddr != null) {
-      quickItems[0] = _QuickPlace(
-        Icons.home_rounded,
-        S.of(context).homeLabel,
-        homeAddr.address,
-      );
-    }
-    if (workAddr != null) {
-      quickItems[1] = _QuickPlace(
-        Icons.work_rounded,
-        S.of(context).workLabel,
-        workAddr.address,
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.only(top: 8),
-      children: [
-        for (final item in quickItems)
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.06),
-              ),
-            ),
-            child: ListTile(
-              onTap: () => _onQuickPlaceTap(item, homeAddr, workAddr),
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(item.icon, size: 20, color: c.textSecondary),
-              ),
-              title: Text(
-                item.title,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              subtitle: Text(
-                item.subtitle,
-                style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 6,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _QuickPlace {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  const _QuickPlace(this.icon, this.title, this.subtitle);
-}
-
-// ─── Google Places Autocomplete Bottom Sheet ─────────────────────────
-class _PlacesAutocompleteSheet extends StatefulWidget {
-  final String title;
-  final String hint;
-  final double? initialLat;
-  final double? initialLng;
-
-  const _PlacesAutocompleteSheet({
-    required this.title,
-    required this.hint,
-    this.initialLat,
-    this.initialLng,
-  });
-
-  @override
-  State<_PlacesAutocompleteSheet> createState() =>
-      _PlacesAutocompleteSheetState();
-}
-
-class _PlacesAutocompleteSheetState extends State<_PlacesAutocompleteSheet> {
-  final _controller = TextEditingController();
-  final _places = PlacesService(ApiKeys.webServices);
-  Timer? _debounce;
-  List<PlaceSuggestion> _suggestions = [];
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    _debounce?.cancel();
-    if (query.trim().length < 2) {
-      setState(() {
-        _suggestions = [];
-        _loading = false;
-      });
-      return;
-    }
-    setState(() => _loading = true);
-    _debounce = Timer(const Duration(milliseconds: 400), () async {
-      try {
-        final results = await _places.autocomplete(
-          query,
-          latitude: widget.initialLat,
-          longitude: widget.initialLng,
-        );
-        if (mounted) {
-          setState(() {
-            _suggestions = results;
-            _loading = false;
-          });
-        }
-      } catch (_) {
-        if (mounted) setState(() => _loading = false);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: BoxDecoration(
-        color: c.panel,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 14),
-          // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
+        backgroundColor: _bg,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+            child: Column(
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Icon(
-                    Icons.arrow_back_rounded,
-                    color: c.textPrimary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 14),
+                // ── Top row: back + fields + swap ──
+                _buildTopRow(),
+
+                const SizedBox(height: 16),
+
+                // ── Body: suggestions OR shortcuts ──
                 Expanded(
-                  child: Text(
-                    widget.title,
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _suggestions.isNotEmpty || _loading
+                      ? _buildSuggestionsList()
+                      : _buildShortcuts(),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          // Search field
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: c.border),
-              ),
-              child: TextField(
-                controller: _controller,
-                autofocus: true,
-                style: TextStyle(color: c.textPrimary, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: widget.hint,
-                  hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: c.textTertiary,
-                    size: 22,
-                  ),
-                  suffixIcon: _controller.text.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _controller.clear();
-                            setState(() {
-                              _suggestions = [];
-                              _loading = false;
-                            });
-                          },
-                          child: Icon(
-                            Icons.close_rounded,
-                            color: c.textTertiary,
-                            size: 20,
-                          ),
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                ),
-                onChanged: _onSearchChanged,
-              ),
-            ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopRow() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Back button
+          _CircleBtn(
+            icon: Icons.arrow_back_rounded,
+            onTap: () => Navigator.of(context).pop(),
           ),
-          const SizedBox(height: 8),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: Color(0xFFE8C547),
-                ),
-              ),
-            ),
-          // Suggestions
+          const SizedBox(width: 10),
+
+          // Fields + connector line
           Expanded(
-            child: _suggestions.isEmpty && !_loading
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.place_outlined,
-                          color: c.textTertiary,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _controller.text.isEmpty
-                              ? S.of(context).typeToSearchAddress
-                              : S.of(context).noResultsFound,
-                          style: TextStyle(color: c.textTertiary, fontSize: 14),
+            child: Stack(
+              children: [
+                // Vertical gold gradient connector
+                Positioned(
+                  left: 6,
+                  top: 22,
+                  bottom: 22,
+                  child: Container(
+                    width: 2,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [_gold, Colors.white],
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _gold.withValues(alpha: 0.45),
+                          blurRadius: 6,
                         ),
                       ],
                     ),
-                  )
-                : ListView.separated(
-                    padding: EdgeInsets.fromLTRB(12, 4, 12, bottomInset + 20),
-                    itemCount: _suggestions.length,
-                    separatorBuilder: (_, i) =>
-                        Divider(color: c.divider, height: 1, indent: 52),
-                    itemBuilder: (context, index) {
-                      final s = _suggestions[index];
-                      return ListTile(
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: c.border),
-                          ),
-                          child: Icon(
-                            s.icon,
-                            color: const Color(0xFFD4AF37),
-                            size: 20,
-                          ),
-                        ),
-                        title: Text(
-                          s.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        onTap: () => Navigator.of(context).pop(s.description),
-                      );
-                    },
                   ),
+                ),
+
+                Column(
+                  children: [
+                    _buildField(
+                      dot: const _Dot(pickup: true),
+                      label: S.of(context).currentLocation,
+                      controller: _pickupCtrl,
+                      focusNode: _pickupFocus,
+                      onTap: () => setState(() {
+                        _editingPickup = true;
+                        _editingDropoff = false;
+                        _suggestions = [];
+                      }),
+                      onChanged: _editingPickup ? _onTextChanged : null,
+                      onSubmitted: _editingPickup ? _onFieldSubmitted : null,
+                      active: _editingPickup,
+                      placeholderHint: S.of(context).enterPickupAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildField(
+                      dot: const _Dot(pickup: false),
+                      label: S.of(context).whereTo,
+                      controller: _dropoffCtrl,
+                      focusNode: _dropoffFocus,
+                      onTap: () => setState(() {
+                        _editingPickup = false;
+                        _editingDropoff = true;
+                        _suggestions = [];
+                      }),
+                      onChanged: _editingDropoff ? _onTextChanged : null,
+                      onSubmitted:
+                          _editingDropoff ? _onFieldSubmitted : null,
+                      active: _editingDropoff,
+                      placeholderHint: S.of(context).whereTo,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Swap button
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: _SwapButton(controller: _swapCtl, onTap: _swapFields),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required Widget dot,
+    required String label,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required VoidCallback onTap,
+    ValueChanged<String>? onChanged,
+    ValueChanged<String>? onSubmitted,
+    required bool active,
+    required String placeholderHint,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          dot,
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
+              onTap: onTap,
+              cursorColor: _gold,
+              textInputAction: TextInputAction.search,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: active ? _gold : Colors.white,
+                fontSize: 15,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: placeholderHint,
+                hintStyle: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShortcuts() {
+    final s = S.of(context);
+    final recents = _recents;
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 2, bottom: 24),
+      physics: const BouncingScrollPhysics(),
+      children: [
+        // ── "Choose on map" premium shortcut ──
+        _ShortcutCard(
+          icon: Icons.map_rounded,
+          title: s.chooseOnMap,
+          subtitle: s.dropPinAtExactSpot,
+          onTap: _openMapPicker,
+        ),
+
+        const SizedBox(height: 22),
+
+        // ── SAVED PLACES ──
+        _sectionLabel(s.savedPlaces),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _SavedChip(
+              icon: Icons.home_rounded,
+              label: s.home,
+              onTap: () => _onSavedPlaceTap('home'),
+            ),
+            const SizedBox(width: 8),
+            _SavedChip(
+              icon: Icons.work_rounded,
+              label: s.work,
+              onTap: () => _onSavedPlaceTap('work'),
+            ),
+            const SizedBox(width: 8),
+            _SavedChip(
+              icon: Icons.flight_takeoff_rounded,
+              label: s.airportLabel,
+              onTap: () => _onSavedPlaceTap('airport'),
+            ),
+          ],
+        ),
+
+        // ── RECENT ──
+        if (recents.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          _sectionLabel(s.recentLabel),
+          const SizedBox(height: 4),
+          ...recents.take(6).map(
+                (r) => _RecentRow(
+                  address: r,
+                  onTap: () => _onRecentTap(r),
+                ),
+              ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSuggestionsList() {
+    if (_loading && _suggestions.isEmpty) {
+      return const Center(
+        child: SizedBox(
+          width: 26,
+          height: 26,
+          child: CircularProgressIndicator(color: _gold, strokeWidth: 2.5),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 4, bottom: 24),
+      itemCount: _suggestions.length,
+      physics: const BouncingScrollPhysics(),
+      itemBuilder: (_, i) {
+        final s = _suggestions[i];
+        return _SuggestionRow(
+          suggestion: s,
+          onTap: () => _onSuggestionTap(s),
+        );
+      },
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+          color: _gold.withValues(alpha: 0.75),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Building blocks
+// ═══════════════════════════════════════════════════════════════════
+
+class _Dot extends StatelessWidget {
+  final bool pickup;
+  const _Dot({required this.pickup});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 14,
+      height: 14,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: pickup ? _gold : Colors.white.withValues(alpha: 0.35),
+        boxShadow: pickup
+            ? [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.6),
+                  blurRadius: 10,
+                ),
+              ]
+            : null,
+      ),
+    );
+  }
+}
+
+class _CircleBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _CircleBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 22,
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _SwapButton extends StatelessWidget {
+  final AnimationController controller;
+  final VoidCallback onTap;
+  const _SwapButton({required this.controller, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (_, __) {
+          return Transform.rotate(
+            angle: controller.value * 3.14159,
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: const Color(0x1FE8C547),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0x4DE8C547)),
+              ),
+              child: const Icon(Icons.swap_vert_rounded,
+                  color: _gold, size: 18),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ShortcutCard extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ShortcutCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_ShortcutCard> createState() => _ShortcutCardState();
+}
+
+class _ShortcutCardState extends State<_ShortcutCard> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.98 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _pressed
+                  ? [const Color(0x26E8C547), const Color(0x0DFFFFFF)]
+                  : [const Color(0x14E8C547), const Color(0x05FFFFFF)],
+            ),
+            border: Border.all(
+              color: _pressed
+                  ? const Color(0x80E8C547)
+                  : const Color(0x40E8C547),
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0x1FE8C547),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x4DE8C547)),
+                ),
+                child: Icon(widget.icon, color: _gold, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.subtitle,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white.withValues(alpha: 0.55),
+                size: 12,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedChip extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SavedChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  State<_SavedChip> createState() => _SavedChipState();
+}
+
+class _SavedChipState extends State<_SavedChip> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: _pressed
+                ? const Color(0x1FE8C547)
+                : Colors.white.withValues(alpha: 0.06),
+            border: Border.all(
+              color: _pressed
+                  ? const Color(0x66E8C547)
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
+            borderRadius: BorderRadius.circular(100),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(widget.icon, color: _gold, size: 14),
+              const SizedBox(width: 8),
+              Text(
+                widget.label,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentRow extends StatefulWidget {
+  final String address;
+  final VoidCallback onTap;
+  const _RecentRow({required this.address, required this.onTap});
+
+  @override
+  State<_RecentRow> createState() => _RecentRowState();
+}
+
+class _RecentRowState extends State<_RecentRow> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          color: _pressed
+              ? Colors.white.withValues(alpha: 0.04)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+              child: Icon(
+                Icons.schedule_rounded,
+                color: Colors.white.withValues(alpha: 0.55),
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                widget.address,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionRow extends StatefulWidget {
+  final PlaceSuggestion suggestion;
+  final VoidCallback onTap;
+  const _SuggestionRow({required this.suggestion, required this.onTap});
+
+  @override
+  State<_SuggestionRow> createState() => _SuggestionRowState();
+}
+
+class _SuggestionRowState extends State<_SuggestionRow> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final desc = widget.suggestion.description;
+    final comma = desc.indexOf(',');
+    final primary = comma > 0 ? desc.substring(0, comma) : desc;
+    final secondary = comma > 0 ? desc.substring(comma + 1).trim() : '';
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        margin: const EdgeInsets.only(bottom: 2),
+        decoration: BoxDecoration(
+          color: _pressed
+              ? const Color(0x14E8C547)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0x1FE8C547),
+              ),
+              child: const Icon(Icons.place_rounded, color: _gold, size: 16),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    primary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (secondary.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      secondary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

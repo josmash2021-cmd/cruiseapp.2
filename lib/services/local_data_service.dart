@@ -155,6 +155,7 @@ class LocalDataService {
   static const _notificationsKey = 'notifications_v1';
   static const _promoKey = 'active_promo_v1';
   static const _promoMonthKey = 'promo_month_v1';
+  static const _recentSearchesKey = 'recent_searches_v1';
 
   /// Cached SharedPreferences instance â€” avoids 38 platform channel calls.
   static SharedPreferences? _prefs;
@@ -220,6 +221,32 @@ class LocalDataService {
       _favoritesKey,
       jsonEncode(filtered.map((item) => item.toJson()).toList()),
     );
+  }
+
+  /// Most-recent-first list of the last destination addresses the user
+  /// searched / picked. Deduped by exact-match.
+  static Future<List<String>> getRecentSearches({int limit = 10}) async {
+    final raw = _p.getString(_recentSearchesKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = (jsonDecode(raw) as List).cast<String>();
+      return list.take(limit).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Add an address to the top of the recents list. Silently ignores empty
+  /// or whitespace-only values.
+  static Future<void> addRecentSearch(String address) async {
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) return;
+    final current = await getRecentSearches(limit: 20);
+    final updated = [
+      trimmed,
+      ...current.where((s) => s.toLowerCase() != trimmed.toLowerCase()),
+    ].take(20).toList();
+    await _p.setString(_recentSearchesKey, jsonEncode(updated));
   }
 
   static Future<List<TripHistoryItem>> getTripHistory() async {

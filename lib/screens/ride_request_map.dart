@@ -804,6 +804,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     _cinematicDone = true;
     _cinematicRunning = false;
 
+    // Seed the floating label offsets right before they reveal so they
+    // appear at the correct pin positions — the onCameraChange listener
+    // keeps them glued afterwards.
+    unawaited(_syncLabelOffsets());
+
     // 7. Beat + sheet fade in
     await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
@@ -893,28 +898,64 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
   }
 
-  /// Swap pin-only bitmaps to pin+label bitmaps with a spring scale animation.
-  /// Creates the effect of address labels "unrolling" from the pin.
+  /// Trigger the animated overlay labels (pickup at 50 ms, dropoff at
+  /// 300 ms) once the cinematic finishes. Matches the Shopify widget's
+  /// staggered reveal sequence for .vipRide__mapLabel.
   void _unrollLabels() {
     if (_labelsRevealed) return;
     _labelsRevealed = true;
 
-    // Swap annotations to pin+label bitmaps
-    _swapToLabelBitmaps();
+    // Pickup first — matches web's 50 ms setTimeout.
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (!mounted) return;
+      _setState(() => _pickupLabelRevealed = true);
+    });
+    // Dropoff shortly after — matches web's 300 ms setTimeout.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _setState(() => _dropoffLabelRevealed = true);
+    });
 
-    // Smooth fade in — scale from 0.0 → 0.65 over 700 ms
-    // (easeOutCubic so the reveal decelerates gently).
-    // NO spring, NO pop — just a clean, fluid appearance.
+    // Keep pins at their final display size (no label-bitmap swap now;
+    // labels live as overlay widgets positioned via pixelForCoordinate).
     _labelPopCtrl?.dispose();
     _labelPopCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 300),
     );
-    _labelPopAnim = Tween<double>(begin: 0.0, end: 0.65).animate(
-      CurvedAnimation(parent: _labelPopCtrl!, curve: Curves.easeOutCubic),
-    );
+    _labelPopAnim = Tween<double>(begin: 0.65, end: 0.65).animate(_labelPopCtrl!);
     _labelPopAnim!.addListener(_updateLabelScales);
     _labelPopCtrl!.forward(from: 0);
+  }
+
+  /// Reproject pickup/dropoff pin positions to screen pixels so the
+  /// overlay labels follow the map while it tilts, pans or zooms.
+  /// Called on every camera change event and at the end of the cinematic.
+  Future<void> _syncLabelOffsets() async {
+    final mc = _mapCtrl;
+    if (mc == null) return;
+    final pickup = _ctrl.state.pickup;
+    final dropoff = _ctrl.state.dropoff;
+    try {
+      if (pickup != null) {
+        final px = await mc.pixelForCoordinate(mapbox.Point(
+          coordinates: mapbox.Position(pickup.lng, pickup.lat),
+        ));
+        if (!mounted) return;
+        _setState(() => _pickupScreenOffset =
+            Offset(px.x.toDouble(), px.y.toDouble()));
+      }
+      if (dropoff != null) {
+        final px = await mc.pixelForCoordinate(mapbox.Point(
+          coordinates: mapbox.Position(dropoff.lng, dropoff.lat),
+        ));
+        if (!mounted) return;
+        _setState(() => _dropoffScreenOffset =
+            Offset(px.x.toDouble(), px.y.toDouble()));
+      }
+    } catch (_) {
+      // Mapbox throws if called before the map is ready — silently ignore.
+    }
   }
 
   void _updateLabelScales() {
@@ -1152,21 +1193,16 @@ extension _RideRequestMap on _RideRequestScreenState {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
-    // During cinematic, pins start tiny and use pin-ONLY bitmaps (labels animate in later)
+    // During cinematic, pins start tiny and grow via _startPinPop().
     final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
-    final useLabels = _labelsRevealed;
+    // Labels now live as Flutter overlay widgets (AnimatedMapLabel),
+    // so we always draw the pin-only bitmap — the bitmap-with-label
+    // variant is only kept for legacy paths that still reference it.
 
     // Pickup marker
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
-      Uint8List? bytes;
-      if (useLabels && _showPinLabels && _pickupPinWithLabel != null) {
-        bytes = _pickupPinWithLabel!.$1;
-      } else if (_pickupPinOnly != null) {
-        bytes = _pickupPinOnly!.$1;
-      } else {
-        bytes = _goldPinIcon;
-      }
+      Uint8List? bytes = _pickupPinOnly?.$1 ?? _goldPinIcon;
       if (bytes != null) {
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
@@ -1181,14 +1217,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Dropoff marker
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
-      Uint8List? bytes;
-      if (useLabels && _showPinLabels && _dropoffPinWithLabel != null) {
-        bytes = _dropoffPinWithLabel!.$1;
-      } else if (_dropoffPinOnly != null) {
-        bytes = _dropoffPinOnly!.$1;
-      } else {
-        bytes = _goldDropoffPinIcon ?? _goldPinIcon;
-      }
+      Uint8List? bytes = _dropoffPinOnly?.$1 ?? _goldDropoffPinIcon ?? _goldPinIcon;
       if (bytes != null) {
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),

@@ -774,6 +774,58 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
+  // Floating gold-border labels ("RECOGIDA" / "DESTINO") that sit
+  // above each pin tip, matching the Shopify widget's .vipRide__mapLabel.
+  // Positions are driven by _pickupScreenOffset / _dropoffScreenOffset
+  // which are recomputed on every camera change via _syncLabelOffsets().
+  List<Widget> _buildFloatingLabels() {
+    final s = _ctrl.state;
+    final widgets = <Widget>[];
+    final loc = S.of(context);
+    final pickupText = loc.pickupUpperLabel; // "RECOGIDA" / "PICKUP"
+    final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
+
+    final pickupPos = _pickupScreenOffset;
+    if (pickupPos != null && s.pickupLabel.isNotEmpty) {
+      widgets.add(
+        Positioned(
+          // Offset up-and-right of the pin tip so the label floats
+          // beside the pin rather than covering it.
+          left: pickupPos.dx + 14,
+          top: pickupPos.dy - 82,
+          child: AnimatedMapLabel(
+            kind: MapLabelKind.pickup,
+            address: s.pickupLabel,
+            pickupText: pickupText,
+            dropoffText: dropoffText,
+            visible: _pickupLabelRevealed,
+            alignEnd: false,
+          ),
+        ),
+      );
+    }
+
+    final dropoffPos = _dropoffScreenOffset;
+    if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
+      widgets.add(
+        Positioned(
+          // Offset up-and-left for dropoff (mirrored side of the pin).
+          left: dropoffPos.dx - 220,
+          top: dropoffPos.dy - 82,
+          child: AnimatedMapLabel(
+            kind: MapLabelKind.dropoff,
+            address: s.dropoffLabel,
+            pickupText: pickupText,
+            dropoffText: dropoffText,
+            visible: _dropoffLabelRevealed,
+            alignEnd: true,
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
   // Detail panel shown below the 3-card grid once the user has picked a
   // tier. Matches .vipRide__rideDetail from the web (description + eta
   // row + big price).

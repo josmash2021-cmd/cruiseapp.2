@@ -38,6 +38,7 @@ import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
+import '../widgets/map/animated_map_label.dart';
 import '../widgets/vehicle_tier_badge.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
@@ -272,6 +273,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Active ride-card glow pulse (matches vipRide rideGlow 2.8s) ──
   late AnimationController _activeCardGlowCtrl;
+
+  // ── Floating map labels (Flutter overlay — not baked bitmap) ──
+  // These are updated via pixelForCoordinate every camera tick so they
+  // track the pin tip exactly as the map tilts/pans/zooms.
+  Offset? _pickupScreenOffset;
+  Offset? _dropoffScreenOffset;
+  bool _pickupLabelRevealed = false;
+  bool _dropoffLabelRevealed = false;
 
   // ── Driver Found overlay ──
   bool _driverFoundVisible = false;
@@ -603,8 +612,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   onScrollListener: (_) {
                     if (!_programmaticCam) setState(() => _userMovedMap = true);
                   },
+                  onCameraChangeListener: (_) => _syncLabelOffsets(),
                 ),
               ),
+
+            // ── Floating animated map labels (RECOGIDA / DESTINO) ──
+            // Sit directly over the pin tips via pixelForCoordinate.
+            // Hidden during idle / searching phases; revealed staggered
+            // (pickup at +50ms, dropoff at +300ms) after the cinematic.
+            if (phase == RiderPhase.previewRoute ||
+                phase == RiderPhase.selectingRide)
+              ..._buildFloatingLabels(),
 
             // ── Back button ──
             Positioned(

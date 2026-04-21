@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -565,14 +566,32 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   }
 
   Widget _buildTopRow() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
+    // Frosted-glass panel: blurred translucent black with a faint gold
+    // tint on the border so it feels premium, not generic.
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            // Layered fill so the blur has something to carry; mostly
+            // black so the frost still reads as dark.
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.14),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Back button
@@ -586,11 +605,20 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
           Expanded(
             child: Stack(
               children: [
-                // Vertical gold gradient connector
+                // Vertical gold→white gradient connector. Positioned so
+                // its horizontal center lines up with the marker centers
+                // (marker is 14×14, its center is at x=7; the line is 2px
+                // wide, so left:6 puts its own center at x=7). Vertically
+                // it starts at the pickup-dot center and ends at the
+                // dropoff-marker center — each field adds ~4px top/bottom
+                // padding around a 14×14 marker inside a ~34px tall row,
+                // and there is a 12px gap between them, so the visual
+                // centers sit about 17px below the top and 17px above
+                // the bottom of the stack.
                 Positioned(
                   left: 6,
-                  top: 22,
-                  bottom: 22,
+                  top: 17,
+                  bottom: 17,
                   child: Container(
                     width: 2,
                     decoration: BoxDecoration(
@@ -658,6 +686,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
             child: _SwapButton(controller: _swapCtl, onTap: _swapFields),
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -839,20 +869,39 @@ class _Dot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Both figures are 14×14 so their visual centers line up with the
+    // vertical gold connector (its x position is tuned to 6px from the
+    // left of the column, matching the 7px half-width of the marker).
+    if (pickup) {
+      return Container(
+        width: 14,
+        height: 14,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _gold,
+          boxShadow: [
+            BoxShadow(
+              color: _gold.withValues(alpha: 0.6),
+              blurRadius: 10,
+            ),
+          ],
+        ),
+      );
+    }
+    // Drop-off: white rounded square, also 14×14 so the vertical line
+    // lands exactly on its visual center.
     return Container(
       width: 14,
       height: 14,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: pickup ? _gold : Colors.white.withValues(alpha: 0.35),
-        boxShadow: pickup
-            ? [
-                BoxShadow(
-                  color: _gold.withValues(alpha: 0.6),
-                  blurRadius: 10,
-                ),
-              ]
-            : null,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.30),
+            blurRadius: 8,
+          ),
+        ],
       ),
     );
   }

@@ -25,13 +25,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'airport_terminal_sheet.dart';
 import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
+import 'schedule_ride_flow.dart';
 import 'map_picker_screen.dart';
 import 'map_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';
 import 'scheduled_rides_screen.dart';
-import 'schedule_picker_sheet.dart';
 import 'trip_receipt_screen.dart';
 import 'account_screen.dart';
 import '../config/api_keys.dart';
@@ -1295,14 +1295,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       return;
     }
 
-    // Schedule option - show date/time picker
-    final result = await showModalBottomSheet<(DateTime, bool)>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          SchedulePickerSheet(isDark: AppColors.of(context).isDark),
-    );
+    // Schedule option — full-screen date + time picker (matches the
+    // Shopify widget's two-step flow).
+    final result = await showScheduleRideFlow(context);
 
     // If cancelled, revert to Now
     if (result == null || !mounted) {

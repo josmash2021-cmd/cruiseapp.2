@@ -18,7 +18,7 @@ import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
-import 'schedule_picker_sheet.dart';
+import 'schedule_ride_flow.dart';
 
 /// Premium Scheduled Rides screen for riders.
 /// Shows upcoming and past scheduled/airport rides with cancel ability.
@@ -139,15 +139,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   }
 
   Future<void> _startScheduleFlow() async {
-    final isDark = AppColors.of(context).isDark;
-
-    // Step 1: Show the calendar + time picker
-    final result = await showModalBottomSheet<(DateTime, bool)>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => SchedulePickerSheet(isDark: isDark),
-    );
+    // Step 1: full-screen date + time flow (replaces the old bottom sheet)
+    final result = await showScheduleRideFlow(context);
 
     if (result == null || !mounted) return;
     final (scheduledAt, isAirport) = result;

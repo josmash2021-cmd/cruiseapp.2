@@ -206,15 +206,30 @@ class _MapPickerScreenState extends State<MapPickerScreen>
       _startMapRipple();
     });
 
-    // 3. Pop result after full animation
-    Future.delayed(const Duration(milliseconds: 1400), () {
+    // 3. Capture the current camera state so the next screen can boot
+    //    its own map at exactly the same view → no teleport on handoff.
+    () async {
+      double? zoom, bearing, pitch;
+      try {
+        final cam = await _mapCtrl?.getCameraState();
+        if (cam != null) {
+          zoom = cam.zoom;
+          bearing = cam.bearing;
+          pitch = cam.pitch;
+        }
+      } catch (_) {}
+
+      await Future.delayed(const Duration(milliseconds: 1400));
       if (!mounted) return;
       Navigator.of(context).pop({
         'address': _address,
         'lat': _center.latitude,
         'lng': _center.longitude,
+        if (zoom != null) 'zoom': zoom,
+        if (bearing != null) 'bearing': bearing,
+        if (pitch != null) 'pitch': pitch,
       });
-    });
+    }();
   }
 
   /// Meters-per-pixel at a given latitude and zoom level.

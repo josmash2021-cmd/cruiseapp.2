@@ -58,6 +58,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   List<FavoritePlace> _favorites = [];
   List<String> _recents = [];
 
+  // Camera state captured from the last map-picker confirm — lets
+  // RideRequestScreen boot at the exact same view and eliminates the
+  // perceived "two-map" handoff flash.
+  double? _handoffLat;
+  double? _handoffLng;
+  double? _handoffZoom;
+  double? _handoffBearing;
+  double? _handoffPitch;
+  bool _handoffCover = false;
+
   bool _editingPickup = false;
   bool _editingDropoff = true;
 
@@ -339,6 +349,14 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     );
     if (result.address.isEmpty) return;
 
+    // Remember the map picker's final camera state so the ride-request
+    // screen can boot its own map in the same place — no flash.
+    _handoffLat = result.lat;
+    _handoffLng = result.lng;
+    _handoffZoom = (raw['zoom'] as num?)?.toDouble();
+    _handoffBearing = (raw['bearing'] as num?)?.toDouble();
+    _handoffPitch = (raw['pitch'] as num?)?.toDouble();
+
     if (_editingDropoff) {
       setState(() {
         _dropoffDetails = result;
@@ -447,6 +465,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
 
     if (!mounted) return;
 
+    // Hide the search chrome with a pure black layer so the user never
+    // sees the list/cards peek through while the ride-request screen
+    // fades in. The RideRequestScreen's own background is black too, so
+    // the visible sequence becomes: map-picker (with pin) → black fade
+    // → ride-request map (positioned at the same camera state).
+    setState(() => _handoffCover = true);
+
     Navigator.of(context).pushReplacement(
       slideUpFadeRoute(
         RideRequestScreen(
@@ -456,6 +481,11 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
           initialDropoffLabel: dropLabel,
           initialDropoffAddress: dropLabel,
           preloadedRoute: preloaded,
+          handoffLat: _handoffLat,
+          handoffLng: _handoffLng,
+          handoffZoom: _handoffZoom,
+          handoffBearing: _handoffBearing,
+          handoffPitch: _handoffPitch,
         ),
       ),
     );
@@ -472,13 +502,15 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
       child: Scaffold(
         backgroundColor: _bg,
         resizeToAvoidBottomInset: true,
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-            child: Column(
-              children: [
-                // ── Top row: back + fields + swap ──
-                _buildTopRow(),
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: Column(
+                  children: [
+                    // ── Top row: back + fields + swap ──
+                    _buildTopRow(),
 
                 const SizedBox(height: 16),
 
@@ -512,8 +544,21 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                   ),
                 ),
               ],
+                ),
+              ),
             ),
-          ),
+            // Handoff cover — black opaque layer that hides search content
+            // the instant we start pushing RideRequestScreen, so the
+            // transition reads as a clean fade between two map views.
+            IgnorePointer(
+              ignoring: !_handoffCover,
+              child: AnimatedOpacity(
+                opacity: _handoffCover ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 120),
+                child: Container(color: _bg),
+              ),
+            ),
+          ],
         ),
       ),
     );

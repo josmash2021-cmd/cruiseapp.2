@@ -91,6 +91,15 @@ class RideRequestScreen extends StatefulWidget {
   final String? initialDropoffLabel;
   final RouteResult? preloadedRoute;
   final String? initialRideId;
+  /// When the previous screen was a full-screen map, passing its final
+  /// camera state lets this screen boot the map at exactly the same
+  /// center/zoom/bearing/pitch so the transition reads as one smooth
+  /// fade between two identical views (no teleport, no reset).
+  final double? handoffLat;
+  final double? handoffLng;
+  final double? handoffZoom;
+  final double? handoffBearing;
+  final double? handoffPitch;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -105,6 +114,11 @@ class RideRequestScreen extends StatefulWidget {
     this.initialDropoffLabel,
     this.preloadedRoute,
     this.initialRideId,
+    this.handoffLat,
+    this.handoffLng,
+    this.handoffZoom,
+    this.handoffBearing,
+    this.handoffPitch,
   });
 
   @override
@@ -517,10 +531,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               RepaintBoundary(
                 child: mapbox.MapWidget(
                   styleUri: MapboxConfig.styleDark,
+                  // Handoff camera: if the previous screen (map picker)
+                  // handed us its final view, boot in that exact state
+                  // so there's no visible teleport between the two maps.
                   cameraOptions: mapbox.CameraOptions(
-                    center: mapbox.Point(coordinates: mapbox.Position(_center!.longitude, _center!.latitude)),
-                    zoom: 15.5,
-                    pitch: 45.0,
+                    center: mapbox.Point(
+                      coordinates: mapbox.Position(
+                        widget.handoffLng ?? _center!.longitude,
+                        widget.handoffLat ?? _center!.latitude,
+                      ),
+                    ),
+                    zoom: widget.handoffZoom ?? 15.5,
+                    bearing: widget.handoffBearing ?? 0.0,
+                    pitch: widget.handoffPitch ?? 45.0,
                   ),
                   onMapCreated: (ctrl) async {
                     _mapCtrl = ctrl;

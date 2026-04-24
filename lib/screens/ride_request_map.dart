@@ -1069,11 +1069,20 @@ extension _RideRequestMap on _RideRequestScreenState {
       if ((targetDist - lastDistDrawn).abs() < advanceThreshold && progress < 1.0) return;
       lastDistDrawn = targetDist;
 
-      // Find the point index where cumDist >= targetDist
-      int idx = 2;
+      // Find the first point index where cumDist >= targetDist.
+      //
+      // BUG FIX: the previous version set `idx = i + 1` unconditionally
+      // inside the loop, so even when targetDist hadn't been reached
+      // yet the idx kept growing until the loop ended at cumDist.length.
+      // That made the polyline snap to the full route instead of
+      // animating progressively. The correct behaviour is: stop at the
+      // FIRST index whose cumulative distance passes targetDist.
+      int idx = cumDist.length; // all points drawn if target ≥ total
       for (int i = 1; i < cumDist.length; i++) {
-        if (cumDist[i] >= targetDist) { idx = i + 1; break; }
-        idx = i + 1;
+        if (cumDist[i] >= targetDist) {
+          idx = i + 1;
+          break;
+        }
       }
       idx = idx.clamp(2, points.length);
 

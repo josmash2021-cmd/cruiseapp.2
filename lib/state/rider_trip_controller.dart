@@ -115,6 +115,14 @@ class RiderTripState {
   final DateTime? scheduledAt;
   final bool isAirportTrip;
 
+  // Airport metadata — populated when the rider comes through the
+  // AirportTerminalSheet flow. Mirrors the Shopify widget's
+  // createTrip/dispatch payload fields.
+  final String? airportCode;
+  final String? airportTerminal;
+  final String? airportPickupZone; // door (from) or airline (to)
+  final String? airportFlight;
+
   // Backend trip IDs
   final int? tripId;
   final String? firestoreTripId;
@@ -145,6 +153,10 @@ class RiderTripState {
     this.driverBearing = 0,
     this.scheduledAt,
     this.isAirportTrip = false,
+    this.airportCode,
+    this.airportTerminal,
+    this.airportPickupZone,
+    this.airportFlight,
     this.tripId,
     this.firestoreTripId,
     this.cancelReason,
@@ -167,6 +179,10 @@ class RiderTripState {
     double? driverBearing,
     DateTime? scheduledAt,
     bool? isAirportTrip,
+    String? airportCode,
+    String? airportTerminal,
+    String? airportPickupZone,
+    String? airportFlight,
     int? tripId,
     String? firestoreTripId,
     String? cancelReason,
@@ -188,6 +204,10 @@ class RiderTripState {
       driverBearing: driverBearing ?? this.driverBearing,
       scheduledAt: scheduledAt ?? this.scheduledAt,
       isAirportTrip: isAirportTrip ?? this.isAirportTrip,
+      airportCode: airportCode ?? this.airportCode,
+      airportTerminal: airportTerminal ?? this.airportTerminal,
+      airportPickupZone: airportPickupZone ?? this.airportPickupZone,
+      airportFlight: airportFlight ?? this.airportFlight,
       tripId: tripId ?? this.tripId,
       firestoreTripId: firestoreTripId ?? this.firestoreTripId,
       cancelReason: cancelReason ?? this.cancelReason,
@@ -390,6 +410,25 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   void setSchedule(DateTime? dateTime) {
     _state = _state.copyWith(scheduledAt: dateTime);
+    notifyListeners();
+  }
+
+  /// Stash all the airport metadata at once so the dispatch call can
+  /// include code/terminal/pickup_zone/flight on the payload.
+  void setAirportMetadata({
+    required bool isAirport,
+    String? code,
+    String? terminal,
+    String? pickupZone,
+    String? flight,
+  }) {
+    _state = _state.copyWith(
+      isAirportTrip: isAirport,
+      airportCode: code,
+      airportTerminal: terminal,
+      airportPickupZone: pickupZone,
+      airportFlight: flight,
+    );
     notifyListeners();
   }
 
@@ -658,6 +697,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         } catch (_) {}
       }
 
+      final flight = _state.airportFlight?.trim();
+      final notes = (flight != null && flight.isNotEmpty)
+          ? 'Flight: $flight'
+          : null;
+
       final result = await ApiService.dispatchRideRequest(
         riderId: userId,
         pickupAddress: pickupAddr.isNotEmpty ? pickupAddr : 'current location',
@@ -668,6 +712,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         dropoffLng: dropoff.lng,
         fare: _state.selectedOption?.priceEstimate,
         vehicleType: _state.selectedOption?.name,
+        isAirport: _state.isAirportTrip,
+        airportCode: _state.airportCode,
+        terminal: _state.airportTerminal,
+        pickupZone: _state.airportPickupZone,
+        notes: notes,
         stripePaymentIntentId: _heldPaymentIntentId,
       );
 

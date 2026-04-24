@@ -55,6 +55,17 @@ extension _RideRequestController on _RideRequestScreenState {
     final ap = sel.airport;
     final isFrom = sel.direction == AirportDirection.fromAirport;
 
+    // Save airport metadata on the controller so the dispatch payload
+    // includes code / terminal / pickup_zone / flight — matches the
+    // Shopify widget's createTrip body.
+    _ctrl.setAirportMetadata(
+      isAirport: true,
+      code: ap.code,
+      terminal: sel.terminal?.name,
+      pickupZone: isFrom ? sel.arrivalDoor : sel.airline,
+      flight: sel.flightNumber,
+    );
+
     // Build geocode query
     final terminalPart = sel.terminal != null ? ', ${sel.terminal!.name}' : '';
     final departureSuffix = isFrom ? '' : ' Departures';
@@ -1506,6 +1517,14 @@ extension _RideRequestController on _RideRequestScreenState {
         );
         return;
       }
+      // Airport metadata is already stashed on the controller state by
+      // _autoApplyAirportSelection — read it straight from there so both
+      // scheduled createTrip and immediate dispatchRideRequest agree.
+      final flight = state.airportFlight?.trim();
+      final notes = (flight != null && flight.isNotEmpty)
+          ? 'Flight: $flight'
+          : null;
+
       await ApiService.createTrip(
         riderId: userId,
         pickupAddress: state.pickupLabel,
@@ -1518,6 +1537,10 @@ extension _RideRequestController on _RideRequestScreenState {
         vehicleType: state.selectedOption?.name,
         scheduledAt: state.scheduledAt,
         isAirport: state.isAirportTrip,
+        airportCode: state.airportCode,
+        terminal: state.airportTerminal,
+        pickupZone: state.airportPickupZone,
+        notes: notes,
       );
 
       if (!mounted) return;

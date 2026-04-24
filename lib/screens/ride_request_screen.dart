@@ -276,6 +276,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _optionsLoaded = false;
   Timer? _shimmerTimeoutTimer;
 
+  // One-shot guard: the sheet watchdog timer fires only once per mount.
+  // Scheduled the first time rideOptions are non-empty; forces the sheet
+  // opacity animation to 1.0 after 2 s if it stalled mid-cascade.
+  bool _sheetForceTimerScheduled = false;
+
   // ── Price shimmer while waiting for real route ──
   late AnimationController _priceShimmerCtrl;
 

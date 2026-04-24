@@ -583,6 +583,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     if (_cinematicRunning) return;
+    // Wait for the real road-snapped route — the 2-point estimated
+    // placeholder would draw as a diagonal through buildings until
+    // Directions resolves. Controller will re-notify once it has ≥3.
+    if (s.route!.points.length < 3) return;
     // Claim the lock BEFORE resetting so a second _onStateChange that
     // fires between _resetCinematic() and _startCinematicSequence()
     // sees _cinematicRunning == true and bails. This was the cause of
@@ -643,7 +647,8 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _replayCinematicIfRouteAvailable() {
     if (_cinematicDone || _cinematicRunning) return;
     final route = _ctrl.state.route;
-    if (route == null || route.points.isEmpty) return;
+    // Need ≥3 points — 2 is the estimated straight-line placeholder.
+    if (route == null || route.points.length < 3) return;
     final pts = _capRouteEndpoints(List<LatLng>.from(route.points));
     _showPinLabels = true;
     _buildRouteMarkers();
@@ -802,8 +807,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     // ── Route draws starting at 25% of the tilt animation ──
     await Future.delayed(const Duration(milliseconds: 550));
     if (!mounted) { _cinematicRunning = false; return; }
-    // Fire route draw concurrently — don't await, let it overlap with tilt.
-    final routeFuture = _animateGoldRoute(pts);
+    // SKIP route draw while the route is still the 2-point "estimated"
+    // placeholder (origin → destination straight line). Drawing it would
+    // put a diagonal gold line through buildings. The controller will
+    // refresh state with the real road-snapped route once Directions
+    // resolves; _onStateChange → _drawRoute will redraw it properly.
+    // ≥3 points means Mapbox/Google/OSRM returned the polyline.
+    final Future<void> routeFuture = pts.length < 3
+        ? Future.value()
+        : _animateGoldRoute(pts);
 
     // ── Wait for BOTH tilt and route to finish ──
     await Future.wait([
@@ -1408,6 +1420,12 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   Future<void> _applyDarkNavyGoldTheme(mapbox.MapboxMap ctrl) async {
     await MapTheme.applyNavyGold(ctrl);
+    // The bottom sheet covers the lower 40-50% of the map. Mapbox's
+    // native POI labels (Apple Pay, Holiday Inn, hotels, restaurants)
+    // anchor to their coordinates and leak above the sheet edge. The
+    // web widget's booking map never shows business POIs — hide them
+    // here so the rider only sees streets + our pickup/dropoff pins.
+    await MapTheme.hidePoiLayers(ctrl);
   }
 
   Future<void> _recenterMap() async {

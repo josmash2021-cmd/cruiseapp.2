@@ -277,6 +277,20 @@ extension _RideRequestController on _RideRequestScreenState {
         if (_cinematicDone && _sheetCtrl.status == AnimationStatus.dismissed) {
           _sheetCtrl.forward();
         }
+        // Watchdog: if ride options have loaded and the sheet has been
+        // open for >2 s without completing (row opacities never hit 1.0),
+        // force the animation home. Fixes the reported bug where the
+        // "Choose a vehicle" header renders but the tier cards underneath
+        // stay invisible because _sheetCtrl stalled mid-transition.
+        if (s.rideOptions.isNotEmpty && !_sheetForceTimerScheduled) {
+          _sheetForceTimerScheduled = true;
+          Timer(const Duration(seconds: 2), () {
+            if (!mounted) return;
+            if (_sheetCtrl.status != AnimationStatus.completed) {
+              _sheetCtrl.value = 1.0;
+            }
+          });
+        }
         // Start cinematic + route draw as soon as any route is available.
         // Estimated route (2 points) triggers markers+tilt; real route
         // (>15 points) triggers the gold polyline draw.

@@ -333,6 +333,38 @@ class MapTheme {
   }
 
   // ════════════════════════════════════════════════════════════════════════
+  // POI / Business Icons — hide. On ride-request + tracking screens the
+  // big bottom sheet covers the lower map, and native Mapbox POI labels
+  // (Apple Pay, Holiday Inn, etc.) leak out through the top edge or get
+  // pinned by the renderer above the sheet. Matches the web widget which
+  // never shows business POIs on the booking map.
+  // ════════════════════════════════════════════════════════════════════════
+  static Future<void> hidePoiLayers(mapbox.MapboxMap map) async {
+    const layers = [
+      'poi-label', 'poi', 'place-of-worship',
+      'poi-scalerank1', 'poi-scalerank2', 'poi-scalerank3', 'poi-scalerank4',
+      'points-of-interest', 'landmark-icon', 'transit-label',
+    ];
+    for (final layerId in layers) {
+      await _sp(map, layerId, 'visibility', 'none');
+    }
+    // Dynamic fallback — match any layer whose id looks POI-ish.
+    try {
+      final allLayers = await map.style.getStyleLayers();
+      final poiPattern = RegExp(
+        r'(poi|point.?of.?interest|landmark|transit)',
+        caseSensitive: false,
+      );
+      for (final layer in allLayers) {
+        if (layer == null) continue;
+        final id = layer.id;
+        if (!poiPattern.hasMatch(id)) continue;
+        await _sp(map, id, 'visibility', 'none');
+      }
+    } catch (_) {}
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
   // POI / Business Icons — make visible on all maps
   // ════════════════════════════════════════════════════════════════════════
   static Future<void> applyPoiVisibility(mapbox.MapboxMap map) async {

@@ -574,7 +574,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   Widget _buildAirportTile(AirportInfo a) {
     final int terminalCount = a.terminals.length;
-    return GestureDetector(
+    // .vrApt__airportItem:active (vip-apt-sheet.css:323):
+    //   transform: scale(.985); 120ms ease-out — match the direction
+    //   card press feedback exactly.
+    return _PressScale(
       onTap: () => _selectAirport(a),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
@@ -675,15 +678,18 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           const SizedBox(height: 20),
 
           Text(
-            S.of(context).whichAirlineFlying,
-            // .vrApt__sectionHeader (vip-apt-sheet.css:413-417):
-//   font 12px w600, color rgba(232,197,71,.7), letter-spacing .12em
-style: TextStyle(
-  color: _gold.withValues(alpha: 0.7),
-  fontSize: 12,
-  fontWeight: FontWeight.w600,
-  letterSpacing: 1.44,
-),
+            S.of(context).whichAirlineFlying.toUpperCase(),
+            // .vrApt__sectionHeader (vip-apt-sheet.css:412-419):
+            //   font-size: 12px; font-weight: 600;
+            //   letter-spacing: 0.05em (≈0.6px at 12px);
+            //   text-transform: uppercase;
+            //   color: var(--vrApt-text-2) = rgba(255,255,255,.55);
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.6,
+            ),
           ),
           const SizedBox(height: 10),
 
@@ -717,9 +723,11 @@ style: TextStyle(
                   ),
                   child: Row(
                     children: [
+                      // .vrApt__airlineIcon (vip-apt-sheet.css:448-458):
+                      //   width/height 38px; border-radius 10px
                       Container(
-                        width: 40,
-                        height: 40,
+                        width: 38,
+                        height: 38,
                         decoration: BoxDecoration(
                           color: (selected ? _blue : _textSecondary).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
@@ -806,13 +814,15 @@ style: TextStyle(
           _buildAirportBadge(ap),
           const SizedBox(height: 20),
 
-          // Terminal chips
-          Text(S.of(context).whichTerminalArrived,
+          // Terminal chips — .vrApt__sectionHeader (vip-apt-sheet.css:412-419):
+          //   12px w600 uppercase, color text-2 (rgba(255,255,255,.55)),
+          //   letter-spacing .05em (≈0.6px at 12px).
+          Text(S.of(context).whichTerminalArrived.toUpperCase(),
             style: TextStyle(
-              color: _gold.withValues(alpha: 0.7),
+              color: Colors.white.withValues(alpha: 0.55),
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              letterSpacing: 1.44,
+              letterSpacing: 0.6,
             )),
           const SizedBox(height: 10),
           Wrap(
@@ -859,12 +869,15 @@ style: TextStyle(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 20),
-                      Text(S.of(context).selectArrivalDoor,
+                      // .vrApt__sectionHeader (vip-apt-sheet.css:412-419):
+                      //   12px w600 uppercase, color text-2,
+                      //   letter-spacing .05em (≈0.6px at 12px).
+                      Text(S.of(context).selectArrivalDoor.toUpperCase(),
                           style: TextStyle(
-                              color: _textSecondary,
+                              color: Colors.white.withValues(alpha: 0.55),
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5)),
+                              letterSpacing: 0.6)),
                       const SizedBox(height: 10),
                       ..._selectedTerminal!.arrivalDoors.map((door) {
                         final selected = _selectedArrivalDoor == door;
@@ -1012,7 +1025,8 @@ style: TextStyle(
               decoration: InputDecoration(
                 hintText: S.of(context).flightNumberHint,
                 hintStyle: TextStyle(color: _textSecondary),
-                icon: Icon(Icons.airplane_ticket_outlined, color: _blue, size: 20),
+                // Web uses a plain plane icon (Lucide), not a ticket.
+                icon: Icon(Icons.flight_rounded, color: _blue, size: 20),
                 border: InputBorder.none,
               ),
             ),
@@ -1035,17 +1049,12 @@ style: TextStyle(
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(color: (isFrom ? _green : _gold).withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
               ),
+              // .vrApt__confirmBtn (vip-apt-sheet.css:716-725): text only,
+              // no leading icon. Keep the button minimal like the web.
               child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.check_rounded, color: isFrom ? Colors.white : Colors.black87, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
-                      style: TextStyle(color: isFrom ? Colors.white : Colors.black87, fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
-                  ],
+                child: Text(
+                  isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
+                  style: TextStyle(color: isFrom ? Colors.white : Colors.black87, fontWeight: FontWeight.w700, fontSize: 15),
                 ),
               ),
             ),

@@ -710,21 +710,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // two-layer drop-shadow for depth.
                   SizedBox(
                     height: 52,
-                    child: AnimatedOpacity(
-                      opacity: selected ? 1.0 : 0.85,
-                      duration: const Duration(milliseconds: 180),
-                      child: Image.asset(
-                        _carAssetForOption(opt.name),
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.high,
-                        isAntiAlias: true,
-                        cacheWidth: 240,
-                        errorBuilder: (_, __, ___) => Icon(
-                          Icons.directions_car_rounded,
-                          size: 36,
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
-                      ),
+                    child: CarImage3D(
+                      assetPath: _carAssetForOption(opt.name),
+                      cacheWidth: 240,
+                      dimmed: !selected,
+                      dimDuration: const Duration(milliseconds: 180),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -1167,18 +1157,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 // Car image
                 SizedBox(
                   height: 56,
-                  child: Image.asset(
-                    _carAssetForOption(opt.name),
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                    isAntiAlias: true,
-                    alignment: Alignment.center,
+                  child: CarImage3D(
+                    assetPath: _carAssetForOption(opt.name),
                     cacheWidth: 216,
-                    errorBuilder: (_, e, s) => Icon(
-                      Icons.directions_car_rounded,
-                      size: 36,
-                      color: Colors.white.withValues(alpha: 0.5),
-                    ),
                   ),
                 ),
               ],

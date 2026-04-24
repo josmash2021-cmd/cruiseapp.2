@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
+import '../widgets/car_image_3d.dart';
 import '../widgets/vehicle_tier_badge.dart';
 
 /// Premium ride options bottom sheet with card-based layout.
@@ -517,20 +518,14 @@ class RideOptionsSheet extends StatelessWidget {
         imagePath = 'assets/images/cruise_6.png';
     }
     
-    return AnimatedOpacity(
-      opacity: isSelected ? 1.0 : 0.75,
-      duration: const Duration(milliseconds: 200),
-      child: Image.asset(
-        imagePath,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        isAntiAlias: true,
-        cacheWidth: 200,
-        errorBuilder: (ctx, err, st) => Icon(
-          Icons.directions_car_rounded,
-          color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
-          size: 36,
-        ),
+    return CarImage3D(
+      assetPath: imagePath,
+      cacheWidth: 200,
+      dimmed: !isSelected,
+      fallback: Icon(
+        Icons.directions_car_rounded,
+        color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
+        size: 36,
       ),
     );
   }

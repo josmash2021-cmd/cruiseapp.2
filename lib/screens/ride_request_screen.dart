@@ -37,6 +37,7 @@ import 'ride_options_sheet.dart';
 import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/car_image_3d.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';

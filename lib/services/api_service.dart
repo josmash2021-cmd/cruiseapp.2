@@ -980,6 +980,13 @@ class ApiService {
   }
 
   /// Authenticate via Google or Apple OAuth token.
+  ///
+  /// Sets [_loginInProgress] so that [_parse]'s 401 handler does NOT treat
+  /// a legitimate social-login failure (bad token, account-not-found in
+  /// loginOnly mode, etc.) as a "session expired" event. Without this
+  /// guard, a 401 here fires _handleUnauthorized → clearToken →
+  /// onUnauthorized callback, which bounces the app back to the
+  /// welcome screen and looks like a crash/restart.
   static Future<Map<String, dynamic>> socialAuth({
     required String provider,
     required String idToken,
@@ -989,30 +996,38 @@ class ApiService {
     String role = 'rider',
     bool loginOnly = false,
   }) async {
-    final res = await _client
-        .post(
-          Uri.parse('$_baseUrl/auth/social'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({
-            'provider': provider,
-            'id_token': idToken,
-            if (firstName != null) 'first_name': firstName,
-            if (lastName != null) 'last_name': lastName,
-            if (photoUrl != null) 'photo_url': photoUrl,
-            'role': role,
-            'login_only': loginOnly,
-          }),
-        )
-        .timeout(const Duration(seconds: 15));
+    _loginInProgress = true;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/social'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({
+              'provider': provider,
+              'id_token': idToken,
+              if (firstName != null) 'first_name': firstName,
+              if (lastName != null) 'last_name': lastName,
+              if (photoUrl != null) 'photo_url': photoUrl,
+              'role': role,
+              'login_only': loginOnly,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
-    final data = _parse(res);
-    final token = data['access_token'] as String;
-    await _saveToken(token);
-    if (data['refresh_token'] != null) {
-      await _saveRefreshToken(data['refresh_token'] as String);
+      final data = _parse(res);
+      final token = data['access_token'] as String?;
+      if (token == null) {
+        throw ApiException(500, 'Social auth response missing access_token');
+      }
+      await _saveToken(token);
+      if (data['refresh_token'] != null) {
+        await _saveRefreshToken(data['refresh_token'] as String);
+      }
+      _cachedUser = data['user'] as Map<String, dynamic>?;
+      return data;
+    } finally {
+      _loginInProgress = false;
     }
-    _cachedUser = data['user'] as Map<String, dynamic>?;
-    return data;
   }
 
   /// Get the current user's profile (requires valid JWT).

@@ -348,7 +348,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
     _pickupOverlayCtrl.dispose();
-    _routeFadeTimer?.cancel();
+    _routeFadeJob?.cancel();
     _startRidePhaseTimer?.cancel();
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
@@ -356,9 +356,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _gpsFallbackTimer?.cancel();
-    _labelAnimTimer?.cancel();
-    _dropoffPopTimer?.cancel();
-    _pickupPopOutTimer?.cancel();
+    _labelAnimJob?.cancel();
+    _dropoffPopJob?.cancel();
+    _pickupPopOutJob?.cancel();
+    _animScheduler.dispose();
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
     super.dispose();
@@ -390,7 +391,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ══════════════════════════════════════════════════════════════════════════
   // FIX 2: DRIVER ARRIVED STATE
   // ══════════════════════════════════════════════════════════════════════════
-  Timer? _routeFadeTimer;
+  // Single shared vsync scheduler that drives every pin/route animation
+  // on the tracking map. Replaces 4 separate wall-clock Timer.periodic
+  // (16ms + 3× 33ms) that used to pile up during pickup/dropoff
+  // transitions and spike CPU / heat. See [_AnimScheduler] below for the
+  // job model. The scheduler auto-parks its ticker when no jobs are
+  // active, so idle cost is zero.
+  late final _AnimScheduler _animScheduler = _AnimScheduler(this);
+
   double _routeOpacity = 1.0;
   bool _arrivedStateInitialized = false;
 
@@ -414,14 +422,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;
-  Timer? _labelAnimTimer;
-  Timer? _dropoffPopTimer;
-  Timer? _pickupPopOutTimer;
+  // Animation job handles — replaced individual Timer.periodic instances.
+  // Calling .cancel() aborts the job on the shared scheduler.
+  _AnimJob? _labelAnimJob;
+  _AnimJob? _dropoffPopJob;
+  _AnimJob? _pickupPopOutJob;
+  _AnimJob? _routeFadeJob;
   bool _completionCheckInFlight = false;
 
   // RTDB auto-reconnect: retry when stream errors out
   Timer? _rtdbReconnectTimer;
   int _rtdbFailCount = 0;
+
+  // Set every time the Firestore trip-status listener delivers fresh data.
+  // The 1.5 s HTTP poll skips its tick when this is <700 ms old, avoiding
+  // redundant network calls while Firestore is healthy. Null = never
+  // heard from Firestore → poll runs normally (safe default).
+  DateTime? _lastFirestoreEventAt;
 
   // Fallback: fetch approach route from backend if no RTDB GPS in 5s
   Timer? _gpsFallbackTimer;
@@ -556,4 +573,124 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   List<LatLng> _tripRoutePts = [];         // stored pickup→dropoff route (for after arriving)
   bool _approachRouteFetched = false;      // guard: approach route already obtained
   bool _approachRouteFetching = false;     // guard: fetch in progress
+}
+
+// ════════════════════════════════════════════════════════════
+//  Shared animation scheduler for the tracking map
+// ════════════════════════════════════════════════════════════
+//
+//  One vsync Ticker drives up to N concurrent short-lived animation
+//  jobs (pin pops, label springs, route fades). Replaces the old model
+//  where each animation owned a wall-clock Timer.periodic — that
+//  stacked 4 timers at 30-60 FPS during the pickup/dropoff transition
+//  and was the #1 source of CPU heat on both rider and driver phones.
+//
+//  The ticker auto-parks when jobs.isEmpty, so the idle cost is zero.
+//  Each [_AnimJob] completes once its elapsed time reaches its
+//  duration; [onDone] is invoked with [mounted] already validated.
+
+typedef _AnimTick = void Function(double t);
+
+class _AnimJob {
+  _AnimJob._(this._scheduler, this.durationMs, this.onTick, this.onDone) {
+    _startedAt = DateTime.now();
+  }
+
+  final _AnimScheduler _scheduler;
+  final int durationMs;
+  final _AnimTick onTick;
+  final VoidCallback? onDone;
+
+  late final DateTime _startedAt;
+  bool _cancelled = false;
+  bool _done = false;
+
+  bool get isActive => !_cancelled && !_done;
+
+  void cancel() {
+    if (_cancelled || _done) return;
+    _cancelled = true;
+    _scheduler._remove(this);
+  }
+
+  /// Returns true if the job has finished and should be removed.
+  bool _advance(State hostState) {
+    if (_cancelled || _done) return true;
+    final elapsed = DateTime.now().difference(_startedAt).inMilliseconds;
+    final t = (elapsed / durationMs).clamp(0.0, 1.0);
+    if (hostState.mounted) {
+      onTick(t);
+    } else {
+      // Host unmounted — stop silently, skip onDone.
+      _done = true;
+      return true;
+    }
+    if (t >= 1.0) {
+      _done = true;
+      if (hostState.mounted) onDone?.call();
+      return true;
+    }
+    return false;
+  }
+}
+
+class _AnimScheduler {
+  _AnimScheduler(this._vsync);
+
+  final TickerProvider _vsync;
+  final List<_AnimJob> _jobs = [];
+  Ticker? _ticker;
+  bool _disposed = false;
+
+  _AnimJob schedule({
+    required int durationMs,
+    required _AnimTick onTick,
+    VoidCallback? onDone,
+  }) {
+    final job = _AnimJob._(this, durationMs, onTick, onDone);
+    if (_disposed) return job;
+    _jobs.add(job);
+    _ensureTickerRunning();
+    return job;
+  }
+
+  void _remove(_AnimJob job) {
+    _jobs.remove(job);
+    if (_jobs.isEmpty) _ticker?.stop();
+  }
+
+  void _ensureTickerRunning() {
+    // Lazy-create so we don't spin a ticker until the first job arrives.
+    _ticker ??= _vsync.createTicker(_onFrame);
+    if (!_ticker!.isActive) _ticker!.start();
+  }
+
+  void _onFrame(Duration _) {
+    // Iterate over a copy so jobs can cancel() themselves inside onTick
+    // without blowing up the iteration.
+    if (_jobs.isEmpty) {
+      _ticker?.stop();
+      return;
+    }
+    final host = _vsync as State;
+    final done = <_AnimJob>[];
+    for (final job in List<_AnimJob>.from(_jobs)) {
+      if (job._advance(host)) done.add(job);
+    }
+    for (final j in done) {
+      _jobs.remove(j);
+    }
+    if (_jobs.isEmpty) _ticker?.stop();
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    for (final j in _jobs) {
+      j._cancelled = true;
+    }
+    _jobs.clear();
+    _ticker?.dispose();
+    _ticker = null;
+  }
 }

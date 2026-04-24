@@ -23,10 +23,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
         _pollFailCount = 0;
         if (_connectionLost) _setState(() => _connectionLost = false);
-        // Firestore is a bonus channel — do NOT touch the 2s poll timer.
-        // Slowing the poll when Firestore fires was causing missed "arrived"
-        // events: the initial cached snapshot (old status) would downgrade the
-        // poll to 8s, then the real arrived update took up to 8s to surface.
+        // Mark Firestore as recently alive so the very next 1.5s poll tick
+        // can skip the HTTP GET (data already delivered here). We do NOT
+        // slow the timer interval — a stale cached snapshot could make us
+        // miss a live "arrived" event if we downgrade and then Firestore
+        // goes quiet. The skip is tight (700 ms window) so the poll still
+        // fires when Firestore stalls.
+        _lastFirestoreEventAt = DateTime.now();
         _onTripStatusUpdate(data);
       },
       onError: (error) {
@@ -56,6 +59,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// getActiveTrip if the new endpoint isn't deployed yet.
   Future<void> _pollBackendTripStatus() async {
     if (!mounted || _phase == _TrackPhase.completed) return;
+    // Skip this tick if Firestore already delivered the same data
+    // within the last 700 ms — avoids redundant HTTP GETs during the
+    // 90 % of the trip where Firestore is healthy. If Firestore stalls
+    // (>700 ms) we fall through and do the poll normally, so no event
+    // can ever be missed.
+    if (_lastFirestoreEventAt != null &&
+        DateTime.now().difference(_lastFirestoreEventAt!).inMilliseconds < 700) {
+      return;
+    }
     final tripId = widget.tripId;
     try {
       Map<String, dynamic>? data;
@@ -1432,7 +1444,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _startRideAnimationDone = true;
     _startRidePhase = 5; // skip to follow mode immediately
 
-    _routeFadeTimer?.cancel();
+    _routeFadeJob?.cancel();
     _routeOpacity = 1.0;
 
     if (_dropoffAnnot == null) {
@@ -1477,11 +1489,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _cameraFollowTimer?.cancel();
     // Follow every 800ms — short enough to feel fluid, long enough to avoid
     // overlapping easeTo animations (600ms animation + 200ms settle).
+    // Debounce: if the previous flyTo/easeTo hasn't settled yet (network
+    // lag, dropped frame), skip this tick entirely instead of stacking
+    // another camera animation. Stacked animations feel nervous and burn
+    // CPU needlessly on the map thread.
     _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
-      // During arrived phase the driver is at the pickup — no camera movement.
       if (_phase == _TrackPhase.arrived) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+      if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
       _followDriver(_animPos, _animBearing);
     });
   }

@@ -376,29 +376,28 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   /// Spring scale animation for label reveal: 0.50 → 1.15 → 0.95 → 1.05 over 600ms.
+  /// Runs on the shared [_animScheduler] (one vsync Ticker drives all pin
+  /// animations together) instead of its own Timer.periodic.
   void _labelSpringAnimation(mapbox.PointAnnotation annot) {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
-    const duration = 600;
-    final start = DateTime.now();
-    _labelAnimTimer?.cancel();
-    _labelAnimTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
-      if (!mounted) { timer.cancel(); return; }
-      final elapsed = DateTime.now().difference(start).inMilliseconds;
-      final t = (elapsed / duration).clamp(0.0, 1.0);
-      double scale;
-      if (t < 0.5) {
-        scale = 0.50 + (1.15 - 0.50) * (t / 0.5);
-      } else if (t < 0.75) {
-        scale = 1.15 + (0.95 - 1.15) * ((t - 0.5) / 0.25);
-      } else {
-        scale = 0.95 + (1.05 - 0.95) * ((t - 0.75) / 0.25);
-      }
-      try {
-        mgr.update(annot..iconSize = scale);
-      } catch (_) {}
-      if (t >= 1.0) timer.cancel();
-    });
+    _labelAnimJob?.cancel();
+    _labelAnimJob = _animScheduler.schedule(
+      durationMs: 600,
+      onTick: (t) {
+        double scale;
+        if (t < 0.5) {
+          scale = 0.50 + (1.15 - 0.50) * (t / 0.5);
+        } else if (t < 0.75) {
+          scale = 1.15 + (0.95 - 1.15) * ((t - 0.5) / 0.25);
+        } else {
+          scale = 0.95 + (1.05 - 0.95) * ((t - 0.75) / 0.25);
+        }
+        try {
+          mgr.update(annot..iconSize = scale);
+        } catch (_) {}
+      },
+    );
   }
 
   Future<void> _initRoute() async {
@@ -1036,36 +1035,33 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     } catch (_) {}
   }
 
-  /// Pin pop spring animation for dropoff pin
+  /// Pin pop spring animation for dropoff pin. Runs on the shared scheduler.
   void _animateDropoffPinPop() {
     if (_dropoffAnnot == null || _pointAnnotMgr == null) return;
-    const duration = 500;
-    final start = DateTime.now();
-    _dropoffPopTimer?.cancel();
-    _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
-      if (!mounted) { timer.cancel(); return; }
-      final elapsed = DateTime.now().difference(start).inMilliseconds;
-      final t = (elapsed / duration).clamp(0.0, 1.0);
-      double scale;
-      if (t < 0.4) {
-        scale = 0.01 + (1.15 - 0.01) * (t / 0.4);
-      } else if (t < 0.7) {
-        scale = 1.15 + (0.95 - 1.15) * ((t - 0.4) / 0.3);
-      } else {
-        scale = 0.95 + (1.05 - 0.95) * ((t - 0.7) / 0.3);
-      }
-      try {
-        _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);
-      } catch (_) {}
-      if (t >= 1.0) {
-        timer.cancel();
-        // Reveal dropoff label after pin pop settles
+    _dropoffPopJob?.cancel();
+    _dropoffPopJob = _animScheduler.schedule(
+      durationMs: 500,
+      onTick: (t) {
+        double scale;
+        if (t < 0.4) {
+          scale = 0.01 + (1.15 - 0.01) * (t / 0.4);
+        } else if (t < 0.7) {
+          scale = 1.15 + (0.95 - 1.15) * ((t - 0.4) / 0.3);
+        } else {
+          scale = 0.95 + (1.05 - 0.95) * ((t - 0.7) / 0.3);
+        }
+        try {
+          _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);
+        } catch (_) {}
+      },
+      onDone: () {
+        // Reveal dropoff label after pin pop settles.
         Future.delayed(const Duration(milliseconds: 300), () {
           if (!mounted) return;
           _revealDropoffLabel();
         });
-      }
-    });
+      },
+    );
   }
 
   /// Called when the rider taps "Confirm" on the pickup overlay.
@@ -1085,32 +1081,27 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _popOutPickupPin() {
     if (_pickupPopping || _pickupAnnot == null || _pointAnnotMgr == null) return;
     _pickupPopping = true;
-    const duration = 600;
-    final start = DateTime.now();
-    _pickupPopOutTimer?.cancel();
-    _pickupPopOutTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
-      if (!mounted) { timer.cancel(); return; }
-      final elapsed = DateTime.now().difference(start).inMilliseconds;
-      final t = (elapsed / duration).clamp(0.0, 1.0);
-      double scale;
-      if (t < 0.35) {
-        // Grow: 1.05 → 1.6
-        scale = 1.05 + (1.6 - 1.05) * (t / 0.35);
-      } else {
-        // Shrink: 1.6 → 0
-        final st = (t - 0.35) / 0.65;
-        scale = 1.6 * (1.0 - st * st); // ease-in shrink
-      }
-      try {
-        _pointAnnotMgr!.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));
-      } catch (_) {}
-      if (t >= 1.0) {
-        timer.cancel();
+    _pickupPopOutJob?.cancel();
+    _pickupPopOutJob = _animScheduler.schedule(
+      durationMs: 600,
+      onTick: (t) {
+        double scale;
+        if (t < 0.35) {
+          scale = 1.05 + (1.6 - 1.05) * (t / 0.35); // grow
+        } else {
+          final st = (t - 0.35) / 0.65;
+          scale = 1.6 * (1.0 - st * st); // ease-in shrink
+        }
+        try {
+          _pointAnnotMgr!.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));
+        } catch (_) {}
+      },
+      onDone: () {
         _showPickupPin = false;
         try { _pointAnnotMgr!.delete(_pickupAnnot!); } catch (_) {}
         _pickupAnnot = null;
-      }
-    });
+      },
+    );
   }
 
   /// Animated route draw: progressively reveals the gold route line to dropoff
@@ -1367,7 +1358,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _cameraFollowTimer = null;
 
     // Remove approach route (driver→pickup) — driver is at pickup now.
-    _routeFadeTimer?.cancel();
+    _routeFadeJob?.cancel();
     if (_approachAnnot != null && _polylineAnnotMgr != null) {
       try { await _polylineAnnotMgr!.delete(_approachAnnot!); } catch (_) {}
       _approachAnnot = null;
@@ -1529,24 +1520,19 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
 
-    _routeFadeTimer?.cancel();
-    const fadeDuration = 600;
-    final startTime = DateTime.now();
-    _routeFadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
-      if (!mounted) { timer.cancel(); _routeFadeTimer = null; return; }
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
-      final opacity = 1.0 - t;
-
-      if (_remainingRouteAnnot != null) {
-        try {
-          polyMgr.update(_remainingRouteAnnot!..lineOpacity = opacity);
-        } catch (_) {}
-      }
-
-      if (t >= 1.0) {
-        timer.cancel();
-        _routeFadeTimer = null;
+    _routeFadeJob?.cancel();
+    _routeFadeJob = _animScheduler.schedule(
+      durationMs: 600,
+      onTick: (t) {
+        final opacity = 1.0 - t;
+        if (_remainingRouteAnnot != null) {
+          try {
+            polyMgr.update(_remainingRouteAnnot!..lineOpacity = opacity);
+          } catch (_) {}
+        }
+      },
+      onDone: () async {
+        _routeFadeJob = null;
         if (!mounted) return;
         if (_remainingRouteAnnot != null) {
           try {
@@ -1555,8 +1541,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           _remainingRouteAnnot = null;
         }
         _routeDrawDone = false;
-      }
-    });
+      },
+    );
   }
 
   Future<void> _updateAnnotations() async {

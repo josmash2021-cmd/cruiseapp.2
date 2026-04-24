@@ -210,7 +210,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    // Match web's max-height:60svh.
+    // Match web's max-height:60svh. ONLY kicks in when the content would
+    // overflow — Container uses `constraints.maxHeight` but because the
+    // inner Column is `MainAxisSize.min`, the sheet shrinks to fit its
+    // content and never reserves blank space. SingleChildScrollView
+    // wrapper disabled — the sheet never needs to scroll on phones that
+    // fit the grid + detail + actions (verified on iPhone SE 568pt).
     final sheetMaxH = screenH * 0.60;
 
     return Positioned(
@@ -223,35 +228,38 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         opacity: 1.0,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
-        child: Container(
+        child: ConstrainedBox(
+          // Soft ceiling only — does NOT reserve space.
           constraints: BoxConstraints(maxHeight: sheetMaxH),
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.50),
-                blurRadius: 40,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              physics: const ClampingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(14, 14, 14, 14 + bottomPad),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1F),
+              borderRadius: BorderRadius.circular(20),
+              border:
+                  Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.50),
+                  blurRadius: 40,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              minimum: EdgeInsets.only(bottom: bottomPad),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                   // Payment-declined banner (kept as a top slot — it's
                   // critical domain info and the web shows a similar
                   // dismissible row above the header).
@@ -429,6 +437,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
           ),
         ),
+      ),
       ),
     );
   }

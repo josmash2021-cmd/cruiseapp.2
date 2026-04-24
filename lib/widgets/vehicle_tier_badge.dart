@@ -112,14 +112,16 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Web uses a 13×13 crown SVG directly in-flow.
               SizedBox(
-                width: widget.fontSize + 4,
-                height: widget.fontSize + 4,
+                width: 13,
+                height: 13,
                 child: CustomPaint(
                   painter: _VipCrownPainter(twinkle: _twinkle!),
                 ),
               ),
-              const SizedBox(width: 3),
+              // .vipRide__badge: gap:1px between icon and text.
+              const SizedBox(width: 1),
               Text(
                 'VIP',
                 style: TextStyle(
@@ -165,23 +167,23 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Web uses a ★ glyph at base font-size (9px) — no upscale.
           Text(
             '★',
             style: TextStyle(
               color: Colors.black,
-              fontSize: widget.fontSize + 1,
+              fontSize: widget.fontSize,
               height: 1.0,
             ),
           ),
-          const SizedBox(width: 3),
+          // .vipRide__badge: gap:1px.
+          const SizedBox(width: 1),
           Text(
             'PREMIUM',
             style: TextStyle(
               fontFamily: 'Poppins',
               color: Colors.black,
               fontSize: widget.fontSize,
-              // .vipRide__badge: font-weight 800, letter-spacing .08em
-              // (≈0.72px at font-size 9px).
               fontWeight: FontWeight.w800,
               letterSpacing: 0.72,
               height: 1.0,
@@ -217,23 +219,26 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            '✦',
-            style: TextStyle(
-              color: const Color(0xFF1A1A1A),
-              fontSize: widget.fontSize + 2,
-              height: 1.0,
+          // Web uses .vipRide__badgeIcon--lg on comfort: font-size 2.3em
+          // (≈20.7px at 9px base), line-height 1, translateY(-1.5px).
+          Transform.translate(
+            offset: const Offset(0, -1.5),
+            child: Text(
+              '✦',
+              style: TextStyle(
+                color: const Color(0xFF1A1A1A),
+                fontSize: widget.fontSize * 2.3,
+                height: 1.0,
+              ),
             ),
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 1),
           Text(
             'COMFORT',
             style: TextStyle(
               fontFamily: 'Poppins',
               color: const Color(0xFF1A1A1A),
               fontSize: widget.fontSize,
-              // .vipRide__badge: font-weight 800, letter-spacing .08em
-              // (≈0.72px at font-size 9px).
               fontWeight: FontWeight.w800,
               letterSpacing: 0.72,
               height: 1.0,

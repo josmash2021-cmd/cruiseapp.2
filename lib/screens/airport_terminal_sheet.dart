@@ -29,11 +29,12 @@ class AirportTerminalSheet extends StatefulWidget {
 
 class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     with SingleTickerProviderStateMixin {
-  // ── colours ──
+  // ── colours ── (direct port of vip-apt-sheet.css:8-26 tokens)
   static const _gold      = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
   static const _blue      = Color(0xFF4285F4);
   static const _green     = Color(0xFF34A853);
+  static const _red       = Color(0xFFEF4444);
 
   // ── animation ──
   late final AnimationController _animCtrl;
@@ -65,15 +66,25 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   @override
   void initState() {
     super.initState();
+    // Step-transition controller — drives the per-step fade out/in.
+    //   STEP_OUT_MS = 120ms  (vip-apt-sheet.js:21)
+    //   STEP_IN_MS  = 180ms  (vip-apt-sheet.js:22)
+    //   total 300ms; the web stacks them so 0→.4 is "out", .4→1 is "in".
     _animCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
     _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _animCtrl, curve: const Interval(0.0, 0.4, curve: Curves.easeOut)),
+      CurvedAnimation(
+        parent: _animCtrl,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
+      ),
     );
     _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animCtrl, curve: const Interval(0.4, 1.0, curve: Curves.easeOut)),
+      CurvedAnimation(
+        parent: _animCtrl,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+      ),
     );
   }
 
@@ -421,19 +432,22 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     required String title,
     required String subtitle,
   }) {
-    // .vrApt__dirCard (vip-apt-sheet.css:202-237)
+    // .vrApt__dirCard (vip-apt-sheet.css:202-253):
     //   padding: 20px; border-radius: 20px;
-    //   background: rgba(color, .07); border: 1px solid rgba(color, .25);
-    //   gap: 14px; icon 56×56 radius 16 bg rgba(color, .12) icon 24px;
-    //   :active scale(.985)
-    return GestureDetector(
+    //   background: rgba(color,.07); border: 1.5px solid rgba(color,.25);
+    //   gap: 14px;
+    //   .vrApt__dirIcon: 56×56, radius 16, bg rgba(color,.12), icon 24px
+    //   .vrApt__dirTitle: 16px w700
+    //   .vrApt__dirSub:   13px w500
+    //   :active transform: scale(.985)
+    return _PressScale(
       onTap: () => _selectDirection(direction),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.5),
         ),
         child: Row(
           children: [
@@ -459,7 +473,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   const SizedBox(height: 4),
                   Text(subtitle,
                       style: TextStyle(
-                          color: _textSecondary, fontSize: 13)),
+                          color: _textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -486,7 +502,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            // .vrApt__searchBox: padding 12px 14px (vip-apt-sheet.css:267)
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: _surface,
               borderRadius: BorderRadius.circular(14),
@@ -503,7 +520,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 suffixIcon: _searchQuery.isNotEmpty
                     ? GestureDetector(
                         onTap: () { _searchCtrl.clear(); _onSearchChanged(''); },
-                        child: Icon(Icons.close_rounded, color: _textSecondary, size: 18),
+                        child: Icon(Icons.close_rounded, color: _textSecondary, size: 24),
                       )
                     : null,
                 border: InputBorder.none,
@@ -648,7 +665,14 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
           Text(
             S.of(context).whichAirlineFlying,
-            style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+            // .vrApt__sectionHeader (vip-apt-sheet.css:413-417):
+//   font 12px w600, color rgba(232,197,71,.7), letter-spacing .12em
+style: TextStyle(
+  color: _gold.withValues(alpha: 0.7),
+  fontSize: 12,
+  fontWeight: FontWeight.w600,
+  letterSpacing: 1.44,
+),
           ),
           const SizedBox(height: 10),
 
@@ -661,12 +685,20 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               final terminals = ap.terminalsForAirline(airline);
               final termLabel = terminals.isNotEmpty ? terminals.first.name : '';
               final selected = _selectedAirline == airline;
+              // .vrApt__airlineTile (vip-apt-sheet.css:431-462):
+              //   padding 14px 16px → 13.5px 15.5px when selected
+              //   (border grows 1→1.5px; padding shrinks .5px so the
+              //    total card size stays identical — no layout jitter)
+              //   icon 40×40, radius 10
               return GestureDetector(
                 onTap: () => _selectAirline(airline),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: selected ? 15.5 : 16,
+                    vertical: selected ? 13.5 : 14,
+                  ),
                   decoration: BoxDecoration(
                     color: selected ? _blue.withValues(alpha: 0.12) : _surface,
                     borderRadius: BorderRadius.circular(14),
@@ -675,7 +707,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   child: Row(
                     children: [
                       Container(
-                        width: 38, height: 38,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: (selected ? _blue : _textSecondary).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
@@ -764,7 +797,12 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
           // Terminal chips
           Text(S.of(context).whichTerminalArrived,
-            style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+            style: TextStyle(
+              color: _gold.withValues(alpha: 0.7),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.44,
+            )),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8, runSpacing: 8,
@@ -777,7 +815,12 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  // .vrApt__terminalChip: padding 10px 14px → 9.5px
+                  // 13.5px when selected (border compensation)
+                  padding: EdgeInsets.symmetric(
+                    horizontal: selected ? 13.5 : 14,
+                    vertical: selected ? 9.5 : 10,
+                  ),
                   decoration: BoxDecoration(
                     color: selected ? _green.withValues(alpha: 0.12) : _surface,
                     borderRadius: BorderRadius.circular(12),
@@ -819,7 +862,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
                             margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(14),
+                            // .vrApt__doorTile: padding 14 → 13.5 selected
+                            // (border 1→1.5 compensation).
+                            padding: EdgeInsets.all(selected ? 13.5 : 14),
                             decoration: BoxDecoration(
                               color: selected
                                   ? _gold.withValues(alpha: 0.08)
@@ -936,7 +981,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           Text(
             isFrom ? S.of(context).flightNumberRequiredLabel : S.of(context).flightNumberOptional,
             style: TextStyle(
-              color: isFrom && _flightError ? Colors.red : _textSecondary,
+              color: isFrom && _flightError ? _red : _textSecondary,
               fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5,
             ),
           ),
@@ -946,7 +991,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             decoration: BoxDecoration(
               color: _surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _flightError ? Colors.red.withValues(alpha: 0.6) : _border),
+              border: Border.all(color: _flightError ? _red.withValues(alpha: 0.6) : _border),
             ),
             child: TextField(
               controller: _flightCtrl,
@@ -963,7 +1008,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           ),
           if (_flightError) ...[
             const SizedBox(height: 6),
-            Text(S.of(context).flightNumberRequiredError, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            Text(S.of(context).flightNumberRequiredError, style: const TextStyle(color: _red, fontSize: 12)),
           ],
           const SizedBox(height: 6),
           Text(S.of(context).flightTrackingNote, style: TextStyle(color: _textSecondary, fontSize: 12)),
@@ -1039,4 +1084,43 @@ class _AirportSuggestion {
   final String placeId;
   final String code;
   const _AirportSuggestion({required this.description, required this.placeId, required this.code});
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  _PressScale — reusable :active scale(.985) ease-out 120ms wrapper.
+//  Matches CSS `transition: transform 120ms cubic-bezier(0, 0, 0.58, 1);`
+//  on .vrApt__dirCard / .vrApt__airportTile / .vrApt__airlineTile.
+// ═══════════════════════════════════════════════════════════════════
+
+class _PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressScale({
+    required this.child,
+    required this.onTap,
+  });
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _pressed ? 0.985 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: const Cubic(0, 0, 0.58, 1),
+        child: widget.child,
+      ),
+    );
+  }
 }

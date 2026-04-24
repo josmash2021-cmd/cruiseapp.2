@@ -1026,8 +1026,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
   }
 
-  /// Animate gold route draw at 60fps — smooth progressive reveal.
-  /// Uses fire-and-forget updates to avoid frame-skipping from async backpressure.
+  /// Animate the gold route line as a liquid ribbon — every frame extends
+  /// the head to the exact metre along the polyline, interpolating WITHIN
+  /// the current segment so there are no visible stair-steps even at
+  /// high zoom. Frame-rate-independent, fire-and-forget updates.
   Future<void> _animateGoldRoute(List<LatLng> points, [Duration? duration]) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) {
@@ -1042,11 +1044,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Clear old route if present
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
 
-    // Pre-create the annotation with the first 2 points so the ticker
-    // never needs to await create() — only fire-and-forget update() calls.
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    // Pre-create the annotation with the first point duplicated so the
+    // ticker never awaits create() — only fire-and-forget update() calls.
+    final p0 = mapbox.Position(points[0].longitude, points[0].latitude);
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: mapbox.LineString(coordinates: [p0, p0]),
       // Warm gold — averages the web's 3-stop gradient
       // (#D4AF37 → #FFD700 → #E8C547). Solid #F0CA3E reads close to
       // the middle-weighted visual of the CSS gradient on a dark map.
@@ -1057,19 +1059,18 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // ── Distance-based interpolation for ultra-smooth curves ──
     //
-    // Instead of advancing by point count (which produces uneven speed
-    // on curves where Mapbox packs many short segments), we precompute
-    // the cumulative distance along the route and advance at constant
-    // metres-per-frame. The line never jumps or stutters, even on tight
-    // curves and near the endpoints.
+    // Precompute cumulative distance so we can advance at a constant
+    // metres-per-frame rate regardless of how tightly Mapbox packs
+    // points on curves. Then on every frame we interpolate WITHIN the
+    // current segment (lat/lng lerp between the two surrounding points)
+    // so the tip of the line lands on the exact metre, not just on the
+    // next vertex — no stair-stepping even at zoom 18+.
     //
-    // Duration adapts to route length. Short routes (few points)
-    // still get a visible draw over 2.0 s so they never flash.
-    // Long routes cap at 4.0 s so the user doesn't wait forever.
+    // Duration adapts to route length. Short routes still animate over
+    // 2.0 s so they never flash; long routes cap at 4.0 s.
     final totalMs = duration?.inMilliseconds ??
         (points.length * 16).clamp(2000, 4000);
 
-    // Pre-compute cumulative distances (meters along the polyline).
     final cumDist = <double>[0.0];
     for (int i = 1; i < points.length; i++) {
       final dlat = (points[i].latitude - points[i - 1].latitude) * 111320;
@@ -1082,8 +1083,10 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    double lastDistDrawn = 0;
-    bool updating = false;
+    // Preallocated outgoing Position list — grows as the head advances
+    // so we only allocate one trailing Position per frame instead of
+    // rebuilding the whole coordinate array from scratch.
+    final outCoords = <mapbox.Position>[p0, p0];
 
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -1093,54 +1096,78 @@ extension _RideRequestMap on _RideRequestScreenState {
         if (!completer.isCompleted) completer.complete();
         return;
       }
-      if (updating) return;
 
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      // easeOutCubic: starts drawing IMMEDIATELY (fast at the start)
-      // and decelerates smoothly at the end. This fixes short routes
-      // where easeInOutCubic's slow start made the line appear frozen
-      // for the first 15% of the animation.
+      // easeOutCubic: moves fast from frame 0 so the line starts
+      // drawing the instant the ticker fires; eases smoothly into
+      // the final metres. No "frozen start" feel.
       final eased = Curves.easeOutCubic.transform(progress);
       final targetDist = eased * totalDist;
 
-      // Advance threshold scales with total distance: 1m for short
-      // routes (<500m), up to 5m for long routes. Prevents IPC
-      // thrashing while keeping every curve segment smooth.
-      final advanceThreshold = (totalDist * 0.005).clamp(1.0, 5.0);
-      if ((targetDist - lastDistDrawn).abs() < advanceThreshold && progress < 1.0) return;
-      lastDistDrawn = targetDist;
-
-      // Find the first point index where cumDist >= targetDist.
-      //
-      // BUG FIX: the previous version set `idx = i + 1` unconditionally
-      // inside the loop, so even when targetDist hadn't been reached
-      // yet the idx kept growing until the loop ended at cumDist.length.
-      // That made the polyline snap to the full route instead of
-      // animating progressively. The correct behaviour is: stop at the
-      // FIRST index whose cumulative distance passes targetDist.
-      int idx = cumDist.length; // all points drawn if target ≥ total
-      for (int i = 1; i < cumDist.length; i++) {
-        if (cumDist[i] >= targetDist) {
-          idx = i + 1;
-          break;
+      // Locate the segment that contains targetDist using binary
+      // search — O(log n) per frame instead of O(n).
+      int lo = 0;
+      int hi = cumDist.length - 1;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (cumDist[mid] < targetDist) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
         }
       }
-      idx = idx.clamp(2, points.length);
+      // lo is the first index whose cumDist >= targetDist. The head of
+      // the line falls on the segment [lo-1, lo] at fraction t.
+      final int fullIdx = math.max(lo, 1);
+      final double prevD = cumDist[fullIdx - 1];
+      final double segLen = cumDist[fullIdx] - prevD;
+      final double t = segLen > 0.01
+          ? ((targetDist - prevD) / segLen).clamp(0.0, 1.0)
+          : 0.0;
+
+      // Lerp lat/lng between the surrounding two anchors — this is the
+      // key to smoothness. The visible tip moves at constant metres-
+      // per-second, not one-vertex-per-frame.
+      final a = points[fullIdx - 1];
+      final b = points[fullIdx];
+      final headLat = a.latitude + (b.latitude - a.latitude) * t;
+      final headLng = a.longitude + (b.longitude - a.longitude) * t;
 
       if (_routeAnnot != null) {
-        final subset = points.sublist(0, idx);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        updating = true;
-        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+        // Rebuild outCoords to exactly [p0 … points[fullIdx-1], head].
+        // We keep all fully-passed vertices as-is and replace only the
+        // moving tip each frame — cheap and stable.
+        if (outCoords.length != fullIdx + 1) {
+          outCoords
+            ..clear()
+            ..addAll([
+              for (int i = 0; i < fullIdx; i++)
+                mapbox.Position(points[i].longitude, points[i].latitude),
+              mapbox.Position(headLng, headLat),
+            ]);
+        } else {
+          outCoords[outCoords.length - 1] =
+              mapbox.Position(headLng, headLat);
+        }
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: outCoords);
+        // Fire-and-forget: don't gate subsequent frames on Mapbox's
+        // native bridge resolving the update — any dropped frame is
+        // invisible because the next one already has the latest head.
+        polyMgr.update(_routeAnnot!).catchError((_) {});
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
-        if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
+        // Final exact snap — head at the real dropoff endpoint.
+        if (_routeAnnot != null) {
+          final fullCoords = [
+            for (final p in points) mapbox.Position(p.longitude, p.latitude),
+          ];
+          _routeAnnot!.geometry =
+              mapbox.LineString(coordinates: fullCoords);
+          polyMgr.update(_routeAnnot!).catchError((_) {});
+        }
         if (!completer.isCompleted) completer.complete();
       }
     });

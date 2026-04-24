@@ -52,6 +52,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   final _flightCtrl  = TextEditingController();
   final _searchCtrl  = TextEditingController();
+  // Dedicated controller for the airport list scrollbar (step 1 — 40+ rows).
+  final _airportListScrollCtrl = ScrollController();
   String _searchQuery = '';
   bool   _flightError = false;
 
@@ -93,6 +95,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     _animCtrl.dispose();
     _flightCtrl.dispose();
     _searchCtrl.dispose();
+    _airportListScrollCtrl.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -270,6 +273,15 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       decoration: BoxDecoration(
         color: _bg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        // .vrApt__sheet (vip-apt-sheet.css:69):
+        //   box-shadow: 0 -8px 40px rgba(0,0,0,.5)
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 40,
+            offset: const Offset(0, -8),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -541,11 +553,21 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         ),
         const SizedBox(height: 10),
         Expanded(
-          child: ListView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-            children: [
-              ...filtered.map((a) => _buildAirportTile(a)),
+          // .vrApt__airportList::-webkit-scrollbar (vip-apt-sheet.css:169):
+          //   width: 3px; thumb rgba(255,255,255,.15).
+          // Flutter equivalent — a thin always-visible scrollbar.
+          child: RawScrollbar(
+            controller: _airportListScrollCtrl,
+            thumbColor: Colors.white.withValues(alpha: 0.15),
+            thickness: 3,
+            radius: const Radius.circular(2),
+            thumbVisibility: true,
+            child: ListView(
+              controller: _airportListScrollCtrl,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              children: [
+                ...filtered.map((a) => _buildAirportTile(a)),
               if (_suggestions.isNotEmpty && filtered.isNotEmpty) _buildSeparator(),
               ..._suggestions.map((s) => _buildSuggestionTile(s)),
               if (_loadingSuggestions)
@@ -565,7 +587,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                     Text(S.of(context).noAirportsFound, style: TextStyle(color: _textSecondary, fontSize: 14)),
                   ]),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
@@ -955,23 +978,25 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: dirColor.withValues(alpha: 0.18)),
             ),
+            // .vrApt__summaryRow (vip-apt-sheet.css:619-632):
+            //   padding: 4px 0 per row — compact spacing, no gaps.
             child: Column(
               children: [
                 _summaryRow(Icons.flight_rounded, S.of(context).airport, '${ap.code} — ${ap.name}', dirColor),
                 if (_selectedTerminal != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   _summaryRow(Icons.door_front_door_outlined, S.of(context).terminalLabel, _selectedTerminal!.name, dirColor),
                 ],
                 if (_selectedAirline != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   _summaryRow(Icons.airplanemode_active_rounded, S.of(context).airlineLabel, _selectedAirline!, dirColor),
                 ],
                 if (_selectedArrivalDoor != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   _summaryRow(Icons.pin_drop_rounded, S.of(context).arrivalDoorLabel, _selectedArrivalDoor!, dirColor),
                 ],
                 if (ap.flatRateSurcharge != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   _summaryRow(Icons.attach_money_rounded, S.of(context).airportSurchargeLabel, '+\$${ap.flatRateSurcharge!.toStringAsFixed(2)}', _gold),
                 ],
               ],
@@ -1039,8 +1064,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           Text(S.of(context).flightTrackingNote, style: TextStyle(color: _textSecondary, fontSize: 12)),
           const SizedBox(height: 24),
 
-          // Confirm button
-          GestureDetector(
+          // Confirm button — .vrApt__confirmBtn:active { transform:
+          // scale(.985) } (vip-apt-sheet.css:715). Wrap in _PressScale
+          // to match that press feedback.
+          _PressScale(
             onTap: _confirm,
             child: Container(
               width: double.infinity, height: 54,

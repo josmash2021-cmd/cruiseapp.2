@@ -798,7 +798,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
 
     _tiltCtrl!.addListener(onUnifiedTick);
-    _tiltCtrl!.forward(from: 0);
+    // Capture the TickerFuture ONCE so we never call forward() twice
+    // (a second forward() restarts the animation from 0, doubling the
+    // cinematic duration and delaying _sheetCtrl.forward() ~2x).
+    final tiltFuture = _tiltCtrl!.forward(from: 0);
 
     // Dispose old bearing controller — no longer needed, unified handles it.
     _bearingCtrl?.dispose();
@@ -826,7 +829,7 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // ── Wait for BOTH tilt and route to finish ──
     await Future.wait([
-      _tiltCtrl!.forward(),
+      tiltFuture,
       routeFuture,
     ]);
     if (!mounted) { _cinematicRunning = false; return; }

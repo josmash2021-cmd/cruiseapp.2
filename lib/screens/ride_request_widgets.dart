@@ -210,61 +210,67 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
 
-    // Sheet is content-sized. No ConstrainedBox, no ScrollView, no
-    // maxHeight. The Column(mainAxisSize.min) sizes to its children:
-    //   • Title row   ~28
-    //   • gap 12
-    //   • Grid row    ~120 (cards with car image + name + badge)
-    //   • (when option != null) gap 14 + detail 76
-    //   • (when option != null) gap 12 + payment 52 + gap 8 + request 54
-    // Total empty: ~160. With selection: ~410. Padding 14+14 + safe
-    // area bottom. Comfortably fits above the tab bar on every phone
-    // from iPhone SE (568pt) up.
-    //
-    // Matching the web: the sheet never reserves 60svh of blank space
-    // — it grows with its content, just like .vipRide__sheet does.
+    // Sheet uses Align(bottomCenter) + IntrinsicHeight inside a
+    // Positioned that spans the full bottom area. This guarantees
+    // the Column(mainAxisSize.min) intrinsic height propagates up
+    // through DecoratedBox → ClipRRect → SafeArea without any parent
+    // collapsing to 0. The content sizes itself naturally and the
+    // sheet never reserves blank space.
     return Positioned(
       left: 8,
       right: 8,
       bottom: 10,
-      child: AnimatedOpacity(
-        opacity: 1.0,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-        // DecoratedBox draws the outer background + shadows WITHOUT
-        // clipping (so the gold + black box-shadows extend beyond the
-        // sheet edges like the web widget). The inner ClipRRect clips
-        // only the child content to the radius, leaving the shadow
-        // untouched.
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
-            borderRadius: BorderRadius.circular(20),
-            border:
-                Border.all(color: Colors.white.withValues(alpha: 0.06)),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.50),
-                blurRadius: 40,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
+      // No height — the child Align + Column(min) decides the height
+      // but we bound it to a sensible max so very tall content
+      // doesn't escape the screen on small phones.
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.75,
+        ),
+        child: AnimatedOpacity(
+          opacity: 1.0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          // Align bottomCenter makes the Column(min) hug the bottom
+          // and take ONLY its intrinsic height — the remainder stays
+          // transparent instead of being claimed by the decoration.
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                // Container with decoration (bg + shadow + border) that
+                // sizes to its child (Column.min). The Container uses
+                // its decoration shape (borderRadius) for both painting
+                // AND clipBehavior to keep the content inside.
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1F),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.06),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color:
+                          const Color(0xFFE8C547).withValues(alpha: 0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.50),
+                      blurRadius: 40,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                   // Payment-declined banner (kept as a top slot — it's
                   // critical domain info and the web shows a similar
                   // dismissible row above the header).
@@ -445,6 +451,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ],
                 ],
+                    ),
+                  ),
                 ),
               ),
             ),

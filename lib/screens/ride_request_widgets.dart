@@ -210,12 +210,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    // Match web's max-height:60svh. ONLY kicks in when the content would
-    // overflow — Container uses `constraints.maxHeight` but because the
-    // inner Column is `MainAxisSize.min`, the sheet shrinks to fit its
-    // content and never reserves blank space. SingleChildScrollView
-    // wrapper disabled — the sheet never needs to scroll on phones that
-    // fit the grid + detail + actions (verified on iPhone SE 568pt).
+    // Match web's max-height:60svh. The content (grid + detail + actions)
+    // fits comfortably on iPhone 11+ / Android ≥ 640dp, but on iPhone SE
+    // (568pt) or compact Androids (≤ 600dp) the detail + actions stack
+    // would overflow. The inner Column is wrapped in a
+    // SingleChildScrollView so when content > maxHeight, the body
+    // scrolls internally instead of RenderFlex overflowing.
     final sheetMaxH = screenH * 0.60;
 
     return Positioned(
@@ -229,7 +229,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
         child: ConstrainedBox(
-          // Soft ceiling only — does NOT reserve space.
+          // Soft ceiling only — does NOT reserve space. Because the
+          // child (Container + SafeArea + ScrollView + Column(min))
+          // shrinks to content when under the ceiling, the sheet auto-
+          // sizes itself without leaving blank space.
           constraints: BoxConstraints(maxHeight: sheetMaxH),
           child: Container(
             clipBehavior: Clip.antiAlias,
@@ -251,11 +254,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ],
             ),
+            // SafeArea handles bottom inset on home-indicator devices.
+            // SingleChildScrollView lets the sheet scroll on small
+            // phones (iPhone SE 568pt) where content + actions can
+            // exceed 60svh. With loose constraints + Column(min)
+            // the scroll view reports its size as child's intrinsic
+            // height capped at maxHeight — so no blank space below
+            // the Request button when content fits comfortably.
             child: SafeArea(
               top: false,
-              minimum: EdgeInsets.only(bottom: bottomPad),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -299,19 +309,26 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
                   // .vipRide__pricesHeader — centered title row with
                   // optional Airport / 10% OFF pills to the side.
+                  // Title is Flexible + ellipsis so it truncates instead
+                  // of overflowing when both pills are active on narrow
+                  // screens (iPhone SE with airport + promo).
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        widget.fastRide
-                            ? S.of(context).fastRideLabel
-                            : S.of(context).chooseARide,
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: -0.6, // -.03em × 20px
+                      Flexible(
+                        child: Text(
+                          widget.fastRide
+                              ? S.of(context).fastRideLabel
+                              : S.of(context).chooseARide,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: -0.6, // -.03em × 20px
+                          ),
                         ),
                       ),
                       if (_ctrl.state.isAirportTrip) ...[

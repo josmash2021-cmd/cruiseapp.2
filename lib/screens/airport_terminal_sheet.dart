@@ -186,7 +186,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       setState(() { _suggestions = []; _loadingSuggestions = false; });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 450), () => _fetchSuggestions(q));
+    // 120ms matches the web's vip-apt-sheet.js debounce so the list
+    // refreshes the moment the user stops typing.
+    _debounce = Timer(const Duration(milliseconds: 120), () => _fetchSuggestions(q));
   }
 
   Future<void> _fetchSuggestions(String q) async {
@@ -788,37 +790,74 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             }).toList(),
           ),
 
-          // Arrival doors — revealed after terminal selected
-          if (_selectedTerminal != null) ...[
-            const SizedBox(height: 20),
-            Text(S.of(context).selectArrivalDoor,
-              style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-            const SizedBox(height: 10),
-            ..._selectedTerminal!.arrivalDoors.map((door) {
-              final selected = _selectedArrivalDoor == door;
-              return GestureDetector(
-                onTap: () => _selectArrivalDoor(door),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: selected ? _gold.withValues(alpha: 0.08) : _surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: selected ? _gold.withValues(alpha: 0.45) : _border, width: selected ? 1.5 : 1),
-                  ),
-                  child: Row(
+          // Arrival doors — revealed after terminal selected.
+          // Fade-in 200ms ease-out matches .vrApt__doorSection
+          // animation: vrApt-fadeIn 200ms ease-out on the web.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            switchInCurve: Curves.easeOut,
+            transitionBuilder: (child, anim) =>
+                FadeTransition(opacity: anim, child: child),
+            child: _selectedTerminal == null
+                ? const SizedBox.shrink(key: ValueKey('no-doors'))
+                : Column(
+                    key: ValueKey('doors-${_selectedTerminal!.name}'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.pin_drop_rounded, color: selected ? _gold : _textSecondary, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(door, style: TextStyle(color: selected ? _gold : _textPrimary, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 14))),
-                      if (selected) Icon(Icons.check_circle_rounded, color: _gold, size: 20),
+                      const SizedBox(height: 20),
+                      Text(S.of(context).selectArrivalDoor,
+                          style: TextStyle(
+                              color: _textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 10),
+                      ..._selectedTerminal!.arrivalDoors.map((door) {
+                        final selected = _selectedArrivalDoor == door;
+                        return GestureDetector(
+                          onTap: () => _selectArrivalDoor(door),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? _gold.withValues(alpha: 0.08)
+                                  : _surface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: selected
+                                      ? _gold.withValues(alpha: 0.45)
+                                      : _border,
+                                  width: selected ? 1.5 : 1),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.pin_drop_rounded,
+                                    color: selected ? _gold : _textSecondary,
+                                    size: 18),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                    child: Text(door,
+                                        style: TextStyle(
+                                            color: selected
+                                                ? _gold
+                                                : _textPrimary,
+                                            fontWeight: selected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                            fontSize: 14))),
+                                if (selected)
+                                  Icon(Icons.check_circle_rounded,
+                                      color: _gold, size: 20),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
                     ],
                   ),
-                ),
-              );
-            }),
-          ],
+          ),
         ],
       ),
     );

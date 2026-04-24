@@ -347,7 +347,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         });
       }
     });
-    _miniDot.build(() {
+    _miniDot.build(this, () {
       if (mounted) _updateMiniMapAnnotation();
     });
     _checkDriversOnline();

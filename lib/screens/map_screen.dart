@@ -237,8 +237,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   LatLng? _prevDriverPosition; // for smooth interpolation
   double _driverBearing = 0; // bearing toward destination
   DateTime? _lastDriverMarkerRebuild;
-  // SmoothMotion replaces the old AnimationController approach
-  SmoothMotion? _driverMotion;
+  // LegacySmoothMotion replaces the old AnimationController approach
+  LegacySmoothMotion? _driverMotion;
   int _driverSnapIdx = 0;
   List<LatLng> _driverRoutePoints = [];
   String _lastDriverRoutePhase = ''; // 'driver_en_route' or 'in_trip'
@@ -324,7 +324,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     // Pickup annotation set after map is created
     _pickupFocus.addListener(_handleAddressFocusChange);
     _dropoffFocus.addListener(_handleAddressFocusChange);
-    _driverMotion = SmoothMotion(
+    _driverMotion = LegacySmoothMotion(
       onTick: _onDriverMotionTick,
       lerpFactor: 0.10,
       enablePrediction: false,
@@ -332,7 +332,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _driverMotion!.start(this);
     _loadPinIcons();
     // Car icon loading removed - no car markers on rider map
-    _goldDot.build(() { if (mounted) _updateGoldDotAnnotation(); });
+    _goldDot.build(this, () { if (mounted) _updateGoldDotAnnotation(); });
     // Precache car images for the ride progress bar
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

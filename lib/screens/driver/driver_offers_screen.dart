@@ -39,7 +39,7 @@ class DriverOffersScreen extends StatefulWidget {
 }
 
 class _DriverOffersScreenState extends State<DriverOffersScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _dark = Color(0xFF111116);
   static const _card = Color(0xFF1C1C24);
@@ -73,7 +73,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
       end: 1.0,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
-    _goldDot.build(() { if (mounted) setState(() {}); });
+    _goldDot.build(this, () { if (mounted) setState(() {}); });
     _initLocation();
     _startCountdownTimer();
   }

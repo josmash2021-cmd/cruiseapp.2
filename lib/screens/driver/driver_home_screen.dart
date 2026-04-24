@@ -207,7 +207,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
 
     if (widget.returnFromTrip) _isStillOnline = true;
-    _goldDot.build(() {
+    _goldDot.build(this, () {
       // Update the Mapbox annotation directly — no setState needed (avoids rebuild storm)
       if (mounted) _syncDotAnnotation();
     });

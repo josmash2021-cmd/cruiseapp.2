@@ -2,11 +2,13 @@ import 'dart:math' as math;
 import 'package:flutter/scheduler.dart';
 import '../models/lat_lng.dart';
 
-/// Smoothly interpolates between raw GPS positions so the driver marker
-/// doesn't jump. Uses **time-based** exponential decay so the animation is
-/// frame-rate independent and buttery smooth at any refresh rate.
-class SmoothMotion {
-  SmoothMotion({
+/// DEPRECATED — legacy exponential-decay smoother kept only for
+/// [map_screen.dart] and [driver_nav_screen.dart] which still use the
+/// old `onTick`-driven API. New code MUST use [SmoothMotion] from
+/// `lib/utils/smooth_motion.dart` (constant-velocity, no decay). See
+/// CLAUDE.md rule #13.
+class LegacySmoothMotion {
+  LegacySmoothMotion({
     required this.onTick,
     this.lerpFactor = 0.22,          // higher = snappier catch-up
     this.enablePrediction = true,

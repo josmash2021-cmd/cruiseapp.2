@@ -101,7 +101,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // ── Navigation engine ────────────────────────────────────────────────────
   late final NavStateMachine _sm;
   late final NavigationService _navService;
-  late final SmoothMotion _motion;
+  late final LegacySmoothMotion _motion;
 
   // ── Map ─────────────────────────────────────────────────────────────────────
   final _mapKey = GlobalKey();
@@ -230,7 +230,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Navigation engine
     _navService = NavigationService();
     _sm = NavStateMachine(onPhaseChanged: _onPhaseChanged);
-    _motion = SmoothMotion(onTick: _onMotionTick);
+    _motion = LegacySmoothMotion(onTick: _onMotionTick);
     _motion.start(this);
     _motion.teleport(_pos, _bearing);
 
@@ -459,7 +459,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       setState(() {});
     }
 
-    // Camera: use setCamera (instant) since SmoothMotion already interpolates.
+    // Camera: use setCamera (instant) since LegacySmoothMotion already interpolates.
     if (_cameraFollowing && !_isOverview) {
       final ahead = _lookaheadPoint(pos, bearing, 120);
       _map?.setCamera(

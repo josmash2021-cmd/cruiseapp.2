@@ -302,7 +302,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navCarIconBytes = results[2] as Uint8List?;
     // results[3] is void (_loadDriverPhoto sets _driverPhotoImage internally)
     _goldPinBytes = results[4] as Uint8List?;
-    await _goldDot.build(() { if (mounted) _updateDriverAnnotation(); });
+    await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
     if (mounted) _setState(() {});
   }
 

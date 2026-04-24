@@ -309,7 +309,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   void _startPolling() {
     _pollTimer?.cancel();
     int pollAttempts = 0;
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+    // Fallback poll at 2 s — fast enough that if the Firestore listener is
+    // briefly disconnected (cold start, network flap) the rider still sees
+    // the dispatch approval within ~2 s. FCM push is the primary path;
+    // Firestore listener is the secondary; this poll is the final safety
+    // net. Backend handler is cheap (single indexed SELECT).
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       pollAttempts++;
       try {
         final result = await ApiService.getVerificationStatus();

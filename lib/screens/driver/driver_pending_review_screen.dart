@@ -333,7 +333,11 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
   /// Polling fallback — API call every 10s + Firestore re-check.
   void _startPolling(int userIdInt) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    // Fallback poll at 2 s — fast enough that if the Firestore listener
+    // misses the dispatch approval (cold start, network flap) the driver
+    // still sees it within ~2 s. FCM push is primary, Firestore is
+    // secondary, this poll is the safety net.
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (!mounted || _navigating) {
         _pollTimer?.cancel();
         return;

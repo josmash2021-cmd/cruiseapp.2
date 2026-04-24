@@ -551,10 +551,15 @@ Future<void> heavyInit() async {
               'driver_arriving', 'driver_arrived', 'arrived',
               'completed', 'arrived_dropoff',
               'scheduled_claimed', 'scheduled_driver_cancelled',
+              // Verification decision — rider must see their account was
+              // approved/rejected the second dispatch acts on it.
+              'rider_approved', 'rider_rejected',
             };
             const driverInAppTypes = {
               'trip_offer', 'new_offer',
               'rider_cancelled', 'scheduled_cancelled', 'scheduled_available',
+              // Driver verification decision from dispatch.
+              'driver_approved', 'driver_rejected',
             };
 
             // Chat messages: show in-app only for drivers, suppress for riders (badge shows)

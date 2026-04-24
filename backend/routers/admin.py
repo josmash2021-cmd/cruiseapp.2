@@ -594,6 +594,37 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
 
+    # Fire-and-forget FCM push so the user's device sees the decision
+    # instantly, even when the app is backgrounded or the Firestore
+    # listener is not attached (e.g. home screen after reinstall).
+    # Matches the /auth/dispatch-approve flow for drivers.
+    try:
+        if user.fcm_token:
+            is_driver = (user.role or "") == "driver"
+            if action == "approve":
+                title = "You're Approved! 🎉" if is_driver else "Account Verified ✓"
+                body = (
+                    "Welcome to the Cruise family! Open the app to start driving."
+                    if is_driver
+                    else "Your identity has been verified. You can now request rides."
+                )
+                payload_type = "driver_approved" if is_driver else "rider_approved"
+            else:
+                title = "Verification Update"
+                body = reason or "Your verification was not approved. Please try again."
+                payload_type = "driver_rejected" if is_driver else "rider_rejected"
+            asyncio.create_task(
+                _send_fcm_push(
+                    user.fcm_token,
+                    title,
+                    body,
+                    {"type": payload_type, "user_id": str(user_id)},
+                )
+            )
+            logging.info("[ADMIN-VERIFY] FCM push queued for user %d (%s)", user_id, action)
+    except Exception as e:
+        logging.warning("[ADMIN-VERIFY] FCM push failed: %s", e)
+
     _security_audit_log("ADMIN_VERIFICATION", "admin", f"user_id={user_id} action={action} reason={reason}")
     return {
         "user_id": user_id,

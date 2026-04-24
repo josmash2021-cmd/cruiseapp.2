@@ -45,7 +45,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final s = S.of(context);
-    final now = DateTime.now();
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -98,8 +97,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
                     floatController: _floatCtl,
                     floatPhase: 0,
                     imageAsset: 'assets/images/ride_type_airport.png',
-                    imageBuilder: (img) => img,
-                    badgeIcon: Icons.arrow_forward_rounded,
                     title: s.airportLabel,
                     subtitle: s.airportSubtitle,
                     onTap: () => Navigator.pop(context, 'airport'),
@@ -108,7 +105,7 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
 
                 const SizedBox(height: 32),
 
-                // ─── Schedule card (with dynamic date overlay) ───
+                // ─── Schedule card — render the PNG as-is (no overlay) ───
                 _StaggeredEntry(
                   controller: _entryCtl,
                   delay: 0.18,
@@ -116,11 +113,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
                     floatController: _floatCtl,
                     floatPhase: math.pi,
                     imageAsset: 'assets/images/ride_type_schedule.png',
-                    imageBuilder: (img) => _CalendarImageWithDate(
-                      base: img,
-                      date: now,
-                    ),
-                    badgeIcon: Icons.access_time_rounded,
                     title: s.schedule,
                     subtitle: s.scheduleSubtitle,
                     onTap: () => Navigator.pop(context, 'schedule'),
@@ -219,8 +211,6 @@ class _RideTypeCard extends StatefulWidget {
   final AnimationController floatController;
   final double floatPhase; // radians — offset the sine wave per card
   final String imageAsset;
-  final Widget Function(Widget image) imageBuilder;
-  final IconData badgeIcon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -229,8 +219,6 @@ class _RideTypeCard extends StatefulWidget {
     required this.floatController,
     required this.floatPhase,
     required this.imageAsset,
-    required this.imageBuilder,
-    required this.badgeIcon,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -240,93 +228,112 @@ class _RideTypeCard extends StatefulWidget {
   State<_RideTypeCard> createState() => _RideTypeCardState();
 }
 
-class _RideTypeCardState extends State<_RideTypeCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pressCtl;
+class _RideTypeCardState extends State<_RideTypeCard> {
   bool _pressed = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _pressCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 140),
-      value: 1.0,
-    );
-  }
-
-  @override
-  void dispose() {
-    _pressCtl.dispose();
-    super.dispose();
-  }
-
   void _onTapDown(TapDownDetails _) {
-    _pressCtl.animateTo(0.94, curve: Curves.easeOut);
     setState(() => _pressed = true);
   }
 
   void _onTapCancel() {
-    _pressCtl.animateTo(1.0, curve: Curves.easeOut);
     setState(() => _pressed = false);
   }
 
   void _onTapUp(TapUpDetails _) {
-    _pressCtl.animateTo(1.0, curve: Curves.easeOut);
     setState(() => _pressed = false);
     widget.onTap();
   }
 
   @override
   Widget build(BuildContext context) {
+    // .vipRide__laterCard--v
+    //   display:flex; flex-direction:column; align-items:center;
+    //   justify-content:center; text-align:center;
+    //   gap:10px; padding:10px 16px;
+    //   border-radius:22px; background:transparent; border:none;
+    //   :active { transform: scale(.97); opacity: .85; }
     return GestureDetector(
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
       onTapCancel: _onTapCancel,
       child: AnimatedBuilder(
-        animation: Listenable.merge([widget.floatController, _pressCtl]),
+        animation: widget.floatController,
         builder: (_, __) {
-          final floatT =
-              math.sin(widget.floatController.value * 2 * math.pi +
-                  widget.floatPhase);
-          // ±3 px vertical float
+          final floatT = math.sin(
+              widget.floatController.value * 2 * math.pi + widget.floatPhase);
+          // ±3 px vertical float (idle breathing)
           final dy = 3.0 * floatT;
-          final scale = _pressCtl.value;
 
-          return Transform.scale(
-            scale: scale,
-            child: Column(
-              children: [
-                // ─── Image block (132×132) with gold badge & float ───
-                Transform.translate(
-                  offset: Offset(0, dy),
-                  child: _buildImageBlock(),
+          return AnimatedScale(
+            scale: _pressed ? 0.97 : 1.0,
+            duration: const Duration(milliseconds: 130),
+            child: AnimatedOpacity(
+              opacity: _pressed ? 0.85 : 1.0,
+              duration: const Duration(milliseconds: 130),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // .vipRide__laterCard__icon
+                    //   width:112; height:112; border-radius:26;
+                    //   background:transparent; overflow:hidden;
+                    Transform.translate(
+                      offset: Offset(0, dy),
+                      child: _buildImageBlock(),
+                    ),
+                    const SizedBox(height: 10),
+                    // .vipRide__laterCard__title
+                    //   font-family: Poppins;
+                    //   font-size: 22; font-weight: 700; color: #fff;
+                    //   letter-spacing: -.025em; line-height: 1.2;
+                    //   text-shadow:
+                    //     0 0 14px rgba(232,197,71,.55),
+                    //     0 2px 6px rgba(232,197,71,.35)
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.55,
+                        height: 1.2,
+                        shadows: [
+                          Shadow(
+                            color: Color(0x8CE8C547),
+                            blurRadius: 14,
+                          ),
+                          Shadow(
+                            color: Color(0x59E8C547),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // .vipRide__laterCard__sub
+                    //   font-size: 13; color: rgba(255,255,255,.5);
+                    //   line-height: 1.45; max-width: 240; font-weight: 400;
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 240),
+                      child: Text(
+                        widget.subtitle,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          height: 1.45,
+                          letterSpacing: 0.065,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
-                // ─── Title ───
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                // ─── Subtitle ───
-                Text(
-                  widget.subtitle,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+              ),
             ),
           );
         },
@@ -335,189 +342,20 @@ class _RideTypeCardState extends State<_RideTypeCard>
   }
 
   Widget _buildImageBlock() {
-    const dim = 132.0;
+    // 112×112 transparent container, radius 26, overflow hidden.
+    const dim = 112.0;
     return SizedBox(
-      width: dim + 16,
-      height: dim + 16,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Glow behind the image (intensifies on press)
-          AnimatedOpacity(
-            opacity: _pressed ? 0.55 : 0.30,
-            duration: const Duration(milliseconds: 220),
-            child: Container(
-              width: dim + 10,
-              height: dim + 10,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x40E8C547),
-                    blurRadius: 32,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Card itself
-          Container(
-            width: dim,
-            height: dim,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1A1A1A), Color(0xFF0B0B0B)],
-              ),
-              borderRadius: BorderRadius.circular(26),
-              border: Border.all(
-                color: _pressed
-                    ? const Color(0xFFE8C547).withValues(alpha: 0.55)
-                    : Colors.white.withValues(alpha: 0.06),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: widget.imageBuilder(
-                Image.asset(widget.imageAsset, fit: BoxFit.contain),
-              ),
-            ),
-          ),
-          // Gold badge (top-right)
-          Positioned(
-            top: 4,
-            right: 4,
-            child: _GoldBadge(icon: widget.badgeIcon),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  Gold circular badge with shadow (top-right corner)
-// ═══════════════════════════════════════════════════════════════════
-
-class _GoldBadge extends StatelessWidget {
-  final IconData icon;
-  const _GoldBadge({required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
+      width: dim,
+      height: dim,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: Image.asset(
+          widget.imageAsset,
+          fit: BoxFit.contain,
+          width: dim,
+          height: dim,
         ),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x66E8C547),
-            blurRadius: 10,
-            spreadRadius: 1,
-          ),
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
       ),
-      child: Icon(icon, color: Colors.black87, size: 16),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  Calendar image with dynamic month+day overlay
-//  The PNG shows "APR 17" — we cover that region and draw today's
-//  month and day on top so the card always reflects the current date.
-// ═══════════════════════════════════════════════════════════════════
-
-class _CalendarImageWithDate extends StatelessWidget {
-  final Widget base;
-  final DateTime date;
-  const _CalendarImageWithDate({required this.base, required this.date});
-
-  static const _months = [
-    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final month = _months[date.month - 1];
-    final day = date.day.toString();
-
-    return LayoutBuilder(
-      builder: (_, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
-        // The PNG has a dark top strip (~24% of height) where "APR" sits,
-        // and the big white area below shows "17". We re-render both so
-        // they stay in sync with the current date.
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            // Base calendar PNG
-            Positioned.fill(child: base),
-
-            // Month label — covers the "APR" strip on the PNG
-            Positioned(
-              top: h * 0.15,
-              left: w * 0.12,
-              child: Text(
-                month,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  height: 1.0,
-                  shadows: [
-                    Shadow(color: Colors.black, blurRadius: 0.5),
-                  ],
-                ),
-              ),
-            ),
-
-            // Day number — sits over the "17" on the PNG
-            Positioned(
-              top: h * 0.48,
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  day,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFF1A1A1A),
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    height: 1.0,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

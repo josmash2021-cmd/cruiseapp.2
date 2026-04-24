@@ -583,10 +583,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     if (_cinematicRunning) return;
-    // Wait for the real road-snapped route — the 2-point estimated
-    // placeholder would draw as a diagonal through buildings until
-    // Directions resolves. Controller will re-notify once it has ≥3.
-    if (s.route!.points.length < 3) return;
+    // NOTE: We USED to bail here when the route had <3 points ("estimated"
+    // placeholder). That blocked the whole cinematic — and with it
+    // _sheetCtrl.forward() — so the "Choose a vehicle" sheet rendered
+    // empty. Cinematic and polyline are now separated:
+    //   • _startCinematicSequence always runs the tilt + pin reveal
+    //     + sheet fade-in so the rider sees the bottom sheet right away.
+    //   • The gold polyline inside that sequence skips itself when
+    //     pts.length < 3, then the controller's real-route branch
+    //     redraws it as soon as Directions returns ≥3 points.
     // Claim the lock BEFORE resetting so a second _onStateChange that
     // fires between _resetCinematic() and _startCinematicSequence()
     // sees _cinematicRunning == true and bails. This was the cause of
@@ -647,8 +652,10 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _replayCinematicIfRouteAvailable() {
     if (_cinematicDone || _cinematicRunning) return;
     final route = _ctrl.state.route;
-    // Need ≥3 points — 2 is the estimated straight-line placeholder.
-    if (route == null || route.points.length < 3) return;
+    // Accept even the 2-point estimated route — cinematic runs, only the
+    // gold polyline skips inside _startCinematicSequence (pts.length < 3).
+    // Ensures the sheet always appears even if Directions is slow/down.
+    if (route == null || route.points.isEmpty) return;
     final pts = _capRouteEndpoints(List<LatLng>.from(route.points));
     _showPinLabels = true;
     _buildRouteMarkers();

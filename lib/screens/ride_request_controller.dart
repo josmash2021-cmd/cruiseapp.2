@@ -272,22 +272,27 @@ extension _RideRequestController on _RideRequestScreenState {
         // final step so the panel + rows cascade in once the rider
         // can see the full gold route.
         //
-        // Fallback: if the cinematic has already completed and we
-        // are revisiting this phase, nudge the sheet on directly.
+        // Fallback #1 — cinematic already finished on a previous visit
+        // (e.g. user tapped back, then re-entered). Forward the sheet
+        // directly so options are visible right away.
         if (_cinematicDone && _sheetCtrl.status == AnimationStatus.dismissed) {
           _sheetCtrl.forward();
         }
-        // Watchdog: if ride options have loaded and the sheet has been
-        // open for >2 s without completing (row opacities never hit 1.0),
-        // force the animation home. Fixes the reported bug where the
-        // "Choose a vehicle" header renders but the tier cards underneath
-        // stay invisible because _sheetCtrl stalled mid-transition.
-        if (s.rideOptions.isNotEmpty && !_sheetForceTimerScheduled) {
+        // Fallback #2 — ride options are loaded but the sheet never
+        // opened (cinematic never ran / was interrupted). Forward the
+        // animation normally so the stagger plays, NOT .value=1.0 which
+        // would skip frames and leave row opacities stuck at 0.
+        // Reschedulable: _sheetForceTimerScheduled is reset on every
+        // phase exit (see cancel / reset below) so a second trip in
+        // the same session rearms the guard.
+        if (s.rideOptions.isNotEmpty &&
+            _sheetCtrl.status == AnimationStatus.dismissed &&
+            !_sheetForceTimerScheduled) {
           _sheetForceTimerScheduled = true;
-          Timer(const Duration(seconds: 2), () {
+          Timer(const Duration(milliseconds: 1500), () {
             if (!mounted) return;
-            if (_sheetCtrl.status != AnimationStatus.completed) {
-              _sheetCtrl.value = 1.0;
+            if (_sheetCtrl.status == AnimationStatus.dismissed) {
+              _sheetCtrl.forward();
             }
           });
         }
@@ -436,6 +441,8 @@ extension _RideRequestController on _RideRequestScreenState {
         _searchMapTimer = null;
         _splashTimer?.cancel();
         _splashTimer = null;
+        // Rearm sheet-fallback guard for the next trip in this session.
+        _sheetForceTimerScheduled = false;
         _cleanupMapAnnotations();
         // If SearchingDriverScreen is still on the stack, don't navigate away —
         // the await in _startRideDirectly will handle cleanup once the screen pops.

@@ -234,8 +234,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           // shrinks to content when under the ceiling, the sheet auto-
           // sizes itself without leaving blank space.
           constraints: BoxConstraints(maxHeight: sheetMaxH),
-          child: Container(
-            clipBehavior: Clip.antiAlias,
+          // DecoratedBox draws the outer background + shadows WITHOUT
+          // clipping (so the gold + black box-shadows extend beyond
+          // the sheet edges like the web widget). The inner ClipRRect
+          // handles rounding the content so it doesn't bleed past the
+          // radius, without sacrificing the drop shadow.
+          child: DecoratedBox(
             decoration: BoxDecoration(
               color: const Color(0xFF1A1A1F),
               borderRadius: BorderRadius.circular(20),
@@ -254,19 +258,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ],
             ),
-            // SafeArea handles bottom inset on home-indicator devices.
-            // SingleChildScrollView lets the sheet scroll on small
-            // phones (iPhone SE 568pt) where content + actions can
-            // exceed 60svh. With loose constraints + Column(min)
-            // the scroll view reports its size as child's intrinsic
-            // height capped at maxHeight — so no blank space below
-            // the Request button when content fits comfortably.
-            child: SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.all(14),
-                child: Column(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              // SafeArea handles bottom inset on home-indicator devices.
+              // SingleChildScrollView lets the sheet scroll on small
+              // phones (iPhone SE 568pt) where content + actions can
+              // exceed 60svh. With loose constraints + Column(min) the
+              // scroll view reports its size as child's intrinsic height
+              // capped at maxHeight — so no blank space when content
+              // fits comfortably.
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -452,6 +458,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ],
               ),
             ),
+          ),
           ),
         ),
       ),

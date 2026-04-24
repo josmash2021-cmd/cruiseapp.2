@@ -390,48 +390,54 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             children: [
                               for (int i = 0; i < displayOptions.length; i++) ...[
                                 Expanded(
-                                  child: FadeTransition(
-                                    key: ValueKey(
-                                        'ride_opt_${displayOptions[i].id}'),
-                                    opacity: i == 0
-                                        ? _rowOpacity0
-                                        : (i == 1
-                                            ? _rowOpacity1
-                                            : _rowOpacity2),
-                                    child: _PressableScale(
-                                      onTap: () {
-                                        HapticFeedback.selectionClick();
-                                        _ctrl.selectRideOption(
-                                            displayOptions[i]);
-                                        if (_mapCtrl != null &&
-                                            !_cinematicRunning) {
-                                          final s = _ctrl.state;
-                                          if (s.pickup != null &&
-                                              s.dropoff != null) {
-                                            final pts = s.route?.points ??
-                                                [
-                                                  LatLng(s.pickup!.lat,
-                                                      s.pickup!.lng),
-                                                  LatLng(s.dropoff!.lat,
-                                                      s.dropoff!.lng),
-                                                ];
-                                            Future.delayed(
-                                                const Duration(
-                                                    milliseconds: 350), () {
-                                              if (mounted &&
-                                                  !_cinematicRunning) {
-                                                _fitRoute(pts,
-                                                    preserveCamera: true);
-                                              }
-                                            });
-                                          }
+                                  key: ValueKey(
+                                      'ride_opt_${displayOptions[i].id}'),
+                                  // NOTE: Cards used to be wrapped in a
+                                  // FadeTransition driven by _rowOpacity0/1/2
+                                  // for a staggered entrance. On iOS we
+                                  // occasionally saw the sheet container
+                                  // visible (title showing) while the rows
+                                  // stayed at opacity 0 — some edge case
+                                  // where _sheetCtrl never reached the 0.35+
+                                  // interval where rows begin to appear.
+                                  // The outer FadeTransition(opacity:
+                                  // _sheetOpacity) still handles the whole-
+                                  // sheet entrance, so removing the per-row
+                                  // fade only drops the 200 ms stagger — no
+                                  // more invisible cards.
+                                  child: _PressableScale(
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      _ctrl.selectRideOption(
+                                          displayOptions[i]);
+                                      if (_mapCtrl != null &&
+                                          !_cinematicRunning) {
+                                        final s = _ctrl.state;
+                                        if (s.pickup != null &&
+                                            s.dropoff != null) {
+                                          final pts = s.route?.points ??
+                                              [
+                                                LatLng(s.pickup!.lat,
+                                                    s.pickup!.lng),
+                                                LatLng(s.dropoff!.lat,
+                                                    s.dropoff!.lng),
+                                              ];
+                                          Future.delayed(
+                                              const Duration(
+                                                  milliseconds: 350), () {
+                                            if (mounted &&
+                                                !_cinematicRunning) {
+                                              _fitRoute(pts,
+                                                  preserveCamera: true);
+                                            }
+                                          });
                                         }
-                                      },
-                                      child: _buildRideOptionCard(
-                                        c,
-                                        displayOptions[i],
-                                        option?.id == displayOptions[i].id,
-                                      ),
+                                      }
+                                    },
+                                    child: _buildRideOptionCard(
+                                      c,
+                                      displayOptions[i],
+                                      option?.id == displayOptions[i].id,
                                     ),
                                   ),
                                 ),

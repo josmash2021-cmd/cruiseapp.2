@@ -845,6 +845,22 @@ extension _RideRequestMap on _RideRequestScreenState {
     // keeps them glued afterwards.
     unawaited(_syncLabelOffsets());
 
+    // If the cinematic ran on the estimated 2-point route and the REAL
+    // road-snapped route has already arrived in the meantime, the
+    // controller's `!_cinematicRunning` branch never fired (we WERE
+    // running). Catch it now — this is the only path that guarantees
+    // the polyline gets drawn when Directions resolves before the
+    // cinematic's 2.2 s tilt completes.
+    final latestRoute = _ctrl.state.route;
+    if (mounted &&
+        latestRoute != null &&
+        latestRoute.points.length >= 3 &&
+        _routeAnnot == null) {
+      final pts = _capRouteEndpoints(List<LatLng>.from(latestRoute.points));
+      _buildRouteMarkers();
+      unawaited(_animateGoldRoute(pts));
+    }
+
     // 7. Beat + sheet fade in
     await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;

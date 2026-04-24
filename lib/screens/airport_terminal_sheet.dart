@@ -268,24 +268,39 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   // ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
-      decoration: BoxDecoration(
-        color: _bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        // .vrApt__sheet (vip-apt-sheet.css:69):
-        //   box-shadow: 0 -8px 40px rgba(0,0,0,.5)
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 40,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
+    final mq = MediaQuery.of(context);
+    final kb = mq.viewInsets.bottom;
+    // .vrApt__sheet max-height: 88vh (css:60) — 92vh on ≤480px.
+    // When the soft keyboard is up (step 3 flight input), shrink the
+    // max height AND add bottom padding so the Confirm button stays
+    // clear of the keyboard while the body scrolls.
+    final basePct = mq.size.width <= 480 ? 0.92 : 0.88;
+    final maxH = (mq.size.height - kb) * basePct;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: kb),
+      child: Container(
+        constraints: BoxConstraints(maxHeight: maxH),
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          // .vrApt__sheet (vip-apt-sheet.css:69):
+          //   box-shadow: 0 -8px 40px rgba(0,0,0,.5)
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 40,
+              offset: const Offset(0, -8),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          // Skip bottom safe-area inset while keyboard is up — it's
+          // already pushed above the system bar by the keyboard.
+          bottom: kb == 0,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Handle — .vrApt__handle (css:74-81): 36×4, margin 12 auto 8,
@@ -299,11 +314,13 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               ),
             ),
             // Header — .vrApt__header (css:84-90): padding 8px 16px 12px,
-            // gap 10px.
+            // gap 10px. Bottom padding is built into _buildHeader.
             _buildHeader(),
             // Progress — .vrApt__progress (css:143-158): padding 0 16 16.
+            // The 16px bottom is built into _buildProgressDots.
             if (_step > 0) _buildProgressDots(),
-            const SizedBox(height: 4),
+            // .vrApt__body padding: 0 20px 24px — NO top padding. The
+            // body sits directly under the header / progress.
             // Step content
             Flexible(
               child: AnimatedBuilder(
@@ -318,6 +335,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -345,15 +363,15 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       child: Row(
         children: [
           // .vrApt__backBtn (css:91-110): 36×36 round, color blue.
-          if (_step > 0)
+          // Hidden on step 0 — no gap either (web uses [hidden] display:none).
+          if (_step > 0) ...[
             _HeaderCircleBtn(
               icon: Icons.arrow_back_ios_rounded,
               iconColor: _blue,
               onTap: _goBack,
-            )
-          else
-            const SizedBox(width: 0), // no back on step 0
-          if (_step > 0) const SizedBox(width: 10),
+            ),
+            const SizedBox(width: 10),
+          ],
           // .vrApt__headerIcon (css:112-119): blue (or green when "from").
           Icon(
             _step == 0 ? Icons.connecting_airports_rounded : dirIcon,
@@ -361,15 +379,21 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             size: 24,
           ),
           const SizedBox(width: 10),
-          // .vrApt__title (css:121-129): flex:1, 20px w800, -.01em.
+          // .vrApt__title (css:121-129 + media 480 line 739):
+          //   flex:1, 20px w800, -.01em, line-height 1.2.
+          //   On narrow screens (≤480px) font drops to 18px.
+          // Ellipsis on overflow — with 3 items (icon + pill + close) on
+          // step > 1 the title can get crowded on iPhone SE.
           Expanded(
             child: Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: _textPrimary,
-                fontSize: 20,
+                fontSize: MediaQuery.of(context).size.width <= 360 ? 18 : 20,
                 fontWeight: FontWeight.w800,
-                letterSpacing: -0.2, // -.01em × 20px
+                letterSpacing: -0.2,
                 height: 1.2,
               ),
             ),
@@ -451,7 +475,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   Widget _buildDirectionPicker() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      // .vrApt__body padding: 0 20px 24px (no top).
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
         children: [
           _buildDirectionCard(
@@ -560,11 +585,12 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
     return Column(
       children: [
-        // Search field
+        // Search field — lives in the .vrApt__body padding (0 20 24).
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Container(
-            // .vrApt__searchBox: padding 12px 14px (vip-apt-sheet.css:267)
+            // .vrApt__searchBox (css:263-272): padding 12px 14px, gap 10px,
+            // bg surface, radius 14, border .10, margin-bottom 12px.
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: _surface,
@@ -590,11 +616,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        // .vrApt__searchBox margin-bottom: 12px.
+        const SizedBox(height: 12),
         Expanded(
-          // .vrApt__airportList::-webkit-scrollbar (vip-apt-sheet.css:169):
-          //   width: 3px; thumb rgba(255,255,255,.15).
-          // Flutter equivalent — a thin always-visible scrollbar.
+          // .vrApt__body::-webkit-scrollbar (css:169): width 3px,
+          // thumb rgba(255,255,255,.15). Flutter equivalent below.
           child: RawScrollbar(
             controller: _airportListScrollCtrl,
             thumbColor: Colors.white.withValues(alpha: 0.15),
@@ -604,7 +630,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             child: ListView(
               controller: _airportListScrollCtrl,
               physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              // Align with .vrApt__body padding: 0 20px 24px. Previously
+              // was horizontal 16 which offset tiles 4px inwards from the
+              // search box — visible as a misalignment on the left edge.
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
               children: [
                 ...filtered.map((a) => _buildAirportTile(a)),
               if (_suggestions.isNotEmpty && filtered.isNotEmpty) _buildSeparator(),

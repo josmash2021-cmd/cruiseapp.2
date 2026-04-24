@@ -264,38 +264,12 @@ extension _RideRequestController on _RideRequestScreenState {
     switch (s.phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
-        // NOTE: _sheetCtrl.forward() is NOT called here anymore.
-        // The user asked for the choose-a-ride card to fade in
-        // AFTER the route line finishes drawing, not while the
-        // cinematic is still running. _drawRoute() / the real-route
-        // branch below fires _sheetCtrl.forward() themselves as the
-        // final step so the panel + rows cascade in once the rider
-        // can see the full gold route.
+        // The sheet visibility is driven by the phase itself (Positioned
+        // widget mounted in the Stack) and an AnimatedOpacity inside
+        // _buildRoutePreviewSheet — no AnimationController coordination
+        // is needed here. The previous _sheetCtrl / _sheetForceTimer
+        // watchdog caused races where the sheet stayed empty on iOS.
         //
-        // Fallback #1 — cinematic already finished on a previous visit
-        // (e.g. user tapped back, then re-entered). Forward the sheet
-        // directly so options are visible right away.
-        if (_cinematicDone && _sheetCtrl.status == AnimationStatus.dismissed) {
-          _sheetCtrl.forward();
-        }
-        // Fallback #2 — ride options are loaded but the sheet never
-        // opened (cinematic never ran / was interrupted). Forward the
-        // animation normally so the stagger plays, NOT .value=1.0 which
-        // would skip frames and leave row opacities stuck at 0.
-        // Reschedulable: _sheetForceTimerScheduled is reset on every
-        // phase exit (see cancel / reset below) so a second trip in
-        // the same session rearms the guard.
-        if (s.rideOptions.isNotEmpty &&
-            _sheetCtrl.status == AnimationStatus.dismissed &&
-            !_sheetForceTimerScheduled) {
-          _sheetForceTimerScheduled = true;
-          Timer(const Duration(milliseconds: 1500), () {
-            if (!mounted) return;
-            if (_sheetCtrl.status == AnimationStatus.dismissed) {
-              _sheetCtrl.forward();
-            }
-          });
-        }
         // Start cinematic + route draw as soon as any route is available.
         // Estimated route (2 points) triggers markers+tilt; real route
         // (>15 points) triggers the gold polyline draw.
@@ -313,12 +287,7 @@ extension _RideRequestController on _RideRequestScreenState {
             // cinematic's own _animateGoldRoute is still in progress.
             final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
             _buildRouteMarkers();
-            _animateGoldRoute(pts).then((_) {
-              if (mounted &&
-                  _sheetCtrl.status == AnimationStatus.dismissed) {
-                _sheetCtrl.forward();
-              }
-            });
+            unawaited(_animateGoldRoute(pts));
           }
         }
         // Mark options as loaded when rideOptions arrive
@@ -441,8 +410,6 @@ extension _RideRequestController on _RideRequestScreenState {
         _searchMapTimer = null;
         _splashTimer?.cancel();
         _splashTimer = null;
-        // Rearm sheet-fallback guard for the next trip in this session.
-        _sheetForceTimerScheduled = false;
         _cleanupMapAnnotations();
         // If SearchingDriverScreen is still on the stack, don't navigate away —
         // the await in _startRideDirectly will handle cleanup once the screen pops.

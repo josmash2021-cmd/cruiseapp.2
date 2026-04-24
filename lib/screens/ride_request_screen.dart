@@ -276,11 +276,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _optionsLoaded = false;
   Timer? _shimmerTimeoutTimer;
 
-  // One-shot guard: the sheet watchdog timer fires only once per mount.
-  // Scheduled the first time rideOptions are non-empty; forces the sheet
-  // opacity animation to 1.0 after 2 s if it stalled mid-cascade.
-  bool _sheetForceTimerScheduled = false;
-
   // ── Price shimmer while waiting for real route ──
   late AnimationController _priceShimmerCtrl;
 
@@ -656,6 +651,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       below: "road-label",
                     );
                     _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                    // Retry _drawRoute now that managers are ready. If the
+                    // controller fired previewRoute before the map finished
+                    // loading, _drawRoute bailed early — this is our catch-up.
+                    if (mounted) {
+                      final s = _ctrl.state;
+                      if (s.route != null &&
+                          s.pickup != null &&
+                          s.dropoff != null &&
+                          !_cinematicDone &&
+                          !_cinematicRunning) {
+                        _drawRoute();
+                      }
+                    }
                     try {
                       final lid = _pointAnnotMgr!.id;
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');

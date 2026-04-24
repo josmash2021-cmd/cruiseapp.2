@@ -583,19 +583,12 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     if (_cinematicRunning) return;
-    // NOTE: We USED to bail here when the route had <3 points ("estimated"
-    // placeholder). That blocked the whole cinematic — and with it
-    // _sheetCtrl.forward() — so the "Choose a vehicle" sheet rendered
-    // empty. Cinematic and polyline are now separated:
-    //   • _startCinematicSequence always runs the tilt + pin reveal
-    //     + sheet fade-in so the rider sees the bottom sheet right away.
-    //   • The gold polyline inside that sequence skips itself when
-    //     pts.length < 3, then the controller's real-route branch
-    //     redraws it as soon as Directions returns ≥3 points.
-    // Claim the lock BEFORE resetting so a second _onStateChange that
-    // fires between _resetCinematic() and _startCinematicSequence()
-    // sees _cinematicRunning == true and bails. This was the cause of
-    // the "double tilt" the user saw — two sequences ran in parallel.
+    // Prerequisites — bail BEFORE claiming the lock so we retry on the
+    // next _onStateChange tick once the map finishes loading. Previously
+    // we'd set _cinematicRunning = true and then _startCinematicSequence
+    // would return immediately because _mapCtrl was null, leaving the
+    // lock permanently set and blocking every future attempt.
+    if (_mapCtrl == null || _polylineAnnotMgr == null) return;
     _cinematicRunning = true;
     _showPinLabels = true;
     final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
@@ -859,13 +852,6 @@ extension _RideRequestMap on _RideRequestScreenState {
       final pts = _capRouteEndpoints(List<LatLng>.from(latestRoute.points));
       _buildRouteMarkers();
       unawaited(_animateGoldRoute(pts));
-    }
-
-    // 7. Beat + sheet fade in
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!mounted) return;
-    if (_sheetCtrl.status == AnimationStatus.dismissed) {
-      _sheetCtrl.forward();
     }
   }
 

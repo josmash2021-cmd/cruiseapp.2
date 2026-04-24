@@ -193,12 +193,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       left: 12,
       right: 12,
       bottom: 8,
-      // Pure FADE-IN: panel opacity is driven by _sheetOpacity, the
-      // ride option rows below pull from _rowOpacity0/1/2 with a
-      // staggered Interval so the container appears first and the
-      // rows fade in after it, one by one. No slide, no scale.
-      child: FadeTransition(
-        opacity: _sheetOpacity,
+      // Simple opacity gate — the sheet appears the moment we enter the
+      // previewRoute/selectingRide phase. Mirrors the web widget's
+      // behaviour: the card is visible as soon as the user arrives at
+      // step 3, no staggered row animation, no coupling to the
+      // cinematic. This removes every race we had where the outer
+      // FadeTransition stayed at ~0.2 and the rows stayed at 0.
+      child: AnimatedOpacity(
+        opacity: displayOptions.isEmpty ? 0.92 : 1.0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
         child: Container(
           constraints: BoxConstraints(maxHeight: sheetH),
           clipBehavior: Clip.antiAlias,

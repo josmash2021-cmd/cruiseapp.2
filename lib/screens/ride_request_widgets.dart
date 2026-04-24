@@ -477,6 +477,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Column(
                               children: [
+                                // Staggered cascade — web reveals the pair
+                                // of buttons with a 250ms + 400ms offset
+                                // after selection. Port matches that.
+                                _StaggeredFade(
+                                  key: ValueKey('pay_${option.id}'),
+                                  delayMs: 250,
+                                  child:
                                 // .vipRide__paymentBtn:
                                 //   padding 12px 14px; radius 12px;
                                 //   background rgba(255,255,255,.06);
@@ -540,6 +547,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     ),
                                   ),
                                 ),
+                                ),
                                 const SizedBox(height: 10),
                                 // ── Request Ride button ──
                                 // .vipRide__requestBtn port:
@@ -548,16 +556,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 //   box-shadow: 0 2px 8px rgba(232,197,71,.25),
                                 //               0 6px 20px rgba(0,0,0,.2)
                                 //   active:scale(.97); disabled:opacity:.35
-                                _WebRequestButton(
-                                  enabled: !_isProcessingPayment && _hasAnyPaymentMethod,
-                                  isLoading: _isProcessingPayment,
-                                  label: widget.scheduledAt != null
-                                      ? S.of(context).bookScheduledRide
-                                      : S.of(context).requestRide,
-                                  onTap: () {
-                                    HapticFeedback.mediumImpact();
-                                    _startRideDirectly(c, option);
-                                  },
+                                _StaggeredFade(
+                                  key: ValueKey('req_${option.id}'),
+                                  delayMs: 400,
+                                  child: _WebRequestButton(
+                                    enabled: !_isProcessingPayment && _hasAnyPaymentMethod,
+                                    isLoading: _isProcessingPayment,
+                                    label: widget.scheduledAt != null
+                                        ? S.of(context).bookScheduledRide
+                                        : S.of(context).requestRide,
+                                    onTap: () {
+                                      HapticFeedback.mediumImpact();
+                                      _startRideDirectly(c, option);
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
@@ -2587,6 +2599,47 @@ class _PressableScaleState extends State<_PressableScale> {
         curve: const Cubic(0, 0, 0.2, 1),
         child: widget.child,
       ),
+    );
+  }
+}
+
+// Fade-in after a delay — matches the web's staggered reveal
+// (payment button @ 250ms, request button @ 400ms).
+class _StaggeredFade extends StatefulWidget {
+  final Widget child;
+  final int delayMs;
+  const _StaggeredFade({super.key, required this.child, required this.delayMs});
+  @override
+  State<_StaggeredFade> createState() => _StaggeredFadeState();
+}
+
+class _StaggeredFadeState extends State<_StaggeredFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _ctl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: _ctl, curve: Curves.easeOutCubic),
+      child: widget.child,
     );
   }
 }

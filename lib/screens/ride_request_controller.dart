@@ -1655,7 +1655,7 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
-  void _showPaymentMethodPicker(AppColors c, RideOption? option) {
+  Future<void> _showPaymentMethodPicker(AppColors c, RideOption? option) async {
     // Full-screen payment method picker (2×2 grid) — matches the
     // Shopify widget's pay overlay.
     //
@@ -1664,24 +1664,22 @@ extension _RideRequestController on _RideRequestScreenState {
     // id `credit_card` — they're the same thing under the hood.
     final current =
         _selectedPaymentMethod == 'credit_card' ? 'card' : _selectedPaymentMethod;
-    () async {
-      final picked = await showRidePaymentMethodPicker(
-        context,
-        currentMethod: current,
-        // Test mode always visible — matches the web widget where the
-        // Modo de Prueba tile is always in the picker so operators can
-        // simulate a payment without a real card on file.
-        showTestMode: true,
-      );
-      if (picked == null || !mounted) return;
-      final mapped = picked == 'card' ? 'credit_card' : picked;
-      _setState(() => _selectedPaymentMethod = mapped);
-      if (mapped == 'credit_card' &&
-          !_linkedPaymentMethods.contains('credit_card')) {
-        // No card on file yet — jump straight to the credit-card entry screen.
-        await _openCreditCardScreen(c, option);
-      }
-    }();
+    final picked = await showRidePaymentMethodPicker(
+      context,
+      currentMethod: current,
+      // Test mode always visible — matches the web widget where the
+      // Modo de Prueba tile is always in the picker so operators can
+      // simulate a payment without a real card on file.
+      showTestMode: true,
+    );
+    if (picked == null || !mounted) return;
+    final mapped = picked == 'card' ? 'credit_card' : picked;
+    _setState(() => _selectedPaymentMethod = mapped);
+    if (mapped == 'credit_card' &&
+        !_linkedPaymentMethods.contains('credit_card')) {
+      // No card on file yet — jump straight to the credit-card entry screen.
+      await _openCreditCardScreen(c, option);
+    }
   }
 
   // Kept for backwards-compat — no longer used but referenced by older
@@ -1910,12 +1908,25 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Payment helpers ──
 
-  bool get _hasAnyPaymentMethod =>
-      _linkedPaymentMethods.isNotEmpty ||
-      _selectedPaymentMethod == 'test_mode' ||
-      _selectedPaymentMethod == 'paypal' ||
-      _selectedPaymentMethod == 'apple_pay' ||
-      _selectedPaymentMethod == 'google_pay';
+  /// True when the rider has a usable payment method selected. For
+  /// platform rails (Apple Pay / Google Pay / PayPal / Test Mode) the
+  /// method id alone is enough. For 'credit_card' we must also have a
+  /// card on file, otherwise the request button would enable a ride
+  /// that can't actually be charged.
+  bool get _hasAnyPaymentMethod {
+    switch (_selectedPaymentMethod) {
+      case 'test_mode':
+      case 'paypal':
+      case 'apple_pay':
+      case 'google_pay':
+        return true;
+      case 'credit_card':
+        return _linkedPaymentMethods.contains('credit_card') &&
+            _savedCardLast4 != null;
+      default:
+        return _linkedPaymentMethods.isNotEmpty;
+    }
+  }
 
   String _paymentLabel(String id) {
     if (id.isEmpty || id == 'none') return S.of(context).selectPaymentMethod;

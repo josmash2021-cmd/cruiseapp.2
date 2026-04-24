@@ -268,13 +268,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ),
                     ),
 
-                  // Title — tappable to collapse/expand
+                  // Title — tappable to expand (only when a tier has
+                  // been picked, so the user can reopen the 3-card
+                  // grid). The web widget always shows the cards, so
+                  // collapsing before selection made no sense.
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 18),
                     child: GestureDetector(
-                      onTap: () => _setState(
-                        () => _rideOptionsExpanded = !_rideOptionsExpanded,
-                      ),
+                      onTap: () {
+                        if (option == null) return;
+                        _setState(
+                          () => _rideOptionsExpanded = !_rideOptionsExpanded,
+                        );
+                      },
                       behavior: HitTestBehavior.opaque,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -349,7 +355,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ),
                           ],
                           const Spacer(),
-                          if (!widget.fastRide)
+                          // Chevron only when a tier is already picked —
+                          // tapping the title then toggles between detail
+                          // view and the 3-card grid. Hidden while the
+                          // rider is still choosing to match the web.
+                          if (!widget.fastRide && option != null)
                             AnimatedRotation(
                               turns: _rideOptionsExpanded ? 0.0 : -0.25,
                               duration: const Duration(milliseconds: 250),
@@ -455,7 +465,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ),
                           )
                         : const SizedBox.shrink(),
-                    crossFadeState: _rideOptionsExpanded
+                    // Show the 3-card grid (firstChild) whenever the
+                    // rider hasn't picked a tier yet, no matter what
+                    // _rideOptionsExpanded says. Otherwise the sheet
+                    // could collapse into an empty SizedBox when
+                    // selectedOption is null. This matches the web's
+                    // behaviour where the cards stay visible until a
+                    // tier is picked.
+                    crossFadeState: (option == null || _rideOptionsExpanded)
                         ? CrossFadeState.showFirst
                         : CrossFadeState.showSecond,
                     duration: const Duration(milliseconds: 300),

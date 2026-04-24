@@ -1505,7 +1505,9 @@ class S {
   // ── Ride Request / Schedule Booking Screens ────────────────────────────────
   String get nowLabel => _es ? 'Ahora' : 'Now';
   String get scheduleLabel => _es ? 'Programar' : 'Schedule';
-  String get chooseARide => _es ? 'Elige un viaje' : 'Choose a ride';
+  // Matches the Shopify widget's step 3 heading
+  // (vipRide__pricesTitle in 005_09-28-46_260627b.liquid).
+  String get chooseARide => _es ? 'Elige un vehículo' : 'Choose a vehicle';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'CONFORT' : 'COMFORT';

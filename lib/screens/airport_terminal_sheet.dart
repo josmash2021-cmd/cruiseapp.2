@@ -419,6 +419,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     required String title,
     required String subtitle,
   }) {
+    // .vrApt__dirCard (vip-apt-sheet.css:202-237)
+    //   padding: 20px; border-radius: 20px;
+    //   background: rgba(color, .07); border: 1px solid rgba(color, .25);
+    //   gap: 14px; icon 56×56 radius 16 bg rgba(color, .12) icon 24px;
+    //   :active scale(.985)
     return GestureDetector(
       onTap: () => _selectDirection(direction),
       child: Container(
@@ -426,26 +431,33 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.5),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
         ),
         child: Row(
           children: [
             Container(
-              width: 56, height: 56,
+              width: 56,
+              height: 56,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: _textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text(title,
+                      style: TextStyle(
+                          color: _textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: TextStyle(color: _textSecondary, fontSize: 13)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          color: _textSecondary, fontSize: 13)),
                 ],
               ),
             ),

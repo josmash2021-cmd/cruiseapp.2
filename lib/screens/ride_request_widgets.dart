@@ -209,70 +209,59 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
-    final screenH = MediaQuery.of(context).size.height;
-    // Match web's max-height:60svh. The content (grid + detail + actions)
-    // fits comfortably on iPhone 11+ / Android ≥ 640dp, but on iPhone SE
-    // (568pt) or compact Androids (≤ 600dp) the detail + actions stack
-    // would overflow. The inner Column is wrapped in a
-    // SingleChildScrollView so when content > maxHeight, the body
-    // scrolls internally instead of RenderFlex overflowing.
-    final sheetMaxH = screenH * 0.60;
 
+    // Sheet is content-sized. No ConstrainedBox, no ScrollView, no
+    // maxHeight. The Column(mainAxisSize.min) sizes to its children:
+    //   • Title row   ~28
+    //   • gap 12
+    //   • Grid row    ~120 (cards with car image + name + badge)
+    //   • (when option != null) gap 14 + detail 76
+    //   • (when option != null) gap 12 + payment 52 + gap 8 + request 54
+    // Total empty: ~160. With selection: ~410. Padding 14+14 + safe
+    // area bottom. Comfortably fits above the tab bar on every phone
+    // from iPhone SE (568pt) up.
+    //
+    // Matching the web: the sheet never reserves 60svh of blank space
+    // — it grows with its content, just like .vipRide__sheet does.
     return Positioned(
       left: 8,
       right: 8,
       bottom: 10,
-      // Sheet is visible the instant we enter previewRoute/selectingRide.
-      // No fade-in coupling with the map cinematic — matches the web.
       child: AnimatedOpacity(
         opacity: 1.0,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
-        child: ConstrainedBox(
-          // Soft ceiling only — does NOT reserve space. Because the
-          // child (Container + SafeArea + ScrollView + Column(min))
-          // shrinks to content when under the ceiling, the sheet auto-
-          // sizes itself without leaving blank space.
-          constraints: BoxConstraints(maxHeight: sheetMaxH),
-          // DecoratedBox draws the outer background + shadows WITHOUT
-          // clipping (so the gold + black box-shadows extend beyond
-          // the sheet edges like the web widget). The inner ClipRRect
-          // handles rounding the content so it doesn't bleed past the
-          // radius, without sacrificing the drop shadow.
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1F),
-              borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: Colors.white.withValues(alpha: 0.06)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.50),
-                  blurRadius: 40,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              // SafeArea handles bottom inset on home-indicator devices.
-              // SingleChildScrollView lets the sheet scroll on small
-              // phones (iPhone SE 568pt) where content + actions can
-              // exceed 60svh. With loose constraints + Column(min) the
-              // scroll view reports its size as child's intrinsic height
-              // capped at maxHeight — so no blank space when content
-              // fits comfortably.
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
+        // DecoratedBox draws the outer background + shadows WITHOUT
+        // clipping (so the gold + black box-shadows extend beyond the
+        // sheet edges like the web widget). The inner ClipRRect clips
+        // only the child content to the radius, leaving the shadow
+        // untouched.
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1F),
+            borderRadius: BorderRadius.circular(20),
+            border:
+                Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.50),
+                blurRadius: 40,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -456,12 +445,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ],
                 ],
+                ),
               ),
             ),
           ),
-          ),
         ),
-      ),
       ),
     );
   }

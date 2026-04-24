@@ -268,20 +268,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ),
                     ),
 
-                  // Title — tappable to expand (only when a tier has
-                  // been picked, so the user can reopen the 3-card
-                  // grid). The web widget always shows the cards, so
-                  // collapsing before selection made no sense.
+                  // Title — static, non-interactive. Cards stay visible
+                  // at all times, so there's no collapse/expand anymore.
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: GestureDetector(
-                      onTap: () {
-                        if (option == null) return;
-                        _setState(
-                          () => _rideOptionsExpanded = !_rideOptionsExpanded,
-                        );
-                      },
-                      behavior: HitTestBehavior.opaque,
+                    child: IgnorePointer(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -355,167 +346,155 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ),
                           ],
                           const Spacer(),
-                          // Chevron only when a tier is already picked —
-                          // tapping the title then toggles between detail
-                          // view and the 3-card grid. Hidden while the
-                          // rider is still choosing to match the web.
-                          if (!widget.fastRide && option != null)
-                            AnimatedRotation(
-                              turns: _rideOptionsExpanded ? 0.0 : -0.25,
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                              child: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: Colors.white.withValues(alpha: 0.5),
-                                size: 22,
-                              ),
-                            ),
+                          // Chevron removed — web's step 3 has no
+                          // collapse toggle on the heading.
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
 
-                  // Ride options list — collapsible
-                  AnimatedCrossFade(
-                    firstChild: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Route failed → show retry
-                          if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
-                            _buildRouteFailedRetry()
-                          // Loading → 3-column shimmer placeholders (matches
-                          // the real grid layout so we don't see a vertical
-                          // → horizontal jump when the options arrive)
-                          else if (displayOptions.isEmpty)
-                            Row(
-                              children: [
-                                for (int i = 0; i < 3; i++) ...[
-                                  Expanded(child: _buildShimmerCard()),
-                                  if (i < 2) const SizedBox(width: 8),
-                                ],
+                  // Ride options — ALWAYS-VISIBLE grid.
+                  //
+                  // The web widget keeps the 3-card grid on screen at all
+                  // times; picking a tier reveals a detail panel BELOW
+                  // it (margin-top:14px). We now match that: the grid
+                  // stays stacked with the detail panel so the rider can
+                  // switch tiers without tapping the chevron to "expand".
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Route failed → show retry
+                        if (_ctrl.state.routeFetchFailed &&
+                            displayOptions.isEmpty)
+                          _buildRouteFailedRetry()
+                        // Loading → shimmer placeholders
+                        else if (displayOptions.isEmpty)
+                          Row(
+                            children: [
+                              for (int i = 0; i < 3; i++) ...[
+                                Expanded(child: _buildShimmerCard()),
+                                if (i < 2) const SizedBox(width: 8),
                               ],
-                            )
-                          // Real options — 3-column grid layout (matches the
-                          // Shopify widget's step 3: one vertical card per
-                          // tier). Each card still fades in with its own
-                          // interval so the stagger reads the same way.
-                          else
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                for (int i = 0; i < displayOptions.length; i++) ...[
-                                  Expanded(
-                                    child: FadeTransition(
-                                      key: ValueKey('ride_opt_${displayOptions[i].id}'),
-                                      opacity: i == 0
-                                          ? _rowOpacity0
-                                          : (i == 1 ? _rowOpacity1 : _rowOpacity2),
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          HapticFeedback.selectionClick();
-                                          _ctrl.selectRideOption(displayOptions[i]);
-                                          _setState(
-                                            () => _rideOptionsExpanded = false,
-                                          );
-                                          if (_mapCtrl != null && !_cinematicRunning) {
-                                            final s = _ctrl.state;
-                                            if (s.pickup != null && s.dropoff != null) {
-                                              final pts = s.route?.points ?? [
-                                                LatLng(s.pickup!.lat, s.pickup!.lng),
-                                                LatLng(s.dropoff!.lat, s.dropoff!.lng),
-                                              ];
-                                              Future.delayed(const Duration(milliseconds: 350), () {
-                                                if (mounted && !_cinematicRunning) {
-                                                  _fitRoute(pts, preserveCamera: true);
-                                                }
-                                              });
-                                            }
+                            ],
+                          )
+                        // Real options — 3-column grid matching
+                        // .vipRide__rideList { display: grid;
+                        // grid-template-columns: repeat(3, 1fr);
+                        // gap: 8px }.
+                        else
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (int i = 0; i < displayOptions.length; i++) ...[
+                                Expanded(
+                                  child: FadeTransition(
+                                    key: ValueKey(
+                                        'ride_opt_${displayOptions[i].id}'),
+                                    opacity: i == 0
+                                        ? _rowOpacity0
+                                        : (i == 1
+                                            ? _rowOpacity1
+                                            : _rowOpacity2),
+                                    child: _PressableScale(
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        _ctrl.selectRideOption(
+                                            displayOptions[i]);
+                                        if (_mapCtrl != null &&
+                                            !_cinematicRunning) {
+                                          final s = _ctrl.state;
+                                          if (s.pickup != null &&
+                                              s.dropoff != null) {
+                                            final pts = s.route?.points ??
+                                                [
+                                                  LatLng(s.pickup!.lat,
+                                                      s.pickup!.lng),
+                                                  LatLng(s.dropoff!.lat,
+                                                      s.dropoff!.lng),
+                                                ];
+                                            Future.delayed(
+                                                const Duration(
+                                                    milliseconds: 350), () {
+                                              if (mounted &&
+                                                  !_cinematicRunning) {
+                                                _fitRoute(pts,
+                                                    preserveCamera: true);
+                                              }
+                                            });
                                           }
-                                        },
-                                        child: _buildRideOptionCard(
-                                          c,
-                                          displayOptions[i],
-                                          option?.id == displayOptions[i].id,
-                                        ),
+                                        }
+                                      },
+                                      child: _buildRideOptionCard(
+                                        c,
+                                        displayOptions[i],
+                                        option?.id == displayOptions[i].id,
                                       ),
                                     ),
                                   ),
-                                  if (i < displayOptions.length - 1)
-                                    const SizedBox(width: 8),
-                                ],
+                                ),
+                                if (i < displayOptions.length - 1)
+                                  const SizedBox(width: 8),
                               ],
-                            ),
+                            ],
+                          ),
+                        // Detail panel sits BELOW the grid, revealed once
+                        // a tier is picked. Matches .vipRide__rideDetail
+                        // with its `margin-top: 14px`.
+                        if (option != null) ...[
+                          const SizedBox(height: 14),
+                          _buildRideDetailPanel(c, option),
                         ],
-                      ),
+                      ],
                     ),
-                    // Collapsed view — detail panel for the selected tier
-                    // (matches the .vipRide__rideDetail in the web widget).
-                    secondChild: option != null
-                        ? GestureDetector(
-                            onTap: () => _setState(
-                                () => _rideOptionsExpanded = true),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: _buildRideDetailPanel(c, option),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                    // Show the 3-card grid (firstChild) whenever the
-                    // rider hasn't picked a tier yet, no matter what
-                    // _rideOptionsExpanded says. Otherwise the sheet
-                    // could collapse into an empty SizedBox when
-                    // selectedOption is null. This matches the web's
-                    // behaviour where the cards stay visible until a
-                    // tier is picked.
-                    crossFadeState: (option == null || _rideOptionsExpanded)
-                        ? CrossFadeState.showFirst
-                        : CrossFadeState.showSecond,
-                    duration: const Duration(milliseconds: 300),
-                    sizeCurve: Curves.easeInOutCubic,
                   ),
 
                   const SizedBox(height: 6),
 
-                  // Payment Method + Request button — slide in after card selection
+                  // Payment Method + Request button — slide in once a
+                  // tier is picked. Web renders them straight after the
+                  // detail panel (same wrapper); we match with AnimatedSize
+                  // so the sheet grows smoothly.
                   AnimatedSize(
                     duration: const Duration(milliseconds: 350),
                     curve: Curves.easeInOutCubic,
                     child: AnimatedSlide(
-                      offset: option != null && !_rideOptionsExpanded
+                      offset: option != null
                           ? Offset.zero
                           : const Offset(0, 0.3),
                       duration: const Duration(milliseconds: 400),
                       curve: Curves.easeOutCubic,
                       child: AnimatedOpacity(
-                        opacity: option != null && !_rideOptionsExpanded ? 1.0 : 0.0,
+                        opacity: option != null ? 1.0 : 0.0,
                         duration: const Duration(milliseconds: 350),
                         curve: Curves.easeOut,
                         child: IgnorePointer(
-                          ignoring: option == null || _rideOptionsExpanded,
-                          child: option != null && !_rideOptionsExpanded
+                          ignoring: option == null,
+                          child: option != null
                         ? Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Column(
                               children: [
-                                // ── Payment Method button ──
+                                // .vipRide__paymentBtn:
+                                //   padding 12px 14px; radius 12px;
+                                //   background rgba(255,255,255,.06);
+                                //   border 1px solid rgba(255,255,255,.1);
+                                //   :active background rgba(255,255,255,.1)
                                 GestureDetector(
                                   onTap: () => _showPaymentMethodPicker(c, option),
                                   child: Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
+                                      horizontal: 14,
+                                      vertical: 12,
                                     ),
                                     decoration: BoxDecoration(
                                       color: Colors.white.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.08),
+                                        color: Colors.white.withValues(alpha: 0.10),
                                       ),
                                     ),
                                     child: Row(
@@ -621,8 +600,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return 'assets/images/cruise_6.png';
   }
 
-  // Vertical grid card — matches the Shopify widget's .vipRide__rideCard:
-  // image on top, tier name, small badge below, subtle gold glow when active.
+  // .vipRide__rideCard port — vertical grid card, 1:1 with the web.
+  //   padding: 10px 8px
+  //   border-radius: 14px
+  //   background: rgba(255,255,255,.02) / rgba(232,197,71,.08) active
+  //   border: 1px rgba(255,255,255,.08) / rgba(232,197,71,.7) active
+  //   outline: 2px rgba(232,197,71,.55) active (inset, -1px offset)
+  //   rideGlow 2.8s active pulse
+  //   :active transform scale(.96)
   Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
@@ -632,112 +617,134 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
 
-    return AnimatedScale(
-      scale: selected ? 1.0 : 0.97,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      child: AnimatedBuilder(
-        // Only drives the pulse when the card is active; at rest we
-        // still rebuild with a static listenable so we don't waste
-        // frames on inactive cards.
-        animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
-        builder: (_, child) {
-          // Triangle wave 0 → 1 → 0 over 2.8s — matches rideGlow CSS
-          // 0%/100% vs 50% midpoint keyframe pair.
-          final t = selected ? _activeCardGlowCtrl.value : 0.0;
-          final glow = 0.18 + 0.17 * t; // 0.18 → 0.35
-          final outerGlow = 0.10 + 0.12 * t; // 0.10 → 0.22
-          final borderAlpha = 0.55 + 0.20 * t; // 0.55 → 0.75
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: const Cubic(0, 0, 0.2, 1),
-            padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
-            decoration: BoxDecoration(
+    return AnimatedBuilder(
+      animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
+      builder: (_, __) {
+        // rideGlow keyframe pair — 0%/100% vs 50% midpoint on a 2.8s
+        // ease-in-out loop. Triangle wave 0 → 1 → 0.
+        final t = selected ? _activeCardGlowCtrl.value : 0.0;
+        final glowInner = 0.15 + 0.15 * t; // matches rgba shadow stop
+        final glowOuter = 0.18 + 0.15 * t;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0x14E8C547) // rgba(232,197,71,.08)
+                : Colors.white.withValues(alpha: 0.02),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
               color: selected
-                  ? const Color(0x14E8C547)
-                  : Colors.white.withValues(alpha: 0.02),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? _cardGold.withValues(alpha: borderAlpha)
-                    : Colors.white.withValues(alpha: 0.08),
-                width: selected ? 1.5 : 1,
-              ),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: _cardGold.withValues(alpha: glow),
-                        blurRadius: 18 + 6 * t,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 6),
-                      ),
-                      BoxShadow(
-                        color: _cardGold.withValues(alpha: outerGlow),
-                        blurRadius: 32 + 8 * t,
-                        spreadRadius: -2,
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                  ? const Color(0xB3E8C547) // rgba(232,197,71,.7)
+                  : Colors.white.withValues(alpha: 0.08),
+              width: selected ? 1 : 1,
             ),
-            child: child,
-          );
-        },
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Car image
-            SizedBox(
-              height: 56,
-              child: AnimatedOpacity(
-                opacity: selected ? 1.0 : 0.85,
-                duration: const Duration(milliseconds: 180),
-                child: Image.asset(
-                  _carAssetForOption(opt.name),
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
-                  isAntiAlias: true,
-                  cacheWidth: 240,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.directions_car_rounded,
-                    size: 36,
-                    color: Colors.white.withValues(alpha: 0.5),
+            boxShadow: selected
+                ? [
+                    // rideGlow 0%: 0 0 0 1px rgba(232,197,71,.3),
+                    //              0 6px 18px rgba(232,197,71,.15)
+                    // rideGlow 50%: 0 0 0 1px rgba(232,197,71,.5),
+                    //               0 8px 24px rgba(232,197,71,.3)
+                    BoxShadow(
+                      color: const Color(0xFFE8C547)
+                          .withValues(alpha: 0.3 + 0.2 * t),
+                      blurRadius: 0,
+                      spreadRadius: 1,
+                    ),
+                    BoxShadow(
+                      color: const Color(0xFFE8C547).withValues(alpha: glowInner),
+                      blurRadius: 18 + 6 * t,
+                      offset: const Offset(0, 6),
+                    ),
+                    BoxShadow(
+                      color: const Color(0xFFE8C547).withValues(alpha: glowOuter * 0.5),
+                      blurRadius: 24 + 8 * t,
+                      spreadRadius: -2,
+                    ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Color(0x2E000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Inner outline 2px rgba(232,197,71,.55) offset -1px —
+              // web uses `outline: 2px solid ... outline-offset: -1px`
+              // which draws inside the card. Emulated here with a
+              // positioned ring.
+              if (selected)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      margin: const EdgeInsets.all(1),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0x8CE8C547), // rgba(232,197,71,.55)
+                          width: 2,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // .vipRide__rideImgTag — max-height clamp(40,11vw,52),
+                  // two-layer drop-shadow for depth.
+                  SizedBox(
+                    height: 52,
+                    child: AnimatedOpacity(
+                      opacity: selected ? 1.0 : 0.85,
+                      duration: const Duration(milliseconds: 180),
+                      child: Image.asset(
+                        _carAssetForOption(opt.name),
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        isAntiAlias: true,
+                        cacheWidth: 240,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.directions_car_rounded,
+                          size: 36,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // .vipRide__rideName — 17px max, weight 700,
+                  // letter-spacing .02em, line-height 1.3.
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 15, // clamp floor; grid cell is narrow
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.34, // .02em × 17px
+                      height: 1.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  VehicleTierBadge(
+                    tier: tierLabel == 'VIP'
+                        ? VehicleTier.vip
+                        : tierLabel == 'PREMIUM'
+                            ? VehicleTier.premium
+                            : VehicleTier.comfort,
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 6),
-            // Tier display name
-            Text(
-              displayName,
-              style: const TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-                height: 1.1,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 6),
-            // Pixel-perfect tier badge — shared widget with animated VIP
-            VehicleTierBadge(
-              tier: tierLabel == 'VIP'
-                  ? VehicleTier.vip
-                  : tierLabel == 'PREMIUM'
-                      ? VehicleTier.premium
-                      : VehicleTier.comfort,
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -848,13 +855,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // .vipRide__rideDetail__desc: 13px, color rgba(255,255,255,.75),
+            // line-height 1.4, default weight 400.
             Text(
               opt.description,
               style: TextStyle(
                 fontFamily: 'Poppins',
                 color: Colors.white.withValues(alpha: 0.75),
                 fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
                 height: 1.4,
               ),
             ),
@@ -870,12 +879,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 if (_ctrl.state.route == null)
                   _buildPriceShimmer(width: 68, height: 22)
                 else
+                  // .vipRide__rideDetail__price: clamp(18,5vw,22)
+                  // weight 800 color #fff.
                   Text(
                     '\$${opt.priceEstimate.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white,
-                      fontSize: 20,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,
                     ),
@@ -2541,6 +2552,40 @@ class _WebRequestButtonState extends State<_WebRequestButton> {
                   ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  _PressableScale — scale(.96) on tap-down matching the web's
+//  .vipRide__rideCard:active { transform: scale(.96) }.
+// ═══════════════════════════════════════════════════════════════════
+class _PressableScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressableScale({required this.child, required this.onTap});
+
+  @override
+  State<_PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<_PressableScale> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _pressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: const Cubic(0, 0, 0.2, 1),
+        child: widget.child,
       ),
     );
   }

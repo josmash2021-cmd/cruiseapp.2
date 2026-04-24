@@ -288,22 +288,22 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
+            // Handle — .vrApt__handle (css:74-81): 36×4, margin 12 auto 8,
+            // bg rgba(255,255,255,.30).
             Container(
-              margin: const EdgeInsets.only(top: 10),
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: _textSecondary.withValues(alpha: 0.3),
+                color: Colors.white.withValues(alpha: 0.30),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 14),
-            // Header
+            // Header — .vrApt__header (css:84-90): padding 8px 16px 12px,
+            // gap 10px.
             _buildHeader(),
-            const SizedBox(height: 4),
-            // Progress dots
+            // Progress — .vrApt__progress (css:143-158): padding 0 16 16.
             if (_step > 0) _buildProgressDots(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
             // Step content
             Flexible(
               child: AnimatedBuilder(
@@ -340,30 +340,42 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      // .vrApt__header (css:84-90): padding 8px 16px 12px; gap 10px.
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Row(
         children: [
+          // .vrApt__backBtn (css:91-110): 36×36 round, color blue.
           if (_step > 0)
-            GestureDetector(
+            _HeaderCircleBtn(
+              icon: Icons.arrow_back_ios_rounded,
+              iconColor: _blue,
               onTap: _goBack,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Icon(Icons.arrow_back_ios_rounded, color: _blue, size: 20),
-              ),
-            ),
+            )
+          else
+            const SizedBox(width: 0), // no back on step 0
+          if (_step > 0) const SizedBox(width: 10),
+          // .vrApt__headerIcon (css:112-119): blue (or green when "from").
           Icon(
             _step == 0 ? Icons.connecting_airports_rounded : dirIcon,
             color: _step == 0 ? _blue : dirColor,
             size: 24,
           ),
           const SizedBox(width: 10),
+          // .vrApt__title (css:121-129): flex:1, 20px w800, -.01em.
           Expanded(
             child: Text(
               title,
-              style: TextStyle(color: _textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: _textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2, // -.01em × 20px
+                height: 1.2,
+              ),
             ),
           ),
-          if (_selectedAirport != null && _step > 1)
+          // .vrApt__codePill (css:131-140): 5px 10px radius 10 bg blue .12.
+          if (_selectedAirport != null && _step > 1) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
@@ -372,18 +384,32 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               ),
               child: Text(
                 _selectedAirport!.code,
-                style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  color: _blue,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.28, // .02em × 14px
+                ),
               ),
             ),
+            const SizedBox(width: 10),
+          ],
+          // .vrApt__closeBtn (css:91-110): 36×36 round, color text-2,
+          // margin-left: auto. Matches the web's explicit dismiss button.
+          _HeaderCircleBtn(
+            icon: Icons.close_rounded,
+            iconColor: Colors.white.withValues(alpha: 0.55),
+            onTap: () => Navigator.of(context).pop(),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildProgressDots() {
-    const labels = ['', '', '', ''];
+    // .vrApt__progress (css:143-158): padding 0 16px 16px.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Row(
         children: List.generate(4, (i) {
           final active   = i == _step;
@@ -435,7 +461,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             title: S.of(context).takeMeToAirport,
             subtitle: S.of(context).flyingOutSubtitle,
           ),
-          const SizedBox(height: 14),
+          // .vrApt__dirList: gap 12px.
+          const SizedBox(height: 12),
           _buildDirectionCard(
             direction: AirportDirection.fromAirport,
             icon: Icons.flight_land_rounded,
@@ -483,25 +510,37 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               ),
               child: Icon(icon, color: color, size: 24),
             ),
+            // .vrApt__dirCard: gap 14px between icon and text.
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: TextStyle(
-                          color: _textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: _textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500)),
+                  // .vrApt__dirTitle: 16px w700 line-height 1.3.
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  // .vrApt__dirSub: 13px color text-2 line-height 1.3.
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 1.3,
+                    ),
+                  ),
                 ],
               ),
             ),
+            // .vrApt__dirChev: uses the dir color.
             Icon(Icons.arrow_forward_ios_rounded, color: color, size: 16),
           ],
         ),
@@ -610,19 +649,24 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         ),
         child: Row(
           children: [
+            // .vrApt__airportCode: 48×48 radius 14 bg blue .10,
+            // font 14 w900 letter-spacing .02em.
             Container(
               width: 48, height: 48,
-              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
-              child: Center(child: Text(a.code, style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w900))),
+              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
+              child: Center(child: Text(a.code, style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.28))),
             ),
-            const SizedBox(width: 14),
+            // .vrApt__airportTile: gap 12px.
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.name, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 3),
-                  Text(S.of(context).terminalsCount(terminalCount), style: TextStyle(color: _textSecondary, fontSize: 12)),
+                  // .vrApt__airportName: 14px w700 line-height 1.3 ellipsis.
+                  Text(a.name, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w700, height: 1.3), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  // .vrApt__airportCount: 12px text-2 line-height 1.3.
+                  Text(S.of(context).terminalsCount(terminalCount), style: TextStyle(color: _textSecondary, fontSize: 12, height: 1.3)),
                 ],
               ),
             ),
@@ -641,7 +685,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   }
 
   Widget _buildSuggestionTile(_AirportSuggestion s) {
-    return GestureDetector(
+    // Same :active scale(.985) feedback as .vrApt__airportTile.
+    return _PressScale(
       onTap: () => _selectSuggestion(s),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
@@ -651,15 +696,16 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           children: [
             Container(
               width: 48, height: 48,
-              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
               child: Center(
                 child: s.code.isNotEmpty
-                    ? Text(s.code, style: const TextStyle(color: _blue, fontSize: 13, fontWeight: FontWeight.w900))
+                    ? Text(s.code, style: const TextStyle(color: _blue, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.26))
                     : Icon(Icons.flight_rounded, color: _blue, size: 20),
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(child: Text(s.description, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis)),
+            // .vrApt__airportTile: gap 12px.
+            const SizedBox(width: 12),
+            Expanded(child: Text(s.description, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w600, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis)),
             const SizedBox(width: 8),
             Icon(Icons.chevron_right_rounded, color: _textSecondary, size: 20),
           ],
@@ -1131,6 +1177,55 @@ class _AirportSuggestion {
   final String placeId;
   final String code;
   const _AirportSuggestion({required this.description, required this.placeId, required this.code});
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  _HeaderCircleBtn — 1:1 port of .vrApt__backBtn / .vrApt__closeBtn.
+//  CSS ref (vip-apt-sheet.css:91-110):
+//    width/height: 36px; border-radius: 50%;
+//    background: transparent; hover bg rgba(255,255,255,.06);
+//    transition: background-color 160ms ease-out.
+// ═══════════════════════════════════════════════════════════════════
+class _HeaderCircleBtn extends StatefulWidget {
+  final IconData icon;
+  final Color iconColor;
+  final VoidCallback onTap;
+  const _HeaderCircleBtn({
+    required this.icon,
+    required this.iconColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_HeaderCircleBtn> createState() => _HeaderCircleBtnState();
+}
+
+class _HeaderCircleBtnState extends State<_HeaderCircleBtn> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: const Cubic(0, 0, 0.58, 1),
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: _pressed
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(widget.icon, color: widget.iconColor, size: 20),
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

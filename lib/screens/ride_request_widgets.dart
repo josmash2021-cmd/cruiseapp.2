@@ -140,17 +140,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
-  // ── Route preview sheet ──
-
+  // ── Route preview sheet — 1:1 port of the web widget's step-3 sheet ──
+  //
+  // Web HTML structure:
+  //   .vipRide__sheet[data-vipride-step="3"]     ← outer container
+  //     .vipRide__prices                         ← content wrapper
+  //       .vipRide__pricesHeader
+  //         .vipRide__pricesTitle                ← "Choose a Ride"
+  //       .vipRide__rideList                     ← 3-column grid
+  //         .vipRide__rideCard × 3
+  //       .vipRide__rideDetail                   ← shown after selection
+  //       .vipRide__actionBtns                   ← Payment + Request buttons
+  //
+  // CSS ref (liquid lines 681, 742-806):
+  //   outer:   background:#1a1a1f; border-radius:20px;
+  //            border:1px solid rgba(255,255,255,.06);
+  //            box-shadow:0 2px 10px rgba(232,197,71,.06),
+  //                       0 8px 40px rgba(0,0,0,.5);
+  //            padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+  //            max-height:60svh; overflow-y:auto;
+  //   title:   Poppins 800 clamp(16px,4.5vw,20px) letter-spacing:-.03em center
+  //   list:    display:grid grid-template-columns:repeat(3,1fr) gap:8px
+  //   detail:  margin-top:14px padding:14px border-radius:14px
+  //            bg:linear-gradient(135deg, rgba(232,197,71,.06),
+  //                                       rgba(255,255,255,.02));
+  //            border:1px solid rgba(232,197,71,.18)
+  //   actions: margin-top:12px display:flex flex-direction:column gap:8px
   Widget _buildRoutePreviewSheet(AppColors c, double bottomPad) {
     final s = _ctrl.state;
 
-    // Fast ride: show only one "Comfort" option with express pricing (~$2.67/min ≈ $160/hr)
+    // Fast-ride tier override (single "Comfort" option, ~$160/hr).
     List<RideOption> displayOptions = s.rideOptions;
     if (widget.fastRide && s.rideOptions.isNotEmpty) {
-      final baseFusion = s.rideOptions.last; // Fusion = cheapest = base
-      final expressPrice = (baseFusion.priceEstimate * 3.2)
-          .roundToDouble(); // ~$160/hr rate
+      final baseFusion = s.rideOptions.last;
+      final expressPrice =
+          (baseFusion.priceEstimate * 3.2).roundToDouble();
       displayOptions = [
         RideOption(
           id: 'comfort_express',
@@ -164,7 +188,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       ];
     }
 
-    // Apply 10% promo discount
+    // 10% promo discount.
     if (widget.applyPromo) {
       displayOptions = displayOptions
           .map(
@@ -186,34 +210,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
     final screenH = MediaQuery.of(context).size.height;
-    // Keep the ride options panel compact so map route remains visible.
-    final sheetH = (screenH * 0.42).clamp(300.0, 520.0) + bottomPad;
+    // Match web's max-height:60svh.
+    final sheetMaxH = screenH * 0.60;
 
     return Positioned(
-      left: 12,
-      right: 12,
-      bottom: 8,
-      // Simple opacity gate — the sheet appears the moment we enter the
-      // previewRoute/selectingRide phase. Mirrors the web widget's
-      // behaviour: the card is visible as soon as the user arrives at
-      // step 3, no staggered row animation, no coupling to the
-      // cinematic. This removes every race we had where the outer
-      // FadeTransition stayed at ~0.2 and the rows stayed at 0.
+      left: 8,
+      right: 8,
+      bottom: 10,
+      // Sheet is visible the instant we enter previewRoute/selectingRide.
+      // No fade-in coupling with the map cinematic — matches the web.
       child: AnimatedOpacity(
-        opacity: displayOptions.isEmpty ? 0.92 : 1.0,
+        opacity: 1.0,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
         child: Container(
-          constraints: BoxConstraints(maxHeight: sheetH),
+          constraints: BoxConstraints(maxHeight: sheetMaxH),
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: const Color(0xFF1A1A1F),
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 24,
-                offset: const Offset(0, -4),
+                color: const Color(0xFFE8C547).withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.50),
+                blurRadius: 40,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -221,380 +247,220 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             top: false,
             child: SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(14, 14, 14, 14 + bottomPad),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Drag handle
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Payment declined banner
-                  if (_showPaymentDeclinedBanner)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF3D0000),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: const Color(0xFFB71C1C), width: 1),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline_rounded,
-                                color: Color(0xFFEF9A9A), size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                S.of(context).paymentDeclinedMsg,
-                                style: const TextStyle(
-                                    color: Color(0xFFEF9A9A), fontSize: 13),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => _setState(
-                                  () => _showPaymentDeclinedBanner = false),
-                              child: const Icon(Icons.close_rounded,
-                                  color: Color(0xFFEF9A9A), size: 18),
-                            ),
-                          ],
-                        ),
+                  // Payment-declined banner (kept as a top slot — it's
+                  // critical domain info and the web shows a similar
+                  // dismissible row above the header).
+                  if (_showPaymentDeclinedBanner) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3D0000),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: const Color(0xFFB71C1C), width: 1),
                       ),
-                    ),
-
-                  // Title — static, non-interactive. Cards stay visible
-                  // at all times, so there's no collapse/expand anymore.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: IgnorePointer(
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Spacer(),
-                          Text(
-                            widget.fastRide
-                                ? S.of(context).fastRideLabel
-                                : S.of(context).chooseARide,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              letterSpacing: -0.3,
+                          const Icon(Icons.error_outline_rounded,
+                              color: Color(0xFFEF9A9A), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              S.of(context).paymentDeclinedMsg,
+                              style: const TextStyle(
+                                  color: Color(0xFFEF9A9A), fontSize: 13),
                             ),
                           ),
-                          if (_ctrl.state.isAirportTrip) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF4285F4,
-                                ).withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.flight_rounded,
-                                    size: 12,
-                                    color: Color(0xFF4285F4),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    S.of(context).airportLabel,
-                                    style: TextStyle(
-                                      color: Color(0xFF4285F4),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          if (widget.applyPromo) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFFE8C547,
-                                ).withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                '10% OFF',
-                                style: TextStyle(
-                                  color: Color(0xFFE8C547),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const Spacer(),
-                          // Chevron removed — web's step 3 has no
-                          // collapse toggle on the heading.
+                          GestureDetector(
+                            onTap: () => _setState(
+                                () => _showPaymentDeclinedBanner = false),
+                            child: const Icon(Icons.close_rounded,
+                                color: Color(0xFFEF9A9A), size: 18),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 10),
+                  ],
 
-                  // Ride options — ALWAYS-VISIBLE grid.
-                  //
-                  // The web widget keeps the 3-card grid on screen at all
-                  // times; picking a tier reveals a detail panel BELOW
-                  // it (margin-top:14px). We now match that: the grid
-                  // stays stacked with the detail panel so the rider can
-                  // switch tiers without tapping the chevron to "expand".
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                  // .vipRide__pricesHeader — centered title row with
+                  // optional Airport / 10% OFF pills to the side.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.fastRide
+                            ? S.of(context).fastRideLabel
+                            : S.of(context).chooseARide,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -0.6, // -.03em × 20px
+                        ),
+                      ),
+                      if (_ctrl.state.isAirportTrip) ...[
+                        const SizedBox(width: 8),
+                        _headerPill(
+                          icon: Icons.flight_rounded,
+                          text: S.of(context).airportLabel,
+                          color: const Color(0xFF4285F4),
+                        ),
+                      ],
+                      if (widget.applyPromo) ...[
+                        const SizedBox(width: 8),
+                        _headerPill(
+                          text: '10% OFF',
+                          color: const Color(0xFFE8C547),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // .vipRide__rideList — 3-column grid, always visible.
+                  if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
+                    _buildRouteFailedRetry()
+                  else if (displayOptions.isEmpty)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Route failed → show retry
-                        if (_ctrl.state.routeFetchFailed &&
-                            displayOptions.isEmpty)
-                          _buildRouteFailedRetry()
-                        // Loading → shimmer placeholders
-                        else if (displayOptions.isEmpty)
-                          Row(
-                            children: [
-                              for (int i = 0; i < 3; i++) ...[
-                                Expanded(child: _buildShimmerCard()),
-                                if (i < 2) const SizedBox(width: 8),
-                              ],
-                            ],
-                          )
-                        // Real options — 3-column grid matching
-                        // .vipRide__rideList { display: grid;
-                        // grid-template-columns: repeat(3, 1fr);
-                        // gap: 8px }.
-                        else
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              for (int i = 0; i < displayOptions.length; i++) ...[
-                                Expanded(
-                                  key: ValueKey(
-                                      'ride_opt_${displayOptions[i].id}'),
-                                  // NOTE: Cards used to be wrapped in a
-                                  // FadeTransition driven by _rowOpacity0/1/2
-                                  // for a staggered entrance. On iOS we
-                                  // occasionally saw the sheet container
-                                  // visible (title showing) while the rows
-                                  // stayed at opacity 0 — some edge case
-                                  // where _sheetCtrl never reached the 0.35+
-                                  // interval where rows begin to appear.
-                                  // The outer FadeTransition(opacity:
-                                  // _sheetOpacity) still handles the whole-
-                                  // sheet entrance, so removing the per-row
-                                  // fade only drops the 200 ms stagger — no
-                                  // more invisible cards.
-                                  child: _PressableScale(
-                                    onTap: () {
-                                      HapticFeedback.selectionClick();
-                                      _ctrl.selectRideOption(
-                                          displayOptions[i]);
-                                      if (_mapCtrl != null &&
-                                          !_cinematicRunning) {
-                                        final s = _ctrl.state;
-                                        if (s.pickup != null &&
-                                            s.dropoff != null) {
-                                          final pts = s.route?.points ??
-                                              [
-                                                LatLng(s.pickup!.lat,
-                                                    s.pickup!.lng),
-                                                LatLng(s.dropoff!.lat,
-                                                    s.dropoff!.lng),
-                                              ];
-                                          Future.delayed(
-                                              const Duration(
-                                                  milliseconds: 350), () {
-                                            if (mounted &&
-                                                !_cinematicRunning) {
-                                              _fitRoute(pts,
-                                                  preserveCamera: true);
-                                            }
-                                          });
-                                        }
+                        for (int i = 0; i < 3; i++) ...[
+                          Expanded(child: _buildShimmerCard()),
+                          if (i < 2) const SizedBox(width: 8),
+                        ],
+                      ],
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (int i = 0; i < displayOptions.length; i++) ...[
+                          Expanded(
+                            key: ValueKey(
+                                'ride_opt_${displayOptions[i].id}'),
+                            child: _PressableScale(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                _ctrl.selectRideOption(displayOptions[i]);
+                                if (_mapCtrl != null && !_cinematicRunning) {
+                                  final st = _ctrl.state;
+                                  if (st.pickup != null &&
+                                      st.dropoff != null) {
+                                    final pts = st.route?.points ??
+                                        [
+                                          LatLng(st.pickup!.lat,
+                                              st.pickup!.lng),
+                                          LatLng(st.dropoff!.lat,
+                                              st.dropoff!.lng),
+                                        ];
+                                    Future.delayed(
+                                        const Duration(milliseconds: 350),
+                                        () {
+                                      if (mounted && !_cinematicRunning) {
+                                        _fitRoute(pts, preserveCamera: true);
                                       }
-                                    },
-                                    child: _buildRideOptionCard(
-                                      c,
-                                      displayOptions[i],
-                                      option?.id == displayOptions[i].id,
-                                    ),
-                                  ),
-                                ),
-                                if (i < displayOptions.length - 1)
-                                  const SizedBox(width: 8),
-                              ],
-                            ],
+                                    });
+                                  }
+                                }
+                              },
+                              child: _buildRideOptionCard(
+                                c,
+                                displayOptions[i],
+                                option?.id == displayOptions[i].id,
+                              ),
+                            ),
                           ),
-                        // Detail panel sits BELOW the grid, revealed once
-                        // a tier is picked. Matches .vipRide__rideDetail
-                        // with its `margin-top: 14px`.
-                        if (option != null) ...[
-                          const SizedBox(height: 14),
-                          _buildRideDetailPanel(c, option),
+                          if (i < displayOptions.length - 1)
+                            const SizedBox(width: 8),
                         ],
                       ],
                     ),
-                  ),
 
-                  const SizedBox(height: 6),
+                  // .vipRide__rideDetail — appears only after a tier is
+                  // picked. Web uses margin-top:14px.
+                  if (option != null) ...[
+                    const SizedBox(height: 14),
+                    _buildRideDetailPanel(c, option),
+                  ],
 
-                  // Payment Method + Request button — slide in once a
-                  // tier is picked. Web renders them straight after the
-                  // detail panel (same wrapper); we match with AnimatedSize
-                  // so the sheet grows smoothly.
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeInOutCubic,
-                    child: AnimatedSlide(
-                      offset: option != null
-                          ? Offset.zero
-                          : const Offset(0, 0.3),
-                      duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedOpacity(
-                        opacity: option != null ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 350),
-                        curve: Curves.easeOut,
-                        child: IgnorePointer(
-                          ignoring: option == null,
-                          child: option != null
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Column(
-                              children: [
-                                // Staggered cascade — web reveals the pair
-                                // of buttons with a 250ms + 400ms offset
-                                // after selection. Port matches that.
-                                _StaggeredFade(
-                                  key: ValueKey('pay_${option.id}'),
-                                  delayMs: 250,
-                                  child:
-                                // .vipRide__paymentBtn:
-                                //   padding 12px 14px; radius 12px;
-                                //   background rgba(255,255,255,.06);
-                                //   border 1px solid rgba(255,255,255,.1);
-                                //   :active background rgba(255,255,255,.1)
-                                GestureDetector(
-                                  onTap: () => _showPaymentMethodPicker(c, option),
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.10),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 350),
-                                          switchInCurve: Curves.easeOut,
-                                          switchOutCurve: Curves.easeIn,
-                                          child: SizedBox(
-                                            key: ValueKey('logo_$_selectedPaymentMethod'),
-                                            child: _paymentLogoWidget(
-                                              _selectedPaymentMethod,
-                                              32,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: AnimatedSwitcher(
-                                            duration: const Duration(milliseconds: 350),
-                                            switchInCurve: Curves.easeOut,
-                                            switchOutCurve: Curves.easeIn,
-                                            child: Align(
-                                              key: ValueKey(_selectedPaymentMethod),
-                                              alignment: Alignment.centerLeft,
-                                              child: Text(
-                                                _paymentLabel(_selectedPaymentMethod),
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Icon(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          color: Colors.white.withValues(alpha: 0.5),
-                                          size: 22,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                ),
-                                const SizedBox(height: 10),
-                                // ── Request Ride button ──
-                                // .vipRide__requestBtn port:
-                                //   background:#E8C547 (solid, no gradient)
-                                //   padding:16px; border-radius:12px
-                                //   box-shadow: 0 2px 8px rgba(232,197,71,.25),
-                                //               0 6px 20px rgba(0,0,0,.2)
-                                //   active:scale(.97); disabled:opacity:.35
-                                _StaggeredFade(
-                                  key: ValueKey('req_${option.id}'),
-                                  delayMs: 400,
-                                  child: _WebRequestButton(
-                                    enabled: !_isProcessingPayment && _hasAnyPaymentMethod,
-                                    isLoading: _isProcessingPayment,
-                                    label: widget.scheduledAt != null
-                                        ? S.of(context).bookScheduledRide
-                                        : S.of(context).requestRide,
-                                    onTap: () {
-                                      HapticFeedback.mediumImpact();
-                                      _startRideDirectly(c, option);
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
+                  // .vipRide__actionBtns — payment selector + Request Ride.
+                  // Web: margin-top:12px flex-direction:column gap:8px,
+                  // with a 250ms / 400ms staggered vipFB fade-in.
+                  if (option != null) ...[
+                    const SizedBox(height: 12),
+                    _StaggeredFade(
+                      key: ValueKey('pay_${option.id}'),
+                      delayMs: 250,
+                      child: _PaymentMethodButton(
+                        onTap: () => _showPaymentMethodPicker(c, option),
+                        selectedMethod: _selectedPaymentMethod,
+                        logoBuilder: _paymentLogoWidget,
+                        labelBuilder: _paymentLabel,
                       ),
                     ),
-                  ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                    _StaggeredFade(
+                      key: ValueKey('req_${option.id}'),
+                      delayMs: 400,
+                      child: _WebRequestButton(
+                        enabled: !_isProcessingPayment &&
+                            _hasAnyPaymentMethod,
+                        isLoading: _isProcessingPayment,
+                        label: widget.scheduledAt != null
+                            ? S.of(context).bookScheduledRide
+                            : S.of(context).requestRide,
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          _startRideDirectly(c, option);
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // Small pill used in the sheet header (airport / promo chips).
+  Widget _headerPill({
+    IconData? icon,
+    required String text,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2460,6 +2326,103 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 //    :active:not(:disabled) → transform: scale(.97);
 //    :disabled → opacity: .35;
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// _PaymentMethodButton — 1:1 port of .vipRide__paymentBtn
+// ─────────────────────────────────────────────────────────────────────
+// CSS ref (liquid line 801-803):
+//   width:100% display:flex align-items:center gap:10px
+//   padding:12px 14px border-radius:12px
+//   background:rgba(255,255,255,.06)
+//   border:1px solid rgba(255,255,255,.1)
+//   :active { background:rgba(255,255,255,.1) }
+// ═══════════════════════════════════════════════════════════════════
+class _PaymentMethodButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final String selectedMethod;
+  final Widget Function(String method, double size) logoBuilder;
+  final String Function(String method) labelBuilder;
+
+  const _PaymentMethodButton({
+    required this.onTap,
+    required this.selectedMethod,
+    required this.logoBuilder,
+    required this.labelBuilder,
+  });
+
+  @override
+  State<_PaymentMethodButton> createState() => _PaymentMethodButtonState();
+}
+
+class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: _pressed ? 0.10 : 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Icon container — web uses an inline icon at 26×26, we use
+            // the widget's logoBuilder so the Apple / Google / Card /
+            // Test Mode graphics stay identical to the payment picker.
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: SizedBox(
+                key: ValueKey('payLogo_${widget.selectedMethod}'),
+                child: widget.logoBuilder(widget.selectedMethod, 26),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: Align(
+                  key: ValueKey('payLabel_${widget.selectedMethod}'),
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.labelBuilder(widget.selectedMethod),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Trailing chevron — web uses a right-arrow SVG at 7×12.
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.4),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _WebRequestButton extends StatefulWidget {
   final bool enabled;

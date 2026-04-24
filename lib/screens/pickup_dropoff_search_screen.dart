@@ -593,79 +593,53 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   }
 
   Widget _buildTopRow() {
-    // Frosted-glass panel: blurred translucent black with a faint gold
-    // tint on the border so it feels premium, not generic.
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-          decoration: BoxDecoration(
-            // Layered fill so the blur has something to carry; mostly
-            // black so the frost still reads as dark.
-            color: Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _gold.withValues(alpha: 0.14),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Back button
-          _CircleBtn(
+    // Web layout: three siblings at the top — back button (38×38
+    // floating), fields container (flex:1 wrapping both pickup and
+    // dropoff inputs with a single shared background), and the swap
+    // button (34×34 floating). The back and swap have margin-top so
+    // they vertically align with the top half of the two-row fields.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // .vipRide__locPicker__back — 38×38 circle, margin-top:8
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: _CircleBtn(
             icon: Icons.arrow_back_rounded,
             onTap: () => Navigator.of(context).pop(),
           ),
-          const SizedBox(width: 10),
+        ),
+        const SizedBox(width: 10),
 
-          // Fields + connector line
-          Expanded(
-            child: Stack(
-              children: [
-                // Vertical gold→white gradient connector. Positioned so
-                // its horizontal center lines up with the marker centers
-                // (marker is 14×14, its center is at x=7; the line is 2px
-                // wide, so left:6 puts its own center at x=7). Vertically
-                // it starts at the pickup-dot center and ends at the
-                // dropoff-marker center — each field adds ~4px top/bottom
-                // padding around a 14×14 marker inside a ~34px tall row,
-                // and there is a 12px gap between them, so the visual
-                // centers sit about 17px below the top and 17px above
-                // the bottom of the stack.
-                Positioned(
-                  left: 6,
-                  top: 17,
-                  bottom: 17,
-                  child: Container(
-                    width: 2,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [_gold, Colors.white],
-                      ),
-                      borderRadius: BorderRadius.circular(2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _gold.withValues(alpha: 0.45),
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
+        // .vipRide__locPicker__fieldsWrap
+        //   background: rgba(14,14,20,.92);
+        //   border: 1px solid rgba(255,255,255,.08);
+        //   border-radius: 16px;
+        //   padding: 6px;
+        //   box-shadow: 0 8px 32px rgba(0,0,0,.5);
+        //   backdrop-filter: blur(20px);
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xEB0E0E14), // rgba(14,14,20,.92)
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
                   ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x800A0A10),
+                      blurRadius: 32,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
                 ),
-
-                Column(
+                child: Column(
                   children: [
                     _buildField(
                       dot: const _Dot(pickup: true),
@@ -678,11 +652,17 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                         _suggestions = [];
                       }),
                       onChanged: _editingPickup ? _onTextChanged : null,
-                      onSubmitted: _editingPickup ? _onFieldSubmitted : null,
+                      onSubmitted:
+                          _editingPickup ? _onFieldSubmitted : null,
                       active: _editingPickup,
                       placeholderHint: S.of(context).enterPickupAddress,
+                      isPickup: true,
                     ),
-                    const SizedBox(height: 12),
+                    // .vipRide__locPicker__field--pickup border-bottom
+                    Container(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
                     _buildField(
                       dot: const _Dot(pickup: false),
                       label: S.of(context).whereTo,
@@ -698,24 +678,22 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                           _editingDropoff ? _onFieldSubmitted : null,
                       active: _editingDropoff,
                       placeholderHint: S.of(context).whereTo,
+                      isPickup: false,
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-
-          const SizedBox(width: 8),
-
-          // Swap button
-          Padding(
-            padding: const EdgeInsets.only(top: 14),
-            child: _SwapButton(controller: _swapCtl, onTap: _swapFields),
-          ),
-        ],
-      ),
         ),
-      ),
+        const SizedBox(width: 10),
+
+        // .vipRide__lpReverse — 34×34 gold circle, margin-top:12
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _SwapButton(controller: _swapCtl, onTap: _swapFields),
+        ),
+      ],
     );
   }
 
@@ -729,19 +707,31 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     ValueChanged<String>? onSubmitted,
     required bool active,
     required String placeholderHint,
+    required bool isPickup,
   }) {
+    // .vipRide__locPicker__field
+    //   display:flex; align-items:center; gap:12px;
+    //   padding:13px 12px;
+    //   background:transparent;
+    //   border-radius: 10px 10px 0 0 (pickup) / 0 0 10px 10px (dropoff)
+    //   :focus-within background: rgba(255,255,255,.04)
+    final radius = isPickup
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(10), topRight: Radius.circular(10))
+        : const BorderRadius.only(
+            bottomLeft: Radius.circular(10),
+            bottomRight: Radius.circular(10));
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
         decoration: BoxDecoration(
-          // Focus tint — matches .vipRide__locPicker__field:focus-within on the web
           color: active
               ? Colors.white.withValues(alpha: 0.04)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: radius,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -757,17 +747,19 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                 onTap: onTap,
                 cursorColor: _gold,
                 textInputAction: TextInputAction.search,
-                style: TextStyle(
+                // font-size: 15px; font-weight: 500; color: #fff;
+                style: const TextStyle(
                   fontFamily: 'Poppins',
-                  color: active ? _gold : Colors.white,
+                  color: Colors.white,
                   fontSize: 15,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  fontWeight: FontWeight.w500,
                 ),
                 decoration: InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                   hintText: placeholderHint,
+                  // placeholder color: rgba(255,255,255,.35)
                   hintStyle: TextStyle(
                     fontFamily: 'Poppins',
                     color: Colors.white.withValues(alpha: 0.35),
@@ -896,38 +888,34 @@ class _Dot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Both figures are 14×14 so their visual centers line up with the
-    // vertical gold connector (its x position is tuned to 6px from the
-    // left of the column, matching the 7px half-width of the marker).
+    // .vipRide__locPicker__dot--pickup:
+    //   width:10; height:10; border-radius:50%;
+    //   background:#E8C547;
+    //   box-shadow: 0 0 8px rgba(232,197,71,.7)
     if (pickup) {
       return Container(
-        width: 14,
-        height: 14,
-        decoration: BoxDecoration(
+        width: 10,
+        height: 10,
+        decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: _gold,
           boxShadow: [
-            BoxShadow(
-              color: _gold.withValues(alpha: 0.6),
-              blurRadius: 10,
-            ),
+            BoxShadow(color: Color(0xB3E8C547), blurRadius: 8),
           ],
         ),
       );
     }
-    // Drop-off: white rounded square, also 14×14 so the vertical line
-    // lands exactly on its visual center.
+    // .vipRide__locPicker__dot--dropoff:
+    //   width:9; height:9; background:#fff;
+    //   border-radius:3; box-shadow: 0 0 8px rgba(255,255,255,.5)
     return Container(
-      width: 14,
-      height: 14,
+      width: 9,
+      height: 9,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(3),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.30),
-            blurRadius: 8,
-          ),
+        boxShadow: const [
+          BoxShadow(color: Color(0x80FFFFFF), blurRadius: 8),
         ],
       ),
     );
@@ -941,14 +929,35 @@ class _CircleBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkResponse(
-          onTap: onTap,
-          radius: 22,
-          child: Icon(icon, color: Colors.white, size: 20),
+    // .vipRide__locPicker__back
+    //   width:38; height:38; border-radius:50%;
+    //   background: rgba(12,12,18,.85);
+    //   border: 1px solid rgba(255,255,255,.12);
+    //   color: rgba(255,255,255,.85);
+    //   backdrop-filter: blur(12px);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xD90C0C12),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.12),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              color: Colors.white.withValues(alpha: 0.85),
+              size: 18,
+            ),
+          ),
         ),
       ),
     );
@@ -1009,79 +1018,87 @@ class _ShortcutCardState extends State<_ShortcutCard> {
 
   @override
   Widget build(BuildContext context) {
+    // .vipRide__locPicker__shortcut
+    //   padding: 18px 20px; gap: 16px;
+    //   .vipRide__locPicker__shortcutIcon: 48×48, border-radius 14,
+    //     background rgba(255,255,255,.07), border 1px rgba(255,255,255,.08),
+    //     color rgba(255,255,255,.6)
+    //   Title: 15px w600 #fff
+    //   Sub: 12px rgba(255,255,255,.38)
+    //
+    // .vipRide__locPicker__shortcut--premium (applied to "Choose on map"):
+    //   background: linear-gradient(135deg, rgba(232,197,71,.08),
+    //                                        rgba(255,255,255,.02));
+    //   border: 1px solid rgba(232,197,71,.25);
+    //   border-radius: 14px; margin-top: 4px;
+    //   .shortcutIcon: background rgba(232,197,71,.18),
+    //                  border-color rgba(232,197,71,.35), color #E8C547
     return GestureDetector(
       onTap: widget.onTap,
       onTapDown: (_) => setState(() => _pressed = true),
       onTapCancel: () => setState(() => _pressed = false),
       onTapUp: (_) => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.98 : 1.0,
-        duration: const Duration(milliseconds: 120),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: _pressed
-                  ? [const Color(0x26E8C547), const Color(0x0DFFFFFF)]
-                  : [const Color(0x14E8C547), const Color(0x05FFFFFF)],
-            ),
-            border: Border.all(
-              color: _pressed
-                  ? const Color(0x80E8C547)
-                  : const Color(0x40E8C547),
-            ),
-            borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0x14E8C547), Color(0x05FFFFFF)],
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0x1FE8C547),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x4DE8C547)),
-                ),
-                child: Icon(widget.icon, color: _gold, size: 18),
+          color: _pressed ? Colors.white.withValues(alpha: 0.04) : null,
+          border: Border.all(color: const Color(0x40E8C547)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            // shortcutIcon (premium variant): 48×48, radius 14,
+            // bg rgba(232,197,71,.18), border rgba(232,197,71,.35), gold
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0x2EE8C547),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0x59E8C547)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.1,
-                      ),
+              alignment: Alignment.center,
+              child: Icon(widget.icon, color: _gold, size: 22),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.subtitle,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    widget.subtitle,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.38),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: Colors.white.withValues(alpha: 0.55),
-                size: 12,
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white.withValues(alpha: 0.22),
+              size: 12,
+            ),
+          ],
         ),
       ),
     );
@@ -1133,7 +1150,7 @@ class _SavedChipState extends State<_SavedChip> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.icon, color: _gold, size: 14),
+              Icon(widget.icon, color: _gold, size: 16),
               const SizedBox(width: 8),
               Text(
                 widget.label,

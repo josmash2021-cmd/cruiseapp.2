@@ -437,6 +437,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
     }
 
+    // ── Airport selection always takes priority ──
+    // Applied after the first frame so the RiderTripController has a
+    // chance to finish its initial state emission. Previously this was
+    // nested inside an else-branch and could be skipped entirely when
+    // the caller also passed initialPickupDetails / initialDropoffDetails.
+    if (widget.airportSelection != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _autoApplyAirportSelection(widget.airportSelection!);
+      });
+    } else {
+      // No airport — wipe any metadata carried over from a previous
+      // airport trip so the dispatch payload doesn't leak.
+      _ctrl.clearAirportMetadata();
+    }
+
     // ── Pre-loaded route: skip the network fetch entirely ──
     if (widget.preloadedRoute != null &&
         widget.initialPickupDetails != null &&
@@ -466,10 +482,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _initLocation();
     } else {
       _initLocation().then((_) {
-        // Auto-geocode airport and apply as pickup or dropoff based on direction
-        if (widget.airportSelection != null) {
-          _autoApplyAirportSelection(widget.airportSelection!);
-        }
+        // Airport selection already handled above via post-frame callback.
         // Direct details available (e.g. from Choose on map) — use immediately
         if (widget.initialPickupDetails != null) {
           _ctrl.setPickup(

@@ -148,21 +148,32 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     _advance();
   }
 
+  // Guard against rapid taps: ignore a second airline/door selection
+  // while the first is still waiting for its 220ms advance delay. Without
+  // this, two selections in a row would each call _advance() and skip a
+  // step of the state machine.
+  bool _advancePending = false;
+
   void _selectAirline(String airline) {
+    if (_advancePending) return;
     final matches = _selectedAirport!.terminalsForAirline(airline);
     setState(() {
       _selectedAirline  = airline;
       _selectedTerminal = matches.isNotEmpty ? matches.first : null;
     });
-    // Small delay so user sees the selection highlight before advancing
+    _advancePending = true;
     Future.delayed(const Duration(milliseconds: 220), () {
+      _advancePending = false;
       if (mounted) _advance();
     });
   }
 
   void _selectArrivalDoor(String door) {
+    if (_advancePending) return;
     setState(() => _selectedArrivalDoor = door);
+    _advancePending = true;
     Future.delayed(const Duration(milliseconds: 220), () {
+      _advancePending = false;
       if (mounted) _advance();
     });
   }

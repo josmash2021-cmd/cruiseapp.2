@@ -596,9 +596,13 @@ extension _RideRequestMap on _RideRequestScreenState {
   }
 
   /// Reset all cinematic animation state so sequence can replay from scratch.
+  ///
+  /// Intentionally does NOT touch `_cinematicRunning` — the caller (e.g.
+  /// `_drawRoute`) claims that lock *before* invoking us so a second
+  /// concurrent `_onStateChange` bails out. Clearing it here would undo
+  /// that guard and let two cinematic sequences run in parallel.
   void _resetCinematic() {
     _cinematicDone = false;
-    _cinematicRunning = false;
     _hasAppliedSelectionTilt = false;
     _labelsRevealed = false;
 
@@ -722,20 +726,30 @@ extension _RideRequestMap on _RideRequestScreenState {
     double startZoom = 16.0;
     double startBearing = 0.0;
     try {
-      final cur = await _mapCtrl!.getCameraState();
-      final coords = cur.center.coordinates;
-      startLng = coords.lng.toDouble();
-      startLat = coords.lat.toDouble();
-      startPitch = cur.pitch;
-      startZoom = cur.zoom;
-      startBearing = cur.bearing;
+      final mc = _mapCtrl;
+      if (mc != null) {
+        final cur = await mc.getCameraState();
+        if (!mounted) {
+          _cinematicRunning = false;
+          return;
+        }
+        final coords = cur.center.coordinates;
+        startLng = coords.lng.toDouble();
+        startLat = coords.lat.toDouble();
+        startPitch = cur.pitch;
+        startZoom = cur.zoom;
+        startBearing = cur.bearing;
+      }
     } catch (_) {
       // Fallback keeps the old dropoff-centric defaults.
     }
 
     // Small beat so the initial frame renders before animating.
     await Future.delayed(const Duration(milliseconds: 100));
-    if (!mounted) { _cinematicRunning = false; return; }
+    if (!mounted || _mapCtrl == null) {
+      _cinematicRunning = false;
+      return;
+    }
 
     // ── Pin pop (concurrent) ──
     _startPinPop();
@@ -953,8 +967,10 @@ extension _RideRequestMap on _RideRequestScreenState {
         _setState(() => _dropoffScreenOffset =
             Offset(px.x.toDouble(), px.y.toDouble()));
       }
-    } catch (_) {
-      // Mapbox throws if called before the map is ready — silently ignore.
+    } catch (e) {
+      // Mapbox throws if called before the map is ready — log so we can
+      // notice if labels stop syncing unexpectedly.
+      debugPrint('[Label] _syncLabelOffsets failed: $e');
     }
   }
 
@@ -995,7 +1011,14 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Uses fire-and-forget updates to avoid frame-skipping from async backpressure.
   Future<void> _animateGoldRoute(List<LatLng> points, [Duration? duration]) async {
     final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null || points.length < 2) return;
+    if (polyMgr == null) {
+      debugPrint('[Route] _animateGoldRoute: polyline manager not ready yet');
+      return;
+    }
+    if (points.length < 2) {
+      debugPrint('[Route] _animateGoldRoute: need ≥2 points, got ${points.length}');
+      return;
+    }
 
     // Clear old route if present
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
@@ -1548,15 +1571,21 @@ extension _RideRequestMap on _RideRequestScreenState {
         _ctrl.setDropoff(place, _pickerAddress);
       }
 
-      // Phase exits pickingLocation — setPickup/setDropoff will push the
-      // controller into previewRoute once both endpoints are known. If
-      // only one is set so far, we bounce back to idle so the "Where to?"
-      // pill can be tapped for the other leg.
+      // Phase exits pickingLocation.
+      //   - Both endpoints set: _tryFetchRoute() (triggered by
+      //     setPickup/setDropoff above) flips phase → previewRoute.
+      //   - Only one set: bounce to selectingLocations so the rider
+      //     can go back to the search screen and pick the other leg.
       final s = _ctrl.state;
-      if (s.pickup != null && s.dropoff != null) {
-        // previewRoute is triggered by setDropoff's _tryFetchRoute chain.
-      } else {
+      if (s.pickup == null || s.dropoff == null) {
         _ctrl.startLocationSelection();
+        // Pop back to the pickup/dropoff search so the user can
+        // complete the other leg. Without this the screen sits on a
+        // map with no visible UI other than the idle pill.
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+          return;
+        }
       }
 
       if (mounted) {

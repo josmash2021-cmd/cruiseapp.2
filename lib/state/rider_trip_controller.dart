@@ -432,6 +432,41 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Wipe airport metadata back to null / false. Call this whenever a
+  /// fresh, non-airport ride is started so the previous airport trip's
+  /// code / terminal / flight don't leak into the new dispatch payload.
+  void clearAirportMetadata() {
+    if (!_state.isAirportTrip &&
+        _state.airportCode == null &&
+        _state.airportTerminal == null &&
+        _state.airportPickupZone == null &&
+        _state.airportFlight == null) {
+      return; // already clean
+    }
+    _state = RiderTripState(
+      phase: _state.phase,
+      pickup: _state.pickup,
+      dropoff: _state.dropoff,
+      pickupLabel: _state.pickupLabel,
+      dropoffLabel: _state.dropoffLabel,
+      route: _state.route,
+      rideOptions: _state.rideOptions,
+      selectedOption: _state.selectedOption,
+      driver: _state.driver,
+      etaMinutes: _state.etaMinutes,
+      driverLocation: _state.driverLocation,
+      driverBearing: _state.driverBearing,
+      scheduledAt: _state.scheduledAt,
+      isAirportTrip: false,
+      tripId: _state.tripId,
+      firestoreTripId: _state.firestoreTripId,
+      cancelReason: _state.cancelReason,
+      cancelCode: _state.cancelCode,
+      routeFetchFailed: _state.routeFetchFailed,
+    );
+    notifyListeners();
+  }
+
   void setAirportTrip(bool isAirport) {
     _state = _state.copyWith(isAirportTrip: isAirport);
     notifyListeners();

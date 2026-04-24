@@ -806,17 +806,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   // tier. Matches .vipRide__rideDetail from the web (description + eta
   // row + big price).
   Widget _buildRideDetailPanel(AppColors c, RideOption opt) {
-    final routeMins = _ctrl.state.route != null
-        ? _parseDurationMins(_ctrl.state.route!.durationText)
-        : 0;
-    final arrival = DateTime.now().add(
-      Duration(minutes: opt.etaMinutes + routeMins),
-    );
-    final h = arrival.hour;
-    final m = arrival.minute;
-    final ampm = h >= 12 ? 'PM' : 'AM';
-    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-    final arrivalStr = '$h12:${m.toString().padLeft(2, '0')} $ampm';
 
     // 650ms cubic-bezier(.4,0,.2,1) slide-down 6px — matches the web's
     // .vipRide__rideDetail animation keyframe vipRideDetailIn.
@@ -870,11 +859,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ),
             ),
             const SizedBox(height: 10),
+            // Web (.vipRide__rideDetail__meta) shows exactly two chips:
+            // ETA minutes and capacity. No arrival-time chip — port must
+            // match this to avoid looking cluttered.
             Row(
               children: [
                 _chipWidget(Icons.schedule_rounded, '${opt.etaMinutes} min'),
-                const SizedBox(width: 6),
-                _chipWidget(Icons.access_time_filled_rounded, arrivalStr),
                 const SizedBox(width: 6),
                 _chipWidget(Icons.person_rounded, '${opt.capacity}'),
                 const Spacer(),

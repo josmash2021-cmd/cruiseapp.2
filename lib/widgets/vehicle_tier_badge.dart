@@ -126,8 +126,10 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
                   fontFamily: 'Poppins',
                   color: Colors.white,
                   fontSize: widget.fontSize,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.9,
+                  // .vipRide__badge: font-weight 800, letter-spacing .08em
+                  // (≈0.72px at font-size 9px).
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.72,
                   height: 1.0,
                 ),
               ),
@@ -178,8 +180,10 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
               fontFamily: 'Poppins',
               color: Colors.black,
               fontSize: widget.fontSize,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.9,
+              // .vipRide__badge: font-weight 800, letter-spacing .08em
+              // (≈0.72px at font-size 9px).
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.72,
               height: 1.0,
             ),
           ),
@@ -228,8 +232,10 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
               fontFamily: 'Poppins',
               color: const Color(0xFF1A1A1A),
               fontSize: widget.fontSize,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.9,
+              // .vipRide__badge: font-weight 800, letter-spacing .08em
+              // (≈0.72px at font-size 9px).
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.72,
               height: 1.0,
             ),
           ),

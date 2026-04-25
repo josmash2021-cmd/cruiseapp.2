@@ -136,9 +136,9 @@ async def _find_nearest_drivers(
     )
     drivers = list(result.scalars().all())
 
-    # Filter by vehicle tier if VIP/Premium requested
+    # Filter by vehicle tier — applies to vip, premium, and comfort
     requested_type = (vehicle_type or "comfort").lower()
-    if requested_type in ("vip", "premium") and drivers:
+    if requested_type in ("vip", "premium", "comfort") and drivers:
         all_ids = [d.id for d in drivers]
         eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, requested_type)
         tier_matched = [d for d in drivers if d.id in eligible_ids]
@@ -720,14 +720,11 @@ async def _filter_drivers_by_vehicle_tier(
 ) -> set[int]:
     """Return driver IDs whose vehicle matches the requested tier.
 
-    VIP requests     -> VIP vehicles AND Premium vehicles (VIP drivers also serve premium rides)
-    Premium requests -> Premium or VIP vehicles; ALSO Comfort vehicles if driver
-                       rating >= 4.7 AND driver level >= Silver (50+ trips)
-    Comfort requests -> any vehicle (no filter)
+    VIP requests     -> VIP vehicles ONLY
+    Premium requests -> Premium or VIP vehicles
+    Comfort requests -> Comfort or Premium vehicles (NOT VIP)
     """
     requested = (requested_type or "comfort").lower().strip()
-    if requested == "comfort":
-        return set(driver_ids)  # comfort accepts any vehicle
     if not driver_ids:
         return set()
 
@@ -743,9 +740,16 @@ async def _filter_drivers_by_vehicle_tier(
     eligible = set()
 
     if requested == "vip":
-        # VIP rides go to VIP and Premium drivers
+        # VIP rides go to VIP drivers only
         for uid, vt in veh_map.items():
-            if vt in ("vip", "premium"):
+            if vt == "vip":
+                eligible.add(uid)
+        return eligible
+
+    if requested == "comfort":
+        # Comfort rides go to Comfort and Premium drivers (NOT VIP)
+        for uid, vt in veh_map.items():
+            if vt in ("comfort", "premium"):
                 eligible.add(uid)
         return eligible
 

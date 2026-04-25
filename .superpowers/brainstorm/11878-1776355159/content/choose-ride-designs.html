@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Choose a Ride — Design Options</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a0c; color:#fff; font-family:'Poppins',system-ui,sans-serif; padding:20px; }
+h1 { font-size:22px; font-weight:700; color:#E8C547; margin-bottom:6px; text-align:center; }
+.subtitle { font-size:13px; color:rgba(255,255,255,.5); text-align:center; margin-bottom:30px; }
+.design-label { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:#E8C547; margin-bottom:12px; padding:6px 14px; background:rgba(232,197,71,.08); border-radius:20px; display:inline-block; }
+.design-section { margin-bottom:50px; padding-bottom:40px; border-bottom:1px solid rgba(255,255,255,.06); }
+
+/* ========== PHONE FRAME ========== */
+.phone { width:320px; margin:16px auto; background:#121214; border-radius:28px; border:2px solid rgba(255,255,255,.08); overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.6); }
+.phone-map { height:180px; background:linear-gradient(145deg,#0d1117,#161b22); position:relative; overflow:hidden; }
+.phone-map::after { content:''; position:absolute; inset:0; background:radial-gradient(circle at 60% 40%, rgba(232,197,71,.06) 0%, transparent 60%); }
+.map-pin { position:absolute; top:50%; left:50%; transform:translate(-50%,-100%); width:28px; height:36px; }
+.map-pin svg { width:100%; height:100%; }
+.map-route { position:absolute; top:30%; left:20%; width:60%; height:40%; }
+.map-route svg { width:100%; height:100%; }
+
+/* ========== DESIGN A: Premium Glass ========== */
+.sheet-a { background:rgba(18,18,20,.97); backdrop-filter:blur(20px); border-radius:20px 20px 0 0; padding:16px; }
+.sheet-a .handle { width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.12); margin:0 auto 14px; }
+.sheet-a .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.sheet-a .header h3 { font-size:18px; font-weight:700; }
+.sheet-a .estimate { display:flex; gap:6px; font-size:12px; color:rgba(255,255,255,.45); font-weight:500; }
+.sheet-a .estimate b { color:#E8C547; }
+
+.card-a { display:flex; align-items:center; gap:14px; padding:14px; background:linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.07); border-radius:16px; margin-bottom:10px; cursor:pointer; transition:all .2s; position:relative; overflow:hidden; }
+.card-a::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg, rgba(232,197,71,.04), transparent 60%); opacity:0; transition:opacity .3s; }
+.card-a:hover::before, .card-a.is-active::before { opacity:1; }
+.card-a.is-active { border-color:rgba(232,197,71,.35); box-shadow:0 0 0 1px rgba(232,197,71,.15), 0 8px 32px rgba(232,197,71,.08); }
+.card-a .img { width:90px; height:64px; border-radius:12px; overflow:hidden; background:rgba(255,255,255,.03); flex-shrink:0; display:flex; align-items:center; justify-content:center; position:relative; }
+.card-a .img img { width:100%; height:100%; object-fit:cover; }
+.card-a .badge { position:absolute; top:4px; left:4px; font-size:8px; font-weight:700; padding:2px 6px; border-radius:4px; letter-spacing:.04em; text-transform:uppercase; z-index:1; }
+.badge-vip { background:linear-gradient(135deg,#E8C547,#d4a017); color:#0a0e1a; }
+.badge-premium { background:rgba(232,197,71,.85); color:#0a0e1a; }
+.badge-standard { background:rgba(100,180,255,.8); color:#0a0e1a; }
+.card-a .meta { flex:1; min-width:0; }
+.card-a .name { font-size:14px; font-weight:700; margin-bottom:2px; }
+.card-a .desc { font-size:11px; color:rgba(255,255,255,.4); margin-bottom:4px; }
+.card-a .bottom-row { display:flex; align-items:center; justify-content:space-between; }
+.card-a .eta { font-size:11px; color:rgba(255,255,255,.4); }
+.card-a .seats { font-size:10px; color:rgba(255,255,255,.3); }
+.card-a .price { font-size:17px; font-weight:800; color:#E8C547; }
+
+/* ========== DESIGN B: Uber-style Horizontal Scroll ========== */
+.sheet-b { background:#121214; border-radius:20px 20px 0 0; padding:16px; }
+.sheet-b .handle { width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.12); margin:0 auto 14px; }
+.sheet-b .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.sheet-b .header h3 { font-size:18px; font-weight:700; }
+.sheet-b .estimate { font-size:12px; color:rgba(255,255,255,.45); }
+
+.scroll-b { display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+.scroll-b::-webkit-scrollbar { display:none; }
+.card-b { min-width:140px; max-width:140px; scroll-snap-align:start; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:10px; text-align:center; cursor:pointer; transition:all .2s; flex-shrink:0; }
+.card-b.is-active { border-color:rgba(232,197,71,.4); background:rgba(232,197,71,.06); }
+.card-b .img-b { width:100%; height:70px; border-radius:10px; overflow:hidden; background:rgba(255,255,255,.03); margin-bottom:8px; display:flex; align-items:center; justify-content:center; position:relative; }
+.card-b .img-b img { width:100%; height:100%; object-fit:cover; }
+.card-b .badge-b { position:absolute; top:4px; left:4px; font-size:7px; font-weight:700; padding:2px 5px; border-radius:4px; text-transform:uppercase; }
+.card-b .name-b { font-size:13px; font-weight:700; margin-bottom:2px; }
+.card-b .seats-b { font-size:10px; color:rgba(255,255,255,.35); margin-bottom:4px; }
+.card-b .price-b { font-size:16px; font-weight:800; color:#E8C547; }
+
+/* ========== DESIGN C: Compact Stack with Gold Accent ========== */
+.sheet-c { background:#121214; border-radius:20px 20px 0 0; padding:16px; }
+.sheet-c .handle { width:36px; height:4px; border-radius:2px; background:rgba(255,255,255,.12); margin:0 auto 14px; }
+.sheet-c .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.sheet-c .header h3 { font-size:18px; font-weight:700; }
+.sheet-c .estimate { font-size:12px; color:rgba(255,255,255,.45); }
+
+.card-c { display:flex; align-items:center; gap:12px; padding:12px 14px; background:transparent; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; transition:all .2s; position:relative; }
+.card-c:last-child { border-bottom:none; }
+.card-c::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:#E8C547; border-radius:0 3px 3px 0; opacity:0; transition:opacity .2s; }
+.card-c.is-active::before { opacity:1; }
+.card-c.is-active { background:rgba(232,197,71,.04); }
+.card-c .img-c { width:56px; height:56px; border-radius:12px; overflow:hidden; background:rgba(255,255,255,.03); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.card-c .img-c img { width:100%; height:100%; object-fit:cover; }
+.card-c .mid { flex:1; min-width:0; }
+.card-c .name-c { font-size:14px; font-weight:600; margin-bottom:1px; }
+.card-c .desc-c { font-size:11px; color:rgba(255,255,255,.35); }
+.card-c .right-c { text-align:right; }
+.card-c .price-c { font-size:16px; font-weight:800; color:#E8C547; }
+.card-c .seats-c { font-size:10px; color:rgba(255,255,255,.3); }
+
+/* ========== SELECTION ========== */
+.pick { display:flex; gap:10px; justify-content:center; margin-top:20px; flex-wrap:wrap; }
+.pick-btn { padding:10px 28px; border-radius:12px; border:1px solid rgba(255,255,255,.1); background:transparent; color:#fff; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+.pick-btn:hover { border-color:rgba(232,197,71,.3); background:rgba(232,197,71,.06); }
+.pick-btn.selected { border-color:#E8C547; background:rgba(232,197,71,.12); color:#E8C547; }
+</style>
+</head>
+<body>
+
+<h1>Choose a Ride — Rediseño</h1>
+<p class="subtitle">Elige el estilo que prefieras para las tarjetas de vehículos</p>
+
+<!-- ============ DESIGN A ============ -->
+<div class="design-section">
+<span class="design-label">A — Premium Glass</span>
+<p style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:16px;">Cards con gradiente sutil, imagen a la izquierda, precio a la derecha. Elegante y fácil de escanear.</p>
+<div class="phone">
+  <div class="phone-map">
+    <svg class="map-route" viewBox="0 0 200 100" fill="none" stroke="#E8C547" stroke-width="3" stroke-linecap="round" opacity=".6"><path d="M20 80 Q60 20 100 50 T180 20"/></svg>
+  </div>
+  <div class="sheet-a">
+    <div class="handle"></div>
+    <div class="header">
+      <h3>Choose a ride</h3>
+      <div class="estimate"><b>4 min</b> · 0.8 mi</div>
+    </div>
+    <div class="card-a is-active">
+      <div class="img"><span class="badge badge-vip">★ VIP</span><div style="width:90px;height:64px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:32px;">🚙</div></div>
+      <div class="meta">
+        <div class="name">VIP Suburban</div>
+        <div class="desc">Spacious · Leather · Snacks</div>
+        <div class="bottom-row"><span class="eta">4 min · <span class="seats">👤 7</span></span><span class="price">$85</span></div>
+      </div>
+    </div>
+    <div class="card-a">
+      <div class="img"><span class="badge badge-premium">◆ Premium</span><div style="width:90px;height:64px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:32px;">🚗</div></div>
+      <div class="meta">
+        <div class="name">Premium Camry</div>
+        <div class="desc">Comfort · Climate · Charger</div>
+        <div class="bottom-row"><span class="eta">3 min · <span class="seats">👤 4</span></span><span class="price">$65</span></div>
+      </div>
+    </div>
+    <div class="card-a">
+      <div class="img"><span class="badge badge-standard">🍃 Comfort</span><div style="width:90px;height:64px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:32px;">🚘</div></div>
+      <div class="meta">
+        <div class="name">Comfort Fusion</div>
+        <div class="desc">Clean · Safe · Efficient</div>
+        <div class="bottom-row"><span class="eta">2 min · <span class="seats">👤 4</span></span><span class="price">$45</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============ DESIGN B ============ -->
+<div class="design-section">
+<span class="design-label">B — Horizontal Scroll</span>
+<p style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:16px;">Scroll horizontal estilo Uber. Más espacio para el mapa. Cards compactas centradas en imagen + precio.</p>
+<div class="phone">
+  <div class="phone-map" style="height:240px;">
+    <svg class="map-route" viewBox="0 0 200 100" fill="none" stroke="#E8C547" stroke-width="3" stroke-linecap="round" opacity=".6"><path d="M20 80 Q60 20 100 50 T180 20"/></svg>
+  </div>
+  <div class="sheet-b">
+    <div class="handle"></div>
+    <div class="header">
+      <h3>Choose a ride</h3>
+      <div class="estimate">4 min · 0.8 mi</div>
+    </div>
+    <div class="scroll-b">
+      <div class="card-b is-active">
+        <div class="img-b"><span class="badge-b badge-vip">★ VIP</span><div style="width:100%;height:70px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:36px;">🚙</div></div>
+        <div class="name-b">VIP Suburban</div>
+        <div class="seats-b">👤 7 passengers</div>
+        <div class="price-b">$85</div>
+      </div>
+      <div class="card-b">
+        <div class="img-b"><span class="badge-b badge-premium">◆ Premium</span><div style="width:100%;height:70px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:36px;">🚗</div></div>
+        <div class="name-b">Premium Camry</div>
+        <div class="seats-b">👤 4 passengers</div>
+        <div class="price-b">$65</div>
+      </div>
+      <div class="card-b">
+        <div class="img-b"><span class="badge-b badge-standard">🍃</span><div style="width:100%;height:70px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:36px;">🚘</div></div>
+        <div class="name-b">Comfort Fusion</div>
+        <div class="seats-b">👤 4 passengers</div>
+        <div class="price-b">$45</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============ DESIGN C ============ -->
+<div class="design-section">
+<span class="design-label">C — Compact List</span>
+<p style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:16px;">Minimalista. Sin bordes. Acento gold a la izquierda. Imagen cuadrada pequeña. Precio alineado a la derecha.</p>
+<div class="phone">
+  <div class="phone-map" style="height:220px;">
+    <svg class="map-route" viewBox="0 0 200 100" fill="none" stroke="#E8C547" stroke-width="3" stroke-linecap="round" opacity=".6"><path d="M20 80 Q60 20 100 50 T180 20"/></svg>
+  </div>
+  <div class="sheet-c">
+    <div class="handle"></div>
+    <div class="header">
+      <h3>Choose a ride</h3>
+      <div class="estimate">4 min · 0.8 mi</div>
+    </div>
+    <div class="card-c is-active">
+      <div class="img-c"><div style="width:56px;height:56px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:28px;border-radius:12px;">🚙</div></div>
+      <div class="mid">
+        <div class="name-c">VIP Suburban</div>
+        <div class="desc-c">★ VIP · 👤 7 · 4 min</div>
+      </div>
+      <div class="right-c">
+        <div class="price-c">$85</div>
+        <div class="seats-c">From</div>
+      </div>
+    </div>
+    <div class="card-c">
+      <div class="img-c"><div style="width:56px;height:56px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:28px;border-radius:12px;">🚗</div></div>
+      <div class="mid">
+        <div class="name-c">Premium Camry</div>
+        <div class="desc-c">◆ Premium · 👤 4 · 3 min</div>
+      </div>
+      <div class="right-c">
+        <div class="price-c">$65</div>
+        <div class="seats-c">From</div>
+      </div>
+    </div>
+    <div class="card-c">
+      <div class="img-c"><div style="width:56px;height:56px;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;font-size:28px;border-radius:12px;">🚘</div></div>
+      <div class="mid">
+        <div class="name-c">Comfort Fusion</div>
+        <div class="desc-c">🍃 Standard · 👤 4 · 2 min</div>
+      </div>
+      <div class="right-c">
+        <div class="price-c">$45</div>
+        <div class="seats-c">From</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============ VOTE ============ -->
+<div style="text-align:center;padding:20px 0 40px;">
+<h2 style="font-size:16px;margin-bottom:14px;">¿Cuál prefieres?</h2>
+<div class="pick">
+  <button class="pick-btn" onclick="this.classList.toggle('selected')">A — Premium Glass</button>
+  <button class="pick-btn" onclick="this.classList.toggle('selected')">B — Horizontal</button>
+  <button class="pick-btn" onclick="this.classList.toggle('selected')">C — Compact List</button>
+</div>
+</div>
+
+</body>
+</html>

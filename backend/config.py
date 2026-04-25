@@ -104,7 +104,7 @@ except ImportError:
 # ── PayPal ──
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
-PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "false").lower() == "true"
+PAYPAL_SANDBOX = os.getenv("PAYPAL_SANDBOX", "false").lower() in ("true", "1", "yes", "on")
 # PAYPAL_CLIENT_SECRET falls back to PAYPAL_SECRET for Railway compatibility
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "") or PAYPAL_SECRET
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "live")

@@ -567,12 +567,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 blurRadius: 30,
                 spreadRadius: -5,
               ),
-              // Inner glow when selected
+              // Inner glow when selected (using non-inset shadow as fallback)
               if (selected)
                 BoxShadow(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.1),
-                  blurRadius: 20,
-                  inset: true,
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  spreadRadius: 2,
                 ),
             ],
           ),
@@ -2603,7 +2603,7 @@ class _WebRequestButtonState extends State<_WebRequestButton> {
 class _PressableScale extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
-  const _PressableScale({required this.child, required this.onTap});
+  const _PressableScale({super.key, required this.child, required this.onTap});
 
   @override
   State<_PressableScale> createState() => _PressableScaleState();

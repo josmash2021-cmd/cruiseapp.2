@@ -161,6 +161,9 @@ const List<(double, double)> _searchCameraAngles = [
   (50.0, -10.0),  // Confirming — settling back center-left
 ];
 
+/// Enum for payment retry actions
+enum _RetryAction { retrySame, tryDifferentMethod, addNewCard, cancel }
+
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }

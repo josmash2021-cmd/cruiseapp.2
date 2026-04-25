@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
@@ -133,7 +134,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
         origin: o,
         destination: d,
       );
-      if (result.points.isNotEmpty) return result.points;
+      if (result != null && result.points.isNotEmpty) return result.points;
     } catch (_) {}
     
     // Fallback: línea recta

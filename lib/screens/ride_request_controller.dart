@@ -1889,9 +1889,6 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
-// Enum for retry actions
-enum _RetryAction { retrySame, tryDifferentMethod, addNewCard, cancel }
-
 /// Smart payment retry dialog that adapts based on available methods and error type
 class _PaymentRetryDialog extends StatelessWidget {
   final String title;

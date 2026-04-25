@@ -430,6 +430,202 @@ async def cancel_web_hold(intent_id: str, request: Request):
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
+# -------------------------------------------------------
+#  WEB PAYPAL v2 — create + capture orders for Shopify checkout
+# -------------------------------------------------------
+
+def _verify_web_key(request: Request):
+    """Shared auth helper for /payments/web/paypal/* endpoints."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid web checkout key")
+
+
+async def _paypal_token() -> str:
+    """Get a PayPal OAuth access token for REST API calls."""
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            f"{base}/v1/oauth2/token",
+            data={"grant_type": "client_credentials"},
+            auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if r.status_code != 200:
+            logging.error("[WebPayPal] auth failed: %s", r.text)
+            raise HTTPException(502, "PayPal auth failed")
+        return r.json()["access_token"]
+
+
+@router.post("/payments/web/paypal/create-order")
+async def create_web_paypal_order(request: Request):
+    """Create a PayPal order for a Shopify checkout (Authorize, capture later)."""
+    _verify_web_key(request)
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
+
+    if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
+        raise HTTPException(503, "PayPal not configured")
+
+    body = await request.json()
+    amount_cents = int(body.get("amount", 0))
+    currency = str(body.get("currency", "USD")).upper()
+    description = body.get("description", "Cruise Ride")
+
+    if amount_cents <= 0 or amount_cents > 10_000_00:
+        raise HTTPException(400, "Invalid amount")
+
+    amount_str = f"{amount_cents / 100:.2f}"
+
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    token = await _paypal_token()
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Use AUTHORIZE so we hold funds and capture only when trip completes
+        r = await client.post(
+            f"{base}/v2/checkout/orders",
+            json={
+                "intent": "AUTHORIZE",
+                "purchase_units": [{
+                    "amount": {"currency_code": currency, "value": amount_str},
+                    "description": description[:127],
+                }],
+                "application_context": {
+                    "shipping_preference": "NO_SHIPPING",
+                    "user_action": "PAY_NOW",
+                    "brand_name": "Cruise",
+                    "locale": "en-US",
+                    "return_url": "https://cruiseinride.com/products/vip-service?paypal_return=1",
+                    "cancel_url": "https://cruiseinride.com/products/vip-service?paypal_cancel=1",
+                },
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+        )
+        if r.status_code not in (200, 201):
+            logging.error("[WebPayPal] create failed: %s %s", r.status_code, r.text)
+            raise HTTPException(502, "PayPal order creation failed")
+        data = r.json()
+        # Extract approve link, fallback to constructing it from order_id
+        approve_url = next((l["href"] for l in data.get("links", []) if l.get("rel") in ("approve", "payer-action")), "")
+        if not approve_url and data.get("id"):
+            checkout_base = "https://www.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://www.paypal.com"
+            approve_url = f"{checkout_base}/checkoutnow?token={data['id']}"
+        logging.info("[WebPayPal] order created: %s amount=$%s approve=%s", data.get("id"), amount_str, approve_url[:80])
+        return {
+            "order_id": data["id"],
+            "status": data.get("status", ""),
+            "approve_url": approve_url,
+        }
+
+
+@router.post("/payments/web/paypal/capture-order")
+async def capture_web_paypal_order(request: Request):
+    """Authorize (hold) the approved PayPal order — final capture happens when trip completes."""
+    _verify_web_key(request)
+
+    if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
+        raise HTTPException(503, "PayPal not configured")
+
+    body = await request.json()
+    order_id = body.get("order_id", "")
+    if not order_id:
+        raise HTTPException(400, "Missing order_id")
+
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    token = await _paypal_token()
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Authorize (hold). We'll capture server-side when trip completes.
+        r = await client.post(
+            f"{base}/v2/checkout/orders/{order_id}/authorize",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+        )
+        if r.status_code not in (200, 201):
+            logging.error("[WebPayPal] authorize failed: %s %s", r.status_code, r.text)
+            raise HTTPException(502, "PayPal authorize failed")
+        data = r.json()
+        # Extract the authorization_id (used later to capture or void)
+        auth_id = ""
+        try:
+            auth_id = data["purchase_units"][0]["payments"]["authorizations"][0]["id"]
+        except (KeyError, IndexError):
+            pass
+        logging.info("[WebPayPal] authorized: order=%s auth_id=%s", order_id, auth_id)
+        return {
+            "order_id": order_id,
+            "status": data.get("status", ""),
+            "authorization_id": auth_id,
+        }
+
+
+@router.post("/payments/web/paypal/capture-auth/{authorization_id}")
+async def capture_web_paypal_auth(authorization_id: str, request: Request):
+    """Capture a held PayPal authorization — called when trip completes."""
+    _verify_web_key(request)
+
+    if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
+        raise HTTPException(503, "PayPal not configured")
+
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    token = await _paypal_token()
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            f"{base}/v2/payments/authorizations/{authorization_id}/capture",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+        )
+        if r.status_code not in (200, 201):
+            logging.error("[WebPayPal] capture failed: %s %s", r.status_code, r.text)
+            raise HTTPException(502, "PayPal capture failed")
+        data = r.json()
+        logging.info("[WebPayPal] captured: auth=%s capture_id=%s", authorization_id, data.get("id"))
+        return {"capture_id": data.get("id"), "status": data.get("status", "")}
+
+
+@router.post("/payments/web/paypal/void-auth/{authorization_id}")
+async def void_web_paypal_auth(authorization_id: str, request: Request):
+    """Void (release) a held PayPal authorization — called on trip cancel."""
+    _verify_web_key(request)
+
+    if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
+        raise HTTPException(503, "PayPal not configured")
+
+    import httpx
+    base = "https://api-m.sandbox.paypal.com" if PAYPAL_SANDBOX else "https://api-m.paypal.com"
+    token = await _paypal_token()
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            f"{base}/v2/payments/authorizations/{authorization_id}/void",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code not in (200, 204):
+            logging.error("[WebPayPal] void failed: %s %s", r.status_code, r.text)
+            raise HTTPException(502, "PayPal void failed")
+        logging.info("[WebPayPal] voided: auth=%s", authorization_id)
+        return {"status": "voided"}
+
+
 from fastapi.responses import RedirectResponse
 
 # Rate limiting for web checkout — max 10 requests per IP per minute
@@ -1996,4 +2192,226 @@ async def web_get_default_payment(request: Request, db: AsyncSession = Depends(g
             "stripe_pm_id": pm.stripe_pm_id or "",
         }
     }
+
+
+# -----------------------------------------------------------------
+# SCHEDULED RIDE EMAIL NOTIFICATIONS (SMTP) — use shared Cruise template
+# -----------------------------------------------------------------
+from services.email_sms_service import _send_email as _send_email_smtp
+from services.email_service import (
+    _shell, _h1, _h2, _p, _badge, _info_card, _row, _route_block
+)
+import asyncio as _asyncio_email
+
+
+def _sched_summary(pickup, dropoff, when, vehicle, booking_id, lang="en"):
+    lbl_sched = "Programado para" if lang == "es" else "Scheduled for"
+    lbl_vehicle = "Vehículo" if lang == "es" else "Vehicle"
+    lbl_booking = "Reserva" if lang == "es" else "Booking"
+    lbl_details = "Detalles del viaje" if lang == "es" else "Ride details"
+    info_rows = _row(lbl_sched, when) + _row(lbl_vehicle, vehicle) + _row(lbl_booking, str(booking_id), last=True)
+    return _route_block(pickup, dropoff, lang) + _h2(lbl_details) + _info_card(info_rows)
+
+
+@router.post("/emails/web/sched-confirm")
+async def email_sched_confirm(request: Request):
+    """Send 'Ride reserved' confirmation email (scheduled only)."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+
+    body = await request.json()
+    to = (body.get("to_email") or "").strip()
+    if not to:
+        raise HTTPException(400, "Missing email")
+    name = body.get("to_name") or "Guest"
+    lang = (body.get("lang") or "en").lower()
+    vehicle = body.get("vehicle") or "Cruise"
+    pickup = body.get("pickup") or "—"
+    dropoff = body.get("dropoff") or "—"
+    when = body.get("scheduled_when") or "—"
+    booking_id = body.get("booking_id") or "—"
+
+    if lang == "es":
+        subject = f"Tu viaje está reservado — {booking_id}"
+        preheader = "Te notificaremos cuando un conductor sea asignado."
+        heading = "Tu reserva está confirmada"
+        intro = (f"Hola {name}, hemos confirmado tu viaje programado. "
+                 "Te avisaremos por email en cuanto un conductor acepte tu viaje.")
+        status_badge = _badge("Ride Reserved", "#E8C547")
+        hold_note = ("Tu tarjeta tiene un monto en espera (hold). "
+                     "Solo se cobrará cuando el viaje se complete.")
+    else:
+        subject = f"Your ride is reserved — {booking_id}"
+        preheader = "We'll email you the moment a driver is assigned."
+        heading = "Your reservation is confirmed"
+        intro = (f"Hi {name}, we've locked in your scheduled ride. "
+                 "We'll email you as soon as a driver accepts.")
+        status_badge = _badge("Ride Reserved", "#E8C547")
+        hold_note = ("A hold has been placed on your card. "
+                     "You'll only be charged when the trip is completed.")
+
+    body_html = (
+        f'<div style="text-align:center;margin-bottom:20px;">{status_badge}</div>'
+        + _h1(heading)
+        + _p(intro)
+        + _sched_summary(pickup, dropoff, when, vehicle, booking_id, lang)
+        + _p(hold_note)
+    )
+    html = _shell(subject, preheader, body_html)
+
+    loop = _asyncio_email.get_event_loop()
+    try:
+        sent = await loop.run_in_executor(None, lambda: _send_email_smtp(to, subject, html, skip_emailjs=True))
+        return {"ok": bool(sent), "to": to}
+    except Exception as e:
+        logging.error("[email sched-confirm] %s", e)
+        raise HTTPException(500, "email send failed")
+
+
+@router.post("/emails/web/sched-driver")
+async def email_sched_driver(request: Request):
+    """Send 'Driver confirmed' email for scheduled rides."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+
+    body = await request.json()
+    to = (body.get("to_email") or "").strip()
+    if not to:
+        raise HTTPException(400, "Missing email")
+    name = body.get("to_name") or "Guest"
+    lang = (body.get("lang") or "en").lower()
+    vehicle = body.get("vehicle") or "Cruise"
+    pickup = body.get("pickup") or "—"
+    dropoff = body.get("dropoff") or "—"
+    when = body.get("scheduled_when") or "—"
+    driver_name = body.get("driver_name") or ("Tu conductor" if lang == "es" else "Your driver")
+    driver_rating = body.get("driver_rating") or ""
+    vehicle_make = body.get("vehicle_make") or ""
+    vehicle_model = body.get("vehicle_model") or ""
+    vehicle_plate = body.get("vehicle_plate") or ""
+    booking_id = body.get("booking_id") or "—"
+
+    car_desc = " ".join([p for p in [vehicle_make, vehicle_model] if p]).strip() or "—"
+    rating_str = f"⭐ {driver_rating}" if driver_rating else ""
+    plate_str = vehicle_plate or "—"
+
+    if lang == "es":
+        subject = f"Tu conductor está confirmado — {booking_id}"
+        preheader = f"{driver_name} te recogerá a la hora programada."
+        heading = "Tu conductor está listo"
+        intro = (f"Hola {name}, tu conductor para el viaje programado ha sido asignado. "
+                 "Te enviaremos otra notificación cuando esté en camino.")
+        status_badge = _badge("Driver Confirmed", "#22c55e")
+        lbl_driver = "Tu conductor"
+        lbl_car = "Vehículo del conductor"
+        lbl_plate = "Placa"
+    else:
+        subject = f"Your driver is confirmed — {booking_id}"
+        preheader = f"{driver_name} will pick you up at your scheduled time."
+        heading = "Your driver is ready"
+        intro = (f"Hi {name}, a driver has been assigned to your scheduled ride. "
+                 "We'll email you again when they're on their way.")
+        status_badge = _badge("Driver Confirmed", "#22c55e")
+        lbl_driver = "Your driver"
+        lbl_car = "Driver's vehicle"
+        lbl_plate = "Plate"
+
+    driver_rows = _row(lbl_driver, f"{driver_name}  {rating_str}".strip()) + _row(lbl_car, car_desc) + _row(lbl_plate, plate_str, last=True)
+    driver_card = _h2(lbl_driver) + _info_card(driver_rows)
+
+    body_html = (
+        f'<div style="text-align:center;margin-bottom:20px;">{status_badge}</div>'
+        + _h1(heading)
+        + _p(intro)
+        + driver_card
+        + _sched_summary(pickup, dropoff, when, vehicle, booking_id, lang)
+    )
+    html = _shell(subject, preheader, body_html)
+
+    loop = _asyncio_email.get_event_loop()
+    try:
+        sent = await loop.run_in_executor(None, lambda: _send_email_smtp(to, subject, html, skip_emailjs=True))
+        return {"ok": bool(sent), "to": to}
+    except Exception as e:
+        logging.error("[email sched-driver] %s", e)
+        raise HTTPException(500, "email send failed")
+
+
+@router.post("/emails/web/sched-enroute")
+async def email_sched_enroute(request: Request):
+    """Send 'Driver on the way' email (scheduled rides only)."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
+        raise HTTPException(401, "Invalid key")
+
+    body = await request.json()
+    to = (body.get("to_email") or "").strip()
+    if not to:
+        raise HTTPException(400, "Missing email")
+    name = body.get("to_name") or "Guest"
+    lang = (body.get("lang") or "en").lower()
+    vehicle = body.get("vehicle") or "Cruise"
+    pickup = body.get("pickup") or "—"
+    driver_name = body.get("driver_name") or ("Tu conductor" if lang == "es" else "Your driver")
+    booking_id = body.get("booking_id") or "—"
+    tracking_url = body.get("live_tracking_url") or "https://cruiseinride.com/products/vip-service"
+
+    if lang == "es":
+        subject = f"Tu conductor está en camino — {booking_id}"
+        preheader = f"{driver_name} va hacia tu punto de recogida ahora."
+        heading = "Tu conductor está en camino"
+        intro = (f"Hola {name}, <b style=\"color:#E8C547\">{driver_name}</b> está yendo a tu punto de recogida. "
+                 "Por favor asegúrate de estar listo.")
+        status_badge = _badge("● Live — On The Way", "#E8C547")
+        cta_label = "Ver en vivo"
+        lbl_pickup = "Recogida"
+        lbl_vehicle = "Vehículo"
+        lbl_booking = "Reserva"
+    else:
+        subject = f"Your driver is on the way — {booking_id}"
+        preheader = f"{driver_name} is heading to your pickup now."
+        heading = "Your driver is on the way"
+        intro = (f"Hi {name}, <b style=\"color:#E8C547\">{driver_name}</b> is heading to your pickup. "
+                 "Please be ready at your pickup location.")
+        status_badge = _badge("● Live — On The Way", "#E8C547")
+        cta_label = "Track live"
+        lbl_pickup = "Pickup"
+        lbl_vehicle = "Vehicle"
+        lbl_booking = "Booking"
+
+    cta_html = (
+        f'<div style="text-align:center;margin:24px 0;">'
+        f'<a href="{tracking_url}" style="display:inline-block;background:#E8C547;color:#0a0a0a;text-decoration:none;padding:14px 36px;border-radius:100px;font-weight:800;font-size:13px;letter-spacing:1.5px;text-transform:uppercase">{cta_label}</a>'
+        '</div>'
+    )
+
+    info_rows = _row(lbl_pickup, pickup) + _row(lbl_vehicle, vehicle) + _row(lbl_booking, str(booking_id), last=True)
+
+    body_html = (
+        f'<div style="text-align:center;margin-bottom:20px;">{status_badge}</div>'
+        + _h1(heading)
+        + _p(intro)
+        + cta_html
+        + _info_card(info_rows)
+    )
+    html = _shell(subject, preheader, body_html)
+
+    loop = _asyncio_email.get_event_loop()
+    try:
+        sent = await loop.run_in_executor(None, lambda: _send_email_smtp(to, subject, html, skip_emailjs=True))
+        return {"ok": bool(sent), "to": to}
+    except Exception as e:
+        logging.error("[email sched-enroute] %s", e)
+        raise HTTPException(500, "email send failed")
 

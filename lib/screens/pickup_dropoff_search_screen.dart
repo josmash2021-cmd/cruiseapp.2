@@ -227,8 +227,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _dropoffCtrl.text = suggestion.description;
         _suggestions = [];
       });
+      // Always open the MapPicker centered on the chosen address so the
+      // rider can fine-tune the exact dropoff pin before we route to
+      // ride_request — matches the live web behavior where tapping a
+      // dropoff suggestion drops the rider into the map confirm step.
       if (_pickupDetails != null) {
-        _returnResults();
+        await _confirmDropoffOnMap(details);
       } else {
         setState(() {
           _editingPickup = true;
@@ -258,6 +262,52 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       await LocalDataService.addRecentSearch(suggestion.description);
       if (mounted) _loadFavorites();
     }
+  }
+
+  /// Push the MapPickerScreen pre-centered on [seed] so the rider can
+  /// nudge the pin to the exact dropoff location, then return to the
+  /// ride_request flow with the adjusted coordinates. Cancels just
+  /// re-focus the dropoff field.
+  Future<void> _confirmDropoffOnMap(PlaceDetails seed) async {
+    HapticFeedback.lightImpact();
+    if (!mounted) return;
+    final raw = await Navigator.of(context).push<Map<String, dynamic>>(
+      slideUpFadeRoute(
+        MapPickerScreen(
+          initialLat: seed.lat,
+          initialLng: seed.lng,
+          isPickup: false,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (raw == null) {
+      // Rider backed out of the map — keep the typed dropoff text but
+      // wait for them to confirm again. Re-focus so the keyboard can
+      // close cleanly without leaving a half-open state.
+      _dropoffFocus.unfocus();
+      return;
+    }
+
+    final adjusted = PlaceDetails(
+      address: (raw['address'] as String?)?.isNotEmpty == true
+          ? raw['address'] as String
+          : seed.address,
+      lat: (raw['lat'] as num?)?.toDouble() ?? seed.lat,
+      lng: (raw['lng'] as num?)?.toDouble() ?? seed.lng,
+    );
+
+    setState(() {
+      _dropoffDetails = adjusted;
+      _dropoffLabel = adjusted.address;
+      _dropoffCtrl.text = adjusted.address;
+      _handoffLat = adjusted.lat;
+      _handoffLng = adjusted.lng;
+      _handoffZoom = (raw['zoom'] as num?)?.toDouble();
+      _handoffBearing = (raw['bearing'] as num?)?.toDouble();
+      _handoffPitch = (raw['pitch'] as num?)?.toDouble();
+    });
+    _returnResults();
   }
 
   Future<void> _onFieldSubmitted(String value) async {

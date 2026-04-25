@@ -566,10 +566,13 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   //  STEP 0 — Direction Picker (1:1 with web - vertical cards)
   // ─────────────────────────────────────────────
   Widget _buildDirectionPicker() {
+    final mq = MediaQuery.of(context);
+    final topPadding = mq.padding.top + 80; // Space below status bar/notch
+
     return Center(
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+        padding: EdgeInsets.fromLTRB(20, topPadding, 20, 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

@@ -103,7 +103,7 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
                   child: _RideTypeCard(
                     floatController: _floatCtl,
                     floatPhase: 0,
-                    imageAsset: 'assets/images/ride_type_airport.png',
+                    imageAsset: 'assets/airport/airport_takeoff.png',
                     title: s.airportLabel,
                     subtitle: s.airportSubtitle,
                     onTap: () => Navigator.pop(context, 'airport'),

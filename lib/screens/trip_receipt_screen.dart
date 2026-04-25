@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
@@ -170,8 +171,10 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     try {
       final data = await ApiService.getFareBreakdown(tid);
       if (mounted) setState(() => _fareBreakdown = data);
-    } catch (_) {
-      // Fare breakdown is optional — silently ignore errors
+    } catch (e) {
+      // Fare breakdown is optional — silently ignore errors in production,
+      // but log in debug for troubleshooting
+      debugPrint('[TripReceipt] Failed to load fare breakdown: $e');
     }
   }
 

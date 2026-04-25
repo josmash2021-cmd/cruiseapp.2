@@ -54,31 +54,43 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_remainingRouteAnnot != null) {
-        try { await polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
+        try { await polyMgr.delete(_remainingRouteAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete route annotation: $e');
+        }
         _remainingRouteAnnot = null;
       }
       if (_dimmedRouteAnnot != null) {
-        try { await polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+        try { await polyMgr.delete(_dimmedRouteAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete dimmed route: $e');
+        }
         _dimmedRouteAnnot = null;
       }
       if (_approachAnnot != null) {
-        try { await polyMgr.delete(_approachAnnot!); } catch (_) {}
+        try { await polyMgr.delete(_approachAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete approach annotation: $e');
+        }
         _approachAnnot = null;
       }
     }
     final carMgr = _carAnnotMgr;
     if (carMgr != null && _carAnnot != null) {
-      try { await carMgr.delete(_carAnnot!); } catch (_) {}
+      try { await carMgr.delete(_carAnnot!); } catch (e) {
+        debugPrint('[TrackingMap] Failed to delete car annotation: $e');
+      }
       _carAnnot = null;
     }
     final ptMgr = _pointAnnotMgr;
     if (ptMgr != null) {
       if (_pickupAnnot != null) {
-        try { await ptMgr.delete(_pickupAnnot!); } catch (_) {}
+        try { await ptMgr.delete(_pickupAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete pickup annotation: $e');
+        }
         _pickupAnnot = null;
       }
       if (_dropoffAnnot != null) {
-        try { await ptMgr.delete(_dropoffAnnot!); } catch (_) {}
+        try { await ptMgr.delete(_dropoffAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete dropoff annotation: $e');
+        }
         _dropoffAnnot = null;
       }
     }
@@ -138,7 +150,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       try {
         final raw = await rootBundle.load('assets/images/car_economy.png');
         _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[CarIcon] Fallback car load failed: $e');
+      }
     }
     if (mounted) _setState(() {});
   }
@@ -358,7 +372,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     try {
       _pickupAnnot!.image = _pickupPinWithLabelBytes!;
       mgr.update(_pickupAnnot!);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to reveal pickup label: $e');
+    }
     _labelSpringAnimation(_pickupAnnot!);
   }
 
@@ -371,7 +387,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     try {
       _dropoffAnnot!.image = _dropoffPinWithLabelBytes!;
       mgr.update(_dropoffAnnot!);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to reveal dropoff label: $e');
+    }
     _labelSpringAnimation(_dropoffAnnot!);
   }
 
@@ -975,7 +993,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           lineWidth: 5.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[TrackingMap] Failed to create dimmed route: $e');
+      }
     }
 
     // Pickup pin — always visible
@@ -987,7 +1007,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+    }
 
     // Dropoff pin — always show so rider can see full trip plan
     _addDropoffPin();
@@ -1032,7 +1054,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       ));
       // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.05 over 500ms
       _animateDropoffPinPop();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to create dropoff pin: $e');
+    }
   }
 
   /// Pin pop spring animation for dropoff pin. Runs on the shared scheduler.

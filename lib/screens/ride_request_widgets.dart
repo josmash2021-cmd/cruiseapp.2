@@ -369,8 +369,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 12),
 
-                  // Grid of ride cards (3 columns) - 1:1 with web design
-                  // Web: 3 cards in a row, evenly spaced
+                  // Grid of ride cards - 1:1 with web design.
+                  // Behavior: when no tier is picked OR the rider tapped the
+                  // selected card to expand again, show all 3 cards. After a
+                  // pick, collapse to ONLY the chosen card so the bottom
+                  // sheet feels lighter and the focus stays on the choice.
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
@@ -383,46 +386,82 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ],
                     )
                   else
-                    Row(
-                      children: [
-                        for (int i = 0; i < displayOptions.length; i++) ...[
-                          Expanded(
-                            child: _PressableScale(
-                              key: ValueKey('ride_opt_${displayOptions[i].id}'),
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                _ctrl.selectRideOption(displayOptions[i]);
-                                if (_mapCtrl != null && !_cinematicRunning) {
-                                  final st = _ctrl.state;
-                                  if (st.pickup != null &&
-                                      st.dropoff != null) {
-                                    final pts = st.route?.points ??
-                                        [
-                                          LatLng(st.pickup!.lat,
-                                              st.pickup!.lng),
-                                          LatLng(st.dropoff!.lat,
-                                              st.dropoff!.lng),
-                                        ];
-                                    Future.delayed(
-                                        const Duration(milliseconds: 350),
-                                        () {
-                                      if (mounted && !_cinematicRunning) {
-                                        _fitRoute(pts, preserveCamera: true);
-                                      }
-                                    });
-                                  }
-                                }
-                              },
-                              child: _buildRideOptionCardGrid(
-                                c,
-                                displayOptions[i],
-                                option?.id == displayOptions[i].id,
-                              ),
-                            ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topCenter,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: 0.96, end: 1.0).animate(anim),
+                            child: child,
                           ),
-                          if (i < displayOptions.length - 1) const SizedBox(width: 8),
-                        ],
-                      ],
+                        ),
+                        child: (option != null && !_gridExpanded)
+                            // ── COLLAPSED: only the picked card, full width ──
+                            ? Padding(
+                                key: ValueKey('collapsed_${option.id}'),
+                                padding: const EdgeInsets.symmetric(horizontal: 36),
+                                child: _PressableScale(
+                                  key: ValueKey('ride_opt_only_${option.id}'),
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    _setState(() => _gridExpanded = true);
+                                  },
+                                  child: _buildRideOptionCardGrid(c, option, true),
+                                ),
+                              )
+                            // ── EXPANDED: all 3 cards in a row ──
+                            : Row(
+                                key: const ValueKey('expanded_grid'),
+                                children: [
+                                  for (int i = 0; i < displayOptions.length; i++) ...[
+                                    Expanded(
+                                      child: _PressableScale(
+                                        key: ValueKey('ride_opt_${displayOptions[i].id}'),
+                                        onTap: () {
+                                          HapticFeedback.selectionClick();
+                                          _ctrl.selectRideOption(displayOptions[i]);
+                                          // Collapse to single card after pick.
+                                          _setState(() => _gridExpanded = false);
+                                          if (_mapCtrl != null && !_cinematicRunning) {
+                                            final st = _ctrl.state;
+                                            if (st.pickup != null &&
+                                                st.dropoff != null) {
+                                              final pts = st.route?.points ??
+                                                  [
+                                                    LatLng(st.pickup!.lat,
+                                                        st.pickup!.lng),
+                                                    LatLng(st.dropoff!.lat,
+                                                        st.dropoff!.lng),
+                                                  ];
+                                              Future.delayed(
+                                                  const Duration(milliseconds: 350),
+                                                  () {
+                                                if (mounted && !_cinematicRunning) {
+                                                  _fitRoute(pts, preserveCamera: true);
+                                                }
+                                              });
+                                            }
+                                          }
+                                        },
+                                        child: _buildRideOptionCardGrid(
+                                          c,
+                                          displayOptions[i],
+                                          option?.id == displayOptions[i].id,
+                                        ),
+                                      ),
+                                    ),
+                                    if (i < displayOptions.length - 1)
+                                      const SizedBox(width: 8),
+                                  ],
+                                ],
+                              ),
+                      ),
                     ),
 
                   // .vipRide__rideDetail — appears only after a tier is
@@ -539,15 +578,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isPremium = !isSuv && !isFusion;
     final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
-    
-    // Badge colors matching the web
-    final badgeGradient = isVIP 
-        ? const [Color(0xFFF5DC7A), Color(0xFFE8C547)]
+
+    // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770:
+    //   VIP     → BLACK gradient (#1a1a1a→#000) + gold border, white text, diamond glyph
+    //   PREMIUM → GOLD gradient  (#F5DC7A→#E8C547→#B08800), black text, star glyph
+    //   COMFORT → SILVER gradient(#E8E8E8→#B0B0B0), near-black text, sparkle glyph
+    final badgeGradient = isVIP
+        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
         : isPremium
-            ? const [Color(0xFFE8C547), Color(0xFFD4A800)]
-            : const [Color(0xFF4ADE80), Color(0xFF22C55E)];
-    final badgeTextColor = isVIP || isPremium ? Colors.black : Colors.white;
-    final badgeIcon = isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond;
+            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
+            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
+    final badgeTextColor = isVIP
+        ? Colors.white
+        : isPremium
+            ? Colors.black
+            : const Color(0xFF1A1A1A);
+    // Badge glyphs 1:1 with web (live-pull line 142):
+    //   VIP=💎(diamond)  PREMIUM=★  COMFORT=✦
+    final IconData? badgeIcon = isVIP ? Icons.diamond : null;
+    final String badgeGlyph = isPremium ? '★' : '✦';
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
@@ -630,7 +679,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Badge in top
+                          // Badge in top — 1:1 with web (live-pull line 142,764-770)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
@@ -640,11 +689,28 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 colors: badgeGradient,
                               ),
                               borderRadius: BorderRadius.circular(6),
+                              // VIP gets a thin gold border (web: 1px solid rgba(232,197,71,.3))
+                              border: isVIP
+                                  ? Border.all(
+                                      color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                                      width: 1,
+                                    )
+                                  : null,
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(badgeIcon, size: 10, color: badgeTextColor),
+                                if (badgeIcon != null)
+                                  Icon(badgeIcon, size: 10, color: badgeTextColor)
+                                else
+                                  Text(
+                                    badgeGlyph,
+                                    style: TextStyle(
+                                      color: badgeTextColor,
+                                      fontSize: 10,
+                                      height: 1,
+                                    ),
+                                  ),
                                 const SizedBox(width: 4),
                                 Text(
                                   tierLabel,
@@ -871,23 +937,26 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
     
-    // Badge colors 1:1 with web CSS (vip-ride-booker.liquid:746-853)
-    // VIP: linear-gradient(135deg,#E8C547,#D4A574) - Gold
-    // Premium: linear-gradient(135deg,#E8E8E8,#B0B0B0) - Silver  
-    // Comfort: linear-gradient(135deg,#66BB6A,#388E3C) - Green
+    // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770
+    //   VIP     → BLACK gradient #1a1a1a→#000 + gold border, white text, diamond glyph
+    //   PREMIUM → GOLD gradient  #F5DC7A→#E8C547→#B08800, black text, star glyph
+    //   COMFORT → SILVER gradient#E8E8E8→#B0B0B0, near-black text, sparkle glyph
     final List<Color> badgeGradientColors = isVIP
-        ? const [Color(0xFFE8C547), Color(0xFFD4A574)]
+        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
         : isPremium
-            ? const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)]
-            : const [Color(0xFF66BB6A), Color(0xFF388E3C)];
-    final badgeTextColor = isVIP ? Colors.black : (isPremium ? const Color(0xFF1A1A1A) : Colors.white);
-    // Badge icons 1:1 with web (ride-request.liquid:142)
-    // Web HTML: VIP=SVG diamond+sparkles, PREMIUM=★, COMFORT=✦
-    // VIP uses Icons.diamond since web uses an SVG diamond shape
+            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
+            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
+    final badgeTextColor = isVIP
+        ? Colors.white
+        : isPremium
+            ? Colors.black
+            : const Color(0xFF1A1A1A);
+    // Badge glyphs 1:1 with web (live-pull line 142):
+    //   VIP=💎  PREMIUM=★  COMFORT=✦
     final bool useVipIcon = isVIP;
-    final String badgeIconChar = isPremium 
+    final String badgeIconChar = isPremium
         ? '★'  // PREMIUM star
-        : '✦'; // COMFORT four-pointed star
+        : '✦'; // COMFORT sparkle
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
@@ -967,25 +1036,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         colors: badgeGradientColors,
                       ),
                       borderRadius: BorderRadius.circular(6),
-                      boxShadow: isVIP ? [
-                        BoxShadow(
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.35),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ] : isPremium ? [
-                        BoxShadow(
-                          color: Colors.grey.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ] : [
-                        BoxShadow(
-                          color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      // VIP: gold border (web: 1px solid rgba(232,197,71,.3))
+                      border: isVIP
+                          ? Border.all(
+                              color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                              width: 1,
+                            )
+                          : null,
+                      boxShadow: isVIP
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFFE8C547).withValues(alpha: 0.18),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : isPremium
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFFD4A800).withValues(alpha: 0.40),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.grey.withValues(alpha: 0.30),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

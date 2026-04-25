@@ -385,6 +385,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _hasAppliedSelectionTilt = false;
   bool _labelsRevealed = false;
   bool _placingMarkers = false; // guard against concurrent pin duplication
+  // When a vehicle is selected, the 3-card grid collapses to show ONLY the
+  // chosen card. Tapping the chosen card re-expands the grid so the rider
+  // can switch tier. Defaults true (no selection yet → grid visible).
+  bool _gridExpanded = true;
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
   LatLng? _center;

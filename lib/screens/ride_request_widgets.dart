@@ -262,7 +262,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         alignment: Alignment.bottomCenter,
         child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1F),
+              color: Colors.black,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.06),

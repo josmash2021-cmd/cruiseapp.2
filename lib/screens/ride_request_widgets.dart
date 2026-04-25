@@ -856,7 +856,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ? const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)]
             : const [Color(0xFF66BB6A), Color(0xFF388E3C)];
     final badgeTextColor = isVIP ? Colors.black : (isPremium ? const Color(0xFF1A1A1A) : Colors.white);
-    final badgeIcon = isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond;
+    // Badge icons 1:1 with web (ride-request.liquid:142)
+    // Web: VIP=SVG diamond with sparkles, PREMIUM=★ (star), COMFORT=✦ (sparkle)
+    final IconData badgeIcon = isVIP 
+        ? Icons.diamond  // VIP diamond/crown icon
+        : isPremium 
+            ? Icons.star   // PREMIUM star (★)
+            : Icons.brightness_5; // COMFORT sparkle (✦)
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,

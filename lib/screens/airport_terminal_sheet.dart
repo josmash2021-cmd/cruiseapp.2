@@ -666,8 +666,12 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               a.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
               a.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
+    final mq = MediaQuery.of(context);
+
     return Column(
       children: [
+        // Top padding to avoid notch/status bar
+        SizedBox(height: mq.padding.top + 8),
         // Search field — lives in the .vrApt__body padding (0 20 24).
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -931,10 +935,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
     final allAirlines = ap.allAirlines;
+    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1069,10 +1074,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   Widget _buildArrivalPicker() {
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
+    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1205,10 +1211,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     final ap      = _selectedAirport!;
     final isFrom  = _direction == AirportDirection.fromAirport;
     final dirColor = isFrom ? _green : _blue;
+    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

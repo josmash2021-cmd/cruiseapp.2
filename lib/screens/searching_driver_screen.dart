@@ -40,7 +40,7 @@ class SearchingDriverScreen extends StatefulWidget {
 class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     with TickerProviderStateMixin {
   // ── constants ──
-  static const _bg   = Color(0xFF0A0D14);
+  static const _bg   = Color(0xFF000000);
   static const _gold = Color(0xFFE8C547);
   static const _goldEnd = Color(0xFFF5D990);
 
@@ -407,7 +407,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
             height: 72,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF0F1220),
+              color: Colors.black,
               border: Border.all(color: _gold.withValues(alpha: 0.5), width: 1.5),
               boxShadow: [
                 BoxShadow(
@@ -417,13 +417,15 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
                 ),
               ],
             ),
-            child: Icon(
-              Icons.directions_car,
-              color: _gold,
-              size: 32,
-              shadows: [
-                Shadow(color: _gold.withValues(alpha: 0.8), blurRadius: 12),
-              ],
+            // App logo fills the whole circle (logoapp.png is the gold
+            // car-in-circle brand mark, already on a black background).
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/logoapp.png',
+                fit: BoxFit.cover,
+                width: 72,
+                height: 72,
+              ),
             ),
           ),
         );

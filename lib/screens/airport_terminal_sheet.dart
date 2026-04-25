@@ -349,77 +349,83 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         : Icons.flight_takeoff_rounded;
     final Color dirColor = isFrom ? _green : _blue;
 
+    // Título según el paso
     final String title = switch (_step) {
       0 => S.of(context).airportRideTitle,
-      1 => S.of(context).selectAirport,
+      1 => S.of(context).selectAirport, // "Seleccionar Aeropuerto"
       2 => isFrom ? S.of(context).selectTerminalAndDoor : S.of(context).selectYourAirline,
       3 => isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
       _ => S.of(context).airportRideTitle,
     };
 
     return Padding(
-      // .vrApt__header (css:84-90): padding 8px 16px 12px; gap 10px.
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
-          // .vrApt__backBtn (css:91-110): 36×36 round, color blue.
-          // Hidden on step 0 — no gap either (web uses [hidden] display:none).
+          // Botón back (solo si no es paso 0)
           if (_step > 0) ...[
             _HeaderCircleBtn(
               icon: Icons.arrow_back_ios_rounded,
-              iconColor: _blue,
+              iconColor: Colors.white.withValues(alpha: 0.7),
               onTap: _goBack,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
           ],
-          // .vrApt__headerIcon (css:112-119): blue (or green when "from").
-          Icon(
-            _step == 0 ? Icons.connecting_airports_rounded : dirIcon,
-            color: _step == 0 ? _blue : dirColor,
-            size: 24,
+          // Ícono de avión DORADO (como en web)
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFF5DC7A), Color(0xFFE8C547)],
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              _step == 0 ? Icons.flight_rounded : dirIcon,
+              color: Colors.black,
+              size: 20,
+            ),
           ),
-          const SizedBox(width: 10),
-          // .vrApt__title (css:121-129 + media 480 line 739):
-          //   flex:1, 20px w800, -.01em, line-height 1.2.
-          //   On narrow screens (≤480px) font drops to 18px.
-          // Ellipsis on overflow — with 3 items (icon + pill + close) on
-          // step > 1 the title can get crowded on iPhone SE.
+          const SizedBox(width: 12),
+          // Título
           Expanded(
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: _textPrimary,
-                fontSize: MediaQuery.of(context).size.width <= 360 ? 18 : 20,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.2,
                 height: 1.2,
               ),
             ),
           ),
-          // .vrApt__codePill (css:131-140): 5px 10px radius 10 bg blue .12.
+          // Código de aeropuerto seleccionado (si aplica)
           if (_selectedAirport != null && _step > 1) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: _blue.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
+                color: _gold.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _gold.withValues(alpha: 0.3)),
               ),
               child: Text(
                 _selectedAirport!.code,
                 style: const TextStyle(
-                  color: _blue,
+                  color: Color(0xFFE8C547),
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 0.28, // .02em × 14px
                 ),
               ),
             ),
             const SizedBox(width: 10),
           ],
-          // .vrApt__closeBtn (css:91-110): 36×36 round, color text-2,
-          // margin-left: auto. Matches the web's explicit dismiss button.
+          // Botón cerrar
           _HeaderCircleBtn(
             icon: Icons.close_rounded,
             iconColor: Colors.white.withValues(alpha: 0.55),
@@ -665,48 +671,108 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   Widget _buildAirportTile(AirportInfo a) {
     final int terminalCount = a.terminals.length;
-    // .vrApt__airportItem:active (vip-apt-sheet.css:323):
-    //   transform: scale(.985); 120ms ease-out — match the direction
-    //   card press feedback exactly.
+    // Estilo web: círculo dorado con código, nombre, terminales/ciudad, precio, flecha
     return _PressScale(
       onTap: () => _selectAirport(a),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
+        margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _border),
+          color: const Color(0xFF1A1A1F), 
+          borderRadius: BorderRadius.circular(16), 
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(
           children: [
-            // .vrApt__airportCode: 48×48 radius 14 bg blue .10,
-            // font 14 w900 letter-spacing .02em.
+            // Código de aeropuerto en círculo DORADO (como en web)
             Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(color: _blue.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
-              child: Center(child: Text(a.code, style: const TextStyle(color: _blue, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.28))),
+              width: 48, 
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFF5DC7A), Color(0xFFE8C547)],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  a.code, 
+                  style: const TextStyle(
+                    color: Colors.black, 
+                    fontSize: 14, 
+                    fontWeight: FontWeight.w900, 
+                    letterSpacing: 0.28,
+                  ),
+                ),
+              ),
             ),
-            // .vrApt__airportTile: gap 12px.
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // .vrApt__airportName: 14px w700 line-height 1.3 ellipsis.
-                  Text(a.name, style: TextStyle(color: _textPrimary, fontSize: 14, fontWeight: FontWeight.w700, height: 1.3), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  // .vrApt__airportCount: 12px text-2 line-height 1.3.
-                  Text(S.of(context).terminalsCount(terminalCount), style: TextStyle(color: _textSecondary, fontSize: 12, height: 1.3)),
+                  // Nombre del aeropuerto
+                  Text(
+                    a.name, 
+                    style: const TextStyle(
+                      color: Colors.white, 
+                      fontSize: 15, 
+                      fontWeight: FontWeight.w700, 
+                      height: 1.3,
+                    ), 
+                    maxLines: 1, 
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  // Terminales
+                  Text(
+                    '$terminalCount terminales', 
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5), 
+                      fontSize: 12, 
+                      height: 1.3,
+                    ),
+                  ),
                 ],
               ),
             ),
+            // Badge de precio dorado (si aplica)
             if (a.flatRateSurcharge != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                child: Text('+\$${a.flatRateSurcharge!.toStringAsFixed(0)}', style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w700)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.15), 
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  '+\$${a.flatRateSurcharge!.toStringAsFixed(0)}', 
+                  style: const TextStyle(
+                    color: Color(0xFFE8C547), 
+                    fontSize: 12, 
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: _textSecondary, size: 20),
+            const SizedBox(width: 10),
+            // Flecha al final
+            Icon(
+              Icons.arrow_forward_ios_rounded, 
+              color: Colors.white.withValues(alpha: 0.3), 
+              size: 16,
+            ),
           ],
         ),
       ),

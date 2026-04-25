@@ -696,10 +696,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     if (pickupPos != null && s.pickupLabel.isNotEmpty) {
       widgets.add(
         Positioned(
-          // Offset up-and-right of the pin tip so the label floats
-          // beside the pin rather than covering it.
-          left: pickupPos.dx + 14,
-          top: pickupPos.dy - 82,
+          // Label to the RIGHT of pickup pin (as shown in image)
+          left: pickupPos.dx + 24,
+          top: pickupPos.dy - 28,
           child: AnimatedMapLabel(
             kind: MapLabelKind.pickup,
             address: s.pickupLabel,
@@ -716,9 +715,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
       widgets.add(
         Positioned(
-          // Offset up-and-left for dropoff (mirrored side of the pin).
-          left: dropoffPos.dx - 220,
-          top: dropoffPos.dy - 82,
+          // Label to the LEFT of dropoff pin (as shown in image)
+          left: dropoffPos.dx - 180,
+          top: dropoffPos.dy - 28,
           child: AnimatedMapLabel(
             kind: MapLabelKind.dropoff,
             address: s.dropoffLabel,

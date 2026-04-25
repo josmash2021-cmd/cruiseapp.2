@@ -180,6 +180,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   AnimationController? _pinPopCtrl;
   Animation<double>? _pinPopAnim;
   Ticker? _routeDrawTicker;
+  // Shimmer animation for completed route — gold dot that travels continuously
+  AnimationController? _routeShimmerCtrl;
+  mapbox.PointAnnotation? _routeShimmerDot;
   double _randomBearing = 0;
   bool _cinematicDone = false;
   bool _cinematicRunning = false;
@@ -581,6 +584,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _labelPopCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _routeShimmerCtrl?.stop();
+    _routeShimmerCtrl?.dispose();
+    // Clean up shimmer dot annotation
+    if (_routeShimmerDot != null) {
+      _pointAnnotMgr?.delete(_routeShimmerDot!).catchError((_) {});
+      _routeShimmerDot = null;
+    }
     // Clean up map annotations on dispose to prevent ghost routes
     _cleanupMapAnnotations();
     super.dispose();

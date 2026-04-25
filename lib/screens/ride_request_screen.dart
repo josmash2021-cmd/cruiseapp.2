@@ -49,6 +49,7 @@ import 'ride_booking_confirmed_screen.dart';
 import 'ride_payment_method_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
+import 'waiting_for_driver_screen.dart';
 import 'home_screen.dart';
 
 part 'ride_request_controller.dart';

@@ -1066,6 +1066,30 @@ extension _RideRequestController on _RideRequestScreenState {
         return;
       }
 
+      // Payment successful, driver not yet assigned → show "Waiting for driver" screen
+      // with map and route (Casi listo...)
+      if (phase == RiderPhase.searchingDriver && !_navigatingToTracking) {
+        final st = _ctrl.state;
+        final route = st.route;
+        if (st.pickup != null && st.dropoff != null) {
+          Navigator.of(context).push(
+            waitingForDriverRoute(
+              pickupLatLng: st.pickup!,
+              dropoffLatLng: st.dropoff!,
+              pickupAddress: st.pickupLabel.isNotEmpty ? st.pickupLabel : 'Recogida',
+              dropoffAddress: st.dropoffLabel.isNotEmpty ? st.dropoffLabel : 'Destino',
+              routePoints: route?.points,
+              onCancel: () {
+                _riderInitiatedCancel = true;
+                _ctrl.cancelTrip();
+              },
+              driverFound: _driverMatchedNotifier,
+            ),
+          );
+        }
+        return;
+      }
+
       // Driver already started the trip (extreme case: very fast driver) → go directly to tracking.
       if ((phase == RiderPhase.onTrip || phase == RiderPhase.completed) &&
           !_navigatingToTracking) {

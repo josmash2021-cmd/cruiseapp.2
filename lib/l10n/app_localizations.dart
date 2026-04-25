@@ -187,6 +187,7 @@ class S {
   String get readyToRide => _es
       ? 'Estás listo para viajar.\nEstaremos aquí cuando nos necesites.'
       : "You're set to ride. We're\nhere when you need us.";
+  String get almostReady => _es ? 'Casi listo...' : 'Almost ready...';
   String get safetyPoint1 => _es
       ? 'Todos los conductores deben pasar verificaciones de antecedentes regulares.'
       : 'All drivers must pass regular background checks.';

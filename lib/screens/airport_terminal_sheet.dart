@@ -29,12 +29,14 @@ class AirportTerminalSheet extends StatefulWidget {
 
 class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     with SingleTickerProviderStateMixin {
-  // ── colours ── (direct port of vip-apt-sheet.css:8-26 tokens)
+  // ── colours ── Premium gold palette matching web
   static const _gold      = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFFBE47A);
-  static const _blue      = Color(0xFF4285F4);
-  static const _green     = Color(0xFF34A853);
+  static const _goldLight = Color(0xFFF5DC7A);
+  static const _blue      = Color(0xFF3B82F6);
+  static const _green     = Color(0xFF22C55E);
   static const _red       = Color(0xFFEF4444);
+  static const _surfaceDark = Color(0xFF0F1419);
+  static const _cardDark    = Color(0xFF1A1D24);
 
   // ── animation ──
   late final AnimationController _animCtrl;
@@ -103,11 +105,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   // ─────────────────────────────────────────────
   //  Theme helpers
   // ─────────────────────────────────────────────
-  Color get _bg         => widget.isDark ? const Color(0xFF111318) : Colors.white;
-  Color get _surface    => widget.isDark ? const Color(0xFF1A1D24) : const Color(0xFFF5F5F5);
-  Color get _textPrimary   => widget.isDark ? Colors.white : const Color(0xFF1A1D24);
-  Color get _textSecondary => widget.isDark ? Colors.white54 : const Color(0xFF6B7280);
-  Color get _border     => widget.isDark ? Colors.white10 : Colors.black12;
+  Color get _bg         => widget.isDark ? _surfaceDark : Colors.white;
+  Color get _surface    => widget.isDark ? _cardDark : const Color(0xFFF5F5F5);
+  Color get _textPrimary   => widget.isDark ? Colors.white : const Color(0xFF0F1419);
+  Color get _textSecondary => widget.isDark ? Colors.white.withValues(alpha: 0.55) : const Color(0xFF6B7280);
+  Color get _border     => widget.isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black12;
 
   // ─────────────────────────────────────────────
   //  Navigation helpers
@@ -390,13 +392,14 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             ),
           ),
           const SizedBox(width: 12),
-          // Título
+          // Título con Poppins
           Expanded(
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
+                fontFamily: 'Poppins',
                 color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -513,56 +516,82 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     required String title,
     required String subtitle,
   }) {
-    // .vrApt__dirCard (vip-apt-sheet.css:202-253):
-    //   padding: 20px; border-radius: 20px;
-    //   background: rgba(color,.07); border: 1.5px solid rgba(color,.25);
-    //   gap: 14px;
-    //   .vrApt__dirIcon: 56×56, radius 16, bg rgba(color,.12), icon 24px
-    //   .vrApt__dirTitle: 16px w700
-    //   .vrApt__dirSub:   13px w500
-    //   :active transform: scale(.985)
+    // Premium direction cards matching web design
     return _PressScale(
       onTap: () => _selectDirection(direction),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
+          // Subtle gradient background like web
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              color.withValues(alpha: 0.08),
+              color.withValues(alpha: 0.03),
+            ],
+          ),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.5),
+          border: Border.all(
+            color: color.withValues(alpha: 0.2),
+            width: 1,
+          ),
+          // Subtle shadow
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.08),
+              blurRadius: 20,
+              spreadRadius: -5,
+            ),
+          ],
         ),
         child: Row(
           children: [
+            // Premium icon container with gradient
             Container(
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    color.withValues(alpha: 0.15),
+                    color.withValues(alpha: 0.08),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: color.withValues(alpha: 0.25),
+                  width: 1,
+                ),
               ),
               child: Icon(icon, color: color, size: 24),
             ),
-            // .vrApt__dirCard: gap 14px between icon and text.
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // .vrApt__dirTitle: 16px w700 line-height 1.3.
+                  // Title with Poppins font
                   Text(
                     title,
-                    style: TextStyle(
-                      color: _textPrimary,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       height: 1.3,
+                      letterSpacing: -0.2,
                     ),
                   ),
                   const SizedBox(height: 2),
-                  // .vrApt__dirSub: 13px color text-2 line-height 1.3.
+                  // Subtitle
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: _textSecondary,
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.55),
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       height: 1.3,
@@ -571,8 +600,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 ],
               ),
             ),
-            // .vrApt__dirChev: uses the dir color.
-            Icon(Icons.arrow_forward_ios_rounded, color: color, size: 16),
+            // Chevron with gold accent
+            Icon(Icons.arrow_forward_ios_rounded, color: _gold.withValues(alpha: 0.6), size: 16),
           ],
         ),
       ),
@@ -671,22 +700,41 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   Widget _buildAirportTile(AirportInfo a) {
     final int terminalCount = a.terminals.length;
-    // Estilo web: círculo dorado con código, nombre, terminales/ciudad, precio, flecha
+    // Premium airport tile matching web design
     return _PressScale(
       onTap: () => _selectAirport(a),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1F), 
-          borderRadius: BorderRadius.circular(16), 
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          // Subtle gradient like web
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0x0AFFFFFF), // rgba(255,255,255,.04)
+              Color(0x05FFFFFF), // rgba(255,255,255,.02)
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.07),
+            width: 1,
+          ),
+          // Subtle glow
+          boxShadow: [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.03),
+              blurRadius: 20,
+              spreadRadius: -5,
+            ),
+          ],
         ),
         child: Row(
           children: [
-            // Código de aeropuerto en círculo DORADO (como en web)
+            // Airport code in premium gold badge
             Container(
-              width: 48, 
+              width: 48,
               height: 48,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
@@ -698,19 +746,20 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
               child: Center(
                 child: Text(
-                  a.code, 
+                  a.code,
                   style: const TextStyle(
-                    color: Colors.black, 
-                    fontSize: 14, 
-                    fontWeight: FontWeight.w900, 
-                    letterSpacing: 0.28,
+                    fontFamily: 'Poppins',
+                    color: Colors.black,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
@@ -720,25 +769,29 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Nombre del aeropuerto
+                  // Airport name with Poppins
                   Text(
-                    a.name, 
+                    a.name,
                     style: const TextStyle(
-                      color: Colors.white, 
-                      fontSize: 15, 
-                      fontWeight: FontWeight.w700, 
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
                       height: 1.3,
-                    ), 
-                    maxLines: 1, 
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
-                  // Terminales
+                  // Terminals count
                   Text(
-                    '$terminalCount terminales', 
+                    '$terminalCount terminales',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5), 
-                      fontSize: 12, 
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                       height: 1.3,
                     ),
                   ),

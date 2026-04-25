@@ -1106,27 +1106,14 @@ extension _RideRequestController on _RideRequestScreenState {
         return;
       }
 
-      // Payment successful, driver not yet assigned → show "Waiting for driver" screen
-      // with map and route (Casi listo...)
+      // Payment successful, driver not yet assigned.
+      // Per product decision: do NOT push WaitingForDriverScreen
+      // ("Almost ready..." with the map). The matching screen + the
+      // "Almost there..." card on the ride_request_screen below already
+      // cover this state, and the third screen was redundant.
+      // We just bail; _onStateChange will run again when phase moves to
+      // driverAssigned/driverArriving and route to the tracking screen.
       if (phase == RiderPhase.searchingDriver && !_navigatingToTracking) {
-        final st = _ctrl.state;
-        final route = st.route;
-        if (st.pickup != null && st.dropoff != null) {
-          Navigator.of(context).push(
-            waitingForDriverRoute(
-              pickupLatLng: LatLng(st.pickup!.lat, st.pickup!.lng),
-              dropoffLatLng: LatLng(st.dropoff!.lat, st.dropoff!.lng),
-              pickupAddress: st.pickupLabel.isNotEmpty ? st.pickupLabel : 'Recogida',
-              dropoffAddress: st.dropoffLabel.isNotEmpty ? st.dropoffLabel : 'Destino',
-              routePoints: route?.points,
-              onCancel: () {
-                _riderInitiatedCancel = true;
-                _ctrl.cancelRide();
-              },
-              driverFound: _driverMatchedNotifier,
-            ),
-          );
-        }
         return;
       }
 

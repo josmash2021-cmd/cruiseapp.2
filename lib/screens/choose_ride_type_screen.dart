@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
@@ -21,8 +20,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entryCtl;
   late final AnimationController _floatCtl;
-  late VideoPlayerController _videoCtrl;
-  bool _videoInitialized = false;
 
   @override
   void initState() {
@@ -36,23 +33,12 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
       duration: const Duration(seconds: 3),
     )..repeat();
     
-    // Initialize video background
-    _videoCtrl = VideoPlayerController.asset('assets/videos/airport_bg.mp4')
-      ..setLooping(true)
-      ..setVolume(0.0)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _videoInitialized = true);
-          _videoCtrl.play();
-        }
-      });
   }
 
   @override
   void dispose() {
     _entryCtl.dispose();
     _floatCtl.dispose();
-    _videoCtrl.dispose();
     super.dispose();
   }
 
@@ -66,23 +52,10 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // ─── Video background (cover mode) ───
-            Positioned.fill(
-              child: _videoInitialized
-                  ? FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _videoCtrl.value.size.width,
-                        height: _videoCtrl.value.size.height,
-                        child: VideoPlayer(_videoCtrl),
-                      ),
-                    )
-                  : Container(color: Colors.black),
-            ),
-            // ─── Dark overlay for text readability ───
+            // ─── Solid black background ───
             Positioned.fill(
               child: Container(
-                color: Colors.black.withValues(alpha: 0.6),
+                color: Colors.black,
               ),
             ),
             // ─── Subtle gold glow overlay ───

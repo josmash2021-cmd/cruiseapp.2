@@ -4,22 +4,13 @@ import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-//  Payment Method — ported 1:1 from the Shopify widget's
-//  .vipRide__payOverlay (vertical list of 4 rows, NOT a 2×2 grid).
+//  Payment Method — Grid 2×2 de tarjetas cuadradas como en la web de Shopify
 //
-//  Web CSS reference:
-//    .vipRide__payOverlay__list { display:flex; flex-direction:column;
-//                                 gap:6px; padding:0 16px; }
-//    .vipRide__payOption { width:100%; display:flex; align-items:center;
-//                          gap:14px; padding:16px; background:rgba(255,
-//                          255,255,.05); border:1px solid rgba(255,255,
-//                          255,.08); border-radius:14px; }
-//    .vipRide__payOption.is-selected {
-//      border-color: rgba(232,197,71,.5);
-//      background:   rgba(232,197,71,.08);
-//    }
-//    .vipRide__payIcon  { width:36px; height:36px; border-radius:10px; }
-//    .vipRide__payCheck { width:22px; height:22px; border-radius:50%; }
+//  Layout: Cuadrícula 2×2 con:
+//    - Apple Pay (fondo negro, icono blanco)
+//    - Google Pay (fondo blanco, icono de colores)
+//    - Tarjeta Débito/Crédito (fondo gris oscuro, icono blanco)
+//    - Modo de Prueba (fondo oscuro dorado, icono dorado)
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
@@ -133,64 +124,66 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
               onBack: () => Navigator.of(context).pop(),
             ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _PayRow(
-                    entryCtl: _entryCtl,
-                    staggerDelay: 0.00,
-                    id: PaymentMethodId.apple,
-                    selected: _selected == PaymentMethodId.apple,
-                    iconBg: Colors.black,
-                    label: 'Apple Pay',
-                    icon: const Icon(Icons.apple, color: Colors.white, size: 20),
-                    onTap: () => _pick(PaymentMethodId.apple),
-                  ),
-                  const SizedBox(height: 6),
-                  _PayRow(
-                    entryCtl: _entryCtl,
-                    staggerDelay: 0.08,
-                    id: PaymentMethodId.google,
-                    selected: _selected == PaymentMethodId.google,
-                    iconBg: Colors.white,
-                    label: 'Google Pay',
-                    icon: _GoogleGLogo(),
-                    onTap: () => _pick(PaymentMethodId.google),
-                  ),
-                  const SizedBox(height: 6),
-                  _PayRow(
-                    entryCtl: _entryCtl,
-                    staggerDelay: 0.16,
-                    id: PaymentMethodId.card,
-                    selected: _selected == PaymentMethodId.card,
-                    iconBg: Colors.white.withValues(alpha: 0.10),
-                    label: s.cardPaymentLabel,
-                    icon: const Icon(
-                      Icons.credit_card_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    onTap: () => _pick(PaymentMethodId.card),
-                  ),
-                  if (widget.showTestMode) ...[
-                    // Web: .vipRide__payOption--test has a gold hairline on top
-                    // (border-top: 1px solid rgba(232,197,71,.12); margin-top:4px).
-                    const SizedBox(height: 10),
-                    _PayRow(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.0, // Cuadrado perfecto
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    _PayCard(
                       entryCtl: _entryCtl,
-                      staggerDelay: 0.24,
-                      id: PaymentMethodId.test,
-                      selected: _selected == PaymentMethodId.test,
-                      iconBg: _gold.withValues(alpha: 0.10),
-                      iconBorder: _gold.withValues(alpha: 0.30),
-                      label: s.testModeLabel,
-                      secondary: s.simulatePayment,
-                      icon: const Icon(Icons.tune_rounded, color: _gold, size: 18),
-                      onTap: () => _pick(PaymentMethodId.test),
+                      staggerDelay: 0.00,
+                      id: PaymentMethodId.apple,
+                      selected: _selected == PaymentMethodId.apple,
+                      iconBg: Colors.black,
+                      label: 'Apple Pay',
+                      icon: const Icon(Icons.apple, color: Colors.white, size: 32),
+                      onTap: () => _pick(PaymentMethodId.apple),
                     ),
+                    _PayCard(
+                      entryCtl: _entryCtl,
+                      staggerDelay: 0.08,
+                      id: PaymentMethodId.google,
+                      selected: _selected == PaymentMethodId.google,
+                      iconBg: Colors.white,
+                      label: 'Google Pay',
+                      icon: _GoogleGLogo(size: 32),
+                      onTap: () => _pick(PaymentMethodId.google),
+                    ),
+                    _PayCard(
+                      entryCtl: _entryCtl,
+                      staggerDelay: 0.16,
+                      id: PaymentMethodId.card,
+                      selected: _selected == PaymentMethodId.card,
+                      iconBg: const Color(0xFF2A2A2A),
+                      label: s.cardPaymentLabel,
+                      icon: const Icon(
+                        Icons.credit_card_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      onTap: () => _pick(PaymentMethodId.card),
+                    ),
+                    if (widget.showTestMode)
+                      _PayCard(
+                        entryCtl: _entryCtl,
+                        staggerDelay: 0.24,
+                        id: PaymentMethodId.test,
+                        selected: _selected == PaymentMethodId.test,
+                        iconBg: const Color(0xFF1A1A1A),
+                        iconBorder: _gold.withValues(alpha: 0.50),
+                        label: s.testModeLabel,
+                        secondary: s.simulatePayment,
+                        icon: const Icon(Icons.tune_rounded, color: _gold, size: 28),
+                        onTap: () => _pick(PaymentMethodId.test),
+                      )
+                    else
+                      const SizedBox.shrink(),
                   ],
-                ],
+                ),
               ),
             ),
           ],
@@ -258,11 +251,11 @@ class _Header extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Row — .vipRide__payOption (ONE horizontal row per method).
-//  Layout: [icon 36] gap 14 [label flex] [check 22]
+//  Card — Tarjeta cuadrada para método de pago (Grid 2×2)
+//  Layout: Icono grande arriba, label abajo, check esquina superior derecha
 // ═══════════════════════════════════════════════════════════════════
 
-class _PayRow extends StatefulWidget {
+class _PayCard extends StatefulWidget {
   final AnimationController entryCtl;
   final double staggerDelay;
   final String id;
@@ -274,7 +267,7 @@ class _PayRow extends StatefulWidget {
   final Widget icon;
   final VoidCallback onTap;
 
-  const _PayRow({
+  const _PayCard({
     required this.entryCtl,
     required this.staggerDelay,
     required this.id,
@@ -288,10 +281,10 @@ class _PayRow extends StatefulWidget {
   });
 
   @override
-  State<_PayRow> createState() => _PayRowState();
+  State<_PayCard> createState() => _PayCardState();
 }
 
-class _PayRowState extends State<_PayRow> {
+class _PayCardState extends State<_PayCard> {
   bool _pressed = false;
 
   @override
@@ -325,68 +318,68 @@ class _PayRowState extends State<_PayRow> {
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: widget.selected
-                // rgba(232,197,71,.08)
-                ? const Color(0x14E8C547)
+                ? const Color(0x14E8C547) // dorado muy suave
                 : _pressed
-                    // :active → rgba(255,255,255,.10)
-                    ? Colors.white.withValues(alpha: 0.10)
-                    // default → rgba(255,255,255,.05)
-                    : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(14),
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFF1A1A1F), // gris oscuro
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: widget.selected
-                  // rgba(232,197,71,.5)
-                  ? _gold.withValues(alpha: 0.5)
-                  // rgba(255,255,255,.08)
-                  : Colors.white.withValues(alpha: 0.08),
-              width: 1,
+                  ? _gold.withValues(alpha: 0.6)
+                  : Colors.white.withValues(alpha: 0.10),
+              width: widget.selected ? 2 : 1,
             ),
           ),
-          child: Row(
+          child: Stack(
             children: [
-              // .vipRide__payIcon — 36×36, radius 10px
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: widget.iconBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: widget.iconBorder != null
-                      ? Border.all(color: widget.iconBorder!)
-                      : null,
-                ),
-                alignment: Alignment.center,
-                child: widget.icon,
+              // Check en esquina superior derecha
+              Positioned(
+                top: 12,
+                right: 12,
+                child: _Check(selected: widget.selected),
               ),
-              const SizedBox(width: 14),
-              // .vipRide__payLabel — flex:1
-              Expanded(
+              // Contenido centrado
+              Center(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Icono grande
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: widget.iconBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: widget.iconBorder != null
+                            ? Border.all(color: widget.iconBorder!, width: 1.5)
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: widget.icon,
+                    ),
+                    const SizedBox(height: 16),
+                    // Label
                     Text(
                       widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontFamily: 'Poppins',
                         color: Colors.white,
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    // Sub-label (opcional)
                     if (widget.secondary != null) ...[
-                      const SizedBox(height: 1),
+                      const SizedBox(height: 4),
                       Text(
                         widget.secondary!,
                         style: TextStyle(
                           fontFamily: 'Poppins',
-                          color: _gold.withValues(alpha: 0.60),
-                          fontSize: 10,
+                          color: _gold.withValues(alpha: 0.70),
+                          fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -394,9 +387,6 @@ class _PayRowState extends State<_PayRow> {
                   ],
                 ),
               ),
-              const SizedBox(width: 14),
-              // .vipRide__payCheck — 22×22 circle; selected: gold fill + ✓
-              _Check(selected: widget.selected),
             ],
           ),
         ),
@@ -439,6 +429,10 @@ class _Check extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════
 
 class _GoogleGLogo extends StatelessWidget {
+  final double size;
+  
+  const _GoogleGLogo({this.size = 20});
+  
   @override
   Widget build(BuildContext context) {
     return ShaderMask(
@@ -454,11 +448,11 @@ class _GoogleGLogo extends StatelessWidget {
         ],
         stops: [0.0, 0.33, 0.66, 1.0],
       ).createShader(rect),
-      child: const Text(
+      child: Text(
         'G',
         style: TextStyle(
           fontFamily: 'Poppins',
-          fontSize: 20,
+          fontSize: size,
           fontWeight: FontWeight.w800,
           height: 1.0,
         ),

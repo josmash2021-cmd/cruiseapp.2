@@ -425,38 +425,93 @@ class _Check extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Google "G" — 4-color gradient letter to match the web SVG.
+//  Google "G" — 4-color SVG logo, 1:1 with web (ride-request.liquid:201).
+//  Uses a CustomPainter with the four official Google brand color paths
+//  so the logo renders identically to the marketing asset.
 // ═══════════════════════════════════════════════════════════════════
 
 class _GoogleGLogo extends StatelessWidget {
   final double size;
-  
+
   const _GoogleGLogo({this.size = 20});
-  
+
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (rect) => const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFF4285F4),
-          Color(0xFF34A853),
-          Color(0xFFFBBC05),
-          Color(0xFFEA4335),
-        ],
-        stops: [0.0, 0.33, 0.66, 1.0],
-      ).createShader(rect),
-      child: Text(
-        'G',
-        style: TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: size,
-          fontWeight: FontWeight.w800,
-          height: 1.0,
-        ),
-      ),
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _GoogleGPainter()),
     );
   }
+}
+
+// SVG source (web): viewBox 0 0 24 24 — 4 brand-color paths.
+class _GoogleGPainter extends CustomPainter {
+  static final _blue   = Paint()..color = const Color(0xFF4285F4)..style = PaintingStyle.fill;
+  static final _green  = Paint()..color = const Color(0xFF34A853)..style = PaintingStyle.fill;
+  static final _yellow = Paint()..color = const Color(0xFFFBBC05)..style = PaintingStyle.fill;
+  static final _red    = Paint()..color = const Color(0xFFEA4335)..style = PaintingStyle.fill;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Scale 24-unit viewBox to the actual size.
+    final s = size.width / 24.0;
+    canvas.scale(s, s);
+
+    // Blue arc (top-right)
+    final blue = Path()
+      ..moveTo(22.56, 12.25)
+      ..cubicTo(22.56, 11.47, 22.49, 10.72, 22.36, 10.0)
+      ..lineTo(12, 10.0)
+      ..lineTo(12, 14.26)
+      ..lineTo(17.92, 14.26)
+      ..cubicTo(17.66, 15.63, 16.88, 16.79, 15.72, 17.58)
+      ..lineTo(15.72, 20.35)
+      ..lineTo(19.29, 20.35)
+      ..cubicTo(21.37, 18.43, 22.56, 15.61, 22.56, 12.25)
+      ..close();
+    canvas.drawPath(blue, _blue);
+
+    // Green arc (bottom-right)
+    final green = Path()
+      ..moveTo(12, 23)
+      ..cubicTo(14.97, 23, 17.46, 22.02, 19.28, 20.34)
+      ..lineTo(15.71, 17.57)
+      ..cubicTo(14.73, 18.23, 13.48, 18.63, 12, 18.63)
+      ..cubicTo(9.14, 18.63, 6.71, 16.70, 5.84, 14.10)
+      ..lineTo(2.18, 14.10)
+      ..lineTo(2.18, 16.94)
+      ..cubicTo(3.99, 20.53, 7.70, 23, 12, 23)
+      ..close();
+    canvas.drawPath(green, _green);
+
+    // Yellow arc (left)
+    final yellow = Path()
+      ..moveTo(5.84, 14.09)
+      ..cubicTo(5.62, 13.43, 5.50, 12.73, 5.50, 12.0)
+      ..cubicTo(5.50, 11.28, 5.62, 10.58, 5.84, 9.91)
+      ..lineTo(5.84, 7.07)
+      ..lineTo(2.18, 7.07)
+      ..cubicTo(1.43, 8.55, 1.0, 10.22, 1.0, 12.0)
+      ..cubicTo(1.0, 13.94, 1.46, 15.77, 2.18, 17.42)
+      ..lineTo(5.84, 14.58)
+      ..lineTo(5.84, 14.09)
+      ..close();
+    canvas.drawPath(yellow, _yellow);
+
+    // Red arc (top-left)
+    final red = Path()
+      ..moveTo(12, 5.38)
+      ..cubicTo(13.62, 5.38, 15.06, 5.94, 16.21, 7.02)
+      ..lineTo(19.36, 3.87)
+      ..cubicTo(17.45, 2.09, 14.97, 1.0, 12, 1.0)
+      ..cubicTo(7.70, 1.0, 3.99, 3.47, 2.18, 7.07)
+      ..lineTo(5.84, 9.91)
+      ..cubicTo(6.71, 7.31, 9.14, 5.38, 12, 5.38)
+      ..close();
+    canvas.drawPath(red, _red);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

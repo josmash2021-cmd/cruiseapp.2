@@ -1893,183 +1893,73 @@ extension _HomeScreenWidgets on _HomeScreenState {
         final isPremium = tier == 'PREMIUM';
         final isComfort = tier == 'COMFORT';
 
-        // ── Animated tier badge (animation lives here, not on the card) ──
-        final badgeAnim = isVIP
-            ? _shimmerController
-            : isPremium
-                ? _promoShimmerCtrl
-                : _clockRotateCtrl;
-
-        final animatedBadge = AnimatedBuilder(
-          animation: badgeAnim,
-          builder: (_, __) {
-            final t = badgeAnim.value;
-            // Pulsing outer glow intensity
-            final glowAlpha = (0.35 + 0.25 * math.sin(t * 2 * math.pi)).clamp(0.0, 1.0);
-            return Stack(
-              alignment: Alignment.center,
+        // ── Static tier badge (no shimmer / sweep / pulse animations) ──
+        // Fixed 78x22 size on every tier so VIP / PREMIUM / COMFORT
+        // line up identically across the row.
+        final Widget animatedBadge = SizedBox(
+          width: 78,
+          height: 22,
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              gradient: isVIP
+                  ? const LinearGradient(
+                      colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
+                    )
+                  : isPremium
+                      ? const LinearGradient(
+                          colors: [
+                            Color(0xFFF5DC7A),
+                            Color(0xFFE8C547),
+                            Color(0xFFB08800),
+                          ],
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+                        ),
+              borderRadius: BorderRadius.circular(6),
+              border: isVIP
+                  ? Border.all(
+                      color:
+                          const Color(0xFFE8C547).withValues(alpha: 0.3),
+                      width: 1,
+                    )
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Base badge - 1:1 with web (ride-request.liquid)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    // VIP: black bg, Premium: gold gradient, Comfort: silver gradient
-                    gradient: isVIP
-                        ? const LinearGradient(
-                            colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
-                          )
-                        : isPremium
-                            ? const LinearGradient(
-                                colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
-                              )
-                            : const LinearGradient(
-                                colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-                              ),
-                    borderRadius: BorderRadius.circular(20),
-                    // VIP: gold border, others: no border
-                    border: isVIP
-                        ? Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.3), width: 1.0)
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: glowAlpha),
-                        blurRadius: 16 + 6 * math.sin(t * 2 * math.pi),
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                if (isVIP)
+                  const Icon(Icons.diamond, size: 9, color: Colors.white)
+                else
+                  Text(
+                    isPremium ? '★' : '✦',
+                    style: TextStyle(
+                      color: isPremium
+                          ? Colors.black
+                          : const Color(0xFF1A1A1A),
+                      fontSize: 8,
+                      height: 1,
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Badge icons 1:1 with web (ride-request.liquid:142)
-                      // Web HTML: VIP=SVG diamond+sparkles, PREMIUM=★, COMFORT=✦
-                      if (isVIP)
-                        Icon(Icons.diamond, size: 12, color: Colors.white)
-                      else
-                        Text(
-                          isPremium ? '★' : '✦',
-                          style: TextStyle(
-                            color: isPremium ? Colors.black : const Color(0xFF1A1A1A),
-                            fontSize: isPremium ? 10 : 11,
-                            height: 1,
-                          ),
-                        ),
-                      const SizedBox(width: 5),
-                      Text(
-                        tier,
-                        style: TextStyle(
-                          // VIP: white text, Premium: black text, Comfort: dark text
-                          color: isVIP ? Colors.white : (isPremium ? Colors.black : const Color(0xFF1A1A1A)),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.64,
-                        ),
-                      ),
-                    ],
+                const SizedBox(width: 3),
+                Text(
+                  tier,
+                  style: TextStyle(
+                    color: isVIP
+                        ? Colors.white
+                        : (isPremium
+                            ? Colors.black
+                            : const Color(0xFF1A1A1A)),
+                    fontSize: 8,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.64,
                   ),
                 ),
-                // VIP: dual-layer gold shimmer
-                if (isVIP) ...[
-                  // Layer 1 — wide soft gold glow
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: IgnorePointer(
-                        child: Transform.translate(
-                          offset: Offset(200 * (t * 2.0 - 0.5), 0),
-                          child: Container(
-                            width: 56,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: [
-                                Colors.transparent,
-                                const Color(0xFFFFE88A).withValues(alpha: 0.35),
-                                Colors.transparent,
-                              ]),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Layer 2 — thin bright white streak
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: IgnorePointer(
-                        child: Transform.translate(
-                          offset: Offset(180 * (t * 2.6 - 0.8), 0),
-                          child: Transform.rotate(
-                            angle: 0.35,
-                            child: Container(
-                              width: 14,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [
-                                  Colors.transparent,
-                                  Colors.white.withValues(alpha: 0.7),
-                                  Colors.transparent,
-                                ]),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-                // Premium: sleek metallic diagonal sweep
-                if (isPremium)
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: IgnorePointer(
-                        child: Transform.translate(
-                          offset: Offset(180 * (t * 2.4 - 0.7), 0),
-                          child: Transform.rotate(
-                            angle: 0.3,
-                            child: Container(
-                              width: 22,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [
-                                  Colors.transparent,
-                                  Colors.white.withValues(alpha: 0.55),
-                                  const Color(0xFFE0E0E0).withValues(alpha: 0.25),
-                                  Colors.transparent,
-                                ]),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                // Comfort: sweeping green light
-                if (isComfort)
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: IgnorePointer(
-                        child: Transform.translate(
-                          offset: Offset(180 * (t * 2.4 - 0.7), 0),
-                          child: Transform.rotate(
-                            angle: 0.3,
-                            child: Container(
-                              width: 26,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [
-                                  Colors.transparent,
-                                  const Color(0xFF81C784).withValues(alpha: 0.5),
-                                  Colors.transparent,
-                                ]),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
-            );
-          },
+            ),
+          ),
         );
 
         // ── Static card — no AnimatedBuilder wrapper ──
@@ -2087,7 +1977,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               child: GestureDetector(
                 onTap: () => _openSearchThenRide(rideId: rideId),
                 child: Container(
-              constraints: const BoxConstraints(minHeight: 130),
+              // Fixed equal height across all 3 tiers — VIP / PREMIUM /
+              // COMFORT now line up identically.
+              height: 168,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
@@ -2100,78 +1992,82 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   color: _gold.withValues(alpha: 0.30),
                   width: 1.5,
                 ),
+                // Only a soft black drop — gold halo behind the card was
+                // dropped per design feedback so the 3 cards sit cleanly
+                // on the black sheet background.
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  ),
-                  BoxShadow(
-                    color: _gold.withValues(alpha: isVIP ? 0.15 : 0.10),
-                    blurRadius: 36,
-                    offset: const Offset(0, 6),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
-              child: Stack(
-                children: [
-                  // Ambient glow top-left (static)
-                  Positioned(
-                    left: -30, top: -20,
-                    child: Container(
-                      width: 120, height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(colors: [
-                          accent.withValues(alpha: isVIP ? 0.18 : 0.09),
-                          Colors.transparent,
-                        ]),
-                      ),
-                    ),
-                  ),
-                  // 1:1 with web — Vertical column layout
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Car image — web style (bigger)
-                        SizedBox(
-                          width: 110,
-                          height: 76,
-                          child: Image.asset(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Car image with ground-shadow ellipse — slightly
+                    // bigger than before (130x90) for more visual weight.
+                    SizedBox(
+                      width: 130,
+                      height: 90,
+                      child: Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Container(
+                              width: 96,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(50),
+                                gradient: RadialGradient(
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.55),
+                                    Colors.black.withValues(alpha: 0.0),
+                                  ],
+                                  stops: const [0.0, 1.0],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Image.asset(
                             'assets/images/${v['image']}',
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                             isAntiAlias: true,
                             alignment: Alignment.center,
-                            cacheWidth: 300,
+                            cacheWidth: 360,
                             errorBuilder: (ctx, err, st) => Icon(
                               Icons.directions_car_rounded,
                               color: accent.withValues(alpha: 0.5),
                               size: 40,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Vehicle name
-                        Text(
-                          isVIP ? 'BLACK' : isPremium ? 'PREMIUM' : 'STANDARD',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        // Badge
-                        animatedBadge,
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      isVIP
+                          ? 'BLACK'
+                          : isPremium
+                              ? 'PREMIUM'
+                              : 'STANDARD',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    animatedBadge,
+                  ],
+                ),
               ),
             ),
               ),

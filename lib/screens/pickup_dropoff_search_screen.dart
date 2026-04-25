@@ -45,8 +45,7 @@ class PickupDropoffSearchScreen extends StatefulWidget {
       _PickupDropoffSearchScreenState();
 }
 
-class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
-    with SingleTickerProviderStateMixin {
+class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   final _placesService = PlacesService(ApiKeys.webServices);
 
   final _pickupCtrl = TextEditingController();
@@ -81,16 +80,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   double? _resolvedLat;
   double? _resolvedLng;
 
-  // Swap button rotation
-  late final AnimationController _swapCtl;
-
   @override
   void initState() {
     super.initState();
-    _swapCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
 
     _pickupCtrl.text = widget.initialPickupText;
     _pickupLabel = widget.initialPickupText;
@@ -185,7 +177,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   @override
   void dispose() {
     _debounce?.cancel();
-    _swapCtl.dispose();
     _pickupCtrl.dispose();
     _dropoffCtrl.dispose();
     _pickupFocus.dispose();
@@ -304,29 +295,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
     } catch (_) {}
 
     if (mounted) setState(() => _loading = false);
-  }
-
-  void _swapFields() {
-    HapticFeedback.selectionClick();
-    _swapCtl.forward(from: 0);
-
-    final tmpDetails = _pickupDetails;
-    final tmpLabel = _pickupLabel;
-    final tmpText = _pickupCtrl.text;
-
-    setState(() {
-      _pickupDetails = _dropoffDetails;
-      _pickupLabel = _dropoffLabel;
-      _pickupCtrl.text = _dropoffCtrl.text;
-
-      _dropoffDetails = tmpDetails;
-      _dropoffLabel = tmpLabel;
-      _dropoffCtrl.text = tmpText;
-    });
-
-    if (_pickupDetails != null && _dropoffDetails != null) {
-      _returnResults();
-    }
   }
 
   Future<void> _openMapPicker() async {
@@ -636,61 +604,82 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                     ),
                   ],
                 ),
-                child: Column(
+                // Stack so the dotted vertical line connecting the gold
+                // pickup dot to the white dropoff dot can be drawn
+                // independently of the field column. The line lives in
+                // the same horizontal column as the dots (left margin 18:
+                // 6px container padding + 12px field padding == dot column).
+                child: Stack(
                   children: [
-                    _buildField(
-                      dot: const _Dot(pickup: true),
-                      label: S.of(context).currentLocation,
-                      labelColor: _gold, // Dorado para pickup
-                      controller: _pickupCtrl,
-                      focusNode: _pickupFocus,
-                      onTap: () => setState(() {
-                        _editingPickup = true;
-                        _editingDropoff = false;
-                        _suggestions = [];
-                      }),
-                      onChanged: _editingPickup ? _onTextChanged : null,
-                      onSubmitted:
-                          _editingPickup ? _onFieldSubmitted : null,
-                      active: _editingPickup,
-                      placeholderHint: S.of(context).enterPickupAddress,
-                      isPickup: true,
+                    Column(
+                      children: [
+                        _buildField(
+                          dot: const _Dot(pickup: true),
+                          label: S.of(context).currentLocation,
+                          labelColor: _gold, // Dorado para pickup
+                          controller: _pickupCtrl,
+                          focusNode: _pickupFocus,
+                          onTap: () {
+                            setState(() {
+                              _editingPickup = true;
+                              _editingDropoff = false;
+                              _suggestions = [];
+                            });
+                            // Live-resolve the rider's GPS into a real
+                            // street address whenever they tap the
+                            // pickup field while it still shows the
+                            // generic "Current location" placeholder.
+                            final txt = _pickupCtrl.text.trim();
+                            if (txt.isEmpty || txt == widget.initialPickupText) {
+                              _resolveGpsPickup();
+                            }
+                          },
+                          onChanged: _editingPickup ? _onTextChanged : null,
+                          onSubmitted:
+                              _editingPickup ? _onFieldSubmitted : null,
+                          active: _editingPickup,
+                          placeholderHint: S.of(context).enterPickupAddress,
+                          isPickup: true,
+                        ),
+                        // .vipRide__locPicker__field--pickup border-bottom
+                        Container(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.06),
+                        ),
+                        _buildField(
+                          dot: const _Dot(pickup: false),
+                          label: S.of(context).whereTo,
+                          labelColor: Colors.white.withValues(alpha: 0.5),
+                          controller: _dropoffCtrl,
+                          focusNode: _dropoffFocus,
+                          onTap: () => setState(() {
+                            _editingPickup = false;
+                            _editingDropoff = true;
+                            _suggestions = [];
+                          }),
+                          onChanged: _editingDropoff ? _onTextChanged : null,
+                          onSubmitted:
+                              _editingDropoff ? _onFieldSubmitted : null,
+                          active: _editingDropoff,
+                          placeholderHint: S.of(context).whereTo,
+                          isPickup: false,
+                        ),
+                      ],
                     ),
-                    // .vipRide__locPicker__field--pickup border-bottom
-                    Container(
-                      height: 1,
-                      color: Colors.white.withValues(alpha: 0.06),
-                    ),
-                    _buildField(
-                      dot: const _Dot(pickup: false),
-                      label: S.of(context).whereTo,
-                      labelColor: Colors.white.withValues(alpha: 0.5), // Gris para dropoff
-                      controller: _dropoffCtrl,
-                      focusNode: _dropoffFocus,
-                      onTap: () => setState(() {
-                        _editingPickup = false;
-                        _editingDropoff = true;
-                        _suggestions = [];
-                      }),
-                      onChanged: _editingDropoff ? _onTextChanged : null,
-                      onSubmitted:
-                          _editingDropoff ? _onFieldSubmitted : null,
-                      active: _editingDropoff,
-                      placeholderHint: S.of(context).whereTo,
-                      isPickup: false,
+                    // Connecting line between the two dots — matches the
+                    // web .vipRide__locPicker__line (vertical, dashed
+                    // gold/white, sitting in the dot column).
+                    const Positioned(
+                      left: 16,        // 12 (field horiz padding) + 4 (dot half width offset)
+                      top: 38,         // below pickup dot
+                      bottom: 38,      // above dropoff dot
+                      child: _DotConnectorLine(),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-
-        // .vipRide__lpReverse — 34×34 gold circle, margin-top:12
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: _SwapButton(controller: _swapCtl, onTap: _swapFields),
         ),
       ],
     );
@@ -981,36 +970,40 @@ class _CircleBtn extends StatelessWidget {
   }
 }
 
-class _SwapButton extends StatelessWidget {
-  final AnimationController controller;
-  final VoidCallback onTap;
-  const _SwapButton({required this.controller, required this.onTap});
+/// Vertical dotted line that connects the gold pickup dot to the white
+/// dropoff dot — matches the web .vipRide__locPicker__line.
+class _DotConnectorLine extends StatelessWidget {
+  const _DotConnectorLine();
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (_, __) {
-          return Transform.rotate(
-            angle: controller.value * 3.14159,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: const Color(0x1FE8C547),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0x4DE8C547)),
-              ),
-              child: const Icon(Icons.swap_vert_rounded,
-                  color: _gold, size: 18),
-            ),
-          );
-        },
-      ),
+    return SizedBox(
+      width: 2,
+      child: CustomPaint(painter: _DottedLinePainter()),
     );
   }
+}
+
+class _DottedLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.25)
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    const dash = 3.0;
+    const gap = 3.0;
+    double y = 0;
+    while (y < size.height) {
+      final end = (y + dash).clamp(0.0, size.height);
+      canvas.drawLine(Offset(size.width / 2, y),
+          Offset(size.width / 2, end), paint);
+      y += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ShortcutCard extends StatefulWidget {

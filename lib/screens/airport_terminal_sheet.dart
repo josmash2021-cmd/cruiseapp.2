@@ -306,10 +306,22 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     final mq = MediaQuery.of(context);
     final isStep0 = _step == 0;
 
+    // Status bar inset — read from the root View so it's always correct,
+    // even when this widget is mounted inside showModalBottomSheet (which
+    // can collapse the local MediaQuery padding to 0). Fallback to local mq
+    // and finally to a 44pt default for notched iPhones.
+    final double rootTopInset =
+        MediaQueryData.fromView(View.of(context)).padding.top;
+    final double topInset = rootTopInset > 0
+        ? rootTopInset
+        : (mq.viewPadding.top > 0
+            ? mq.viewPadding.top
+            : (mq.padding.top > 0 ? mq.padding.top : 44.0));
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video background (visible in all steps)
+        // Video background (visible in all steps) — edge-to-edge, behind status bar
         if (_isVideoInitialized && _videoController != null)
           SizedBox.expand(
             child: FittedBox(
@@ -325,10 +337,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         Container(
           color: Colors.black.withValues(alpha: _isVideoInitialized ? 0.78 : 0.88),
         ),
-        // Main content column — SafeArea doesn't work inside
-        // showModalBottomSheet, use viewPadding.top instead.
+        // Main content column — pushed below the status bar so the system
+        // clock/battery never overlap the back button or title.
         Padding(
-          padding: EdgeInsets.only(top: mq.viewPadding.top),
+          padding: EdgeInsets.only(top: topInset),
           child: Column(
             children: [
               // Header row: Back button (step > 0) or Close (step 0) + Title

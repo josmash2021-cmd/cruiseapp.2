@@ -51,8 +51,10 @@ class WaitingForDriverScreen extends StatefulWidget {
 class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-  static const _cardBg = Color(0xFF1A1A1A);
+  static const _bg = Color(0xFF0A1128);
+
+  // Shimmer animation for progress bar (web: vipTestBarShimmer)
+  late final AnimationController _shimmerCtrl;
 
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PolylineAnnotationManager? _polyMgr;
@@ -90,15 +92,21 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
       }
     }
     
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
     _slideCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 650),
     );
+    // web: transform:translateY(40px) → ~0.18 of sheet height
     _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.5),
+      begin: const Offset(0, 0.18),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
-    _slideFadeAnim = CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic);
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: const Cubic(0.2, 0.8, 0.2, 1)));
+    _slideFadeAnim = CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOut);
     
     Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) _slideCtrl.forward();
@@ -109,6 +117,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
 
   @override
   void dispose() {
+    _shimmerCtrl.dispose();
     _slideCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -375,7 +384,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
               ),
             ),
             
-            // Gradient overlay
+            // Gradient overlay — web: rgba(6,10,24,.58) + blur
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -383,9 +392,9 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.3),
-                      Colors.black.withValues(alpha: 0.5),
-                      Colors.black.withValues(alpha: 0.8),
+                      const Color(0xFF060A18).withValues(alpha: 0.25),
+                      const Color(0xFF060A18).withValues(alpha: 0.45),
+                      const Color(0xFF060A18).withValues(alpha: 0.75),
                     ],
                     stops: const [0.0, 0.4, 1.0],
                   ),
@@ -396,91 +405,85 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
             // Labels flotantes DESTINO y RECOGIDA
             _buildFloatingLabels(),
             
-            // Back button
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
-                ),
-              ),
-            ),
             
-            // Bottom sheet "Casi listo..."
+            // Bottom sheet — web: .vipRide__testConfirm__phase2 + .vipRide__testSheet
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: math.max(bottomPad, 14),
+              left: 14,
+              right: 14,
               child: SlideTransition(
                 position: _slideAnim,
                 child: FadeTransition(
                   opacity: _slideFadeAnim,
                   child: Container(
-                    padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomPad),
+                    // web: padding:16px 18px clamp(18px,5vw,24px)
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     decoration: BoxDecoration(
-                      color: _cardBg,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                      border: Border(
-                        top: BorderSide(color: _gold.withValues(alpha: 0.3)),
+                      // web: linear-gradient(160deg,rgba(13,20,45,.98),rgba(8,14,32,.99))
+                      gradient: const LinearGradient(
+                        begin: Alignment(-0.3, -1),
+                        end: Alignment(0.3, 1),
+                        colors: [
+                          Color(0xFA0D142D),
+                          Color(0xFC080E20),
+                        ],
+                      ),
+                      // web: border-radius:20px
+                      borderRadius: BorderRadius.circular(20),
+                      // web: box-shadow:0 8px 48px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.06)
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          blurRadius: 48,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        width: 1,
                       ),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Handle bar
-                        Center(
-                          child: Container(
-                            width: 36,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
+                        // Handle — web: width:38px height:4px rgba(255,255,255,.13)
+                        Container(
+                          width: 38,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.13),
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 14),
                         
-                        // Icono y título
+                        // Row: icon + info — web: .vipRide__testSheet__row gap:14px
                         Row(
                           children: [
-                            Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: _gold.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: _gold.withValues(alpha: 0.3)),
-                              ),
-                              child: const Icon(Icons.directions_car, color: _gold, size: 24),
-                            ),
-                            const SizedBox(width: 16),
+                            // Icon — web: 48x48 circle, rgba(232,197,71,.1) bg,
+                            // border 1.5px rgba(232,197,71,.35), pulse rings
+                            _buildPulsingIcon(),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // web: font-size:clamp(17px,4.8vw,20px) font-weight:700
                                   Text(
-                                    loc.almostReady, // "Casi listo..."
+                                    loc.almostReady,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
+                                  // web: font-size:clamp(11px,3vw,13px) color:rgba(255,255,255,.4)
                                   Text(
                                     '${_shortAddress(widget.pickupAddress)} → ${_shortAddress(widget.dropoffAddress)}',
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.6),
+                                      color: Colors.white.withValues(alpha: 0.4),
                                       fontSize: 13,
                                     ),
                                     maxLines: 1,
@@ -492,30 +495,21 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                           ],
                         ),
                         
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
                         
-                        // Progress bar dorado
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
-                          child: LinearProgressIndicator(
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            valueColor: const AlwaysStoppedAnimation<Color>(_gold),
-                            minHeight: 3,
-                          ),
-                        ),
+                        // Progress bar — web: .vipRide__testBar--phase2 shimmer
+                        _buildShimmerBar(),
                         
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 4),
                         
-                        // Botón Cancelar
-                        Center(
-                          child: TextButton(
-                            onPressed: _showCancelDialog,
-                            child: Text(
-                              loc.cancel,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 15,
-                              ),
+                        // Cancel — web: font-size:clamp(14px,3.8vw,16px) color:rgba(255,255,255,.45)
+                        TextButton(
+                          onPressed: _showCancelDialog,
+                          child: Text(
+                            loc.cancel,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 16,
                             ),
                           ),
                         ),
@@ -644,6 +638,98 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     );
   }
 
+  /// Web: .vipRide__testSheet__icon — 48x48 circle with pulse rings
+  Widget _buildPulsingIcon() {
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Outer ring — web ::before width:58px
+          _AnimatedRing(size: 58, delay: 0.55, gold: _gold),
+          // Inner ring — web ::after width:72px
+          _AnimatedRing(size: 72, delay: 0.9, gold: _gold),
+          // Core circle — web: 48x48
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              // web: radial-gradient(circle at 38% 32%,rgba(255,255,255,.1),rgba(232,197,71,.07))
+              gradient: RadialGradient(
+                center: const Alignment(-0.24, -0.36),
+                colors: [
+                  Colors.white.withValues(alpha: 0.1),
+                  _gold.withValues(alpha: 0.07),
+                ],
+              ),
+              border: Border.all(
+                color: _gold.withValues(alpha: 0.45),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.18),
+                  blurRadius: 28,
+                ),
+              ],
+            ),
+            child: const Icon(Icons.directions_car, color: _gold, size: 24),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Web: .vipRide__testBar--phase2 shimmer gold gradient
+  Widget _buildShimmerBar() {
+    return AnimatedBuilder(
+      animation: _shimmerCtrl,
+      builder: (_, __) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: Container(
+            height: 3,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: FractionallySizedBox(
+              widthFactor: 1.0,
+              alignment: Alignment.centerLeft,
+              child: ShaderMask(
+                shaderCallback: (bounds) {
+                  // web: linear-gradient(90deg,#B08800,#E8C547,#F5DC7A,#E8C547,#B08800)
+                  // background-size:200% → shift from 100% to -100%
+                  final shift = 1.0 - 2.0 * _shimmerCtrl.value;
+                  return LinearGradient(
+                    colors: const [
+                      Color(0xFFB08800),
+                      Color(0xFFE8C547),
+                      Color(0xFFF5DC7A),
+                      Color(0xFFE8C547),
+                      Color(0xFFB08800),
+                    ],
+                    stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+                    transform: GradientRotation(0),
+                    begin: Alignment(shift - 1, 0),
+                    end: Alignment(shift + 1, 0),
+                  ).createShader(bounds);
+                },
+                blendMode: BlendMode.srcIn,
+                child: Container(
+                  height: 3,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   String _shortAddress(String address) {
     if (address.length > 35) {
       return '${address.substring(0, 35)}...';
@@ -658,6 +744,72 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     final y = math.sin(dLng) * math.cos(lat2);
     final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+}
+
+/// Pulsing ring that animates scale + opacity (web: @keyframes vipTestPulse)
+class _AnimatedRing extends StatefulWidget {
+  final double size;
+  final double delay; // seconds
+  final Color gold;
+  const _AnimatedRing({required this.size, required this.delay, required this.gold});
+
+  @override
+  State<_AnimatedRing> createState() => _AnimatedRingState();
+}
+
+class _AnimatedRingState extends State<_AnimatedRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    );
+    Future.delayed(Duration(milliseconds: (widget.delay * 1000).round()), () {
+      if (mounted) _ctrl.repeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        // web: 0%{scale(.6);opacity:0} 15%{opacity:.55} 100%{scale(1.25);opacity:0}
+        final t = _ctrl.value;
+        final scale = 0.6 + 0.65 * t;
+        final opacity = t < 0.15
+            ? (t / 0.15) * 0.55
+            : 0.55 * (1 - (t - 0.15) / 0.85);
+        return Transform.scale(
+          scale: scale,
+          child: Opacity(
+            opacity: opacity.clamp(0.0, 1.0),
+            child: Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: widget.gold.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -325,8 +325,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         Container(
           color: Colors.black.withValues(alpha: _isVideoInitialized ? 0.78 : 0.88),
         ),
-        // Main content column
-        SafeArea(
+        // Main content column — SafeArea doesn't work inside
+        // showModalBottomSheet, use viewPadding.top instead.
+        Padding(
+          padding: EdgeInsets.only(top: mq.viewPadding.top),
           child: Column(
             children: [
               // Header row: Back button (step > 0) or Close (step 0) + Title
@@ -566,13 +568,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   //  STEP 0 — Direction Picker (1:1 with web - vertical cards)
   // ─────────────────────────────────────────────
   Widget _buildDirectionPicker() {
-    final mq = MediaQuery.of(context);
-    final topPadding = mq.padding.top + 80; // Space below status bar/notch
-
     return Center(
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(20, topPadding, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -666,12 +665,8 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               a.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
               a.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
-    final mq = MediaQuery.of(context);
-
     return Column(
       children: [
-        // Top padding to avoid notch/status bar
-        SizedBox(height: mq.padding.top + 8),
         // Search field — lives in the .vrApt__body padding (0 20 24).
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -935,11 +930,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
     final allAirlines = ap.allAirlines;
-    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1074,11 +1068,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   Widget _buildArrivalPicker() {
     if (_selectedAirport == null) return const SizedBox.shrink();
     final ap = _selectedAirport!;
-    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1211,11 +1204,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     final ap      = _selectedAirport!;
     final isFrom  = _direction == AirportDirection.fromAirport;
     final dirColor = isFrom ? _green : _blue;
-    final mq = MediaQuery.of(context);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(20, mq.padding.top + 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

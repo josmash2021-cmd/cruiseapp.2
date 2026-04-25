@@ -1020,6 +1020,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     child: _circleButton(
                       icon: Icons.arrow_back,
                       onTap: () {
+                        // Clean up map annotations and reset state before going back
+                        // to prevent bugs when starting a new route search
+                        _cleanupMapAnnotations();
+                        _ctrl.reset();
                         Navigator.of(context).pop();
                       },
                       c: c,

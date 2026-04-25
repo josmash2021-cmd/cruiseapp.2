@@ -1961,13 +1961,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Badge icons 1:1 with web (ride-request.liquid)
-                      Icon(
-                        isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond,
-                        // VIP: white icon, Premium: black icon, Comfort: dark icon
-                        color: isVIP ? Colors.white : (isPremium ? Colors.black : const Color(0xFF1A1A1A)),
-                        size: 12,
-                      ),
+                      // Badge icons 1:1 with web (ride-request.liquid:142)
+                      // Web HTML: VIP=SVG diamond+sparkles, PREMIUM=★, COMFORT=✦
+                      if (isVIP)
+                        Icon(Icons.diamond, size: 12, color: Colors.white)
+                      else
+                        Text(
+                          isPremium ? '★' : '✦',
+                          style: TextStyle(
+                            color: isPremium ? Colors.black : const Color(0xFF1A1A1A),
+                            fontSize: isPremium ? 10 : 11,
+                            height: 1,
+                          ),
+                        ),
                       const SizedBox(width: 5),
                       Text(
                         tier,
@@ -1975,8 +1981,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           // VIP: white text, Premium: black text, Comfort: dark text
                           color: isVIP ? Colors.white : (isPremium ? Colors.black : const Color(0xFF1A1A1A)),
                           fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.64,
                         ),
                       ),
                     ],
@@ -2150,16 +2156,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Car image
+                        // Car image — web style (bigger)
                         SizedBox(
-                          height: 70,
+                          width: 110,
+                          height: 76,
                           child: Image.asset(
                             'assets/images/${v['image']}',
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                             isAntiAlias: true,
                             alignment: Alignment.center,
-                            cacheWidth: 240,
+                            cacheWidth: 300,
                             errorBuilder: (ctx, err, st) => Icon(
                               Icons.directions_car_rounded,
                               color: accent.withValues(alpha: 0.5),

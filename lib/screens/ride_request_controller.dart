@@ -2239,8 +2239,17 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         _dropoffAnnot = null;
       }
     }
+    // Reset ALL cinematic state so the next route can animate fresh
     _showPinLabels = false;
     _labelsRevealed = false;
+    _cinematicRunning = false;
+    _cinematicDone = false;
+    _placingMarkers = false;
+    // Reset floating label state so labels position correctly next time
+    _pickupScreenOffset = null;
+    _dropoffScreenOffset = null;
+    _pickupLabelRevealed = false;
+    _dropoffLabelRevealed = false;
   }
 
   /// Shows a confirmation dialog before canceling the ride search.

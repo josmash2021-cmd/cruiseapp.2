@@ -927,10 +927,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
             // ── Floating animated map labels (RECOGIDA / DESTINO) ──
             // Sit directly over the pin tips via pixelForCoordinate.
-            // Hidden during idle / searching phases; revealed staggered
-            // (pickup at +50ms, dropoff at +300ms) after the cinematic.
+            // Shown during preview, ride selection AND while searching
+            // for a driver — keeps the map readable instead of leaving
+            // bare pins floating with no context.
             if (phase == RiderPhase.previewRoute ||
-                phase == RiderPhase.selectingRide)
+                phase == RiderPhase.selectingRide ||
+                phase == RiderPhase.searchingDriver)
               ..._buildFloatingLabels(),
 
             // ── In-place map picker overlays ──

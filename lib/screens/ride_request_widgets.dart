@@ -2039,9 +2039,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               borderRadius: BorderRadius.circular(28),
               child: Container(
                 decoration: const BoxDecoration(
-                  color: Color(0xFF0F0F14),
+                  color: Colors.black,
                 ),
-                child: Padding(
+                child: Stack(
+                  children: [
+                    // Floating gold particles background — same idea as
+                    // SearchingDriverScreen, just scoped to this card.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: AnimatedBuilder(
+                          animation: _radarCtrl,
+                          builder: (_, __) => CustomPaint(
+                            painter: _SearchingCardParticlesPainter(
+                              t: _radarCtrl.value,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2109,13 +2125,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       ring(72, 0.9),
                                       // ::before — 58×58, no delay
                                       ring(58, 0),
-                                      // 48×48 icon circle
+                                      // 48×48 logo circle — Cruise app brand mark
                                       Container(
                                         width: 48,
                                         height: 48,
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFE8C547)
-                                              .withValues(alpha: 0.10),
+                                          color: Colors.black,
                                           shape: BoxShape.circle,
                                           border: Border.all(
                                             color: const Color(0xFFE8C547)
@@ -2130,11 +2145,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                             ),
                                           ],
                                         ),
-                                        alignment: Alignment.center,
-                                        child: const Icon(
-                                          Icons.local_taxi_rounded,
-                                          color: Color(0xFFE8C547),
-                                          size: 22,
+                                        child: const ClipOval(
+                                          child: Image(
+                                            image: AssetImage(
+                                                'assets/images/logoapp.png'),
+                                            fit: BoxFit.cover,
+                                            width: 48,
+                                            height: 48,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -2326,6 +2344,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ],
                     ),
                   ),
+                  ],
+                ),
                 ),
             ),
           ),
@@ -3238,4 +3258,54 @@ class _StaggeredFadeState extends State<_StaggeredFade>
       child: widget.child,
     );
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Subtle gold particle painter for the "Searching nearby drivers" card.
+//  Lightweight version of SearchingDriverScreen particles — fewer dots,
+//  scoped to the card bounds, slow drift for ambient feel.
+// ═══════════════════════════════════════════════════════════════════════
+class _SearchingCardParticlesPainter extends CustomPainter {
+  final double t; // 0→1 loop driver
+  _SearchingCardParticlesPainter({required this.t});
+
+  // Pre-baked particle seeds (fixed positions + sizes + phase offsets) so
+  // the layout is stable across rebuilds.
+  static const List<List<double>> _seeds = [
+    [0.08, 0.20, 1.6, 0.0],
+    [0.18, 0.72, 1.0, 0.4],
+    [0.27, 0.42, 1.4, 0.7],
+    [0.36, 0.85, 0.9, 0.2],
+    [0.45, 0.30, 1.2, 0.5],
+    [0.54, 0.55, 1.6, 0.8],
+    [0.62, 0.18, 1.1, 0.3],
+    [0.70, 0.66, 1.3, 0.6],
+    [0.78, 0.34, 0.9, 0.1],
+    [0.86, 0.78, 1.5, 0.9],
+    [0.92, 0.45, 1.0, 0.4],
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (final s in _seeds) {
+      final px = s[0] * size.width;
+      final py = s[1] * size.height;
+      final r = s[2];
+      final phase = s[3];
+      // Twinkle: 0→1→0 over the loop, offset per particle.
+      final phaseT = ((t + phase) % 1.0);
+      final twinkle = phaseT < 0.5 ? phaseT * 2 : (1.0 - phaseT) * 2;
+      final alpha = (0.10 + 0.35 * twinkle).clamp(0.0, 1.0);
+      // Slight horizontal drift.
+      final dx = math.sin((t + phase) * 2 * math.pi) * 4;
+      paint.color = const Color(0xFFE8C547).withValues(alpha: alpha);
+      canvas.drawCircle(Offset(px + dx, py), r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SearchingCardParticlesPainter old) =>
+      old.t != t;
 }

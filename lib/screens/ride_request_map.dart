@@ -640,20 +640,24 @@ extension _RideRequestMap on _RideRequestScreenState {
     return pts;
   }
 
-  /// Replay cinematic if route data is available (used by searching phase).
-  /// Only triggers if cinematic hasn't already played.
+  /// Called when entering the searching phase. Previously this replayed
+  /// the full cinematic camera sequence, which felt like a hard "reset"
+  /// in the middle of the search. Now we keep whatever cinematic state
+  /// is on screen and just make sure the pin labels + route are
+  /// rendered, then let the slow continuous bearing rotation
+  /// (_animateSearchCameraToAngle) take over.
   void _replayCinematicIfRouteAvailable() {
-    if (_cinematicDone || _cinematicRunning) return;
     final route = _ctrl.state.route;
-    // Accept even the 2-point estimated route — cinematic runs, only the
-    // gold polyline skips inside _startCinematicSequence (pts.length < 3).
-    // Ensures the sheet always appears even if Directions is slow/down.
     if (route == null || route.points.isEmpty) return;
-    final pts = _capRouteEndpoints(List<LatLng>.from(route.points));
     _showPinLabels = true;
     _buildRouteMarkers();
-    _resetCinematic();
-    _startCinematicSequence(pts);
+    // Only run a fresh cinematic if one was never played yet — otherwise
+    // we'd jolt the camera back to the dropoff start frame.
+    if (!_cinematicDone && !_cinematicRunning) {
+      final pts = _capRouteEndpoints(List<LatLng>.from(route.points));
+      _resetCinematic();
+      _startCinematicSequence(pts);
+    }
   }
 
   /// Cinematic map animation — ONE unified camera animation that
@@ -864,33 +868,40 @@ extension _RideRequestMap on _RideRequestScreenState {
   }
 
   /// Smoothly transition the map camera to the angle preset matching [idx].
-  /// Called every 10 s in sync with the status-message text cycle.
+  /// Used to be called every 10s with hard angle jumps, which made the
+  /// map feel like it was "resetting" mid-search. Now we ignore the idx
+  /// entirely and just kick off — once — a slow continuous rotation that
+  /// loops forever while the rider is in searchingDriver phase. The
+  /// pitch is held at a fixed cinematic value so only the bearing drifts.
   void _animateSearchCameraToAngle(int idx) {
     if (_mapCtrl == null || !mounted) return;
-    final angleIdx = idx % _searchCameraAngles.length;
-    final (targetPitch, targetBearing) = _searchCameraAngles[angleIdx];
 
-    // Determine current camera values (fallback to initial cinematic pose)
-    final prevPitch = _searchPitchAnim?.value ?? _tiltAnim?.value ?? 55.0;
-    final prevBearing = _searchBearingAnim?.value ?? _bearingAnim?.value ?? _randomBearing;
+    // Already running? Don't restart — that's exactly what produced
+    // the jarring "reset" feeling.
+    if (_searchCamCtrl != null && _searchCamCtrl!.isAnimating) return;
 
-    // Dispose previous cycling controller
+    const double pitch = 50.0;
+    final double startBearing =
+        _searchBearingAnim?.value ?? _bearingAnim?.value ?? _randomBearing;
+
     _searchCamCtrl?.removeListener(_applySearchCamera);
     _searchCamCtrl?.dispose();
 
-    // 1.8 s ease-in-out for a buttery-smooth, cinematic transition
+    // 60 s for a full 360° turn — slow, ambient, premium feel.
     _searchCamCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(seconds: 60),
     );
-    _searchPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
-      CurvedAnimation(parent: _searchCamCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _searchBearingAnim = Tween<double>(begin: prevBearing, end: targetBearing).animate(
-      CurvedAnimation(parent: _searchCamCtrl!, curve: Curves.easeInOutCubic),
-    );
+    _searchPitchAnim = AlwaysStoppedAnimation<double>(pitch);
+    _searchBearingAnim = Tween<double>(
+      begin: startBearing,
+      end: startBearing + 360.0,
+    ).animate(CurvedAnimation(
+      parent: _searchCamCtrl!,
+      curve: Curves.linear,
+    ));
     _searchCamCtrl!.addListener(_applySearchCamera);
-    _searchCamCtrl!.forward();
+    _searchCamCtrl!.repeat();
   }
 
   void _applySearchCamera() {

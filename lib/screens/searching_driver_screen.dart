@@ -538,10 +538,11 @@ Route<bool> searchingDriverRoute({
   ValueNotifier<bool>? driverFound,
 }) {
   return PageRouteBuilder<bool>(
-    opaque: false,
-    // Slower transitions so the cross-fade between "Confirming your
-    // ride" and the underlying "Finding driver" card feels smooth
-    // and connected — not step-by-step.
+    // opaque: true so the matching screen fully covers the ride_request
+    // bottom sheet ("Almost there..." card) underneath. Once this screen
+    // pops (after the matching animation completes), the underlying card
+    // becomes visible again — that is the intended sequence.
+    opaque: true,
     transitionDuration: const Duration(milliseconds: 420),
     reverseTransitionDuration: const Duration(milliseconds: 420),
     pageBuilder: (_, __, ___) => SearchingDriverScreen(

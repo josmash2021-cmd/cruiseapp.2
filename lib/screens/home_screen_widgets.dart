@@ -88,7 +88,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
       curve: Curves.easeInOutCubic,
       height: Responsive.h(48),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1C22),
+        color: Colors.black,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: active
@@ -224,27 +224,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
           ),
-          Container(
-            margin: const EdgeInsets.only(right: 6),
-            padding: EdgeInsets.symmetric(horizontal: Responsive.w(12), vertical: Responsive.h(6)),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _gold.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.schedule_rounded, color: _gold, size: Responsive.sp(14)),
-                const SizedBox(width: 4),
-                Text(S.of(context).nowLabel,
-                    style: TextStyle(
-                        color: _gold,
-                        fontSize: Responsive.sp(13),
-                        fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
+          SizedBox(width: Responsive.w(12)),
         ],
       ),
     );

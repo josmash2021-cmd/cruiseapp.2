@@ -613,8 +613,6 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     required String subtitle,
     required bool isToAirport,
   }) {
-    final iconData = isToAirport ? Icons.flight_takeoff_rounded : Icons.flight_land_rounded;
-
     return _PressScale(
       onTap: () => _selectDirection(direction),
       child: Container(
@@ -631,7 +629,6 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           children: [
             // Large glass icon container — 1:1 with web .vrApt__dirIcon--big
             _AnimatedPlaneIcon(
-              icon: iconData,
               isToAirport: isToAirport,
             ),
             const SizedBox(height: 16),
@@ -1480,11 +1477,9 @@ class _PressScaleState extends State<_PressScale> {
 //  Large glass icon with subtle flight animation and arrow badge
 // ═══════════════════════════════════════════════════════════════════
 class _AnimatedPlaneIcon extends StatefulWidget {
-  final IconData icon;
   final bool isToAirport;
 
   const _AnimatedPlaneIcon({
-    required this.icon,
     required this.isToAirport,
   });
 
@@ -1577,15 +1572,21 @@ class _AnimatedPlaneIconState extends State<_AnimatedPlaneIcon>
                     ),
                   ),
                 ),
-                // Animated plane icon
-                Transform.translate(
-                  offset: Offset(dx, dy),
-                  child: Transform.rotate(
-                    angle: rot * math.pi / 180,
-                    child: Icon(
-                      widget.icon,
-                      size: 80,
-                      color: Colors.white,
+                // Animated plane image — full 3D PNG sized to fill most
+                // of the 190x190 glass tile, with internal padding so the
+                // wings don't kiss the rounded border.
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Transform.translate(
+                    offset: Offset(dx, dy),
+                    child: Transform.rotate(
+                      angle: rot * math.pi / 180,
+                      child: Image.asset(
+                        widget.isToAirport
+                            ? 'assets/airport/airport_takeoff.png'
+                            : 'assets/airport/airport_landing.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 ),

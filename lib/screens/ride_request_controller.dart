@@ -1096,14 +1096,14 @@ extension _RideRequestController on _RideRequestScreenState {
         if (st.pickup != null && st.dropoff != null) {
           Navigator.of(context).push(
             waitingForDriverRoute(
-              pickupLatLng: st.pickup!,
-              dropoffLatLng: st.dropoff!,
+              pickupLatLng: LatLng(st.pickup!.lat, st.pickup!.lng),
+              dropoffLatLng: LatLng(st.dropoff!.lat, st.dropoff!.lng),
               pickupAddress: st.pickupLabel.isNotEmpty ? st.pickupLabel : 'Recogida',
               dropoffAddress: st.dropoffLabel.isNotEmpty ? st.dropoffLabel : 'Destino',
               routePoints: route?.points,
               onCancel: () {
                 _riderInitiatedCancel = true;
-                _ctrl.cancelTrip();
+                _ctrl.cancelRide();
               },
               driverFound: _driverMatchedNotifier,
             ),
@@ -1734,23 +1734,6 @@ extension _RideRequestController on _RideRequestScreenState {
     if (error is stripe.StripeException) {
       errorCode = error.error.code?.toString() ?? 'unknown';
       switch (error.error.code) {
-        case stripe.FailureCode.CardDeclined:
-          errorTitle = s.cardDeclined;
-          errorMessage = s.cardDeclinedMsg;
-          break;
-        case stripe.FailureCode.InsufficientFunds:
-          errorTitle = s.insufficientFunds;
-          errorMessage = s.insufficientFundsMsg;
-          break;
-        case stripe.FailureCode.ExpiredCard:
-          errorTitle = s.cardExpired;
-          errorMessage = s.cardExpiredMsg;
-          break;
-        case stripe.FailureCode.IncorrectNumber:
-        case stripe.FailureCode.InvalidNumber:
-          errorTitle = s.invalidCardNumber;
-          errorMessage = s.invalidCardNumberMsg;
-          break;
         case stripe.FailureCode.Canceled:
           // User cancelled - no dialog needed
           return false;
@@ -1889,200 +1872,10 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
-/// Smart payment retry dialog that adapts based on available methods and error type
-class _PaymentRetryDialog extends StatelessWidget {
-  final String title;
-  final String message;
-  final String errorCode;
-  final bool hasAlternativeMethod;
-  final bool hasSavedCard;
-  final String originalMethod;
-
-  const _PaymentRetryDialog({
-    required this.title,
-    required this.message,
-    required this.errorCode,
-    required this.hasAlternativeMethod,
-    required this.hasSavedCard,
-    required this.originalMethod,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final isNetworkError = errorCode == 'network_error';
-    final methodName = _getMethodDisplayName(originalMethod, s);
-
-    return Dialog(
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Error icon
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: isNetworkError
-                    ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
-                    : const Color(0xFFEF4444).withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isNetworkError ? Icons.wifi_off_rounded : Icons.credit_card_off_rounded,
-                color: isNetworkError ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Title
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 10),
-            
-            // Message
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            // Action buttons
-            Column(
-              children: [
-                // Primary: Retry with same method
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE8C547),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: () => Navigator.pop(context, _RetryAction.retrySame),
-                    child: Text(
-                      isNetworkError 
-                          ? s.retryConnection
-                          : s.retryWithSameMethod(methodName),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                
-                // Secondary: Try different method (if available)
-                if (hasAlternativeMethod) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFE8C547),
-                        side: const BorderSide(color: Color(0xFFE8C547)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(context, _RetryAction.tryDifferentMethod),
-                      child: Text(
-                        s.tryDifferentPaymentMethod,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                
-                // Tertiary: Add new card
-                if (!hasSavedCard || originalMethod == 'credit_card') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white.withValues(alpha: 0.8),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(context, _RetryAction.addNewCard),
-                      child: Text(
-                        s.addNewCard,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                
-                // Cancel
-                TextButton(
-                  onPressed: () => Navigator.pop(context, _RetryAction.cancel),
-                  child: Text(
-                    s.cancelRide,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getMethodDisplayName(String method, S s) {
-    switch (method) {
-      case 'apple_pay':
-        return 'Apple Pay';
-      case 'google_pay':
-        return 'Google Pay';
-      case 'credit_card':
-        return s.creditOrDebitCard;
-      case 'paypal':
-        return 'PayPal';
-      default:
-        return s.creditOrDebitCard;
-    }
-  }
-}
-
-  // Kept for backwards-compat — no longer used but referenced by older
-  // call sites; leave in place until a dedicated cleanup pass.
-  // ignore: unused_element
-  void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
+// Kept for backwards-compat — no longer used but referenced by older
+// call sites; leave in place until a dedicated cleanup pass.
+// ignore: unused_element
+void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
       if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),

@@ -164,6 +164,198 @@ const List<(double, double)> _searchCameraAngles = [
 /// Enum for payment retry actions
 enum _RetryAction { retrySame, tryDifferentMethod, addNewCard, cancel }
 
+/// Helper function to get display name for payment methods
+String _getMethodDisplayName(String method, S s) {
+  switch (method) {
+    case 'apple_pay':
+      return 'Apple Pay';
+    case 'google_pay':
+      return 'Google Pay';
+    case 'credit_card':
+      return s.creditOrDebitCard;
+    case 'paypal':
+      return 'PayPal';
+    default:
+      return s.creditOrDebitCard;
+  }
+}
+
+/// Smart payment retry dialog that adapts based on available methods and error type
+class _PaymentRetryDialog extends StatelessWidget {
+  final String title;
+  final String message;
+  final String errorCode;
+  final bool hasAlternativeMethod;
+  final bool hasSavedCard;
+  final String originalMethod;
+
+  const _PaymentRetryDialog({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.errorCode,
+    required this.hasAlternativeMethod,
+    required this.hasSavedCard,
+    required this.originalMethod,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final isNetworkError = errorCode == 'network_error';
+    final methodName = _getMethodDisplayName(originalMethod, s);
+
+    return Dialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Error icon
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: isNetworkError
+                    ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
+                    : const Color(0xFFEF4444).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isNetworkError ? Icons.wifi_off_rounded : Icons.credit_card_off_rounded,
+                color: isNetworkError ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Title
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 10),
+            
+            // Message
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Action buttons
+            Column(
+              children: [
+                // Primary: Retry with same method
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE8C547),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, _RetryAction.retrySame),
+                    child: Text(
+                      isNetworkError 
+                          ? s.retryConnection
+                          : s.retryWithSameMethod(methodName),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Secondary: Try different method (if available)
+                if (hasAlternativeMethod) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFE8C547),
+                        side: const BorderSide(color: Color(0xFFE8C547)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, _RetryAction.tryDifferentMethod),
+                      child: Text(
+                        s.tryDifferentPaymentMethod,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                
+                // Tertiary: Add new card
+                if (!hasSavedCard || originalMethod == 'credit_card') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white.withValues(alpha: 0.8),
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, _RetryAction.addNewCard),
+                      child: Text(
+                        s.addNewCard,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                
+                // Cancel
+                TextButton(
+                  onPressed: () => Navigator.pop(context, _RetryAction.cancel),
+                  child: Text(
+                    s.cancelRide,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }

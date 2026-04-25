@@ -369,17 +369,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 12),
 
-                  // Vertical list of ride cards (horizontal layout)
+                  // Grid of ride cards (3 columns) - matching web design
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
-                    Column(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        for (int i = 0; i < 3; i++) _buildShimmerCard(),
+                        for (int i = 0; i < 3; i++) _buildShimmerCardGrid(),
                       ],
                     )
                   else
-                    Column(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         for (int i = 0; i < displayOptions.length; i++) ...[
                           _PressableScale(
@@ -408,7 +412,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 }
                               }
                             },
-                            child: _buildRideOptionCard(
+                            child: _buildRideOptionCardGrid(
                               c,
                               displayOptions[i],
                               option?.id == displayOptions[i].id,
@@ -823,6 +827,136 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // Grid card - square format matching web design (3 columns)
+  // Image top, name middle, badge bottom
+  Widget _buildRideOptionCardGrid(AppColors c, RideOption opt, bool selected) {
+    final isSuv = opt.id == 'suburban';
+    final isFusion = opt.id == 'fusion';
+
+    final bool isVIP = isSuv;
+    final bool isPremium = !isSuv && !isFusion;
+    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
+    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+    
+    // Badge colors matching the web
+    final badgeGradient = isVIP 
+        ? const [Color(0xFFF5DC7A), Color(0xFFE8C547)]
+        : isPremium
+            ? const [Color(0xFFE8C547), Color(0xFFD4A800)]
+            : const [Color(0xFF4ADE80), Color(0xFF22C55E)];
+    final badgeTextColor = isVIP || isPremium ? Colors.black : Colors.white;
+    final badgeIcon = isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond;
+
+    // Calculate width for 3 columns with spacing
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 56) / 3; // 56 = padding (16*2) + spacing (8*3)
+
+    return AnimatedBuilder(
+      animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
+      builder: (_, __) {
+        final t = selected ? _activeCardGlowCtrl.value : 0.0;
+        final glowAlpha = 0.15 + 0.15 * t;
+        
+        return Container(
+          width: cardWidth,
+          height: 140,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1F),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xB3E8C547)
+                  : const Color(0xFFE8C547).withValues(alpha: 0.2),
+              width: selected ? 2 : 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFE8C547).withValues(alpha: glowAlpha * 0.5),
+                blurRadius: 20,
+                spreadRadius: -2,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Car image
+              SizedBox(
+                width: 80,
+                height: 60,
+                child: Image.asset(
+                  _carAssetForOption(opt.name),
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Vehicle name
+              Text(
+                displayName,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: badgeGradient,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(badgeIcon, size: 9, color: badgeTextColor),
+                    const SizedBox(width: 3),
+                    Text(
+                      tierLabel,
+                      style: TextStyle(
+                        color: badgeTextColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Shimmer card for grid loading state
+  Widget _buildShimmerCardGrid() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 56) / 3;
+    
+    return Container(
+      width: cardWidth,
+      height: 140,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFE8C547),
+          strokeWidth: 2,
         ),
       ),
     );

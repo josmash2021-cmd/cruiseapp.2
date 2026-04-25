@@ -1685,6 +1685,44 @@ class S {
       _es ? 'Administrar cuentas de pago' : 'Manage payment accounts';
   String get creditOrDebitCard =>
       _es ? 'Tarjeta de crédito o débito' : 'Credit or debit card';
+      
+  // ── Payment Retry System ────────────────────────────────────────────────────
+  String get cardDeclined => _es ? 'Tarjeta rechazada' : 'Card declined';
+  String get cardDeclinedMsg => _es
+      ? 'Tu tarjeta fue rechazada por el banco. Intenta con otro método de pago.'
+      : 'Your card was declined by the bank. Try a different payment method.';
+  String get insufficientFunds => _es ? 'Fondos insuficientes' : 'Insufficient funds';
+  String get insufficientFundsMsg => _es
+      ? 'No hay fondos suficientes en esta tarjeta. Intenta con otro método de pago.'
+      : 'There are not enough funds on this card. Try a different payment method.';
+  String get cardExpired => _es ? 'Tarjeta vencida' : 'Card expired';
+  String get cardExpiredMsg => _es
+      ? 'Tu tarjeta ha vencido. Por favor actualiza los datos de tu tarjeta.'
+      : 'Your card has expired. Please update your card details.';
+  String get invalidCardNumber => _es ? 'Número inválido' : 'Invalid number';
+  String get invalidCardNumberMsg => _es
+      ? 'El número de tarjeta es incorrecto. Por favor verifica los datos.'
+      : 'The card number is incorrect. Please verify the details.';
+  String get paypalDeclined => _es ? 'PayPal rechazado' : 'PayPal declined';
+  String get paypalDeclinedMsg => _es
+      ? 'PayPal no pudo procesar el pago. Intenta con otro método.'
+      : 'PayPal could not process the payment. Try another method.';
+  String get networkError => _es ? 'Error de conexión' : 'Network error';
+  String get networkErrorMsg => _es
+      ? 'Hubo un problema de conexión. Verifica tu internet e intenta de nuevo.'
+      : 'There was a connection problem. Check your internet and try again.';
+  String get tryDifferentPaymentMethod => _es
+      ? 'Usar otro método de pago'
+      : 'Try different payment method';
+  String get retryConnection => _es ? 'Reintentar conexión' : 'Retry connection';
+  String retryWithSameMethod(String method) => _es
+      ? 'Reintentar con $method'
+      : 'Retry with $method';
+  String get addNewCard => _es ? 'Agregar nueva tarjeta' : 'Add new card';
+  String get genericPaymentError => _es
+      ? 'Hubo un problema con el pago. Intenta de nuevo o usa otro método.'
+      : 'There was a problem with the payment. Try again or use another method.';
+      
   String get cancelRideMsg => _es
       ? '¿Estás seguro de que quieres cancelar tu solicitud de viaje?'
       : 'Are you sure you want to cancel your ride request?';

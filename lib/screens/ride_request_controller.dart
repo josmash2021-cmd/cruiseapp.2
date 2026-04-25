@@ -952,21 +952,27 @@ extension _RideRequestController on _RideRequestScreenState {
         } catch (e) {
           if (!mounted) return;
           debugPrint('Native payment error: $e');
-          nativePayFailed = true;
+          
+          // NEW: Try smart retry with fallback options
+          _setState(() => _isProcessingPayment = false);
+          final amountCents = (option.priceEstimate * 100).round();
+          final retryOk = await _handlePaymentFailure(
+            error: e,
+            amountCents: amountCents,
+            originalMethod: _selectedPaymentMethod,
+            option: option,
+          );
+          if (!retryOk || !mounted) {
+            _rideFlowLocked = false;
+            return; // User cancelled or retry failed
+          }
+          // Retry succeeded, continue with ride request
+          _setState(() => _isProcessingPayment = true);
         }
         _setState(() => _isProcessingPayment = false);
-
-        // Payment declined — show banner immediately and don't proceed
-        if (nativePayFailed) {
-          if (mounted) {
-            _setState(() => _showPaymentDeclinedBanner = true);
-            _showRetrySnackBar(
-              S.of(context).paymentDeclinedMsg,
-              () => _startRideDirectly(AppColors.of(context), option),
-            );
-          }
-          return;
-        }
+      } else {
+        // For non-native pay, use the new retry system inside the payment callback
+        // This is handled in the searching screen's paymentCallback
       }
 
       if (!mounted) return;
@@ -993,7 +999,23 @@ extension _RideRequestController on _RideRequestScreenState {
         cancelled = await nav.push<bool>(
               searchingDriverRoute(
                 onCancel: _cancelSearching,
-                paymentCallback: (isNativePay || isTestMode) ? null : () => _confirmNativePayment(option),
+                paymentCallback: (isNativePay || isTestMode) 
+                    ? null 
+                    : () async {
+                        // Enhanced payment with smart retry
+                        try {
+                          return await _confirmNativePayment(option);
+                        } catch (e) {
+                          // Payment failed - try smart retry with fallback
+                          final amountCents = (option.priceEstimate * 100).round();
+                          return await _handlePaymentFailure(
+                            error: e,
+                            amountCents: amountCents,
+                            originalMethod: _selectedPaymentMethod,
+                            option: option,
+                          );
+                        }
+                      },
                 initiallyDeclined: nativePayFailed,
                 onPaymentDeclined: () => paymentDeclinedFlag = true,
                 driverFound: _driverMatchedNotifier,
@@ -1693,6 +1715,372 @@ extension _RideRequestController on _RideRequestScreenState {
       await _openCreditCardScreen(c, option);
     }
   }
+
+  /// Handles payment failure with automatic retry options.
+  /// Shows a smart dialog that detects available alternatives and offers them.
+  Future<bool> _handlePaymentFailure({
+    required Object error,
+    required int amountCents,
+    required String originalMethod,
+    required RideOption option,
+  }) async {
+    final s = S.of(context);
+    
+    // Parse error type for better messaging
+    String errorTitle = s.paymentDeclined;
+    String errorMessage = s.tryDifferentPaymentMethod;
+    String errorCode = 'unknown';
+    
+    if (error is stripe.StripeException) {
+      errorCode = error.error.code?.toString() ?? 'unknown';
+      switch (error.error.code) {
+        case stripe.FailureCode.CardDeclined:
+          errorTitle = s.cardDeclined;
+          errorMessage = s.cardDeclinedMsg;
+          break;
+        case stripe.FailureCode.InsufficientFunds:
+          errorTitle = s.insufficientFunds;
+          errorMessage = s.insufficientFundsMsg;
+          break;
+        case stripe.FailureCode.ExpiredCard:
+          errorTitle = s.cardExpired;
+          errorMessage = s.cardExpiredMsg;
+          break;
+        case stripe.FailureCode.IncorrectNumber:
+        case stripe.FailureCode.InvalidNumber:
+          errorTitle = s.invalidCardNumber;
+          errorMessage = s.invalidCardNumberMsg;
+          break;
+        case stripe.FailureCode.Canceled:
+          // User cancelled - no dialog needed
+          return false;
+        default:
+          errorTitle = s.paymentDeclined;
+          errorMessage = s.genericPaymentError;
+      }
+    } else if (error.toString().toLowerCase().contains('paypal')) {
+      errorTitle = s.paypalDeclined;
+      errorMessage = s.paypalDeclinedMsg;
+      errorCode = 'paypal_declined';
+    } else if (error.toString().toLowerCase().contains('network') ||
+               error.toString().toLowerCase().contains('timeout') ||
+               error.toString().toLowerCase().contains('connection')) {
+      errorTitle = s.networkError;
+      errorMessage = s.networkErrorMsg;
+      errorCode = 'network_error';
+    }
+
+    // Check for available fallback methods
+    final availableMethods = await _getAvailablePaymentMethods();
+    final hasAlternativeMethod = availableMethods.any((m) => m != originalMethod);
+    final hasSavedCard = await LocalDataService.getStripePaymentMethodId() != null;
+
+    // Show smart retry dialog
+    final retryAction = await showDialog<_RetryAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _PaymentRetryDialog(
+        title: errorTitle,
+        message: errorMessage,
+        errorCode: errorCode,
+        hasAlternativeMethod: hasAlternativeMethod,
+        hasSavedCard: hasSavedCard,
+        originalMethod: originalMethod,
+      ),
+    );
+
+    if (retryAction == null || !mounted) return false;
+
+    switch (retryAction) {
+      case _RetryAction.retrySame:
+        // Retry with same method
+        return await _retryWithSameMethod(amountCents, originalMethod, option);
+        
+      case _RetryAction.tryDifferentMethod:
+        // Show payment method picker and retry
+        final c = AppColors.of(context);
+        await _showPaymentMethodPicker(c, option);
+        if (!mounted) return false;
+        return await _processPaymentWithSelectedMethod(amountCents, option);
+        
+      case _RetryAction.addNewCard:
+        // Add new card and retry
+        final c = AppColors.of(context);
+        await _openCreditCardScreen(c, option);
+        if (!mounted) return false;
+        return await _confirmCard(amountCents);
+        
+      case _RetryAction.cancel:
+        return false;
+    }
+  }
+
+  /// Gets list of available payment methods
+  Future<List<String>> _getAvailablePaymentMethods() async {
+    final methods = <String>[];
+    
+    // Check for native pay
+    if (Platform.isIOS && await PaymentService.isApplePayAvailable()) {
+      methods.add('apple_pay');
+    }
+    if (Platform.isAndroid && await PaymentService.isGooglePayAvailable()) {
+      methods.add('google_pay');
+    }
+    
+    // Check for saved card
+    if (await LocalDataService.getStripePaymentMethodId() != null) {
+      methods.add('credit_card');
+    }
+    
+    // PayPal is always available as option
+    methods.add('paypal');
+    
+    return methods;
+  }
+
+  /// Retries payment with the same method (useful for transient errors)
+  Future<bool> _retryWithSameMethod(int amountCents, String method, RideOption option) async {
+    try {
+      switch (method) {
+        case 'apple_pay':
+          return await _confirmApplePay(amountCents, option.name);
+        case 'google_pay':
+          return await _confirmGooglePay(amountCents, option.name);
+        case 'credit_card':
+          return await _confirmCard(amountCents);
+        case 'paypal':
+          return await _confirmPayPal(amountCents);
+        default:
+          // Fallback to card sheet
+          return await _confirmCardSheet(amountCents, 'Cruise');
+      }
+    } catch (e) {
+      debugPrint('[Retry] Same method failed again: $e');
+      // If it fails again, don't recurse - let the caller handle it
+      return false;
+    }
+  }
+
+  /// Processes payment with currently selected method
+  Future<bool> _processPaymentWithSelectedMethod(int amountCents, RideOption option) async {
+    final isTestMode = _selectedPaymentMethod == 'test_mode';
+    if (isTestMode) return true;
+    
+    final isNativePay = !AppConfig.sandboxPayments &&
+        (_selectedPaymentMethod == 'apple_pay' ||
+            _selectedPaymentMethod == 'google_pay');
+    
+    try {
+      if (isNativePay) {
+        return await _confirmNativePayment(option);
+      } else if (_selectedPaymentMethod == 'paypal') {
+        return await _confirmPayPal(amountCents);
+      } else {
+        return await _confirmCard(amountCents);
+      }
+    } catch (e) {
+      // Try to handle with retry dialog
+      return await _handlePaymentFailure(
+        error: e,
+        amountCents: amountCents,
+        originalMethod: _selectedPaymentMethod,
+        option: option,
+      );
+    }
+  }
+
+// Enum for retry actions
+enum _RetryAction { retrySame, tryDifferentMethod, addNewCard, cancel }
+
+/// Smart payment retry dialog that adapts based on available methods and error type
+class _PaymentRetryDialog extends StatelessWidget {
+  final String title;
+  final String message;
+  final String errorCode;
+  final bool hasAlternativeMethod;
+  final bool hasSavedCard;
+  final String originalMethod;
+
+  const _PaymentRetryDialog({
+    required this.title,
+    required this.message,
+    required this.errorCode,
+    required this.hasAlternativeMethod,
+    required this.hasSavedCard,
+    required this.originalMethod,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final isNetworkError = errorCode == 'network_error';
+    final methodName = _getMethodDisplayName(originalMethod, s);
+
+    return Dialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Error icon
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: isNetworkError
+                    ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
+                    : const Color(0xFFEF4444).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isNetworkError ? Icons.wifi_off_rounded : Icons.credit_card_off_rounded,
+                color: isNetworkError ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Title
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 10),
+            
+            // Message
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Action buttons
+            Column(
+              children: [
+                // Primary: Retry with same method
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE8C547),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, _RetryAction.retrySame),
+                    child: Text(
+                      isNetworkError 
+                          ? s.retryConnection
+                          : s.retryWithSameMethod(methodName),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Secondary: Try different method (if available)
+                if (hasAlternativeMethod) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFE8C547),
+                        side: const BorderSide(color: Color(0xFFE8C547)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, _RetryAction.tryDifferentMethod),
+                      child: Text(
+                        s.tryDifferentPaymentMethod,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                
+                // Tertiary: Add new card
+                if (!hasSavedCard || originalMethod == 'credit_card') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white.withValues(alpha: 0.8),
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, _RetryAction.addNewCard),
+                      child: Text(
+                        s.addNewCard,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                
+                // Cancel
+                TextButton(
+                  onPressed: () => Navigator.pop(context, _RetryAction.cancel),
+                  child: Text(
+                    s.cancelRide,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getMethodDisplayName(String method, S s) {
+    switch (method) {
+      case 'apple_pay':
+        return 'Apple Pay';
+      case 'google_pay':
+        return 'Google Pay';
+      case 'credit_card':
+        return s.creditOrDebitCard;
+      case 'paypal':
+        return 'PayPal';
+      default:
+        return s.creditOrDebitCard;
+    }
+  }
+}
 
   // Kept for backwards-compat — no longer used but referenced by older
   // call sites; leave in place until a dedicated cleanup pass.

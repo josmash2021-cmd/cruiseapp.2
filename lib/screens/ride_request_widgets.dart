@@ -206,71 +206,89 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           .toList();
     }
 
+    // Fallback: generate default options if empty but we have a route
+    if (displayOptions.isEmpty && s.route != null) {
+      final basePrice = 15.0; // Default base price
+      displayOptions = [
+        RideOption(
+          id: 'suburban',
+          name: 'VIP',
+          description: 'Spacious • Leather • Snacks & Drinks',
+          priceEstimate: basePrice * 2.20,
+          etaMinutes: 8,
+          icon: '🚐',
+          capacity: 7,
+          surgeMultiplier: 1.0,
+        ),
+        RideOption(
+          id: 'camry',
+          name: 'Sedan',
+          description: 'Comfort • Climate • Charger',
+          priceEstimate: basePrice * 1.35,
+          etaMinutes: 5,
+          icon: '🚙',
+          capacity: 4,
+          surgeMultiplier: 1.0,
+        ),
+        RideOption(
+          id: 'fusion',
+          name: 'Comfort',
+          description: 'Clean • Safe • Efficient',
+          priceEstimate: basePrice,
+          etaMinutes: 3,
+          icon: '🚗',
+          capacity: 4,
+          surgeMultiplier: 1.0,
+        ),
+      ];
+    }
+
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
 
-    // Sheet uses Align(bottomCenter) + IntrinsicHeight inside a
-    // Positioned that spans the full bottom area. This guarantees
-    // the Column(mainAxisSize.min) intrinsic height propagates up
-    // through DecoratedBox → ClipRRect → SafeArea without any parent
-    // collapsing to 0. The content sizes itself naturally and the
-    // sheet never reserves blank space.
+    // Positioned(top:0,bottom:10,left:8,right:8) gives the child a FULLY
+    // bounded box (finite width AND finite height). Align(bottomCenter)
+    // then collapses unused vertical space and hugs the Column(min) to
+    // the bottom. No Material/ConstrainedBox/AnimatedOpacity needed —
+    // those layers were introducing the intrinsic-height ambiguity that
+    // kept collapsing the sheet on iOS.
     return Positioned(
+      top: 0,
       left: 8,
       right: 8,
       bottom: 10,
-      // No height — the child Align + Column(min) decides the height
-      // but we bound it to a sensible max so very tall content
-      // doesn't escape the screen on small phones.
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.75,
-        ),
-        child: AnimatedOpacity(
-          opacity: 1.0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          // Align bottomCenter makes the Column(min) hug the bottom
-          // and take ONLY its intrinsic height — the remainder stays
-          // transparent instead of being claimed by the decoration.
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Material(
-              type: MaterialType.transparency,
-              child: Container(
-                // Container with decoration (bg + shadow + border) that
-                // sizes to its child (Column.min). The Container uses
-                // its decoration shape (borderRadius) for both painting
-                // AND clipBehavior to keep the content inside.
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1F),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.06),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          const Color(0xFFE8C547).withValues(alpha: 0.06),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.50),
-                      blurRadius: 40,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1F),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color:
+                      const Color(0xFFE8C547).withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.50),
+                  blurRadius: 40,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                   // Payment-declined banner (kept as a top slot — it's
                   // critical domain info and the web shows a similar
                   // dismissible row above the header).
@@ -352,22 +370,30 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   const SizedBox(height: 12),
 
                   // .vipRide__rideList — 3-column grid, always visible.
+                  // IntrinsicHeight forces the Row to compute a finite height
+                  // BEFORE the children render, breaking the circular
+                  // dependency between Row(stretch) and an unsized parent.
+                  // Without this, on iOS the Row collapses to height 0 and
+                  // the cards render invisible (only the sheet title shows).
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (int i = 0; i < 3; i++) ...[
-                          Expanded(child: _buildShimmerCard()),
-                          if (i < 2) const SizedBox(width: 8),
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (int i = 0; i < 3; i++) ...[
+                            Expanded(child: _buildShimmerCard()),
+                            if (i < 2) const SizedBox(width: 8),
+                          ],
                         ],
-                      ],
+                      ),
                     )
                   else
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                         for (int i = 0; i < displayOptions.length; i++) ...[
                           Expanded(
                             key: ValueKey(
@@ -407,7 +433,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           if (i < displayOptions.length - 1)
                             const SizedBox(width: 8),
                         ],
-                      ],
+                        ],
+                      ),
                     ),
 
                   // .vipRide__rideDetail — appears only after a tier is
@@ -451,15 +478,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ],
                 ],
-                    ),
-                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   // Small pill used in the sheet header (airport / promo chips).
@@ -543,6 +567,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final glowInner = 0.15 + 0.15 * t; // matches rgba shadow stop
         final glowOuter = 0.18 + 0.15 * t;
         return Container(
+          height: 140, // Fixed height to match web design
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
           decoration: BoxDecoration(
             color: selected
@@ -553,7 +578,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               color: selected
                   ? const Color(0xB3E8C547) // rgba(232,197,71,.7)
                   : Colors.white.withValues(alpha: 0.08),
-              width: selected ? 1 : 1,
+              width: selected ? 1.5 : 1,
             ),
             boxShadow: selected
                 ? [
@@ -609,6 +634,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                 ),
               Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // .vipRide__rideImgTag — max-height clamp(40,11vw,52),
@@ -1241,6 +1267,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         // card: car image on top, tier name in the middle, badge at
         // the bottom. Keeps the layout stable while options load.
         return Container(
+          height: 140, // Fixed height to prevent collapse with IntrinsicHeight
           padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.02),

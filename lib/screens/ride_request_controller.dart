@@ -1043,6 +1043,17 @@ extension _RideRequestController on _RideRequestScreenState {
         if (phase != RiderPhase.cancelled) {
           _ctrl.forcePhase(RiderPhase.cancelled);
         }
+        
+        // Clean up all resources before navigating
+        _searchMapTimer?.cancel();
+        _searchStatusTimer?.cancel();
+        _searchElapsedTimer?.cancel();
+        _driverFoundTimer?.cancel();
+        _driverMatchedNotifier.dispose();
+        _heldPaymentIntentId = null;
+        _searchingScreenShowing = false;
+        _navigatingToTracking = false;
+        
         _ctrl.reset();
         // Navigate to home screen after cancel
         if (mounted) {

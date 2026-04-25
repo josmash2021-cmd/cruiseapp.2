@@ -1902,7 +1902,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
     ];
 
-    return Column(
+    // 1:1 with web — 3 cards in a horizontal row
+    return Row(
       children: vehicles.map((v) {
         final accent = v['accent'] as Color;
         final idx = v['idx'] as int;
@@ -1928,12 +1929,27 @@ extension _HomeScreenWidgets on _HomeScreenState {
             return Stack(
               alignment: Alignment.center,
               children: [
-                // Base badge
+                // Base badge - 1:1 with web (ride-request.liquid)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: gradient),
+                    // VIP: black bg, Premium: gold gradient, Comfort: silver gradient
+                    gradient: isVIP
+                        ? const LinearGradient(
+                            colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
+                          )
+                        : isPremium
+                            ? const LinearGradient(
+                                colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
+                              )
+                            : const LinearGradient(
+                                colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+                              ),
                     borderRadius: BorderRadius.circular(20),
+                    // VIP: gold border, others: no border
+                    border: isVIP
+                        ? Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.3), width: 1.0)
+                        : null,
                     boxShadow: [
                       BoxShadow(
                         color: accent.withValues(alpha: glowAlpha),
@@ -1945,16 +1961,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Badge icons 1:1 with web (ride-request.liquid)
                       Icon(
-                        isVIP ? Icons.star_rounded : isPremium ? Icons.diamond_rounded : Icons.eco_rounded,
-                        color: isVIP ? Colors.white : Colors.black87,
+                        isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond,
+                        // VIP: white icon, Premium: black icon, Comfort: dark icon
+                        color: isVIP ? Colors.white : (isPremium ? Colors.black : const Color(0xFF1A1A1A)),
                         size: 12,
                       ),
                       const SizedBox(width: 5),
                       Text(
                         tier,
                         style: TextStyle(
-                          color: isVIP ? Colors.white : Colors.black87,
+                          // VIP: white text, Premium: black text, Comfort: dark text
+                          color: isVIP ? Colors.white : (isPremium ? Colors.black : const Color(0xFF1A1A1A)),
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
@@ -2070,10 +2089,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
         // ── Static card — no AnimatedBuilder wrapper ──
         // Map tier → ride option ID for pre-selection
         final rideId = isVIP ? 'suburban' : isPremium ? 'camry' : 'fusion';
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: idx < 2 ? 16 : 0,
-          ),
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: idx < 2 ? 8 : 0,
+            ),
           child: IgnorePointer(
             ignoring: active,
             child: Opacity(
@@ -2111,9 +2131,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 children: [
                   // Ambient glow top-left (static)
                   Positioned(
-                    left: -50, top: -30,
+                    left: -30, top: -20,
                     child: Container(
-                      width: 200, height: 200,
+                      width: 120, height: 120,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(colors: [
@@ -2123,77 +2143,44 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       ),
                     ),
                   ),
-                  // Content row
-                  IntrinsicHeight(
-                    child: Row(
+                  // 1:1 with web — Vertical column layout
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Left: badge above car
+                        // Car image
                         SizedBox(
-                          width: screenW * 0.38,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 10, 4, 8),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Badge above car
-                                animatedBadge,
-                                const SizedBox(height: 2),
-                                // Car image
-                                SizedBox(
-                                  height: 100,
-                                  child: Image.asset(
-                                    'assets/images/${v['image']}',
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.high,
-                                    isAntiAlias: true,
-                                    alignment: Alignment.center,
-                                    cacheWidth: 300,
-                                    errorBuilder: (ctx, err, st) => Icon(
-                                      Icons.directions_car_rounded,
-                                      color: accent.withValues(alpha: 0.5),
-                                      size: 50,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          height: 70,
+                          child: Image.asset(
+                            'assets/images/${v['image']}',
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            isAntiAlias: true,
+                            alignment: Alignment.center,
+                            cacheWidth: 240,
+                            errorBuilder: (ctx, err, st) => Icon(
+                              Icons.directions_car_rounded,
+                              color: accent.withValues(alpha: 0.5),
+                              size: 40,
                             ),
                           ),
                         ),
-                        // Right: description + features
-                        Expanded(
-                          flex: 5,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 16, 20, 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  v['desc'] as String,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.3,
-                                    height: 1.2,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  v['features'] as String,
-                                  softWrap: true,
-                                  style: TextStyle(
-                                    color: _gold.withValues(alpha: 0.85),
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        const SizedBox(height: 8),
+                        // Vehicle name
+                        Text(
+                          isVIP ? 'BLACK' : isPremium ? 'PREMIUM' : 'STANDARD',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
                           ),
                         ),
+                        const SizedBox(height: 6),
+                        // Badge
+                        animatedBadge,
                       ],
                     ),
                   ),
@@ -2203,6 +2190,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
           ),
+        ),
         );
       }).toList(),
     );

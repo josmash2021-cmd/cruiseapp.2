@@ -857,12 +857,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             : const [Color(0xFF66BB6A), Color(0xFF388E3C)];
     final badgeTextColor = isVIP ? Colors.black : (isPremium ? const Color(0xFF1A1A1A) : Colors.white);
     // Badge icons 1:1 with web (ride-request.liquid:142)
-    // Web: VIP=SVG diamond with sparkles, PREMIUM=★ (star), COMFORT=✦ (sparkle)
-    final IconData badgeIcon = isVIP 
-        ? Icons.diamond  // VIP diamond/crown icon
-        : isPremium 
-            ? Icons.star   // PREMIUM star (★)
-            : Icons.brightness_5; // COMFORT sparkle (✦)
+    // Web HTML: VIP=SVG diamond+sparkles, PREMIUM=★, COMFORT=✦
+    // VIP uses Icons.diamond since web uses an SVG diamond shape
+    final bool useVipIcon = isVIP;
+    final String badgeIconChar = isPremium 
+        ? '★'  // PREMIUM star
+        : '✦'; // COMFORT four-pointed star
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
@@ -908,10 +908,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Car image - web style
+                  // Car image - web style (bigger)
                   SizedBox(
-                    width: 90,
-                    height: 64,
+                    width: 110,
+                    height: 76,
                     child: Image.asset(
                       _carAssetForOption(opt.name),
                       fit: BoxFit.contain,
@@ -965,7 +965,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(badgeIcon, size: 9, color: badgeTextColor),
+                        if (useVipIcon)
+                          Icon(Icons.diamond, size: 9, color: badgeTextColor)
+                        else
+                          Text(
+                            badgeIconChar,
+                            style: TextStyle(
+                              color: badgeTextColor,
+                              fontSize: 8,
+                              height: 1,
+                            ),
+                          ),
                         const SizedBox(width: 3),
                         Text(
                           tierLabel,

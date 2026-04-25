@@ -392,33 +392,43 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     )
                   else
                     AnimatedSize(
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOutCubic,
+                      duration: const Duration(milliseconds: 380),
+                      curve: const Cubic(0.22, 1, 0.36, 1),
                       alignment: Alignment.topCenter,
                       child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 280),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, anim) => FadeTransition(
-                          opacity: anim,
-                          child: ScaleTransition(
-                            scale: Tween<double>(begin: 0.96, end: 1.0).animate(anim),
-                            child: child,
-                          ),
-                        ),
+                        duration: const Duration(milliseconds: 420),
+                        switchInCurve: const Cubic(0.22, 1, 0.36, 1),
+                        switchOutCurve: const Cubic(0.4, 0, 1, 1),
+                        transitionBuilder: (child, anim) {
+                          // Premium entrance: fade + slide-up 14px + scale .94->1.
+                          // Soft elastic-out feel via custom cubic so the card
+                          // settles into place instead of snapping.
+                          return FadeTransition(
+                            opacity: anim,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.10),
+                                end: Offset.zero,
+                              ).animate(anim),
+                              child: ScaleTransition(
+                                scale: Tween<double>(
+                                  begin: 0.94,
+                                  end: 1.0,
+                                ).animate(anim),
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
                         child: (option != null && !_gridExpanded)
-                            // ── COLLAPSED: only the picked card, full width ──
-                            ? Padding(
-                                key: ValueKey('collapsed_${option.id}'),
-                                padding: const EdgeInsets.symmetric(horizontal: 36),
-                                child: _PressableScale(
-                                  key: ValueKey('ride_opt_only_${option.id}'),
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    _setState(() => _gridExpanded = true);
-                                  },
-                                  child: _buildRideOptionCardGrid(c, option, true),
-                                ),
+                            // ── COLLAPSED: single horizontal card with all info ──
+                            ? _PressableScale(
+                                key: ValueKey('ride_horizontal_${option.id}'),
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  _setState(() => _gridExpanded = true);
+                                },
+                                child: _buildRideHorizontalCard(c, option),
                               )
                             // ── EXPANDED: all 3 cards in a row ──
                             : Row(
@@ -469,9 +479,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ),
                     ),
 
-                  // .vipRide__rideDetail — appears only after a tier is
-                  // picked. Web uses margin-top:14px.
-                  if (option != null) ...[
+                  // .vipRide__rideDetail — appears only when the rider
+                  // re-expanded the grid (so they can compare detail
+                  // while picking). In collapsed mode the horizontal
+                  // card already shows description, meta and price.
+                  if (option != null && _gridExpanded) ...[
                     const SizedBox(height: 14),
                     _buildRideDetailPanel(c, option),
                   ],
@@ -840,6 +852,207 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       );
     }
     return widgets;
+  }
+
+  // Single horizontal card shown when a tier has been picked and the
+  // grid is collapsed. Combines the small car render + name + badge +
+  // description + meta chips + price into one premium row, removing the
+  // need for the separate _buildRideDetailPanel below.
+  // Tier-aware so badge colors / glyph match the picked vehicle.
+  Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
+    final bool isSuv = opt.id == 'suburban';
+    final bool isFusion = opt.id == 'fusion';
+    final bool isVIP = isSuv;
+    final bool isPremium = !isSuv && !isFusion;
+    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
+    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+
+    final List<Color> badgeGradient = isVIP
+        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
+        : isPremium
+            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
+            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
+    final Color badgeTextColor = isVIP
+        ? Colors.white
+        : isPremium
+            ? Colors.black
+            : const Color(0xFF1A1A1A);
+    final IconData? badgeIcon = isVIP ? Icons.diamond : null;
+    final String badgeGlyph = isPremium ? '★' : '✦';
+
+    final priceText = '\$${opt.priceEstimate.toStringAsFixed(2)}';
+
+    return Container(
+      key: ValueKey('horizontal_${opt.id}'),
+      padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFE8C547).withValues(alpha: 0.45),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE8C547).withValues(alpha: 0.14),
+            blurRadius: 22,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // ── Left: small car render with ground shadow ──
+          SizedBox(
+            width: 84,
+            height: 60,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Container(
+                    width: 64,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(50),
+                      gradient: RadialGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.55),
+                          Colors.black.withValues(alpha: 0.0),
+                        ],
+                        stops: const [0.0, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+                Image.asset(
+                  _carAssetForOption(opt.name),
+                  fit: BoxFit.contain,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // ── Center: name + badge (line 1), description (line 2),
+          //          chips (line 3) — all left-aligned ──
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.02,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 78,
+                      height: 20,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: badgeGradient,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          border: isVIP
+                              ? Border.all(
+                                  color: const Color(0xFFE8C547)
+                                      .withValues(alpha: 0.3),
+                                  width: 1,
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (badgeIcon != null)
+                              Icon(badgeIcon,
+                                  size: 9, color: badgeTextColor)
+                            else
+                              Text(
+                                badgeGlyph,
+                                style: TextStyle(
+                                  color: badgeTextColor,
+                                  fontSize: 8,
+                                  height: 1,
+                                ),
+                              ),
+                            const SizedBox(width: 3),
+                            Text(
+                              tierLabel,
+                              style: TextStyle(
+                                color: badgeTextColor,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.64,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  opt.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _chipWidget(Icons.schedule_rounded,
+                        '${opt.etaMinutes} min'),
+                    const SizedBox(width: 6),
+                    _chipWidget(Icons.person_rounded, '${opt.capacity}'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // ── Right: price ──
+          Text(
+            priceText,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Detail panel shown below the 3-card grid once the user has picked a

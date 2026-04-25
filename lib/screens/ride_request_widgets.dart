@@ -284,7 +284,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                // Bottom is tighter than the other 3 sides so the panel
+                // hugs the last visible row (badges when no tier is
+                // picked yet, or the Request Ride button after one is).
+                // Otherwise the 14px equal-all-around padding leaves a
+                // visible empty band below the badges in the no-pick state.
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -964,7 +969,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
         
         return Container(
-          height: 150,
+          // Tightened from 150 -> 132 so the badge sits closer to the
+          // bottom of the card; the previous 18px of internal padding
+          // below the badge created a visible empty band when no tier
+          // is picked yet (and the panel itself shrinks a bit too).
+          height: 132,
           decoration: BoxDecoration(
             // Web: linear-gradient(135deg,rgba(255,255,255,.04),rgba(255,255,255,.02))
             gradient: const LinearGradient(

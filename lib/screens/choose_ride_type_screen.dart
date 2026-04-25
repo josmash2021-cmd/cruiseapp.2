@@ -246,12 +246,7 @@ class _RideTypeCardState extends State<_RideTypeCard> {
 
   @override
   Widget build(BuildContext context) {
-    // .vipRide__laterCard--v
-    //   display:flex; flex-direction:column; align-items:center;
-    //   justify-content:center; text-align:center;
-    //   gap:10px; padding:10px 16px;
-    //   border-radius:22px; background:transparent; border:none;
-    //   :active { transform: scale(.97); opacity: .85; }
+    // Tarjeta cuadrada estilo web - fondo oscuro, borde dorado sutil
     return GestureDetector(
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
@@ -270,64 +265,69 @@ class _RideTypeCardState extends State<_RideTypeCard> {
             child: AnimatedOpacity(
               opacity: _pressed ? 0.85 : 1.0,
               duration: const Duration(milliseconds: 130),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Transform.translate(
+                offset: Offset(0, dy),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // .vipRide__laterCard__icon
-                    //   width:112; height:112; border-radius:26;
-                    //   background:transparent; overflow:hidden;
-                    Transform.translate(
-                      offset: Offset(0, dy),
-                      child: _buildImageBlock(),
+                    // Tarjeta cuadrada con imagen
+                    Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1F),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE8C547).withValues(alpha: 0.1),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.asset(
+                          widget.imageAsset,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 10),
-                    // .vipRide__laterCard__title
-                    //   font-family: Poppins;
-                    //   font-size: 22; font-weight: 700; color: #fff;
-                    //   letter-spacing: -.025em; line-height: 1.2;
-                    //   text-shadow:
-                    //     0 0 14px rgba(232,197,71,.55),
-                    //     0 2px 6px rgba(232,197,71,.35)
+                    const SizedBox(height: 16),
+                    // Título con glow dorado
                     Text(
                       widget.title,
                       style: const TextStyle(
                         fontFamily: 'Poppins',
                         color: Colors.white,
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: -0.55,
-                        height: 1.2,
+                        letterSpacing: -0.5,
                         shadows: [
                           Shadow(
-                            color: Color(0x8CE8C547),
-                            blurRadius: 14,
-                          ),
-                          Shadow(
-                            color: Color(0x59E8C547),
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
+                            color: Color(0xFFE8C547),
+                            blurRadius: 20,
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 6),
-                    // .vipRide__laterCard__sub
-                    //   font-size: 13; color: rgba(255,255,255,.5);
-                    //   line-height: 1.45; max-width: 240; font-weight: 400;
+                    // Subtítulo en gris
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 240),
+                      constraints: const BoxConstraints(maxWidth: 200),
                       child: Text(
                         widget.subtitle,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w400,
-                          height: 1.45,
-                          letterSpacing: 0.065,
+                          height: 1.4,
                         ),
                       ),
                     ),
@@ -337,24 +337,6 @@ class _RideTypeCardState extends State<_RideTypeCard> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildImageBlock() {
-    // 112×112 transparent container, radius 26, overflow hidden.
-    const dim = 112.0;
-    return SizedBox(
-      width: dim,
-      height: dim,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
-        child: Image.asset(
-          widget.imageAsset,
-          fit: BoxFit.contain,
-          width: dim,
-          height: dim,
-        ),
       ),
     );
   }

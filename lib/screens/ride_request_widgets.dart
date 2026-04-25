@@ -696,7 +696,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   // Floating gold-border labels ("RECOGIDA" / "DESTINO") that sit
-  // above each pin tip, matching the Shopify widget's .vipRide__mapLabel.
+  // beside each pin tip, matching the Shopify widget's .vipRide__mapLabel.
   // Positions are driven by _pickupScreenOffset / _dropoffScreenOffset
   // which are recomputed on every camera change via _syncLabelOffsets().
   List<Widget> _buildFloatingLabels() {
@@ -706,20 +706,39 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final pickupText = loc.pickupUpperLabel; // "RECOGIDA" / "PICKUP"
     final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
 
+    // Label geometry — keeps the pill clear of the pin glyph.
+    // - pin glyph half-width ≈ 16px, so a 20px gap keeps the label off it.
+    // - pill height ≈ 52px (padding 12 + icon 22 + small extra), so we offset
+    //   top by half that to vertically center the pill against the pin tip.
+    const double pinHalfWidth = 16.0;
+    const double sideGap = 20.0;
+    const double pillHalfHeight = 26.0;
+    const double pillEstimatedWidth = 230.0; // icon+gap+maxWidth(180)+padding
+
+    // Map viewport bounds so we can clamp the label inside the visible area.
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+
     final pickupPos = _pickupScreenOffset;
     if (pickupPos != null && s.pickupLabel.isNotEmpty) {
+      // Default: label to the RIGHT of the pin.
+      double left = pickupPos.dx + pinHalfWidth + sideGap;
+      // If it would overflow the right edge, flip to the LEFT side.
+      final bool flipLeft = left + pillEstimatedWidth > screenW - 8;
+      if (flipLeft) {
+        left = pickupPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+      }
       widgets.add(
         Positioned(
-          // Label to the RIGHT of pickup pin (as shown in image)
-          left: pickupPos.dx + 24,
-          top: pickupPos.dy - 28,
+          left: left,
+          top: pickupPos.dy - pillHalfHeight,
           child: AnimatedMapLabel(
             kind: MapLabelKind.pickup,
             address: s.pickupLabel,
             pickupText: pickupText,
             dropoffText: dropoffText,
             visible: _pickupLabelRevealed,
-            alignEnd: false,
+            alignEnd: flipLeft,
           ),
         ),
       );
@@ -727,18 +746,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     final dropoffPos = _dropoffScreenOffset;
     if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
+      // Default: label to the LEFT of the pin.
+      double left = dropoffPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+      // If it would overflow the left edge, flip to the RIGHT side.
+      final bool flipRight = left < 8;
+      if (flipRight) {
+        left = dropoffPos.dx + pinHalfWidth + sideGap;
+      }
       widgets.add(
         Positioned(
-          // Label to the LEFT of dropoff pin (as shown in image)
-          left: dropoffPos.dx - 180,
-          top: dropoffPos.dy - 28,
+          left: left,
+          top: dropoffPos.dy - pillHalfHeight,
           child: AnimatedMapLabel(
             kind: MapLabelKind.dropoff,
             address: s.dropoffLabel,
             pickupText: pickupText,
             dropoffText: dropoffText,
             visible: _dropoffLabelRevealed,
-            alignEnd: true,
+            alignEnd: !flipRight,
           ),
         ),
       );

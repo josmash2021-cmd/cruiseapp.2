@@ -102,6 +102,7 @@ flutter:
   assets:
     - assets/images/
     - assets/images/welcome_bg.mp4
+    - assets/videos/airport_bg.mp4
     - assets/markers/
     - assets/google_fonts/
     - assets/fonts/

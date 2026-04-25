@@ -762,6 +762,22 @@ extension _HomeScreenController on _HomeScreenState {
   /// Open the search screen (photo 3) directly, then push RideRequestScreen
   /// with the pickup/dropoff results pre-filled.
   Future<void> _openSearchThenRide({String? rideId}) async {
+    // Re-entry guard. If a previous tap already opened the search /
+    // ride_request stack, ignore the new tap until the first finishes.
+    // Without this, double-taps on a tier card (or fast tap-cancel-tap
+    // sequences) could push two PickupDropoffSearchScreens or skip
+    // straight to ride_request before the first finished disposing.
+    if (_openingRideFlow) return;
+
+    // Refresh cached state before deciding what to do — _activeRide can
+    // be stale in memory after a back-without-Request-Ride sequence,
+    // which made the next tap mis-route to _resumeActiveRide() and
+    // either skip the dropoff search or jump straight into Choose a
+    // vehicle on a half-empty trip.
+    final freshActive = await LocalDataService.getActiveRide();
+    if (mounted && freshActive != _activeRide) {
+      _setState(() => _activeRide = freshActive);
+    }
     if (_activeRide != null) {
       _resumeActiveRide();
       return;
@@ -769,75 +785,84 @@ extension _HomeScreenController on _HomeScreenState {
     if (!await _ensureVerified()) return;
     if (!mounted) return;
 
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      sharedAxisZRoute(
-        PickupDropoffSearchScreen(
-          initialPickupLat: _currentLatLng?.latitude,
-          initialPickupLng: _currentLatLng?.longitude,
+    _openingRideFlow = true;
+    try {
+      final result = await Navigator.of(context).push<Map<String, dynamic>>(
+        sharedAxisZRoute(
+          PickupDropoffSearchScreen(
+            initialPickupLat: _currentLatLng?.latitude,
+            initialPickupLng: _currentLatLng?.longitude,
+          ),
+          opaque: false,
         ),
-        opaque: false,
-      ),
-    );
-
-    if (result == null || !mounted) return;
-
-    final pickupDetails = result['pickup'] as PlaceDetails?;
-    final dropoffDetails = result['dropoff'] as PlaceDetails?;
-    final pickupLabel = result['pickupLabel'] as String? ?? '';
-    final dropoffLabel = result['dropoffLabel'] as String? ?? '';
-
-    if (dropoffDetails == null) return;
-
-    // Use current location as pickup if search didn't provide one
-    final effectivePickup = pickupDetails ?? (
-      _currentLatLng != null
-          ? PlaceDetails(
-              address: pickupLabel.isNotEmpty ? pickupLabel : 'Current location',
-              lat: _currentLatLng!.latitude,
-              lng: _currentLatLng!.longitude,
-            )
-          : null
-    );
-
-    final effectiveDropoffLabel = dropoffLabel.isNotEmpty
-        ? dropoffLabel
-        : dropoffDetails.address;
-
-    // Pre-fetch route — start immediately, pass to RideRequestScreen
-    // Don't wait here: navigate instantly so the transition feels seamless
-    Future<RouteResult?>? routeFuture;
-    if (effectivePickup != null) {
-      final origin = LatLng(effectivePickup.lat, effectivePickup.lng);
-      final dest = LatLng(dropoffDetails.lat, dropoffDetails.lng);
-      routeFuture = DirectionsService(ApiKeys.webServices)
-          .getRoute(origin: origin, destination: dest);
-    }
-
-    // Quick check — if route already completed (cached/fast), use it
-    RouteResult? preloadedRoute;
-    if (routeFuture != null) {
-      preloadedRoute = await routeFuture.timeout(
-        const Duration(milliseconds: 200),
-        onTimeout: () => null,
       );
-    }
 
-    if (!mounted) return;
+      if (result == null || !mounted) return;
 
-    await Navigator.of(context).push(
-      slideUpFadeRoute(
-        RideRequestScreen(
-          initialPickupDetails: effectivePickup,
-          initialDropoffDetails: dropoffDetails,
-          initialPickupLabel: pickupLabel,
-          initialDropoffLabel: effectiveDropoffLabel,
-          initialDropoffAddress: effectiveDropoffLabel,
-          initialRideId: rideId,
-          preloadedRoute: preloadedRoute,
+      final pickupDetails = result['pickup'] as PlaceDetails?;
+      final dropoffDetails = result['dropoff'] as PlaceDetails?;
+      final pickupLabel = result['pickupLabel'] as String? ?? '';
+      final dropoffLabel = result['dropoffLabel'] as String? ?? '';
+
+      if (dropoffDetails == null) return;
+
+      // Use current location as pickup if search didn't provide one
+      final effectivePickup = pickupDetails ?? (
+        _currentLatLng != null
+            ? PlaceDetails(
+                address: pickupLabel.isNotEmpty ? pickupLabel : 'Current location',
+                lat: _currentLatLng!.latitude,
+                lng: _currentLatLng!.longitude,
+              )
+            : null
+      );
+
+      final effectiveDropoffLabel = dropoffLabel.isNotEmpty
+          ? dropoffLabel
+          : dropoffDetails.address;
+
+      // Pre-fetch route — start immediately, pass to RideRequestScreen
+      // Don't wait here: navigate instantly so the transition feels seamless
+      Future<RouteResult?>? routeFuture;
+      if (effectivePickup != null) {
+        final origin = LatLng(effectivePickup.lat, effectivePickup.lng);
+        final dest = LatLng(dropoffDetails.lat, dropoffDetails.lng);
+        routeFuture = DirectionsService(ApiKeys.webServices)
+            .getRoute(origin: origin, destination: dest);
+      }
+
+      // Quick check — if route already completed (cached/fast), use it
+      RouteResult? preloadedRoute;
+      if (routeFuture != null) {
+        preloadedRoute = await routeFuture.timeout(
+          const Duration(milliseconds: 200),
+          onTimeout: () => null,
+        );
+      }
+
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        slideUpFadeRoute(
+          RideRequestScreen(
+            initialPickupDetails: effectivePickup,
+            initialDropoffDetails: dropoffDetails,
+            initialPickupLabel: pickupLabel,
+            initialDropoffLabel: effectiveDropoffLabel,
+            initialDropoffAddress: effectiveDropoffLabel,
+            initialRideId: rideId,
+            preloadedRoute: preloadedRoute,
+          ),
         ),
-      ),
-    );
-    if (mounted) _loadSavedData();
+      );
+      if (mounted) _loadSavedData();
+    } finally {
+      // Always release the guard — covers early returns, back-pop,
+      // unmount, and uncaught navigator errors. Without this, a single
+      // partial flow could permanently lock the rider out of opening
+      // the search again.
+      if (mounted) _openingRideFlow = false;
+    }
   }
 
   // Map styles now use shared MapStyles.dark from config/map_styles.dart

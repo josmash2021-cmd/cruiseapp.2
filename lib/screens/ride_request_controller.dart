@@ -306,8 +306,10 @@ extension _RideRequestController on _RideRequestScreenState {
           );
           if (match != null) {
             _ctrl.selectRideOption(match);
+            // Collapse to the single horizontal card so the rider lands
+            // on the picked tier directly, not on the 3-card grid.
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _setState(() => _rideOptionsExpanded = false);
+              if (mounted) _setState(() => _gridExpanded = false);
             });
           }
         }

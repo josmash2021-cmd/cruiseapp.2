@@ -459,7 +459,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Shake animation (disabled request button) ──
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
-  bool _rideOptionsExpanded = true;
   bool _programmaticCam = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
 

@@ -221,6 +221,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // ── Ride completion fade ──
   late AnimationController _rideFadeCtrl;
   bool _didAutoResumeRide = false; // prevent re-opening tracking on every _loadSavedData
+  bool _openingRideFlow = false; // re-entry guard for _openSearchThenRide so back+retry doesn't double-push or skip dropoff
 
   /// Interpolated position for the current animation frame.
   LatLng get _interpolatedLatLng {

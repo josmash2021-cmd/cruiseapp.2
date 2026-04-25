@@ -369,55 +369,58 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 12),
 
-                  // Grid of ride cards (3 columns) - matching web design
+                  // Grid of ride cards (3 columns) - 1:1 with web design
+                  // Web: 3 cards in a row, evenly spaced
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
-                        for (int i = 0; i < 3; i++) _buildShimmerCardGrid(),
+                        for (int i = 0; i < 3; i++) ...[
+                          Expanded(child: _buildShimmerCardGrid()),
+                          if (i < 2) const SizedBox(width: 8),
+                        ],
                       ],
                     )
                   else
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
                         for (int i = 0; i < displayOptions.length; i++) ...[
-                          _PressableScale(
-                            key: ValueKey('ride_opt_${displayOptions[i].id}'),
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              _ctrl.selectRideOption(displayOptions[i]);
-                              if (_mapCtrl != null && !_cinematicRunning) {
-                                final st = _ctrl.state;
-                                if (st.pickup != null &&
-                                    st.dropoff != null) {
-                                  final pts = st.route?.points ??
-                                      [
-                                        LatLng(st.pickup!.lat,
-                                            st.pickup!.lng),
-                                        LatLng(st.dropoff!.lat,
-                                            st.dropoff!.lng),
-                                      ];
-                                  Future.delayed(
-                                      const Duration(milliseconds: 350),
-                                      () {
-                                    if (mounted && !_cinematicRunning) {
-                                      _fitRoute(pts, preserveCamera: true);
-                                    }
-                                  });
+                          Expanded(
+                            child: _PressableScale(
+                              key: ValueKey('ride_opt_${displayOptions[i].id}'),
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                _ctrl.selectRideOption(displayOptions[i]);
+                                if (_mapCtrl != null && !_cinematicRunning) {
+                                  final st = _ctrl.state;
+                                  if (st.pickup != null &&
+                                      st.dropoff != null) {
+                                    final pts = st.route?.points ??
+                                        [
+                                          LatLng(st.pickup!.lat,
+                                              st.pickup!.lng),
+                                          LatLng(st.dropoff!.lat,
+                                              st.dropoff!.lng),
+                                        ];
+                                    Future.delayed(
+                                        const Duration(milliseconds: 350),
+                                        () {
+                                      if (mounted && !_cinematicRunning) {
+                                        _fitRoute(pts, preserveCamera: true);
+                                      }
+                                    });
+                                  }
                                 }
-                              }
-                            },
-                            child: _buildRideOptionCardGrid(
-                              c,
-                              displayOptions[i],
-                              option?.id == displayOptions[i].id,
+                              },
+                              child: _buildRideOptionCardGrid(
+                                c,
+                                displayOptions[i],
+                                option?.id == displayOptions[i].id,
+                              ),
                             ),
                           ),
+                          if (i < displayOptions.length - 1) const SizedBox(width: 8),
                         ],
                       ],
                     ),
@@ -843,19 +846,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
     
-    // Badge colors 1:1 with web CSS
-    // VIP: #E8C547 to #d4a017, Premium: rgba(232,197,71,.85), Comfort: blue-ish
-    final badgeBg = isVIP 
-        ? const Color(0xFFE8C547)
+    // Badge colors 1:1 with web CSS (vip-ride-booker.liquid:746-853)
+    // VIP: linear-gradient(135deg,#E8C547,#D4A574) - Gold
+    // Premium: linear-gradient(135deg,#E8E8E8,#B0B0B0) - Silver  
+    // Comfort: linear-gradient(135deg,#66BB6A,#388E3C) - Green
+    final List<Color> badgeGradientColors = isVIP
+        ? const [Color(0xFFE8C547), Color(0xFFD4A574)]
         : isPremium
-            ? const Color(0xFFE8C547).withValues(alpha: 0.85)
-            : const Color(0xFF64B4FF).withValues(alpha: 0.8);
-    final badgeTextColor = isVIP || isPremium ? Colors.black : Colors.white;
+            ? const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)]
+            : const [Color(0xFF66BB6A), Color(0xFF388E3C)];
+    final badgeTextColor = isVIP ? Colors.black : (isPremium ? const Color(0xFF1A1A1A) : Colors.white);
     final badgeIcon = isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond;
-
-    // Calculate width for 3 columns with 8px gap
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 48) / 3; // 48 = padding (16*2) + gaps (8*2)
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
@@ -863,7 +864,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
         
         return Container(
-          width: cardWidth,
           height: 150,
           decoration: BoxDecoration(
             // Web: linear-gradient(135deg,rgba(255,255,255,.04),rgba(255,255,255,.02))
@@ -897,55 +897,89 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ),
             ] : [],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
             children: [
-              // Car image - web style
-              SizedBox(
-                width: 90,
-                height: 64,
-                child: Image.asset(
-                  _carAssetForOption(opt.name),
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Vehicle name - web: Poppins, 14px, bold, white
-              Text(
-                displayName,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.02,
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Badge - web style matching exactly
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(badgeIcon, size: 8, color: badgeTextColor),
-                    const SizedBox(width: 2),
-                    Text(
-                      tierLabel,
-                      style: TextStyle(
-                        color: badgeTextColor,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.04,
-                      ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Car image - web style
+                  SizedBox(
+                    width: 90,
+                    height: 64,
+                    child: Image.asset(
+                      _carAssetForOption(opt.name),
+                      fit: BoxFit.contain,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Vehicle name - web: Poppins, 14px, bold, white
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.02,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Badge - web style matching exactly (vip-ride-booker.liquid:746-853)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: badgeGradientColors,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: isVIP ? [
+                        BoxShadow(
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ] : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(badgeIcon, size: 8, color: badgeTextColor),
+                        const SizedBox(width: 2),
+                        Text(
+                          tierLabel,
+                          style: TextStyle(
+                            color: badgeTextColor,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.04,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+              // Checkmark for selected card (web CSS: .vipRide__rideCard.is-active::after)
+              if (selected)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE8C547),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.black,
+                      size: 14,
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -955,11 +989,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   // Shimmer card for grid loading state - web style
   Widget _buildShimmerCardGrid() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 48) / 3;
-    
     return Container(
-      width: cardWidth,
       height: 150,
       decoration: BoxDecoration(
         gradient: const LinearGradient(

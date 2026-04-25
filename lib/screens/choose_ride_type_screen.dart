@@ -298,9 +298,12 @@ class _RideTypeCardState extends State<_RideTypeCard> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(24),
-                        child: Image.asset(
-                          widget.imageAsset,
-                          fit: BoxFit.cover,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Image.asset(
+                            widget.imageAsset,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                     ),

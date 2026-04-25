@@ -593,14 +593,21 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xEB0E0E14), // rgba(14,14,20,.92)
                   borderRadius: BorderRadius.circular(16),
+                  // 1:1 with web — gold border + soft gold glow.
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.40),
+                    width: 1.2,
                   ),
-                  boxShadow: const [
+                  boxShadow: [
                     BoxShadow(
-                      color: Color(0x800A0A10),
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.10),
+                      blurRadius: 18,
+                      spreadRadius: 1,
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.50),
                       blurRadius: 32,
-                      offset: Offset(0, 8),
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
@@ -710,12 +717,25 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         : const BorderRadius.only(
             bottomLeft: Radius.circular(10),
             bottomRight: Radius.circular(10));
+    // 1:1 with web .vipRide__locPicker__field — single line per row,
+    // no duplicated label above the input. The gold (pickup) / muted
+    // (dropoff) tone comes from the TextField's own text color, not
+    // from a separate label widget. Pickup defaults to its placeholder
+    // text "Current location" rendered in gold; once the rider edits
+    // or types, the text turns white.
+    final bool textIsPlaceholder =
+        controller.text.isEmpty || controller.text == 'Current location';
+    final Color resolvedTextColor = isPickup
+        ? (textIsPlaceholder
+            ? _gold
+            : Colors.white)
+        : Colors.white;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
           color: active
               ? Colors.white.withValues(alpha: 0.04)
@@ -723,56 +743,40 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           borderRadius: radius,
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             dot,
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Label arriba (como en web) - dorado para pickup
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: labelColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                onChanged: onChanged,
+                onSubmitted: onSubmitted,
+                onTap: onTap,
+                cursorColor: _gold,
+                textInputAction: TextInputAction.search,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: resolvedTextColor,
+                  fontSize: 15,
+                  fontWeight: isPickup && textIsPlaceholder
+                      ? FontWeight.w700
+                      : FontWeight.w500,
+                  letterSpacing: -0.1,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  hintText: placeholderHint,
+                  hintStyle: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.40),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(height: 4),
-                  // Campo de texto
-                  TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    onChanged: onChanged,
-                    onSubmitted: onSubmitted,
-                    onTap: onTap,
-                    cursorColor: _gold,
-                    textInputAction: TextInputAction.search,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      hintText: placeholderHint,
-                      hintStyle: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.35),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -970,40 +974,32 @@ class _CircleBtn extends StatelessWidget {
   }
 }
 
-/// Vertical dotted line that connects the gold pickup dot to the white
-/// dropoff dot — matches the web .vipRide__locPicker__line.
+/// Vertical solid gold line connecting the gold pickup dot to the white
+/// dropoff dot — matches the web .vipRide__locPicker__line. Solid (not
+/// dashed), faint at the ends, brighter in the middle for a soft beam
+/// feel that ties the two inputs together visually.
 class _DotConnectorLine extends StatelessWidget {
   const _DotConnectorLine();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 2,
-      child: CustomPaint(painter: _DottedLinePainter()),
+    return Container(
+      width: 1.5,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFFE8C547).withValues(alpha: 0.85),
+            const Color(0xFFE8C547).withValues(alpha: 0.55),
+            Colors.white.withValues(alpha: 0.55),
+          ],
+          stops: const [0.0, 0.5, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(1),
+      ),
     );
   }
-}
-
-class _DottedLinePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.25)
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    const dash = 3.0;
-    const gap = 3.0;
-    double y = 0;
-    while (y < size.height) {
-      final end = (y + dash).clamp(0.0, size.height);
-      canvas.drawLine(Offset(size.width / 2, y),
-          Offset(size.width / 2, end), paint);
-      y += dash + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ShortcutCard extends StatefulWidget {

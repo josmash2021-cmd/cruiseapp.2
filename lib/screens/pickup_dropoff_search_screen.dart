@@ -20,12 +20,9 @@ import 'ride_request_screen.dart';
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
-// .vipRide__locPicker { background: rgba(10,17,40,.75); backdrop-filter: blur(28px) }
-// The widget is always opaque on phone (no content behind the route), so
-// we render the effective solid color #0A1128 — the same navy the web
-// shows once the blur settles on the dark page body.
-const _bg = Color(0xFF0A1128);
-const _cardBg = Color(0xFF1A1D24);
+// Fondo negro puro como en la web
+const _bg = Color(0xFF000000);
+const _cardBg = Color(0xFF1A1A1F);
 
 // ═══════════════════════════════════════════════════════════════════
 //  PickupDropoffSearchScreen — locpicker port
@@ -644,6 +641,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                     _buildField(
                       dot: const _Dot(pickup: true),
                       label: S.of(context).currentLocation,
+                      labelColor: _gold, // Dorado para pickup
                       controller: _pickupCtrl,
                       focusNode: _pickupFocus,
                       onTap: () => setState(() {
@@ -666,6 +664,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
                     _buildField(
                       dot: const _Dot(pickup: false),
                       label: S.of(context).whereTo,
+                      labelColor: Colors.white.withValues(alpha: 0.5), // Gris para dropoff
                       controller: _dropoffCtrl,
                       focusNode: _dropoffFocus,
                       onTap: () => setState(() {
@@ -700,6 +699,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
   Widget _buildField({
     required Widget dot,
     required String label,
+    required Color labelColor,
     required TextEditingController controller,
     required FocusNode focusNode,
     required VoidCallback onTap,
@@ -726,7 +726,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: active
               ? Colors.white.withValues(alpha: 0.04)
@@ -734,39 +734,56 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen>
           borderRadius: radius,
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             dot,
             const SizedBox(width: 12),
             Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                onChanged: onChanged,
-                onSubmitted: onSubmitted,
-                onTap: onTap,
-                cursorColor: _gold,
-                textInputAction: TextInputAction.search,
-                // font-size: 15px; font-weight: 500; color: #fff;
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
-                  hintText: placeholderHint,
-                  // placeholder color: rgba(255,255,255,.35)
-                  hintStyle: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Label arriba (como en web) - dorado para pickup
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: labelColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  // Campo de texto
+                  TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    onChanged: onChanged,
+                    onSubmitted: onSubmitted,
+                    onTap: onTap,
+                    cursorColor: _gold,
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                      hintText: placeholderHint,
+                      hintStyle: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

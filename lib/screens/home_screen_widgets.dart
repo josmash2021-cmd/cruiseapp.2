@@ -314,7 +314,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         final topExtra = frac * topPad;
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFF0A0B10),
+            color: Colors.black,
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
             boxShadow: [
               BoxShadow(

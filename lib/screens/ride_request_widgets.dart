@@ -924,9 +924,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Badge - web style matching exactly (vip-ride-booker.liquid:746-853)
+                  // Badge - 1:1 with web (vip-ride-booker.liquid:746-764)
+                  // Web: padding 2px 7px, font-size clamp(7px,1.8vw,8px), 
+                  // font-weight 800, letter-spacing .08em, border-radius 6px
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.fromLTRB(7, 2, 7, 2),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -940,20 +942,32 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
-                      ] : null,
+                      ] : isPremium ? [
+                        BoxShadow(
+                          color: Colors.grey.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ] : [
+                        BoxShadow(
+                          color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(badgeIcon, size: 8, color: badgeTextColor),
-                        const SizedBox(width: 2),
+                        Icon(badgeIcon, size: 9, color: badgeTextColor),
+                        const SizedBox(width: 3),
                         Text(
                           tierLabel,
                           style: TextStyle(
                             color: badgeTextColor,
                             fontSize: 8,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.04,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.64,
                           ),
                         ),
                       ],

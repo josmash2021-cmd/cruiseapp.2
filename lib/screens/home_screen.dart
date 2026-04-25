@@ -222,6 +222,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   late AnimationController _rideFadeCtrl;
   bool _didAutoResumeRide = false; // prevent re-opening tracking on every _loadSavedData
   bool _openingRideFlow = false; // re-entry guard for _openSearchThenRide so back+retry doesn't double-push or skip dropoff
+  bool _openingScheduleFlow = false; // re-entry guard for _showScheduleSheet (Schedule + Later switch + Airport via Schedule)
 
   /// Interpolated position for the current animation frame.
   LatLng get _interpolatedLatLng {
@@ -1260,110 +1261,136 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _showScheduleSheet() async {
-    // First show Airport/Schedule choice — now a full-screen picker
-    // with animated cards and dynamic calendar date.
-    final choice = await Navigator.of(context).push<String>(
-      slideUpFadeRoute(const ChooseRideTypeScreen()),
-    );
-
-    // If cancelled or no choice, revert to Now
-    if (choice == null || !mounted) {
-      setState(() => _rideNow = true);
-      return;
-    }
-
-    if (choice == 'airport') {
-      // Airport ride — show terminal selector first
-      final airportResult = await showModalBottomSheet<AirportSelection>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) =>
-            AirportTerminalSheet(isDark: AppColors.of(context).isDark),
+    // Re-entry guard so back-then-retry from any step inside the
+    // schedule/airport flow can't re-open the picker on top of itself
+    // or skip a step. Released in finally so every early return + back
+    // pop + uncaught navigator error still frees the lock.
+    if (_openingScheduleFlow) return;
+    _openingScheduleFlow = true;
+    try {
+      // First show Airport/Schedule choice — now a full-screen picker
+      // with animated cards and dynamic calendar date.
+      final choice = await Navigator.of(context).push<String>(
+        slideUpFadeRoute(const ChooseRideTypeScreen()),
       );
-      if (airportResult == null || !mounted) {
-        setState(() => _rideNow = true);
+
+      // If cancelled or no choice, revert to Now
+      if (choice == null || !mounted) {
+        if (mounted) setState(() => _rideNow = true);
         return;
       }
+
+      // Both Airport and Schedule now go through the calendar+time
+      // picker FIRST. Difference: Airport jumps to AirportTerminalSheet
+      // afterwards, Schedule jumps to pickup/dropoff search.
+      final result = await showScheduleRideFlow(context);
+
+      if (result == null || !mounted) {
+        if (mounted) setState(() => _rideNow = true);
+        return;
+      }
+
+      final (scheduledAt, isAirportFromToggle) = result;
+      // The Airport card forces the airport flow regardless of the
+      // picker's internal toggle.
+      final bool isAirportTrip = choice == 'airport' || isAirportFromToggle;
+
+      if (!await _ensureVerified()) return;
+      if (!mounted) return;
+
+      if (isAirportTrip) {
+        // Airport branch — pick airport / terminal / airline / flight
+        // BEFORE creating the trip, then push ride_request with both
+        // the scheduledAt and the airport selection.
+        final airportResult = await showModalBottomSheet<AirportSelection>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          useSafeArea: true,
+          builder: (_) =>
+              AirportTerminalSheet(isDark: AppColors.of(context).isDark),
+        );
+        if (airportResult == null || !mounted) {
+          if (mounted) setState(() => _rideNow = true);
+          return;
+        }
+        Navigator.of(context).push(
+          slideUpFadeRoute(
+            RideRequestScreen(
+              scheduledAt: scheduledAt,
+              isAirportTrip: true,
+              airportSelection: airportResult,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Schedule (non-airport) branch — pickup/dropoff search, then
+      // ride_request with scheduledAt.
+      final searchResult =
+          await Navigator.of(context).push<Map<String, dynamic>>(
+        sharedAxisZRoute(
+          PickupDropoffSearchScreen(
+            initialPickupLat: _currentLatLng?.latitude,
+            initialPickupLng: _currentLatLng?.longitude,
+          ),
+          opaque: false,
+        ),
+      );
+
+      if (searchResult == null || !mounted) {
+        if (mounted) setState(() => _rideNow = true);
+        return;
+      }
+
+      final pickupDetails = searchResult['pickup'] as PlaceDetails?;
+      final dropoffDetails = searchResult['dropoff'] as PlaceDetails?;
+      final pickupLabel = searchResult['pickupLabel'] as String? ?? '';
+      final dropoffLabel = searchResult['dropoffLabel'] as String? ?? '';
+
+      if (dropoffDetails == null) {
+        if (mounted) setState(() => _rideNow = true);
+        return;
+      }
+
+      final effectivePickup = pickupDetails ?? (
+        _currentLatLng != null
+            ? PlaceDetails(
+                address: pickupLabel.isNotEmpty
+                    ? pickupLabel
+                    : S.of(context).currentLocation,
+                lat: _currentLatLng!.latitude,
+                lng: _currentLatLng!.longitude,
+              )
+            : null
+      );
+
+      final effectiveDropoffLabel = dropoffLabel.isNotEmpty
+          ? dropoffLabel
+          : dropoffDetails.address;
+
       Navigator.of(context).push(
         slideUpFadeRoute(
           RideRequestScreen(
-            isAirportTrip: true,
-            airportSelection: airportResult,
+            scheduledAt: scheduledAt,
+            isAirportTrip: false,
+            initialPickupDetails: effectivePickup,
+            initialDropoffDetails: dropoffDetails,
+            initialPickupLabel: pickupLabel,
+            initialDropoffLabel: effectiveDropoffLabel,
+            initialDropoffAddress: effectiveDropoffLabel,
           ),
         ),
       );
-      return;
+    } finally {
+      // Always release the guard, then refresh saved data so the home
+      // never reads stale _activeRide on the next attempt.
+      if (mounted) {
+        _openingScheduleFlow = false;
+        _loadSavedData();
+      }
     }
-
-    // Schedule option — full-screen date + time picker (matches the
-    // Shopify widget's two-step flow).
-    final result = await showScheduleRideFlow(context);
-
-    // If cancelled, revert to Now
-    if (result == null || !mounted) {
-      setState(() => _rideNow = true);
-      return;
-    }
-
-    final (scheduledAt, isAirport) = result;
-
-    if (!await _ensureVerified()) return;
-    if (!mounted) return;
-
-    // Open search screen so user picks a destination, then pass scheduledAt
-    final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
-      sharedAxisZRoute(
-        PickupDropoffSearchScreen(
-          initialPickupLat: _currentLatLng?.latitude,
-          initialPickupLng: _currentLatLng?.longitude,
-        ),
-        opaque: false,
-      ),
-    );
-
-    if (searchResult == null || !mounted) {
-      setState(() => _rideNow = true);
-      return;
-    }
-
-    final pickupDetails = searchResult['pickup'] as PlaceDetails?;
-    final dropoffDetails = searchResult['dropoff'] as PlaceDetails?;
-    final pickupLabel = searchResult['pickupLabel'] as String? ?? '';
-    final dropoffLabel = searchResult['dropoffLabel'] as String? ?? '';
-
-    if (dropoffDetails == null) {
-      setState(() => _rideNow = true);
-      return;
-    }
-
-    final effectivePickup = pickupDetails ?? (
-      _currentLatLng != null
-          ? PlaceDetails(
-              address: pickupLabel.isNotEmpty ? pickupLabel : S.of(context).currentLocation,
-              lat: _currentLatLng!.latitude,
-              lng: _currentLatLng!.longitude,
-            )
-          : null
-    );
-
-    final effectiveDropoffLabel = dropoffLabel.isNotEmpty
-        ? dropoffLabel
-        : dropoffDetails.address;
-
-    Navigator.of(context).push(
-      slideUpFadeRoute(
-        RideRequestScreen(
-          scheduledAt: scheduledAt,
-          isAirportTrip: isAirport,
-          initialPickupDetails: effectivePickup,
-          initialDropoffDetails: dropoffDetails,
-          initialPickupLabel: pickupLabel,
-          initialDropoffLabel: effectiveDropoffLabel,
-          initialDropoffAddress: effectiveDropoffLabel,
-        ),
-      ),
-    );
   }
 
   void _openMapWithDropoff(String query) async {

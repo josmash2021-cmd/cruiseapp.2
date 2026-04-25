@@ -975,36 +975,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           // is picked yet (and the panel itself shrinks a bit too).
           height: 132,
           decoration: BoxDecoration(
-            // Web: linear-gradient(135deg,rgba(255,255,255,.04),rgba(255,255,255,.02))
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0x0AFFFFFF), // rgba(255,255,255,.04)
-                Color(0x05FFFFFF), // rgba(255,255,255,.02)
-              ],
-            ),
+            // Match the Airport / Schedule cards (choose_ride_type_screen):
+            //   solid #1A1A1F, gold border + soft gold glow always on,
+            //   stronger glow + brighter border when the card is picked.
+            color: const Color(0xFF1A1A1F),
             borderRadius: BorderRadius.circular(16),
-            // Web: 1px solid rgba(255,255,255,.07) normal, rgba(232,197,71,.35) active
             border: Border.all(
               color: selected
-                  ? const Color(0x59E8C547) // rgba(232,197,71,.35)
-                  : const Color(0x12FFFFFF), // rgba(255,255,255,.07)
-              width: 1,
+                  ? const Color(0xFFE8C547).withValues(alpha: 0.65)
+                  : const Color(0xFFE8C547).withValues(alpha: 0.30),
+              width: 1.5,
             ),
-            // Web: 0 0 0 1px rgba(232,197,71,.15), 0 8px 32px rgba(232,197,71,.08) when active
-            boxShadow: selected ? [
+            boxShadow: [
               BoxShadow(
-                color: const Color(0x26E8C547), // rgba(232,197,71,.15)
-                blurRadius: 0,
-                spreadRadius: 1,
+                color: const Color(0xFFE8C547)
+                    .withValues(alpha: selected ? 0.20 + 0.10 * t : 0.10),
+                blurRadius: selected ? 24 : 18,
+                spreadRadius: 2,
               ),
-              BoxShadow(
-                color: const Color(0x14E8C547).withValues(alpha: 0.15 + 0.15 * t), // rgba(232,197,71,.08)
-                blurRadius: 32,
-                offset: const Offset(0, 8),
-              ),
-            ] : [],
+            ],
           ),
           child: Stack(
             children: [
@@ -1034,10 +1023,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 8),
                   // Badge - 1:1 with web (vip-ride-booker.liquid:746-764)
-                  // Web: padding 2px 7px, font-size clamp(7px,1.8vw,8px), 
-                  // font-weight 800, letter-spacing .08em, border-radius 6px
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(7, 2, 7, 2),
+                  // Fixed width 78 across all 3 tiers (matches the live web
+                  // .vipRide__badge width:78px) so VIP/PREMIUM/COMFORT line
+                  // up visually instead of VIP collapsing to its 3-letter
+                  // intrinsic width.
+                  SizedBox(
+                    width: 78,
+                    height: 22,
+                    child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -1102,6 +1097,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         ),
                       ],
                     ),
+                  ),
                   ),
                 ],
               ),

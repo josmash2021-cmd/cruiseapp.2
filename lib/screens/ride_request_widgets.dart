@@ -369,72 +369,53 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                   const SizedBox(height: 12),
 
-                  // .vipRide__rideList — 3-column grid, always visible.
-                  // IntrinsicHeight forces the Row to compute a finite height
-                  // BEFORE the children render, breaking the circular
-                  // dependency between Row(stretch) and an unsized parent.
-                  // Without this, on iOS the Row collapses to height 0 and
-                  // the cards render invisible (only the sheet title shows).
+                  // Vertical list of ride cards (horizontal layout)
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (int i = 0; i < 3; i++) ...[
-                            Expanded(child: _buildShimmerCard()),
-                            if (i < 2) const SizedBox(width: 8),
-                          ],
-                        ],
-                      ),
+                    Column(
+                      children: [
+                        for (int i = 0; i < 3; i++) _buildShimmerCard(),
+                      ],
                     )
                   else
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
+                    Column(
+                      children: [
                         for (int i = 0; i < displayOptions.length; i++) ...[
-                          Expanded(
-                            key: ValueKey(
-                                'ride_opt_${displayOptions[i].id}'),
-                            child: _PressableScale(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                _ctrl.selectRideOption(displayOptions[i]);
-                                if (_mapCtrl != null && !_cinematicRunning) {
-                                  final st = _ctrl.state;
-                                  if (st.pickup != null &&
-                                      st.dropoff != null) {
-                                    final pts = st.route?.points ??
-                                        [
-                                          LatLng(st.pickup!.lat,
-                                              st.pickup!.lng),
-                                          LatLng(st.dropoff!.lat,
-                                              st.dropoff!.lng),
-                                        ];
-                                    Future.delayed(
-                                        const Duration(milliseconds: 350),
-                                        () {
-                                      if (mounted && !_cinematicRunning) {
-                                        _fitRoute(pts, preserveCamera: true);
-                                      }
-                                    });
-                                  }
+                          _PressableScale(
+                            key: ValueKey('ride_opt_${displayOptions[i].id}'),
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              _ctrl.selectRideOption(displayOptions[i]);
+                              if (_mapCtrl != null && !_cinematicRunning) {
+                                final st = _ctrl.state;
+                                if (st.pickup != null &&
+                                    st.dropoff != null) {
+                                  final pts = st.route?.points ??
+                                      [
+                                        LatLng(st.pickup!.lat,
+                                            st.pickup!.lng),
+                                        LatLng(st.dropoff!.lat,
+                                            st.dropoff!.lng),
+                                      ];
+                                  Future.delayed(
+                                      const Duration(milliseconds: 350),
+                                      () {
+                                    if (mounted && !_cinematicRunning) {
+                                      _fitRoute(pts, preserveCamera: true);
+                                    }
+                                  });
                                 }
-                              },
-                              child: _buildRideOptionCard(
-                                c,
-                                displayOptions[i],
-                                option?.id == displayOptions[i].id,
-                              ),
+                              }
+                            },
+                            child: _buildRideOptionCard(
+                              c,
+                              displayOptions[i],
+                              option?.id == displayOptions[i].id,
                             ),
                           ),
-                          if (i < displayOptions.length - 1)
-                            const SizedBox(width: 8),
                         ],
-                        ],
-                      ),
+                      ],
                     ),
 
                   // .vipRide__rideDetail — appears only after a tier is
@@ -541,14 +522,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return 'assets/images/cruise_6.png';
   }
 
-  // .vipRide__rideCard port — vertical grid card, 1:1 with the web.
-  //   padding: 10px 8px
-  //   border-radius: 14px
-  //   background: rgba(255,255,255,.02) / rgba(232,197,71,.08) active
-  //   border: 1px rgba(255,255,255,.08) / rgba(232,197,71,.7) active
-  //   outline: 2px rgba(232,197,71,.55) active (inset, -1px offset)
-  //   rideGlow 2.8s active pulse
-  //   :active transform scale(.96)
+  // Horizontal ride card - 1:1 with web design
+  // Badge top-left, 3D car image with shadow, description right side
   Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
@@ -557,122 +532,154 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isPremium = !isSuv && !isFusion;
     final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+    
+    // Badge colors matching the web
+    final badgeGradient = isVIP 
+        ? const [Color(0xFFF5DC7A), Color(0xFFE8C547)]
+        : isPremium
+            ? const [Color(0xFFE8C547), Color(0xFFD4A800)]
+            : const [Color(0xFF4ADE80), Color(0xFF22C55E)];
+    final badgeTextColor = isVIP || isPremium ? Colors.black : Colors.white;
+    final badgeIcon = isVIP ? Icons.workspace_premium : isPremium ? Icons.star : Icons.diamond;
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
       builder: (_, __) {
-        // rideGlow keyframe pair — 0%/100% vs 50% midpoint on a 2.8s
-        // ease-in-out loop. Triangle wave 0 → 1 → 0.
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
-        final glowInner = 0.15 + 0.15 * t; // matches rgba shadow stop
-        final glowOuter = 0.18 + 0.15 * t;
+        final glowAlpha = 0.15 + 0.15 * t;
+        
         return Container(
-          height: 140, // Fixed height to match web design
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          height: 110,
+          margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? const Color(0x14E8C547) // rgba(232,197,71,.08)
-                : Colors.white.withValues(alpha: 0.02),
-            borderRadius: BorderRadius.circular(14),
+            color: const Color(0xFF1A1A1F), // Dark background
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected
-                  ? const Color(0xB3E8C547) // rgba(232,197,71,.7)
-                  : Colors.white.withValues(alpha: 0.08),
-              width: selected ? 1.5 : 1,
+                  ? const Color(0xB3E8C547)
+                  : const Color(0xFFE8C547).withValues(alpha: 0.2),
+              width: selected ? 2 : 1.5,
             ),
-            boxShadow: selected
-                ? [
-                    // rideGlow 0%: 0 0 0 1px rgba(232,197,71,.3),
-                    //              0 6px 18px rgba(232,197,71,.15)
-                    // rideGlow 50%: 0 0 0 1px rgba(232,197,71,.5),
-                    //               0 8px 24px rgba(232,197,71,.3)
-                    BoxShadow(
-                      color: const Color(0xFFE8C547)
-                          .withValues(alpha: 0.3 + 0.2 * t),
-                      blurRadius: 0,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: const Color(0xFFE8C547).withValues(alpha: glowInner),
-                      blurRadius: 18 + 6 * t,
-                      offset: const Offset(0, 6),
-                    ),
-                    BoxShadow(
-                      color: const Color(0xFFE8C547).withValues(alpha: glowOuter * 0.5),
-                      blurRadius: 24 + 8 * t,
-                      spreadRadius: -2,
-                    ),
-                  ]
-                : const [
-                    BoxShadow(
-                      color: Color(0x2E000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+            boxShadow: [
+              // Gold ambient glow
+              BoxShadow(
+                color: const Color(0xFFE8C547).withValues(alpha: glowAlpha * 0.5),
+                blurRadius: 30,
+                spreadRadius: -5,
+              ),
+              // Inner glow when selected
+              if (selected)
+                BoxShadow(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.1),
+                  blurRadius: 20,
+                  inset: true,
+                ),
+            ],
           ),
           child: Stack(
-            clipBehavior: Clip.none,
             children: [
-              // Inner outline 2px rgba(232,197,71,.55) offset -1px —
-              // web uses `outline: 2px solid ... outline-offset: -1px`
-              // which draws inside the card. Emulated here with a
-              // positioned ring.
-              if (selected)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      margin: const EdgeInsets.all(1),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0x8CE8C547), // rgba(232,197,71,.55)
-                          width: 2,
-                        ),
+              // Content row
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Left side - Car image with 3D shadow
+                    SizedBox(
+                      width: 100,
+                      height: 80,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Shadow/glow behind car
+                          Container(
+                            width: 80,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                                  blurRadius: 20,
+                                  spreadRadius: 5,
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Car image
+                          Image.asset(
+                            _carAssetForOption(opt.name),
+                            width: 90,
+                            height: 70,
+                            fit: BoxFit.contain,
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 16),
+                    // Right side - Text content
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Badge in top
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: badgeGradient,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(badgeIcon, size: 10, color: badgeTextColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  tierLabel,
+                                  style: TextStyle(
+                                    color: badgeTextColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Vehicle name
+                          Text(
+                            displayName,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // Description in gold
+                          Text(
+                            opt.description,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color(0xFFE8C547),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // .vipRide__rideImgTag — max-height clamp(40,11vw,52),
-                  // two-layer drop-shadow for depth.
-                  SizedBox(
-                    height: 60, // Aumentado de 52 a 60
-                    child: CarImage3D(
-                      assetPath: _carAssetForOption(opt.name),
-                      cacheWidth: 240,
-                      dimmed: !selected,
-                      dimDuration: const Duration(milliseconds: 180),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  // .vipRide__rideName — 17px max, weight 700,
-                  // letter-spacing .02em, line-height 1.3.
-                  Text(
-                    displayName,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 15, // clamp floor; grid cell is narrow
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.34, // .02em × 17px
-                      height: 1.3,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  VehicleTierBadge(
-                    tier: tierLabel == 'VIP'
-                        ? VehicleTier.vip
-                        : tierLabel == 'PREMIUM'
-                            ? VehicleTier.premium
-                            : VehicleTier.comfort,
-                  ),
-                ],
               ),
             ],
           ),
@@ -1247,7 +1254,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
-  /// Shimmer placeholder card mimicking a ride option while loading.
+  /// Shimmer placeholder card - horizontal layout
   Widget _buildShimmerCard() {
     return AnimatedBuilder(
       animation: _priceShimmerCtrl,
@@ -1262,50 +1269,71 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ],
           stops: const [0.0, 0.5, 1.0],
         );
-        // Vertical placeholder that mirrors the real 3-column grid
-        // card: car image on top, tier name in the middle, badge at
-        // the bottom. Keeps the layout stable while options load.
         return Container(
-          height: 140, // Fixed height to prevent collapse with IntrinsicHeight
-          padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+          height: 110,
+          margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.02),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            color: const Color(0xFF1A1A1F),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFE8C547).withValues(alpha: 0.2),
+              width: 1.5,
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Car image placeholder
-              Container(
-                height: 48,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  gradient: gradient,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Car placeholder
+                Container(
+                  width: 100,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    gradient: gradient,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              // Name placeholder
-              Container(
-                width: 60,
-                height: 12,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3),
-                  gradient: gradient,
+                const SizedBox(width: 16),
+                // Text placeholders
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Badge placeholder
+                      Container(
+                        width: 60,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          gradient: gradient,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Name placeholder
+                      Container(
+                        width: 100,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          gradient: gradient,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Description placeholder
+                      Container(
+                        width: 150,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          gradient: gradient,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // Badge placeholder
-              Container(
-                width: 70,
-                height: 20,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  gradient: gradient,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

@@ -290,80 +290,26 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   }
 
   // ─────────────────────────────────────────────
-  //  BUILD
+  //  BUILD — ALL STEPS fullscreen 1:1 with web
   // ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final kb = mq.viewInsets.bottom;
 
-    // Step 0: Fullscreen mode with video background (1:1 with web)
-    if (_step == 0) {
-      return _buildStep0Fullscreen(context, kb);
-    }
-
-    // Steps 1-3: Standard bottom sheet
-    final basePct = mq.size.width <= 480 ? 0.92 : 0.88;
-    final maxH = (mq.size.height - kb) * basePct;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: kb),
-      child: Container(
-        constraints: BoxConstraints(maxHeight: maxH),
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 40,
-              offset: const Offset(0, -8),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          bottom: kb == 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.30),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              _buildHeader(),
-              if (_step > 0) _buildProgressDots(),
-              Flexible(
-                child: AnimatedBuilder(
-                  animation: _animCtrl,
-                  builder: (_, child) => Opacity(
-                    opacity: _animCtrl.isAnimating
-                        ? (_animCtrl.value < 0.4 ? _fadeOut.value : _fadeIn.value)
-                        : 1.0,
-                    child: child,
-                  ),
-                  child: _buildStep(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    // ALL steps: Fullscreen mode with video background (1:1 with web)
+    return _buildFullscreenSheet(context, kb);
   }
 
-  // Step 0: Fullscreen with video background — 1:1 with web
-  Widget _buildStep0Fullscreen(BuildContext context, double keyboardHeight) {
+  // Fullscreen sheet for ALL steps — 1:1 with web vrApt--full
+  Widget _buildFullscreenSheet(BuildContext context, double keyboardHeight) {
     final mq = MediaQuery.of(context);
+    final isStep0 = _step == 0;
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video background
+        // Video background (visible in all steps)
         if (_isVideoInitialized && _videoController != null)
           SizedBox.expand(
             child: FittedBox(
@@ -379,30 +325,105 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         Container(
           color: Colors.black.withValues(alpha: _isVideoInitialized ? 0.78 : 0.88),
         ),
-        // Close button (top left)
-        Positioned(
-          top: mq.padding.top + 16,
-          left: 16,
-          child: _HeaderCircleBtn(
-            icon: Icons.arrow_back_ios_rounded,
-            iconColor: Colors.white.withValues(alpha: 0.7),
-            onTap: () => Navigator.of(context).pop(),
-          ),
-        ),
-        // Content
+        // Main content column
         SafeArea(
-          child: AnimatedBuilder(
-            animation: _animCtrl,
-            builder: (_, child) => Opacity(
-              opacity: _animCtrl.isAnimating
-                  ? (_animCtrl.value < 0.4 ? _fadeOut.value : _fadeIn.value)
-                  : 1.0,
-              child: child,
-            ),
-            child: _buildDirectionPicker(),
+          child: Column(
+            children: [
+              // Header row: Back button (step > 0) or Close (step 0) + Title
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, isStep0 ? 8 : 16, 16, 8),
+                child: Row(
+                  children: [
+                    // Back/Close button
+                    if (isStep0)
+                      _HeaderCircleBtn(
+                        icon: Icons.arrow_back_ios_rounded,
+                        iconColor: Colors.white.withValues(alpha: 0.7),
+                        onTap: () => Navigator.of(context).pop(),
+                      )
+                    else
+                      _HeaderCircleBtn(
+                        icon: Icons.arrow_back_ios_rounded,
+                        iconColor: Colors.white.withValues(alpha: 0.7),
+                        onTap: _goBack,
+                      ),
+                    const SizedBox(width: 12),
+                    // Title (hidden in step 0)
+                    if (!isStep0) ...[
+                      Expanded(
+                        child: _buildHeaderTitle(),
+                      ),
+                      // Airport code pill if available (step 2+)
+                      if (_selectedAirport != null && _step >= 2)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: _gold.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _selectedAirport!.code,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                    ] else
+                      const Spacer(),
+                  ],
+                ),
+              ),
+              // Progress dots (steps 1-3)
+              if (!isStep0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: _buildProgressDots(),
+                ),
+              // Step content
+              Expanded(
+                child: AnimatedBuilder(
+                  animation: _animCtrl,
+                  builder: (_, child) => Opacity(
+                    opacity: _animCtrl.isAnimating
+                        ? (_animCtrl.value < 0.4 ? _fadeOut.value : _fadeIn.value)
+                        : 1.0,
+                    child: child,
+                  ),
+                  child: _buildStep(),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  // Header title widget for steps 1-3
+  Widget _buildHeaderTitle() {
+    final bool isTo = _direction == AirportDirection.toAirport;
+    final bool isFrom = _direction == AirportDirection.fromAirport;
+
+    final String title = switch (_step) {
+      0 => S.of(context).airportRideTitle,
+      1 => S.of(context).selectAirport,
+      2 => isFrom ? S.of(context).selectTerminalAndDoor : S.of(context).selectYourAirline,
+      3 => isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
+      _ => S.of(context).airportRideTitle,
+    };
+
+    return Text(
+      title,
+      style: const TextStyle(
+        fontFamily: 'Poppins',
+        color: Colors.white,
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.02,
+      ),
     );
   }
 

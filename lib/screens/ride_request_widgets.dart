@@ -969,11 +969,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
         
         return Container(
-          // Tightened from 150 -> 132 so the badge sits closer to the
-          // bottom of the card; the previous 18px of internal padding
-          // below the badge created a visible empty band when no tier
-          // is picked yet (and the panel itself shrinks a bit too).
-          height: 132,
+          // Card height holds the bigger 130x90 car render + ground
+          // shadow + name + 78x22 badge, with no empty band below.
+          height: 156,
           decoration: BoxDecoration(
             // Match the Airport / Schedule cards (choose_ride_type_screen):
             //   solid #1A1A1F, gold border + soft gold glow always on,
@@ -999,20 +997,47 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             children: [
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Car image - web style (bigger)
-                  SizedBox(
-                    width: 110,
-                    height: 76,
-                    child: Image.asset(
-                      _carAssetForOption(opt.name),
-                      fit: BoxFit.contain,
-                    ),
+                  // Car image with a soft black drop shadow under it so
+                  // the vehicle reads as if it's resting on the card.
+                  // Slightly larger than before (130x90) for visual weight.
+                  Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      // Black ground shadow ellipse — sits behind the car.
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Container(
+                          width: 96,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(50),
+                            gradient: RadialGradient(
+                              colors: [
+                                Colors.black.withValues(alpha: 0.55),
+                                Colors.black.withValues(alpha: 0.0),
+                              ],
+                              stops: const [0.0, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 130,
+                        height: 90,
+                        child: Image.asset(
+                          _carAssetForOption(opt.name),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  // Vehicle name - web: Poppins, 14px, bold, white
+                  const SizedBox(height: 6),
+                  // Vehicle name - web: Poppins, 14px, bold, white, centered
                   Text(
                     displayName,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white,

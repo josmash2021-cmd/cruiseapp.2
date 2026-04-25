@@ -1044,6 +1044,13 @@ extension _RideRequestController on _RideRequestScreenState {
           _ctrl.forcePhase(RiderPhase.cancelled);
         }
         _ctrl.reset();
+        // Navigate to home screen after cancel
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            smoothFadeRoute(const HomeScreen()),
+            (_) => false,
+          );
+        }
         return;
       }
 

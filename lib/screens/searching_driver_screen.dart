@@ -59,6 +59,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   bool _paymentDeclined = false;
   Timer? _paymentStartTimer;
   Timer? _declinedPopTimer;
+  Timer? _searchTimeoutTimer; // Safety timeout to prevent getting stuck
 
   // ── status text cycling ──
   // 0 = "Confirming your ride…" (briefly)
@@ -190,6 +191,15 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
         }
       });
     }
+
+    // ── Safety timeout: if no driver found after 4 seconds, pop anyway
+    // This transitions to the waiting screen faster so the user sees the map
+    _searchTimeoutTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        debugPrint('[SearchingDriverScreen] Timeout reached (4s) - popping to continue flow');
+        Navigator.of(context).pop(false); // false = not cancelled, continue to waiting screen
+      }
+    });
   }
 
   @override
@@ -198,6 +208,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     if (_driverFoundCb != null) widget.driverFound?.removeListener(_driverFoundCb!);
     _paymentStartTimer?.cancel();
     _declinedPopTimer?.cancel();
+    _searchTimeoutTimer?.cancel();
     _radarCtrl.dispose();
     _glowCtrl.dispose();
     _particleCtrl.dispose();

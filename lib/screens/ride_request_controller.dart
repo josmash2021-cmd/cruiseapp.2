@@ -1126,6 +1126,15 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
+        // Guard: if SearchingDriverScreen is still on the stack, defer the
+        // navigation. The post-await block (_riderInitiatedCancel branch)
+        // will handle pushAndRemoveUntil(HomeScreen) AFTER the searching
+        // screen has popped — otherwise SearchingDriverScreen's own
+        // Navigator.pop(true) fires after we've already replaced the stack
+        // with HomeScreen, popping HomeScreen and leaving a black screen.
+        if (_searchingScreenShowing) {
+          return;
+        }
         _cancelDialogShown = true;
         final rawReason = _ctrl.state.cancelReason;
         final cancelCode = _ctrl.state.cancelCode;

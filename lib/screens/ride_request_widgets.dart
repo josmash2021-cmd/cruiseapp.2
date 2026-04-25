@@ -640,7 +640,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // .vipRide__rideImgTag — max-height clamp(40,11vw,52),
                   // two-layer drop-shadow for depth.
                   SizedBox(
-                    height: 52,
+                    height: 60, // Aumentado de 52 a 60
                     child: CarImage3D(
                       assetPath: _carAssetForOption(opt.name),
                       cacheWidth: 240,

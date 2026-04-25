@@ -82,28 +82,18 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
-            ),
+            color: const Color(0xFF0D0D0D), // Fondo casi negro como en web
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: const Color(0xFFE8C547).withValues(alpha: 0.30),
+              color: const Color(0xFFE8C547).withValues(alpha: 0.5),
               width: 1,
             ),
             boxShadow: [
-              // Base drop shadow (always present)
+              // Base drop shadow
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5 + 0.05 * peak),
-                blurRadius: 8 + 2 * peak,
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 4,
                 offset: const Offset(0, 2),
-              ),
-              // Gold halo (peaks at 50%)
-              BoxShadow(
-                color: const Color(0xFFE8C547)
-                    .withValues(alpha: 0.08 + 0.27 * peak),
-                blurRadius: 4 + 12 * peak,
               ),
             ],
           ),
@@ -112,24 +102,20 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Web uses a 13×13 crown SVG directly in-flow.
-              SizedBox(
-                width: 13,
-                height: 13,
-                child: CustomPaint(
-                  painter: _VipCrownPainter(twinkle: _twinkle!),
-                ),
+              // Crown icon - dorada como en web
+              Icon(
+                Icons.workspace_premium, // Icono de corona/crown
+                size: 12,
+                color: const Color(0xFFE8C547),
               ),
-              // .vipRide__badge: gap:1px between icon and text.
-              const SizedBox(width: 1),
+              // Espacio entre icono y texto
+              const SizedBox(width: 2),
               Text(
                 'VIP',
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
                   fontSize: widget.fontSize,
-                  // .vipRide__badge: font-weight 800, letter-spacing .08em
-                  // (≈0.72px at font-size 9px).
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.72,
                   height: 1.0,
@@ -148,18 +134,17 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
       height: widget.height,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFF8E896), Color(0xFFE8C547), Color(0xFFD4AF37)],
         ),
         borderRadius: BorderRadius.circular(6),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x66D4AF37),
+            color: Color(0x80E8C547),
             blurRadius: 8,
             offset: Offset(0, 2),
           ),
-          BoxShadow(color: Color(0x40E8C547), blurRadius: 14),
         ],
       ),
       alignment: Alignment.center,
@@ -167,17 +152,13 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Web uses a ★ glyph at base font-size (9px) — no upscale.
-          Text(
-            '★',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: widget.fontSize,
-              height: 1.0,
-            ),
+          // Estrella negra como en web
+          Icon(
+            Icons.star,
+            size: 10,
+            color: Colors.black,
           ),
-          // .vipRide__badge: gap:1px.
-          const SizedBox(width: 1),
+          const SizedBox(width: 2),
           Text(
             'PREMIUM',
             style: TextStyle(
@@ -200,18 +181,17 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
       height: widget.height,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFF5F5F5), Color(0xFFE0E0E0)],
         ),
         borderRadius: BorderRadius.circular(6),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x4DC0C0C0),
-            blurRadius: 8,
+            color: Color(0x40000000),
+            blurRadius: 4,
             offset: Offset(0, 2),
           ),
-          BoxShadow(color: Color(0x26C8C8C8), blurRadius: 12),
         ],
       ),
       alignment: Alignment.center,
@@ -219,25 +199,18 @@ class _VehicleTierBadgeState extends State<VehicleTierBadge>
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Web uses .vipRide__badgeIcon--lg on comfort: font-size 2.3em
-          // (≈20.7px at 9px base), line-height 1, translateY(-1.5px).
-          Transform.translate(
-            offset: const Offset(0, -1.5),
-            child: Text(
-              '✦',
-              style: TextStyle(
-                color: const Color(0xFF1A1A1A),
-                fontSize: widget.fontSize * 2.3,
-                height: 1.0,
-              ),
-            ),
+          // Icono de diamante/cruz como en web
+          Icon(
+            Icons.diamond,
+            size: 10,
+            color: const Color(0xFF333333),
           ),
-          const SizedBox(width: 1),
+          const SizedBox(width: 2),
           Text(
             'COMFORT',
             style: TextStyle(
               fontFamily: 'Poppins',
-              color: const Color(0xFF1A1A1A),
+              color: const Color(0xFF333333),
               fontSize: widget.fontSize,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.72,

@@ -40,6 +40,7 @@ import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/gold_particles_background.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/velocity_aware_panel.dart';
@@ -1163,16 +1164,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Greeting
+        // Greeting — pure black pill + gold particle field for the
+        // same look as the rest of the app.
         Expanded(
-          child: Container(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Container(
             padding: EdgeInsets.symmetric(horizontal: Responsive.w(16), vertical: Responsive.h(10)),
             decoration: BoxDecoration(
-              color: dc.glassBg,
+              color: Colors.black,
               borderRadius: BorderRadius.circular(28),
               border: Border.all(color: dc.divider),
             ),
-            child: Row(
+            child: Stack(
+              children: [
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: GoldParticlesBackground(
+                      particleCount: 6, // tiny pill — only need a few
+                      child: SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                Row(
               children: [
                 // Avatar with gold border
                 VerifiedAvatar(
@@ -1224,7 +1238,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ],
             ),
-          ),
+              ],  // close Stack children list
+            ),    // close Stack
+          ),      // close Container
+          ),      // close ClipRRect
         ),
 
         const SizedBox(width: 12),
@@ -1562,7 +1579,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Container(
       height: panelH + pad.bottom,
       decoration: BoxDecoration(
-        color: dc.card,
+        // Pure black + gold particle field instead of dc.card (#1A1A1F)
+        // so the bottom panel matches the rest of the app's particle
+        // language (driver brand pass 2026-04-27).
+        color: Colors.black,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
         boxShadow: [
           BoxShadow(
@@ -1572,7 +1592,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         ],
       ),
-      child: Column(
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        child: GoldParticlesBackground(
+          particleCount: 14, // smaller field — panel collapses to ~80px
+          child: Column(
         children: [
           // ── Drag handle — drag only registered here ──
           GestureDetector(
@@ -1748,7 +1772,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
           ],
         ),
-      ),    // close AnimatedContainer
+        ),  // close GoldParticlesBackground
+      ),    // close ClipRRect
+      ),    // close Container (was AnimatedContainer comment — wrong)
     );      // close GestureDetector
   }
 

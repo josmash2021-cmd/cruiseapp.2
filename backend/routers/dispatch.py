@@ -925,8 +925,11 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         # Log ALL online drivers to understand WHY zero matched
         all_online = await db.execute(select(User).where(and_(User.role == "driver", User.is_online == True)))
         all_online_drivers = all_online.scalars().all()
-        logging.warning(
-            "[Dispatch] Trip %d: 0 eligible drivers! online_drivers=%d. Details: %s",
+        # INFO not WARNING — "no drivers online" is a normal off-peak
+        # condition, not an app error. Was filling logs with noise that
+        # masked real problems.
+        logging.info(
+            "[Dispatch] Trip %d: 0 eligible drivers (online_drivers=%d). %s",
             trip.id, len(all_online_drivers),
             "; ".join(
                 f"id={d.id} lat={d.lat} lng={d.lng} last_active={d.last_active_at}"

@@ -365,6 +365,7 @@ from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.misc import router as misc_router
 from routers.scheduled import router as scheduled_router
+from routers.referrals import router as referrals_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -377,6 +378,7 @@ app.include_router(payments_router)
 app.include_router(admin_router)
 app.include_router(misc_router)
 app.include_router(scheduled_router)
+app.include_router(referrals_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION

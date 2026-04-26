@@ -840,6 +840,32 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     await db.commit()
     await db.refresh(trip)
 
+    # ── Cruise Cash discount ──────────────────────────────────
+    # Apply any Cruise Cash the rider has accumulated to this trip's
+    # fare. Up to $50 per ride; if the balance covers everything, the
+    # downstream Stripe charge becomes $0. Logs a transaction tied to
+    # this trip so the rider sees it in their wallet history.
+    try:
+        if trip.fare and trip.fare > 0:
+            from routers.referrals import apply_cruise_cash_to_fare
+            fare_cents = int(round(float(trip.fare) * 100))
+            remaining_cents = await apply_cruise_cash_to_fare(
+                db, user.id, fare_cents, ref_trip_id=trip.id,
+            )
+            applied_cents = fare_cents - remaining_cents
+            if applied_cents > 0:
+                # Persist the new effective fare so commission split,
+                # Stripe charge, and dispatch all see the post-discount
+                # number. Original fare is recoverable from the
+                # cruise_cash_transactions row tied to this trip.
+                trip.fare = round(remaining_cents / 100.0, 2)
+                await db.commit()
+                await db.refresh(trip)
+                logging.info("[cruise-cash] applied %s cents to trip %s (remaining %s)",
+                             applied_cents, trip.id, remaining_cents)
+    except Exception as e:
+        logging.warning("[cruise-cash] apply failed for trip %s: %s", trip.id, e)
+
     # Sync trip to Firestore for dispatch_app.
     # Use the guest-aware resolver so web/Shopify bookings show the guest
     # name on the dispatch panel, not the "Web Booking" system user profile.

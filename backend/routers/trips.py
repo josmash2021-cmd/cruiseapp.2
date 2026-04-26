@@ -947,6 +947,23 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         if _drv:
             _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
             _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
+
+    # Referral progress hook — if the rider was referred and this trip's
+    # fare crosses the qualifying threshold ($50 by default), bump the
+    # parent Referral counter; once the rider hits the required count
+    # (2 trips), credit the referrer their $50 Cruise Cash bonus.
+    # Safe no-op for non-referred riders.
+    if canonical_new == "completed" and trip.rider_id and trip.fare:
+        try:
+            from routers.referrals import credit_referrer_if_qualified
+            await credit_referrer_if_qualified(
+                db, trip.rider_id, float(trip.fare),
+                ref_trip_id=trip.id,
+            )
+        except Exception as e:
+            logging.warning("[referrals] credit hook failed for trip %s: %s",
+                            trip.id, e)
+
     await db.commit()
     await db.refresh(trip)
 

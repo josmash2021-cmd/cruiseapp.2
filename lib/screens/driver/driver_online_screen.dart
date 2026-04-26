@@ -796,10 +796,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Theme-aware colors — pure black bg, grey-black widgets/cards,
     // gold icons (driver brand pass 2026-04-26).
     final bg = isDark ? Colors.black : const Color(0xFFF2F2F7);
-    final surface = isDark ? const Color(0xFF1A1A1F) : Colors.white;
-    final card = isDark ? const Color(0xFF1A1A1F) : Colors.white;
+    final surface = isDark ? Colors.black : Colors.white;
+    final card = isDark ? Colors.black : Colors.white;
+    // FABs use a slight transparency so the underlying map / particle
+    // field still shows through subtly behind the gold icon.
     final fabBg = isDark
-        ? const Color(0xFF1A1A1F)
+        ? Colors.black.withValues(alpha: 0.88)
         : Colors.white.withValues(alpha: 0.85);
     final fabBorder = isDark
         ? const Color(0xFFE8C547).withValues(alpha: 0.18)

@@ -293,11 +293,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
           child: Container(
             decoration: BoxDecoration(
-              color: surface,
+              // Pure black + gold particles instead of surface (#1A1A1F)
+              // — same particle language as the rest of the app's
+              // dark surfaces. The animated gold border above is the
+              // searching pulse, particles add subtle depth.
+              color: Colors.black,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
               border: Border(top: BorderSide(color: borderC)),
             ),
-            child: SafeArea(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              child: GoldParticlesBackground(
+                particleCount: 12, // small bar — mini-bar collapsed state
+                child: SafeArea(
               top: false,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -353,6 +361,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ),
       ),
+        ),  // close GoldParticlesBackground
+      ),    // close ClipRRect
         ),
       ),
     );

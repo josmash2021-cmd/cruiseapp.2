@@ -1529,15 +1529,29 @@ extension _HomeScreenWidgets on _HomeScreenState {
           disabled: active || !_driversOnline,
           onTap: () async {
             if (active) return;
+            if (_openingRideFlow) return; // share the same re-entry guard
+            // Re-check drivers right before opening so a stale cached
+            // _driversOnline=true (from up to 120s ago) doesn't push the
+            // rider into a flow that has nobody to match with.
+            await _checkDriversOnline();
+            if (!mounted) return;
             if (!_driversOnline) {
               _showFastRideUnavailableDialog();
               return;
             }
             if (!await _ensureVerified()) return;
             if (!mounted) return;
-            Navigator.of(
-              context,
-            ).push(slideUpFadeRoute(const RideRequestScreen(fastRide: true)));
+            _openingRideFlow = true;
+            try {
+              await Navigator.of(context).push(
+                slideUpFadeRoute(const RideRequestScreen(fastRide: true)),
+              );
+            } finally {
+              if (mounted) {
+                _openingRideFlow = false;
+                _loadSavedData();
+              }
+            }
           },
         ),
         // Clock — real clock animation with ticking hands

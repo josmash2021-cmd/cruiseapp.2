@@ -809,7 +809,7 @@ class S {
   String get liveChat => _es ? 'Chat en Vivo' : 'Live Chat';
 
   // ── Home Screen ───────────────────────────────────────────────────────────
-  String get fastRide => _es ? 'Viaje Rápido' : 'Fast ride';
+  String get fastRide => _es ? 'Prioritario' : 'Priority';
   String get schedule => _es ? 'Programar' : 'Schedule';
   String get recentActivity => _es ? 'Actividad Reciente' : 'Recent Activity';
   String get noServiceState => _es
@@ -817,10 +817,10 @@ class S {
       : 'No services available in your state at this time.';
   String get understood => _es ? 'Entendido' : 'OK';
   String get fastRideUnavailable => _es
-      ? 'Viaje rápido no está disponible cuando no hay conductores conectados cerca. Intenta de nuevo en unos minutos.'
-      : 'Fast Ride is only available when there are drivers connected nearby. Please try again in a few minutes.';
+      ? 'Prioritario solo está disponible cuando hay conductores en línea cerca. Intenta de nuevo en unos minutos.'
+      : 'Priority is only available when drivers are online nearby. Please try again in a few minutes.';
   String get fastRideUnavailableTitle =>
-      _es ? 'Viaje Rápido No Disponible' : 'Fast Ride Unavailable';
+      _es ? 'Prioritario No Disponible' : 'Priority Unavailable';
   String get serviceZoneTitle =>
       _es ? 'Zona no disponible' : 'Zone Not Available';
   String get noDriversInState => _es
@@ -1654,7 +1654,7 @@ class S {
       ? 'No hay conductores disponibles cerca de tu zona en estos momentos. Por favor intenta de nuevo en unos minutos.'
       : 'There are no drivers available near your area right now. Please try again in a few minutes.';
   String get okBtn => _es ? 'Aceptar' : 'OK';
-  String get fastRideLabel => _es ? 'Viaje rápido' : 'Fast Ride';
+  String get fastRideLabel => _es ? 'Prioritario' : 'Priority';
   String requestRideWithPrice(String price) =>
       _es ? 'Solicitar viaje · \$$price' : 'Request Ride · \$$price';
   String get requestRide => _es ? 'Solicitar viaje' : 'Request Ride';

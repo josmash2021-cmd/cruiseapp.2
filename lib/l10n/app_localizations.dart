@@ -1774,7 +1774,7 @@ class S {
       ? 'Ingresa las direcciones para ver la ruta'
       : 'Enter addresses to see route';
   String get bookScheduledRide =>
-      _es ? 'Reservar viaje programado' : 'Book Scheduled Ride';
+      _es ? 'Reservar ahora' : 'Reserve Now';
   String get enterBothAddresses => _es
       ? 'Ingresa el punto de recogida y destino'
       : 'Enter both pickup and destination';
@@ -2112,8 +2112,8 @@ class S {
       : '$percent% promotional discount applied';
   String payAmount(String price) => _es ? 'Pagar $price' : 'Pay $price';
   String bookScheduledRidePrice(String price) => _es
-      ? 'Reservar viaje programado · $price'
-      : 'Book Scheduled Ride · $price';
+      ? 'Reservar ahora · $price'
+      : 'Reserve Now · $price';
   String get paymentMethodTitle => _es ? 'Método de pago' : 'Payment method';
   String get addedLabel => _es ? 'Agregado' : 'Added';
   String get addButton => _es ? 'Agregar' : 'Add';

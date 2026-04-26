@@ -756,11 +756,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       unawaited(_resolveDriverId());
     }
 
-    // Navigate immediately — no waiting on API calls
-    HapticFeedback.heavyImpact();
-    // Play sound completely async — don't let it interfere with the transition
-    unawaited(Future.microtask(() => NotificationService.playOnlineSound()));
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+    // Navigate immediately — no waiting on API calls.
+    //
+    // 2026-04-27 freeze fix:
+    //   The old order was haptic + sound + push, which stacked three
+    //   MethodChannel round-trips on the same frame the route transition
+    //   was supposed to start animating. Result: ~1s freeze the moment
+    //   the driver tapped Go Online.
+    //
+    //   New order: kick off the navigation FIRST (its animation now owns
+    //   the next frames cleanly), then schedule haptic + sound on the
+    //   post-frame callback so they cross the platform boundary AFTER
+    //   the route transition has begun.
+    final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (ctx, anim1, anim2) =>
@@ -779,6 +787,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
       ),
     );
+    // Schedule haptic + sound after the route transition has owned the
+    // first frame. WidgetsBinding.addPostFrameCallback fires once the
+    // current build/layout phase is done, which is exactly when the
+    // PageRouteBuilder transition kicks in — so the MethodChannel
+    // round-trips happen in parallel with the fade/scale, not before.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      HapticFeedback.heavyImpact();
+      NotificationService.playOnlineSound();
+    });
+    final result = await pushFuture;
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);

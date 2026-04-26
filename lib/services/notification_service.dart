@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -395,22 +396,25 @@ class NotificationService {
   static void playOnlineSound() {
     if (_onlineSoundPlaying) return; // prevent double-play
     _onlineSoundPlaying = true;
-    // Hop to a microtask so the caller frame is never on the platform
-    // thread — dispatch, don't await.
-    scheduleMicrotask(() async {
+    // Defer one frame so the caller's navigation transition (fade+scale
+    // PageRouteBuilder) starts BEFORE we cross the MethodChannel into
+    // the platform-side audio engine. Three separate audio calls all
+    // chained on the platform thread used to add up to ~1s of jank
+    // exactly when the new screen was supposed to be fading in — that
+    // was the visible freeze the driver felt the instant they tapped
+    // Go Online.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         if (!(prefs.getBool('notif_sounds') ?? true)) {
           _onlineSoundPlaying = false;
           return;
         }
-        // Use stop() first so any lingering playback state is cleared
-        // before we re-trigger. Avoids the 1-second UI freeze that
-        // happened when the player finished a previous loop and its
-        // onComplete callback landed on the main isolate mid-transition.
-        unawaited(_onlinePlayer.stop());
-        unawaited(_onlinePlayer.seek(Duration.zero));
-        unawaited(_onlinePlayer.resume());
+        // Single play() call. Source is already pre-loaded in init() and
+        // the onPlayerComplete listener resets state when the clip ends,
+        // so we don't need stop() + seek(0) + resume() — that triple
+        // round-trip was the actual cause of the freeze.
+        await _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');
       } finally {

@@ -64,6 +64,7 @@ MIGRATIONS = [
     ("trips", "ac_guaranteed", "BOOLEAN DEFAULT FALSE"),
     ("trips", "silent_ride", "BOOLEAN DEFAULT FALSE"),
     ("trips", "wheelchair_accessible", "BOOLEAN DEFAULT FALSE"),
+    ("trips", "arrived_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "started_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
     # ── Users: critical columns for dispatch heartbeat & push notifications ──

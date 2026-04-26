@@ -113,6 +113,29 @@ def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
     """Return (platform_rate, driver_rate) for the given vehicle type."""
     return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)
 
+
+# ── Wait time fee policy (Uber/Lyft inspired) ──
+# (free_wait_minutes, fee_per_minute_usd). Airport rides override the
+# tier with a longer 10-min free window and the standard $0.40/min.
+# Mirrors lib/screens/rider_confirm_pickup_screen.dart so the rider
+# UI and the backend charge agree on the numbers.
+_WAIT_POLICY_BY_TYPE = {
+    "sedan":   (2, 0.40),
+    "comfort": (2, 0.40),
+    "premium": (3, 0.60),
+    "vip":     (5, 1.00),
+}
+_DEFAULT_WAIT_POLICY = (2, 0.40)
+_AIRPORT_WAIT_POLICY = (10, 0.40)
+
+def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float]:
+    """Return (free_wait_minutes, fee_per_minute_usd) for this trip."""
+    if is_airport:
+        return _AIRPORT_WAIT_POLICY
+    return _WAIT_POLICY_BY_TYPE.get(
+        (vehicle_type or "comfort").lower(), _DEFAULT_WAIT_POLICY
+    )
+
 # Legacy constants kept for backward-compat in places that don't have vehicle_type
 PLATFORM_COMMISSION_RATE = 0.40
 DRIVER_SHARE_RATE = 0.60
@@ -870,9 +893,34 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     # Store the CANONICAL status, not the raw client input
     trip.status = canonical_new
     trip.updated_at = datetime.now(timezone.utc)
+    # Record arrival timestamp for wait time fee calculation. Set ONCE on
+    # first transition to "arrived" — re-arrivals (driver bumps the
+    # status again) shouldn't reset the timer.
+    if canonical_new == "arrived" and not trip.arrived_at:
+        trip.arrived_at = datetime.now(timezone.utc)
     # Record ride start/end timestamps for duration calculation
     if canonical_new == "in_trip" and not trip.started_at:
         trip.started_at = datetime.now(timezone.utc)
+        # Compute wait time fee: bill the rider per minute beyond the
+        # tier-specific free wait window. Mirrors Uber/Lyft policy and
+        # the rider-side _buildWaitTimerBadge UI in
+        # rider_confirm_pickup_screen.dart.
+        if trip.arrived_at:
+            wait_seconds = (trip.started_at - trip.arrived_at).total_seconds()
+            free_wait_min, per_min_rate = _wait_policy(
+                trip.vehicle_type, bool(trip.is_airport)
+            )
+            extra_seconds = max(0.0, wait_seconds - (free_wait_min * 60))
+            # Round UP to the next minute (rider sees the next $X.XX the
+            # moment a new minute starts on the timer).
+            extra_minutes = int(-(-extra_seconds // 60))
+            wait_charge = round(extra_minutes * per_min_rate, 2)
+            trip.wait_time_minutes = extra_minutes
+            trip.wait_time_charge = wait_charge
+            # Roll the wait fee into the fare so payment / earnings split
+            # downstream see the full amount the rider pays.
+            if wait_charge > 0:
+                trip.fare = round((trip.fare or 0.0) + wait_charge, 2)
     if canonical_new == "completed":
         trip.completed_at = datetime.now(timezone.utc)
         # Auto-calculate distance (haversine) if not already set
@@ -886,7 +934,9 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             trip.duration = max(1, int(delta.total_seconds() / 60))
         elif not trip.duration and trip.distance:
             trip.duration = max(1, int(trip.distance * 2))
-    # Auto-calculate earnings split (vehicle-type-dependent commission)
+    # Auto-calculate earnings split (vehicle-type-dependent commission).
+    # `trip.fare` already includes any wait-time surcharge added in the
+    # in_trip branch above, so the driver's % naturally covers it too.
     if canonical_new == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
         platform_rate, driver_rate = _get_commission(trip.vehicle_type)
         tip = trip.tip_amount or 0.0

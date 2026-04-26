@@ -200,6 +200,7 @@ class Trip(Base):
     ac_guaranteed = Column(Boolean, default=False)
     silent_ride = Column(Boolean, default=False)
     wheelchair_accessible = Column(Boolean, default=False)
+    arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -589,6 +590,7 @@ async def migrate_add_columns(conn):
         ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
         ("trips", "distance", "FLOAT"),
         ("trips", "duration", "INTEGER"),
+        ("trips", "arrived_at", "DATETIME"),
         ("trips", "started_at", "DATETIME"),
         ("trips", "completed_at", "DATETIME"),
         ("trips", "driver_earnings", "FLOAT"),
@@ -698,6 +700,7 @@ async def migrate_postgres(conn):
         ("trips", "wait_time_charge", "FLOAT DEFAULT 0.0"),
         ("trips", "distance", "FLOAT"),
         ("trips", "duration", "INTEGER"),
+        ("trips", "arrived_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "started_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "driver_earnings", "FLOAT"),

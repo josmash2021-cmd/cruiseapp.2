@@ -82,7 +82,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,17 +97,12 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: c.surface,
+                    color: const Color(0xFF1A1A1F),
                     borderRadius: BorderRadius.circular(12),
-                    border: c.isDark
-                        ? null
-                        : Border.all(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
                   ),
-                  child: Icon(
+                  child: const Icon(
                     Icons.arrow_back_ios_new_rounded,
-                    color: c.textPrimary,
+                    color: Colors.white,
                     size: 18,
                   ),
                 ),
@@ -120,10 +115,10 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 S.of(context).yourTrips,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: c.textPrimary,
+                  color: Colors.white,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -221,42 +216,33 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: c.surface,
+          color: const Color(0xFF111111),
           borderRadius: BorderRadius.circular(16),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.06),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Date & Price ──
+            // Price split into "$" + amount + cents so the dollars
+            // dominate visually and the cents read as a superscript-ish
+            // suffix. White-on-black, no chip, no gold box.
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Text(
                     date,
-                    style: TextStyle(fontSize: 13, color: c.textSecondary),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _gold.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    trip.price,
                     style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _gold,
+                      fontSize: 13,
+                      color: Color(0xFF9A9AA0),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
+                _PriceText(raw: trip.price),
               ],
             ),
             const SizedBox(height: 14),
@@ -278,10 +264,10 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                 Expanded(
                   child: Text(
                     trip.pickup,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
+                      color: Colors.white,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -320,10 +306,10 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                 Expanded(
                   child: Text(
                     trip.dropoff,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
+                      color: Colors.white,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -334,21 +320,116 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             const SizedBox(height: 12),
 
             // ── Ride type + details ──
-            Divider(color: c.border, height: 1),
+            Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.06),
+            ),
             const SizedBox(height: 10),
             Row(
               children: [
                 TierBadge(rideName: trip.rideName),
                 const Spacer(),
+                // Distance · duration with subtle icons. Brighter than
+                // before so it reads even on data with zero values.
+                Icon(
+                  Icons.straighten_rounded,
+                  size: 13,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+                const SizedBox(width: 4),
                 Text(
-                  '${trip.miles} · ${trip.duration}',
-                  style: TextStyle(fontSize: 13, color: c.textSecondary),
+                  trip.miles,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFFCFCFD4),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 13,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  trip.duration,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFFCFCFD4),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Formatted trip price — splits "$4.10" into a small "$" + big
+/// dollars + small cents so amounts read like a premium receipt
+/// instead of a chunky chip. White-on-black, no background.
+/// Falls back to the raw string if the format is unexpected.
+class _PriceText extends StatelessWidget {
+  final String raw;
+  const _PriceText({required this.raw});
+
+  @override
+  Widget build(BuildContext context) {
+    final match = RegExp(r'^\$?(-?\d+)(?:\.(\d{1,2}))?').firstMatch(raw.trim());
+    if (match == null) {
+      return Text(
+        raw,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      );
+    }
+    final whole = match.group(1) ?? '0';
+    final cents = (match.group(2) ?? '00').padRight(2, '0').substring(0, 2);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 3),
+          child: Text(
+            '\$',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFCFCFD4),
+            ),
+          ),
+        ),
+        const SizedBox(width: 1),
+        Text(
+          whole,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            letterSpacing: -0.5,
+            height: 1.0,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            '.$cents',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFCFCFD4),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

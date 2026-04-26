@@ -492,13 +492,68 @@ async def get_payout_methods(user: User = Depends(_get_current_user), db: AsyncS
     result = await db.execute(select(PayoutMethod).where(PayoutMethod.user_id == user.id))
     return [{"id": p.id, "method_type": p.method_type, "display_name": p.display_name, "is_default": p.is_default} for p in result.scalars().all()]
 
+
+async def _clear_other_defaults(db: AsyncSession, user_id: int, except_id: int | None = None):
+    """Mark every payout method for this user as non-default. If
+    ``except_id`` is given, that row is left untouched (used after we
+    just inserted the new default to avoid a useless UPDATE)."""
+    q = select(PayoutMethod).where(
+        PayoutMethod.user_id == user_id,
+        PayoutMethod.is_default == True,  # noqa: E712
+    )
+    if except_id is not None:
+        q = q.where(PayoutMethod.id != except_id)
+    rs = await db.execute(q)
+    for p in rs.scalars().all():
+        p.is_default = False
+
+
 @router.post("/drivers/payout-methods", dependencies=[Depends(_verify_api_key)])
 async def add_payout_method(body: PayoutMethodIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    pm = PayoutMethod(user_id=user.id, method_type=body.method_type, display_name=body.display_name, is_default=body.set_default)
+    """Create a payout method row. When ``set_default=true`` we first
+    clear any existing defaults so the cashout default-picker never sees
+    two rows marked default at the same time."""
+    if body.set_default:
+        await _clear_other_defaults(db, user.id)
+    pm = PayoutMethod(
+        user_id=user.id,
+        method_type=body.method_type,
+        display_name=body.display_name,
+        is_default=body.set_default,
+    )
     db.add(pm)
     await db.commit()
     await db.refresh(pm)
     return {"id": pm.id, "method_type": pm.method_type, "display_name": pm.display_name, "is_default": pm.is_default}
+
+
+@router.post("/drivers/payout-methods/{payout_id}/default", dependencies=[Depends(_verify_api_key)])
+async def set_default_payout_method(
+    payout_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Promote one payout method to default and demote all others
+    atomically. Returns the updated row."""
+    rs = await db.execute(
+        select(PayoutMethod).where(
+            PayoutMethod.id == payout_id, PayoutMethod.user_id == user.id
+        )
+    )
+    pm = rs.scalar_one_or_none()
+    if not pm:
+        raise HTTPException(404, "Payout method not found")
+    await _clear_other_defaults(db, user.id, except_id=payout_id)
+    pm.is_default = True
+    await db.commit()
+    await db.refresh(pm)
+    return {
+        "id": pm.id,
+        "method_type": pm.method_type,
+        "display_name": pm.display_name,
+        "is_default": pm.is_default,
+    }
+
 
 @router.delete("/drivers/payout-methods/{payout_id}", dependencies=[Depends(_verify_api_key)])
 async def delete_payout_method(payout_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -506,9 +561,117 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
     pm = result.scalar_one_or_none()
     if not pm:
         raise HTTPException(404, "Payout method not found")
+
+    # If the deleted row was the default, promote the most recent
+    # remaining row so the driver always has a default to fall back on.
+    was_default = bool(pm.is_default)
+
+    # Best-effort: detach external_account from the Stripe Connect
+    # account if we know its ID. Failures are logged and ignored — the
+    # local row gets removed regardless so the driver can re-add.
+    sea = (pm.display_name or "")
+    if STRIPE_SECRET and user.stripe_connect_id:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            # Stripe external_account IDs are stored in display_name
+            # for our debit-card flow as a hidden suffix `[ext:ba_xxx]`
+            # or `[ext:card_xxx]`. Parse it out if present.
+            if "[ext:" in sea and sea.endswith("]"):
+                ext_id = sea.split("[ext:")[1][:-1]
+                _stripe.Account.delete_external_account(
+                    user.stripe_connect_id, ext_id
+                )
+        except Exception as e:
+            logging.warning("[payout] external_account detach failed: %s", e)
+
     await db.delete(pm)
     await db.commit()
+
+    if was_default:
+        rs = await db.execute(
+            select(PayoutMethod)
+            .where(PayoutMethod.user_id == user.id)
+            .order_by(PayoutMethod.id.desc())
+            .limit(1)
+        )
+        replacement = rs.scalar_one_or_none()
+        if replacement:
+            replacement.is_default = True
+            await db.commit()
+
     return {"status": "deleted"}
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Debit-card payout method (real, via Stripe Connect external_account)
+# ─────────────────────────────────────────────────────────────────────
+
+@router.post("/drivers/payout-methods/debit-card", dependencies=[Depends(_verify_api_key)])
+async def add_debit_card_payout(
+    body: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a debit card as an external_account on the driver's Stripe
+    Connect Express account so we can do **instant cashouts** to it.
+
+    Client must tokenize the PAN client-side first (Stripe.js / Stripe
+    iOS SDK / Stripe Android SDK) and send us only the resulting
+    ``card_token`` (e.g. ``tok_visa``). We never see the raw PAN.
+
+    Returns the persisted PayoutMethod row. The Stripe external_account
+    id is appended to display_name as ``[ext:card_xxx]`` so the delete
+    flow can detach it cleanly.
+    """
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Only drivers can add payout methods")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+    if not user.stripe_connect_id:
+        raise HTTPException(
+            400,
+            "Connect a bank account first so your Stripe Connect account exists",
+        )
+
+    card_token = (body.get("card_token") or "").strip()
+    set_default = bool(body.get("set_default", False))
+    if not card_token:
+        raise HTTPException(400, "card_token required (tokenize PAN client-side)")
+
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        ext = _stripe.Account.create_external_account(
+            user.stripe_connect_id,
+            external_account=card_token,
+            default_for_currency=set_default,
+        )
+        ext_id = ext.get("id") or ""
+        brand = (ext.get("brand") or "Card").title()
+        last4 = ext.get("last4") or "----"
+        display = f"{brand} ····{last4}  [ext:{ext_id}]"
+    except Exception as e:
+        logging.error("[StripeDebitCard] %s", e)
+        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+
+    if set_default:
+        await _clear_other_defaults(db, user.id)
+    pm = PayoutMethod(
+        user_id=user.id,
+        method_type="debit_card",
+        display_name=display,
+        is_default=set_default,
+    )
+    db.add(pm)
+    await db.commit()
+    await db.refresh(pm)
+    return {
+        "id": pm.id,
+        "method_type": pm.method_type,
+        "display_name": pm.display_name,
+        "is_default": pm.is_default,
+    }
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  PLAID  (stub)

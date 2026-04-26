@@ -2100,6 +2100,45 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
   }
 
+  /// Promote one payout method to default. Backend atomically demotes
+  /// every other method for this driver so there is always exactly one
+  /// default for the cashout flow to pick.
+  static Future<Map<String, dynamic>> setDefaultPayoutMethod(int payoutId) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/payout-methods/$payoutId/default'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
+  /// Attach a debit card as a Stripe Connect external_account so the
+  /// driver can do instant cashouts to it. PAN MUST be tokenized
+  /// client-side via the Stripe SDK first — we send only the resulting
+  /// ``card_token`` (e.g. ``tok_visa``). The raw PAN must never reach
+  /// our backend.
+  static Future<Map<String, dynamic>> addDebitCardPayout({
+    required String cardToken,
+    bool setDefault = false,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/payout-methods/debit-card'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({
+            'card_token': cardToken,
+            'set_default': setDefault,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
   // ═══════════════════════════════════════════════════════
   //  PLAID BANK LINKING
   // ═══════════════════════════════════════════════════════

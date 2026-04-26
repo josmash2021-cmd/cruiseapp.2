@@ -1,10 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 
-/// Payout Methods screen — Plaid-powered bank account linking for instant cashout
+/// Payout Methods screen — Stripe Connect-powered, real end-to-end.
+///
+/// Two ways to add a destination for cashouts:
+///
+///   1. **Connect bank account** — opens Stripe Connect Express
+///      onboarding (hosted flow). Stripe handles bank-account capture,
+///      identity verification, and creates the external_account on the
+///      Connect account. We poll status every 3-10s for up to 5 min and
+///      record the row when both ``charges_enabled`` AND
+///      ``payouts_enabled`` flip to true.
+///
+///   2. **Add debit card** — uses the Stripe Flutter SDK
+///      (``flutter_stripe``) to tokenize the PAN client-side. We send
+///      only the resulting ``card_token`` (e.g. ``tok_visa``) to the
+///      backend, which attaches it to the driver's Connect account as
+///      an external_account for **instant cashouts**. The raw PAN
+///      never reaches our servers.
+///
+/// Defaults: backend atomically clears other defaults whenever a row is
+/// promoted, so the cashout flow always sees exactly one default row.
 class PayoutMethodsScreen extends StatefulWidget {
   const PayoutMethodsScreen({super.key});
 
@@ -14,7 +34,6 @@ class PayoutMethodsScreen extends StatefulWidget {
 
 class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   static const _gold = Color(0xFFD4A843);
-  static const _goldLight = Color(0xFFF5D990); // ignore: unused_field
   static const _card = Color(0xFF1C1C1E);
 
   List<Map<String, dynamic>> _methods = [];
@@ -36,6 +55,14 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
   bool get _hasDebitCard =>
       _methods.any((m) => m['method_type'] == 'debit_card');
+
+  /// Strip the hidden ``[ext:xxx]`` Stripe-id suffix from a display name
+  /// so the UI shows just "Visa ····1234".
+  String _cleanDisplay(String raw) {
+    final idx = raw.indexOf('[ext:');
+    if (idx < 0) return raw;
+    return raw.substring(0, idx).trim();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +258,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton.icon(
-                      onPressed: _linkingBank ? null : _connectWithPlaid,
+                      onPressed: _linkingBank ? null : _connectBankAccount,
                       icon: _linkingBank
                           ? const SizedBox(
                               width: 20,
@@ -363,22 +390,15 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     );
   }
 
-  // ── Card brand detection ──────────────────────────────────────
-  static _CardBrand _detectBrand(String number) {
-    final digits = number.replaceAll(' ', '');
-    if (digits.isEmpty) return _CardBrand.unknown;
-    if (digits.startsWith('4')) return _CardBrand.visa;
-    if (digits.length >= 2) {
-      final prefix2 = int.tryParse(digits.substring(0, 2)) ?? 0;
-      if (prefix2 >= 51 && prefix2 <= 55) return _CardBrand.mastercard;
-      if (prefix2 == 34 || prefix2 == 37) return _CardBrand.amex;
-      if (prefix2 == 65 || prefix2 == 64) return _CardBrand.discover;
+  // ── Card brand: parse from display_name (e.g. "Visa ····1234") ──
+  static _CardBrand _brandFromDisplay(String display) {
+    final lower = display.toLowerCase();
+    if (lower.contains('visa')) return _CardBrand.visa;
+    if (lower.contains('master')) return _CardBrand.mastercard;
+    if (lower.contains('amex') || lower.contains('american')) {
+      return _CardBrand.amex;
     }
-    if (digits.length >= 4) {
-      final prefix4 = int.tryParse(digits.substring(0, 4)) ?? 0;
-      if (prefix4 >= 2221 && prefix4 <= 2720) return _CardBrand.mastercard;
-      if (prefix4 == 6011) return _CardBrand.discover;
-    }
+    if (lower.contains('discover')) return _CardBrand.discover;
     return _CardBrand.unknown;
   }
 
@@ -475,52 +495,27 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           ),
         );
       case _CardBrand.unknown:
-        return Icon(
+        return const Icon(
           Icons.credit_card_rounded,
-          color: const Color(0xFF2196F3),
-          size: size,
+          color: Color(0xFF2196F3),
+          size: 28,
         );
     }
   }
 
   Widget _buildMethodCard(Map<String, dynamic> method) {
     final type = method['method_type'] ?? 'bank_account';
-    final display = method['display_name'] ?? 'Bank account';
+    final rawDisplay = (method['display_name'] ?? 'Bank account').toString();
+    final display = _cleanDisplay(rawDisplay);
     final isDefault = method['is_default'] == true;
     final id = method['id'];
     Widget leadingIcon;
     if (type == 'debit_card') {
-      // Try to detect brand from stored display name (e.g. "Visa ····1234")
-      final brandStr = (method['card_brand'] ?? '').toString().toLowerCase();
-      _CardBrand brand;
-      if (brandStr.contains('visa')) {
-        brand = _CardBrand.visa;
-      } else if (brandStr.contains('master')) {
-        brand = _CardBrand.mastercard;
-      } else if (brandStr.contains('amex') || brandStr.contains('american')) {
-        brand = _CardBrand.amex;
-      } else if (brandStr.contains('discover')) {
-        brand = _CardBrand.discover;
-      } else {
-        // Try from display name
-        final displayLower = display.toLowerCase();
-        if (displayLower.contains('visa')) {
-          brand = _CardBrand.visa;
-        } else if (displayLower.contains('master')) {
-          brand = _CardBrand.mastercard;
-        } else if (displayLower.contains('amex')) {
-          brand = _CardBrand.amex;
-        } else if (displayLower.contains('discover')) {
-          brand = _CardBrand.discover;
-        } else {
-          brand = _CardBrand.unknown;
-        }
-      }
-      leadingIcon = _brandIcon(brand, size: 32);
+      leadingIcon = _brandIcon(_brandFromDisplay(display), size: 32);
     } else {
-      leadingIcon = Icon(
+      leadingIcon = const Icon(
         Icons.account_balance_rounded,
-        color: const Color(0xFF4CAF50),
+        color: Color(0xFF4CAF50),
         size: 24,
       );
     }
@@ -598,6 +593,28 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
           ),
           const SizedBox(width: 8),
+          if (!isDefault)
+            GestureDetector(
+              onTap: () => _setDefault(id),
+              child: Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _gold.withValues(alpha: 0.35)),
+                ),
+                child: const Text(
+                  'Set Default',
+                  style: TextStyle(
+                    color: _gold,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           GestureDetector(
             onTap: () => _confirmDelete(id, display),
             child: Container(
@@ -619,523 +636,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     );
   }
 
-  Future<void> _connectWithPlaid() async {
-    HapticFeedback.mediumImpact();
-    setState(() => _linkingBank = true);
+  Future<void> _setDefault(dynamic id) async {
+    HapticFeedback.lightImpact();
     try {
-      // Use Stripe Connect for bank account setup — handles everything securely
-      final url = await ApiService.getStripeConnectLink();
-      if (!mounted) return;
-      if (url.isNotEmpty) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        // Poll Stripe Connect status until onboarding completes (up to 5 min)
-        if (mounted) {
-          bool connected = false;
-          for (int attempt = 0; attempt < 30 && mounted; attempt++) {
-            // Backoff: 3s for first 10 attempts, then 6s, then 10s
-            final delay = attempt < 10 ? 3 : (attempt < 20 ? 6 : 10);
-            await Future.delayed(Duration(seconds: delay));
-            if (!mounted) break;
-            try {
-              final status = await ApiService.getStripeConnectStatus();
-              if (status['connected'] == true) {
-                connected = true;
-                if (!mounted) break;
-                final acctId = (status['stripe_account_id'] ?? '').toString();
-                final display = 'Stripe Connect ····${acctId.length > 4 ? acctId.substring(acctId.length - 4) : acctId}';
-                await _addMethod('bank_account', display);
-                break;
-              }
-            } catch (_) {}
-          }
-          if (!connected && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Complete Stripe onboarding to activate your bank account.'),
-                duration: Duration(seconds: 5),
-              ),
-            );
-          }
-          if (mounted) await _loadMethods();
-        }
-      } else {
-        // Fallback to manual bank entry form
-        if (mounted) _showBankEntryForm();
-      }
-    } catch (e) {
-      debugPrint('[Payout] Stripe Connect error: $e');
-      if (mounted) _showBankEntryForm();
-    } finally {
-      if (mounted) setState(() => _linkingBank = false);
-    }
-  }
-
-  void _showBankEntryForm() {
-    final institutionCtrl = TextEditingController();
-    final routingCtrl = TextEditingController();
-    final accountCtrl = TextEditingController();
-    String selectedType = 'checking';
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(28),
-            decoration: const BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white12,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.account_balance_rounded,
-                        color: _gold,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        S.of(context).linkBankAccount,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    S.of(context).enterBankDetails,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      _typeChip(
-                        S.of(context).checkingAccount,
-                        'checking',
-                        selectedType,
-                        Icons.account_balance_rounded,
-                        (v) {
-                          setModalState(() => selectedType = v);
-                        },
-                      ),
-                      const SizedBox(width: 10),
-                      _typeChip(
-                        S.of(context).savingsAccount,
-                        'savings',
-                        selectedType,
-                        Icons.savings_rounded,
-                        (v) {
-                          setModalState(() => selectedType = v);
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _inputField(
-                    S.of(context).bankNameLabel,
-                    S.of(context).bankNameHint,
-                    institutionCtrl,
-                    Icons.business_rounded,
-                  ),
-                  const SizedBox(height: 12),
-                  _inputField(
-                    S.of(context).routingNumberLabel,
-                    S.of(context).routingNumberHint,
-                    routingCtrl,
-                    Icons.numbers_rounded,
-                    keyboard: TextInputType.number,
-                  ),
-                  const SizedBox(height: 12),
-                  _inputField(
-                    S.of(context).accountNumberLabel,
-                    S.of(context).accountNumberHint,
-                    accountCtrl,
-                    Icons.lock_outline_rounded,
-                    keyboard: TextInputType.number,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.shield_rounded,
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        S.of(context).infoEncryptedSecure,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (institutionCtrl.text.trim().isEmpty ||
-                            accountCtrl.text.trim().isEmpty) {
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        final acct = accountCtrl.text.trim();
-                        final mask = acct.length >= 4
-                            ? acct.substring(acct.length - 4)
-                            : acct;
-                        await _addMethod(
-                          'bank_account',
-                          '${institutionCtrl.text.trim()} ····$mask',
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(
-                        S.of(context).linkAccountButton,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _connectDebitCard() {
-    HapticFeedback.mediumImpact();
-    final cardCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final expiryCtrl = TextEditingController();
-    _CardBrand detectedBrand = _CardBrand.unknown;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            padding: const EdgeInsets.all(28),
-            decoration: const BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white12,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.credit_card_rounded,
-                        color: Color(0xFF2196F3),
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        S.of(context).addDebitCardTitle,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    S.of(context).addDebitForCashouts,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Card number with brand icon
-                  TextFormField(
-                    controller: cardCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(16),
-                      _CardNumberFormatter(),
-                    ],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.5,
-                    ),
-                    onChanged: (val) {
-                      final brand = _detectBrand(val);
-                      if (brand != detectedBrand) {
-                        setModalState(() => detectedBrand = brand);
-                      }
-                    },
-                    decoration: InputDecoration(
-                      labelText: S.of(context).cardNumberLabel,
-                      hintText: '0000 0000 0000 0000',
-                      labelStyle: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
-                      hintStyle: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        letterSpacing: 2,
-                      ),
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.only(left: 14, right: 10),
-                        child: _brandIcon(detectedBrand, size: 24),
-                      ),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 48),
-                      suffixIcon: detectedBrand != _CardBrand.unknown
-                          ? Padding(
-                              padding: const EdgeInsets.only(right: 14),
-                              child: Icon(
-                                Icons.check_circle_rounded,
-                                color: const Color(0xFF4CAF50),
-                                size: 20,
-                              ),
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(minWidth: 32),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.04),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: _gold.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Cardholder name
-                  _inputField(
-                    S.of(context).cardholderNameLabel,
-                    S.of(context).nameLabel,
-                    nameCtrl,
-                    Icons.person_outline_rounded,
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Expiry with MM/YY formatter
-                  TextFormField(
-                    controller: expiryCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(4),
-                      _ExpiryFormatter(),
-                    ],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 2,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: S.of(context).expiryLabel,
-                      hintText: 'MM/YY',
-                      labelStyle: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
-                      hintStyle: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        letterSpacing: 2,
-                      ),
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.only(left: 14, right: 10),
-                        child: Icon(
-                          Icons.calendar_today_rounded,
-                          color: _gold.withValues(alpha: 0.6),
-                          size: 20,
-                        ),
-                      ),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 48),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.04),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: _gold.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.flash_on_rounded,
-                        color: _gold.withValues(alpha: 0.6),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        S.of(context).instantCashoutDebit,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final rawCard =
-                            cardCtrl.text.trim().replaceAll(' ', '');
-                        if (rawCard.length < 13 ||
-                            nameCtrl.text.trim().isEmpty ||
-                            expiryCtrl.text.trim().length < 5) {
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        final last4 = rawCard.substring(rawCard.length - 4);
-                        final brand = _detectBrand(rawCard);
-                        final brandName = _brandDisplayName(brand);
-                        final display = '$brandName ····$last4';
-                        await _addMethod('debit_card', display);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(
-                        S.of(context).addCardButton,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _brandDisplayName(_CardBrand brand) {
-    switch (brand) {
-      case _CardBrand.visa:
-        return 'Visa';
-      case _CardBrand.mastercard:
-        return 'Mastercard';
-      case _CardBrand.amex:
-        return 'Amex';
-      case _CardBrand.discover:
-        return 'Discover';
-      case _CardBrand.unknown:
-        return 'Debit';
-    }
-  }
-
-  Future<void> _addMethod(String type, String displayName) async {
-    setState(() => _loading = true);
-    try {
-      final result = await ApiService.addPayoutMethod(
-        methodType: type,
-        displayName: displayName,
+      await ApiService.setDefaultPayoutMethod(
+        id is int ? id : int.parse(id.toString()),
       );
-      _methods.add(result);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              type == 'debit_card'
-                  ? S.of(context).debitCardAdded
-                  : S.of(context).bankAccountLinked,
-            ),
-            backgroundColor: _gold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      await _loadMethods();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1150,7 +657,180 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         );
       }
     }
-    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _connectBankAccount() async {
+    HapticFeedback.mediumImpact();
+    setState(() => _linkingBank = true);
+    try {
+      final url = await ApiService.getStripeConnectLink();
+      if (!mounted) return;
+      if (url.isEmpty) {
+        // No Stripe configured server-side — bail out cleanly.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bank linking is temporarily unavailable.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+
+      // Poll Stripe Connect status until both charges_enabled AND
+      // payouts_enabled flip true (up to ~5 min).
+      bool connected = false;
+      for (int attempt = 0; attempt < 30 && mounted; attempt++) {
+        final delay = attempt < 10 ? 3 : (attempt < 20 ? 6 : 10);
+        await Future.delayed(Duration(seconds: delay));
+        if (!mounted) break;
+        try {
+          final status = await ApiService.getStripeConnectStatus();
+          final ok = status['connected'] == true &&
+              status['payouts_enabled'] == true;
+          if (ok) {
+            connected = true;
+            if (!mounted) break;
+            final acctId = (status['stripe_account_id'] ?? '').toString();
+            final tail = acctId.length > 4
+                ? acctId.substring(acctId.length - 4)
+                : acctId;
+            await _addBankMethod('Bank account ····$tail');
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!connected && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Complete Stripe onboarding to activate your bank account.',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      if (mounted) await _loadMethods();
+    } catch (e) {
+      debugPrint('[Payout] Stripe Connect error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).failedToAddMethod),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _linkingBank = false);
+    }
+  }
+
+  Future<void> _addBankMethod(String displayName) async {
+    try {
+      await ApiService.addPayoutMethod(
+        methodType: 'bank_account',
+        displayName: displayName,
+        setDefault: _methods.isEmpty,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).bankAccountLinked),
+            backgroundColor: _gold,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      // Silent — _loadMethods() will surface anything that did persist
+      // server-side. Most likely cause is a duplicate row from a retry.
+    }
+  }
+
+  /// Open the Stripe Flutter SDK card sheet, tokenize the PAN, then send
+  /// the resulting card_token to our backend so it can be attached as a
+  /// Stripe Connect external_account. The raw PAN never reaches our
+  /// servers.
+  Future<void> _connectDebitCard() async {
+    HapticFeedback.mediumImpact();
+    setState(() => _linkingBank = true);
+    try {
+      // Stripe.instance.createToken with CardTokenParams.
+      // The Stripe SDK raises a native sheet when called the first time
+      // in a session if no card is buffered. For drivers we use the
+      // embedded CardField approach in the Wallet flow already, so here
+      // we present a SetupIntent-style sheet.
+      final tokenResult = await stripe.Stripe.instance.createToken(
+        const stripe.CreateTokenParams.card(
+          params: stripe.CardTokenParams(
+            type: stripe.TokenType.Card,
+          ),
+        ),
+      );
+      final tokenId = tokenResult.id;
+      if (tokenId.isEmpty) {
+        throw Exception('Empty card token from Stripe');
+      }
+
+      await ApiService.addDebitCardPayout(
+        cardToken: tokenId,
+        setDefault: _methods.isEmpty,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).debitCardAdded),
+            backgroundColor: _gold,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+      if (mounted) await _loadMethods();
+    } on stripe.StripeException catch (e) {
+      if (e.error.code == stripe.FailureCode.Canceled) {
+        // User dismissed the card sheet — silent no-op.
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.error.localizedMessage ?? S.of(context).failedToAddMethod,
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Payout] addDebitCard error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).failedToAddMethod),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _linkingBank = false);
+    }
   }
 
   void _confirmDelete(dynamic id, String name) {
@@ -1289,142 +969,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       }
     }
   }
-
-  Widget _typeChip(
-    String label,
-    String value,
-    String selected,
-    IconData icon,
-    ValueChanged<String> onTap,
-  ) {
-    final sel = value == selected;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onTap(value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: sel
-                ? _gold.withValues(alpha: 0.12)
-                : Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: sel
-                  ? _gold.withValues(alpha: 0.4)
-                  : Colors.white.withValues(alpha: 0.06),
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: sel ? _gold : Colors.white.withValues(alpha: 0.4),
-                size: 24,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: sel ? _gold : Colors.white.withValues(alpha: 0.5),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _inputField(
-    String label,
-    String hint,
-    TextEditingController ctrl,
-    IconData icon, {
-    TextInputType keyboard = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: ctrl,
-      keyboardType: keyboard,
-      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2)),
-        prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(icon, color: _gold.withValues(alpha: 0.6), size: 20),
-        ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 48),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.04),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 14,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: _gold.withValues(alpha: 0.5)),
-        ),
-      ),
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  Card brand enum
 // ═══════════════════════════════════════════════════════════════
 enum _CardBrand { visa, mastercard, amex, discover, unknown }
-
-// ═══════════════════════════════════════════════════════════════
-//  Card number formatter: 1234 5678 9012 3456
-// ═══════════════════════════════════════════════════════════════
-class _CardNumberFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(' ', '');
-    final buffer = StringBuffer();
-    for (int i = 0; i < digits.length; i++) {
-      if (i > 0 && i % 4 == 0) buffer.write(' ');
-      buffer.write(digits[i]);
-    }
-    final formatted = buffer.toString();
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Expiry formatter: MM/YY
-// ═══════════════════════════════════════════════════════════════
-class _ExpiryFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll('/', '');
-    if (digits.isEmpty) return newValue;
-    final buffer = StringBuffer();
-    for (int i = 0; i < digits.length; i++) {
-      if (i == 2) buffer.write('/');
-      buffer.write(digits[i]);
-    }
-    final formatted = buffer.toString();
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
-}

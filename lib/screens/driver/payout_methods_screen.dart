@@ -4,6 +4,7 @@ import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Payout Methods screen — Stripe Connect-powered, real end-to-end.
 ///
@@ -67,8 +68,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -317,7 +318,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

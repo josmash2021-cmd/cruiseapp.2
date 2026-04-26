@@ -15,6 +15,7 @@ import 'driver_home_screen.dart';
 import 'driver_profile_photo_screen.dart';
 import 'driver_signup_screen.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Shown after a driver submits their application.
 /// Polls the backend every 5 seconds for dispatch approval.
@@ -413,14 +414,14 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1A1A1F),
-        body: SafeArea(
+        backgroundColor: Colors.black,
+        body: GoldParticlesBackground(child: SafeArea(
           child: _status == 'approved'
               ? _buildApproved()
               : _status == 'rejected'
               ? _buildRejected()
               : _buildPending(),
-        ),
+        )),
       ),
     );
   }

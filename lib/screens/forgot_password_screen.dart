@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../widgets/gold_particles_background.dart';
 
 /// Forgot password — enter email, receive reset link by email.
 class ForgotPasswordScreen extends StatefulWidget {
@@ -65,8 +66,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -254,7 +255,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 

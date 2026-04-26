@@ -15,6 +15,7 @@ import '../../services/user_session.dart';
 import '../face_liveness_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'license_scanner_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Multi-step driver sign-up + verification flow.
 ///
@@ -879,9 +880,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
+      backgroundColor: Colors.black,
       resizeToAvoidBottomInset: true,
-      body: GestureDetector(
+      body: GoldParticlesBackground(child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(
           children: [
@@ -982,7 +983,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

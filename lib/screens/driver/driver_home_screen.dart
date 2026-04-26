@@ -66,7 +66,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   // ignore: unused_field
-  static const _surface = Color(0xFF252528);
+  static const _surface = Color(0xFF1A1A1F);
   static const _card = Color(0xFF1C1C1E);
 
   // ── Map ──
@@ -926,7 +926,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Widget _buildBottomNav(dynamic dc) {
     return NavigationBar(
-      backgroundColor: const Color(0xFF252528),
+      backgroundColor: const Color(0xFF1A1A1F),
       indicatorColor: const Color(0xFFE8C547).withValues(alpha: 0.15),
       surfaceTintColor: Colors.transparent,
       elevation: 0,
@@ -1006,7 +1006,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
           // ── Full-screen map ──

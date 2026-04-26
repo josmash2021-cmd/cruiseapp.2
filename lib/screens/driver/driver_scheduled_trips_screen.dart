@@ -8,6 +8,7 @@ import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Premium Scheduled Trips screen for drivers.
 /// Shows upcoming assigned rides with airport indicators and pickup zone info.
@@ -114,15 +115,15 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     final c = AppColors.of(context);
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: CustomScrollView(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Premium App Bar ──
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
-            backgroundColor: const Color(0xFF1A1A1F),
+            backgroundColor: Colors.black,
             surfaceTintColor: Colors.transparent,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),
@@ -243,7 +244,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
               ),
             ),
         ],
-      ),
+      )),
     );
   }
 

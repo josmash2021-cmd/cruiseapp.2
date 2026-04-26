@@ -7,6 +7,7 @@ import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../home_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Vehicle management screen – view car details & upload vehicle documents.
 class DriverVehicleScreen extends StatefulWidget {
@@ -288,8 +289,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: _loading
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
           : Stack(
@@ -355,7 +356,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 ),
 
               ],
-            ),
+            )),
     );
   }
 

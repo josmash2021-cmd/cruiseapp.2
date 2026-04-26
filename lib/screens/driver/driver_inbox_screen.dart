@@ -5,6 +5,7 @@ import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../home_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Driver Inbox – tabs: All, Messages, Alerts, Updates, Deals
 class DriverInboxScreen extends StatefulWidget {
@@ -143,8 +144,8 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -329,7 +330,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

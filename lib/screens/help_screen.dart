@@ -12,6 +12,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import '../widgets/gold_particles_background.dart';
 
 /// Fully functional Help & Support screen with topic detail pages,
 /// search, FAQs, and contact options.
@@ -226,8 +227,8 @@ class _HelpScreenState extends State<HelpScreen> {
     final searchResults = _filteredTopics;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -335,7 +336,7 @@ class _HelpScreenState extends State<HelpScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -680,8 +681,8 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           children: [
             Padding(
@@ -856,7 +857,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

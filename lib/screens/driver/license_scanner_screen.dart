@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Full-screen camera scanner with document-frame overlay and OCR.
 /// Detects text on the license to confirm a real document is present,
@@ -299,8 +300,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: _capturedPath != null ? _buildPreview() : _buildScanner(),
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: _capturedPath != null ? _buildPreview() : _buildScanner()),
     );
   }
 

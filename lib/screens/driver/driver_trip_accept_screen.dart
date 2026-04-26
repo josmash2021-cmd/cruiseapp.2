@@ -106,7 +106,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _gold   = Color(0xFFD4A843);
   static const _bg     = Color(0xFF0A0A0A);
-  static const _card   = Color(0xFF252528);
+  static const _card   = Color(0xFF1A1A1F);
   static const _border = Color(0xFF262626);
 
   // ── Firestore doc ID (matches backend convention) ─────────────────────
@@ -1216,7 +1216,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF252528),
+          color: Color(0xFF1A1A1F),
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
         padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
@@ -1562,7 +1562,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       isScrollControlled: true,
       builder: (_) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF252528),
+          color: Color(0xFF1A1A1F),
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
         padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),

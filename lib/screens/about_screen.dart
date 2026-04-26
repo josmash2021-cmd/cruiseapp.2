@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/gold_particles_background.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -50,8 +51,8 @@ class _AboutScreenState extends State<AboutScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -198,7 +199,7 @@ class _AboutScreenState extends State<AboutScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 

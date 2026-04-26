@@ -11,6 +11,7 @@ import '../services/error_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
+import '../widgets/gold_particles_background.dart';
 
 /// Full-page chat screen — real-time via Firebase RTDB for trip chats,
 /// REST API polling for support chat.
@@ -504,8 +505,8 @@ class _ChatScreenState extends State<ChatScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1A1A1F),
-        body: Column(
+        backgroundColor: Colors.black,
+        body: GoldParticlesBackground(child: Column(
           children: [
             // ── App bar ──
             _buildAppBar(s, topPad),
@@ -523,7 +524,7 @@ class _ChatScreenState extends State<ChatScreen> {
             // ── Input bar ──
             _buildInputBar(s, bottomPad, safePad),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -534,7 +535,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: EdgeInsets.only(top: topPad + 8, bottom: 12, left: 8, right: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF252528),
+        color: const Color(0xFF1A1A1F),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -930,7 +931,7 @@ class _ChatScreenState extends State<ChatScreen> {
         bottom: bottomPad > 0 ? 8 : safePad + 8,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF252528),
+        color: const Color(0xFF1A1A1F),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),

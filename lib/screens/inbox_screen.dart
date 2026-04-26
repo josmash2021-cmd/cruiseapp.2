@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../widgets/verified_avatar.dart';
+import '../widgets/gold_particles_background.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -39,8 +40,8 @@ class _InboxScreenState extends State<InboxScreen>
     final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -138,7 +139,7 @@ class _InboxScreenState extends State<InboxScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 }
@@ -686,7 +687,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ((a['timestamp'] as int?) ?? 0).compareTo((b['timestamp'] as int?) ?? 0));
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -704,7 +705,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: sorted.isEmpty
+      body: GoldParticlesBackground(child: sorted.isEmpty
           ? Center(
               child: Text(
                 S.of(context).noMessagesInConversation,
@@ -767,7 +768,7 @@ class _ConversationDetailScreen extends StatelessWidget {
                   ),
                 );
               },
-            ),
+            )),
     );
   }
 }

@@ -10,6 +10,7 @@ import '../../services/firebase_storage_service.dart';
 import '../../services/photo_recovery_service.dart';
 import '../../services/user_session.dart';
 import 'driver_home_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// After approval, the driver must upload a profile photo before entering the app.
 class DriverProfilePhotoScreen extends StatefulWidget {
@@ -45,7 +46,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     final s = S.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF252528),
+      backgroundColor: const Color(0xFF1A1A1F),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -145,8 +146,8 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     return PopScope(
       canPop: widget.returnOnly,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1A1A1F),
-        body: SafeArea(
+        backgroundColor: Colors.black,
+        body: GoldParticlesBackground(child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Column(
@@ -281,7 +282,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
               ],
             ),
           ),
-        ),
+        )),
       ),
     );
   }

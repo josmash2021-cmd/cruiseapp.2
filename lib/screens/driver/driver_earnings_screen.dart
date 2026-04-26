@@ -8,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Full-featured earnings screen — fetches real data from the backend.
 /// Falls back to empty state if API is unreachable.
@@ -201,8 +202,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     final s = S.of(context);
     final periods = [s.today, s.thisWeek, s.thisMonth];
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: CustomScrollView(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App bar ──
@@ -441,7 +442,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

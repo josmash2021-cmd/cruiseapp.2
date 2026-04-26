@@ -7,6 +7,7 @@ import '../services/local_data_service.dart';
 import '../services/api_service.dart';
 import '../widgets/tier_badge.dart';
 import 'trip_receipt_screen.dart';
+import '../widgets/gold_particles_background.dart';
 
 class RideHistoryScreen extends StatefulWidget {
   const RideHistoryScreen({super.key});
@@ -82,8 +83,8 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -153,7 +154,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -216,7 +217,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF252528),
+          color: const Color(0xFF1A1A1F),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Colors.white.withValues(alpha: 0.06),

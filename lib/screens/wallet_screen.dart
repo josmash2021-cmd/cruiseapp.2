@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import 'payment_accounts_screen.dart';
 import 'referral_screen.dart';
+import '../widgets/gold_particles_background.dart';
 
 /// WalletScreen - Rider payment methods configured for trip payments.
 class WalletScreen extends StatefulWidget {
@@ -154,8 +155,8 @@ class _WalletScreenState extends State<WalletScreen> {
     final loc = S.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -214,7 +215,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -310,7 +311,7 @@ class _WalletScreenState extends State<WalletScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
         decoration: BoxDecoration(
-          color: const Color(0xFF252528),
+          color: const Color(0xFF1A1A1F),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _gold.withValues(alpha: 0.30), width: 1.2),
           boxShadow: [

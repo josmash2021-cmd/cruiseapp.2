@@ -73,7 +73,7 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFD4AF37);
   static const _bg = Color(0xFF0A0A0A);
-  static const _card = Color(0xFF252528);
+  static const _card = Color(0xFF1A1A1F);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;

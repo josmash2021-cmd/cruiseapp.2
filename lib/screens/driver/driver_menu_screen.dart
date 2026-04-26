@@ -43,7 +43,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF252528);
+  static const _surface = Color(0xFF1A1A1F);
   static const _card = Color(0xFF1C1C1E);
 
   // ── Dynamic profile data ──

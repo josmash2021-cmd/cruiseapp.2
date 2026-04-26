@@ -12,6 +12,7 @@ import '../../widgets/user_profile_photo.dart';
 import '../../widgets/common/profile_avatar.dart';
 import 'driver_trip_history_screen.dart';
 import 'cruise_level_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Driver profile screen – Uber-style with stats cards, lifetime highlights, badges.
 class DriverProfileScreen extends StatefulWidget {
@@ -1216,8 +1217,8 @@ class _StatDetailScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           children: [
             // Top bar
@@ -1374,7 +1375,7 @@ class _StatDetailScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

@@ -10,6 +10,7 @@ import '../login_password_screen.dart';
 import 'driver_signup_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_pending_review_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Driver login screen — email + password for existing drivers.
 class DriverLoginScreen extends StatefulWidget {
@@ -219,8 +220,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
     final pad = MediaQuery.of(context).padding;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: GestureDetector(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(
           children: [
@@ -508,7 +509,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

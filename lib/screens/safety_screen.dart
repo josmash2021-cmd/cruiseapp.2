@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
+import '../widgets/gold_particles_background.dart';
 
 class SafetyScreen extends StatefulWidget {
   const SafetyScreen({super.key});
@@ -41,8 +42,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1F),
-      body: SafeArea(
+      backgroundColor: Colors.black,
+      body: GoldParticlesBackground(child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -169,7 +170,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 

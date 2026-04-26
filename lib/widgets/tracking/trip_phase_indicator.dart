@@ -115,7 +115,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+        color: Colors.black,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -139,103 +139,109 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
   /// Arriving phase: dot + status label + bold text + ETA badge
   Widget _buildArrivingContent(Color dotColor) {
-    final String topText = _topStatusText;
     final String bottomText = _bottomCardText;
+    // When driver is essentially here (<= 300m or 0 min), drop the ETA
+    // badge and let the status text expand to fill the whole card so
+    // "Driver is here" / "Driver is waiting" reads big and clear.
+    final double distM = _distanceMiles * 1609.34;
+    final bool hideEta = _etaMinutes <= 0 || distM <= 300;
 
     return Row(
-      key: const ValueKey('arriving_content'),
+      key: ValueKey('arriving_${hideEta ? 'final' : _etaMinutes}'),
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
+            mainAxisAlignment: hideEta
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 500),
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: dotColor,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dotColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: Text(
+                    bottomText,
+                    key: ValueKey(bottomText),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: hideEta ? 17 : 15,
+                      fontWeight: FontWeight.w700,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      transitionBuilder: (child, anim) =>
-                          FadeTransition(opacity: anim, child: child),
-                      child: Text(
-                        topText,
-                        key: ValueKey(topText),
-                        style: TextStyle(
-                          color: dotColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!hideEta) ...[
+          const SizedBox(width: 12),
+          // Live ETA badge — _etaMinutes is read from the controller
+          // state on every rebuild so it tracks the real-time countdown
+          // pushed by the driver-location listener.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, anim) {
+                    return FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.3),
+                          end: Offset.zero,
+                        ).animate(anim),
+                        child: child,
                       ),
+                    );
+                  },
+                  child: Text(
+                    '$_etaMinutes',
+                    key: ValueKey('eta_$_etaMinutes'),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                transitionBuilder: (child, anim) =>
-                    FadeTransition(opacity: anim, child: child),
-                child: Text(
-                  bottomText,
-                  key: ValueKey(bottomText),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        // ETA badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$_etaMinutes',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
+                const Text(
+                  'min',
+                  style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
                 ),
-              ),
-              const Text(
-                'min',
-                style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -294,104 +300,108 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     );
   }
 
-  /// OnTrip / NearDestination: status + ETA badge (dropoff ETA)
+  /// OnTrip / NearDestination: single status + live ETA badge.
+  /// Drops the duplicated gold mini-label that previously sat above
+  /// the white status text. Hides the ETA badge entirely once we are
+  /// essentially at the destination so the text can expand to fill
+  /// the whole card.
   Widget _buildOnTripContent(Color dotColor) {
-    final String topText = _topStatusText;
     final String bottomText = _bottomCardText;
+    final double distM = _distanceMiles * 1609.34;
+    final bool hideEta = _etaMinutes <= 0 || distM <= 200;
 
     return Row(
-      key: ValueKey('ontrip_${_phase}_$_etaMinutes'),
+      key: ValueKey('ontrip_${_phase}_${hideEta ? 'final' : _etaMinutes}'),
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
+            mainAxisAlignment: hideEta
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: dotColor,
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dotColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: Text(
+                    bottomText,
+                    key: ValueKey(bottomText),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: hideEta ? 17 : 15,
+                      fontWeight: FontWeight.w700,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      transitionBuilder: (child, anim) =>
-                          FadeTransition(opacity: anim, child: child),
-                      child: Text(
-                        topText,
-                        key: ValueKey(topText),
-                        style: TextStyle(
-                          color: dotColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!hideEta) ...[
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, anim) {
+                    return FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.3),
+                          end: Offset.zero,
+                        ).animate(anim),
+                        child: child,
                       ),
+                    );
+                  },
+                  child: Text(
+                    '$_etaMinutes',
+                    key: ValueKey('eta_$_etaMinutes'),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                transitionBuilder: (child, anim) =>
-                    FadeTransition(opacity: anim, child: child),
-                child: Text(
-                  bottomText,
-                  key: ValueKey(bottomText),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        // ETA badge (dropoff ETA)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$_etaMinutes',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
+                const Text(
+                  'min',
+                  style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
                 ),
-              ),
-              const Text(
-                'min',
-                style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

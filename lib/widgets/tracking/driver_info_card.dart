@@ -55,7 +55,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+        color: Colors.black,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(

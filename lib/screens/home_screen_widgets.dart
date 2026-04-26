@@ -312,6 +312,26 @@ extension _HomeScreenWidgets on _HomeScreenState {
         final frac = ((size - 0.85) / (_kMaxSheet - 0.85)).clamp(0.0, 1.0);
         final r = 28.0 * (1.0 - frac);
         final topExtra = frac * topPad;
+
+        // ── Collapsed → expanded crossfade ───────────────────────
+        // collapseT = 1.0 when fully collapsed (mini bar), 0.0 when
+        // anywhere above the lower 30% of the drag range.
+        // Curve is sharp on purpose so the full sheet feels "snapped
+        // into view" rather than a slow muddy fade.
+        final dragRange = (_kMaxSheet - _kMinSheet);
+        final raw = ((size - _kMinSheet) / dragRange).clamp(0.0, 1.0);
+        final expandT = Curves.easeOutCubic.transform(
+          (raw / 0.18).clamp(0.0, 1.0),
+        );
+        final collapseT = 1.0 - expandT;
+        // Drive the collapsed glow only while the bar is visible —
+        // saves frames when fully expanded.
+        if (collapseT > 0.05 && !_collapsedGlowCtrl.isAnimating) {
+          _collapsedGlowCtrl.repeat();
+        } else if (collapseT <= 0.05 && _collapsedGlowCtrl.isAnimating) {
+          _collapsedGlowCtrl.stop();
+        }
+
         return DecoratedBox(
           decoration: BoxDecoration(
             color: Colors.black,
@@ -324,7 +344,36 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ],
           ),
-          child: ClipRRect(
+          child: Stack(
+            children: [
+              // ── Animated gold border on the mini bar ───────────
+              // Painted as a Stack peer so it only ever covers the
+              // mini-bar region and never bleeds into the expanded
+              // content above.
+              if (collapseT > 0.05)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: MediaQuery.of(context).size.height * _kMinSheet,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: collapseT,
+                      child: AnimatedBuilder(
+                        animation: _collapsedGlowCtrl,
+                        builder: (_, __) => CustomPaint(
+                          foregroundPainter: SearchingBorderPainter(
+                            progress: _collapsedGlowCtrl.value,
+                            expansion: 1.0,
+                            cornerRadius: 28.0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
             child: CustomScrollView(
               controller: sc,
@@ -358,7 +407,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: RepaintBoundary(child: _buildTopBar()),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24 * expandT),
+
+              // ── Everything below the topbar fades in/out with the
+              // collapsed → expanded transition. While collapsed the
+              // content has 0 opacity AND ignores hits so the user
+              // can't accidentally tap the hidden Where-to? card.
+              Opacity(
+                opacity: expandT,
+                child: IgnorePointer(
+                  ignoring: collapseT > 0.5,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
 
               // ── Hero CTA ("Where to?" / "Ride in progress") ── ONE card only
               Padding(
@@ -470,11 +531,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
               if (_activeRide != null)
                 const SizedBox(height: 20),
+                    ],
+                  ),  // close inner Column wrapped by Opacity/IgnorePointer
+                ),    // close IgnorePointer
+              ),      // close Opacity
                 ],
               )),
               ],
             ),
           ),
+            ],  // close Stack children
+          ),    // close Stack
         );
       },
     );

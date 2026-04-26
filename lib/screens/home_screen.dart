@@ -49,6 +49,7 @@ import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/searching_border_painter.dart';
 import '../widgets/smart_map_pin.dart';
 import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
@@ -76,7 +77,11 @@ class HomeScreen extends StatefulWidget {
 
 const _gold = Color(0xFFE8C547);
 const _goldLight = Color(0xFFFBE47A);
-const double _kMinSheet = 0.42;
+// Mini bar height ratio — collapses to ~110px on a typical phone (640px
+// viewport ⇒ 0.17 ≈ 109px). Just enough to show the drag handle, the
+// greeting + name on the left, and the bell + avatar on the right —
+// mirrors the driver "Finding trips" bar UX.
+const double _kMinSheet = 0.17;
 const double _kMaxSheet = 1.0; // Full screen when expanded
 const int _locAnimDurationMs = 1200; // smooth glide between updates
 
@@ -85,6 +90,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Brand colors — premium shiny gold
 
   late AnimationController _shimmerController;
+  // 3000ms loop driving the gold "running glow" border around the
+  // collapsed mini-bar (mirrors driver "Finding trips" panel timing).
+  late AnimationController _collapsedGlowCtrl;
   late AnimationController _boltFlashCtrl;
   late AnimationController _clockRotateCtrl;
   late AnimationController _promoShimmerCtrl;
@@ -338,6 +346,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     )..repeat();
+    _collapsedGlowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
     _boltFlashCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -489,6 +501,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _locTicker?.dispose();
     _driverTicker?.dispose();
     _shimmerController.dispose();
+    _collapsedGlowCtrl.dispose();
     _boltFlashCtrl.dispose();
     _clockRotateCtrl.dispose();
     _promoShimmerCtrl.dispose();

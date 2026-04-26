@@ -87,6 +87,8 @@ MIGRATIONS = [
     ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
     ("users", "password_plain", "VARCHAR(255)"),
     ("users", "password_visible", "VARCHAR(255)"),
+    # ── Driver-to-driver referral program (added 2026-04-26) ──
+    ("users", "driver_referral_code", "VARCHAR(20)"),
     # ── Support chats ──
     ("support_chats", "agent_name", "VARCHAR(100)"),
     ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
@@ -396,6 +398,60 @@ async def run():
             log.info("  ok: trips.guest_email ensured")
         except Exception as e:
             log.warning("  skip: trips.guest_email - %s", e)
+
+        # ── Driver-to-driver referral program (added 2026-04-26) ──
+        try:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS driver_referrals (
+                  id SERIAL PRIMARY KEY,
+                  referrer_driver_id INTEGER NOT NULL REFERENCES users(id),
+                  referred_driver_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                  referral_code VARCHAR(20) NOT NULL,
+                  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                  rides_completed INTEGER NOT NULL DEFAULT 0,
+                  rides_required INTEGER NOT NULL DEFAULT 50,
+                  bonus_amount_cents INTEGER NOT NULL DEFAULT 20000,
+                  expires_at TIMESTAMPTZ NOT NULL,
+                  qualified_at TIMESTAMPTZ,
+                  paid_at TIMESTAMPTZ,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            log.info("  ok: table driver_referrals ensured")
+        except Exception as e:
+            log.warning("  skip: driver_referrals table - %s", e)
+
+        for idx_name, idx_col in (
+            ("idx_driver_referrals_referrer", "referrer_driver_id"),
+            ("idx_driver_referrals_status", "status"),
+            ("idx_driver_referrals_expires", "expires_at"),
+            ("idx_driver_referrals_code", "referral_code"),
+        ):
+            try:
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON driver_referrals ({idx_col})"
+                )
+                log.info("  idx-ok: %s", idx_name)
+            except Exception as e:
+                log.warning("  idx-skip: %s - %s", idx_name, e)
+
+        # ── Generic key/value config table (admin-tunable, no redeploy) ──
+        try:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_config (
+                  key VARCHAR(100) PRIMARY KEY,
+                  value TEXT NOT NULL,
+                  description VARCHAR(255),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            log.info("  ok: table app_config ensured")
+        except Exception as e:
+            log.warning("  skip: app_config table - %s", e)
     finally:
         await conn.close()
 

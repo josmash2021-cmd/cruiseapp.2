@@ -238,6 +238,47 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     return _trip_dict(trip)
 
 
+@router.get("/admin/stripe/instant-payouts-status", dependencies=[Depends(_verify_api_key)])
+async def admin_check_instant_payouts():
+    """Verify whether Instant Payouts is enabled at the platform level.
+
+    Lists the Connect platform's capabilities and surfaces whether
+    ``instant_payouts`` is granted. Use this before promising drivers
+    instant cashout in production — a platform without the capability
+    will get every Stripe.Payout(method="instant") rejected.
+    """
+    from config import STRIPE_SECRET
+    if not STRIPE_SECRET:
+        return {"ok": False, "error": "STRIPE_SECRET not configured"}
+    try:
+        import stripe as _s
+        _s.api_key = STRIPE_SECRET
+        # Retrieve the platform's own account (no id arg = the calling
+        # account, i.e. your platform).
+        acct = _s.Account.retrieve()
+        caps = acct.get("capabilities", {}) or {}
+        country = acct.get("country")
+        # On Express, Stripe also exposes a top-level `payouts_enabled`
+        # and a per-capability dict. We surface both for clarity.
+        return {
+            "ok": True,
+            "platform_country": country,
+            "platform_charges_enabled": acct.get("charges_enabled"),
+            "platform_payouts_enabled": acct.get("payouts_enabled"),
+            "instant_payouts_capability": caps.get("instant_payouts"),
+            "all_capabilities": caps,
+            "guidance": (
+                "If 'instant_payouts_capability' is null or 'inactive', request it "
+                "via Stripe support: https://support.stripe.com/contact "
+                "(category: Connect → request capability instant_payouts). "
+                "Without it, Stripe.Payout(method='instant') will fail at "
+                "request time with a clear error."
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @router.post("/admin/cancel-all-active", dependencies=[Depends(_verify_api_key)])
 async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
     """Emergency: cancel ALL active trips. Requires API key auth.

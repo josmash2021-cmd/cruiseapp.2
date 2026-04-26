@@ -48,6 +48,7 @@ import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
 import 'ride_booking_confirmed_screen.dart';
 import 'ride_payment_method_screen.dart';
+import 'tap_to_pay_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
 import 'waiting_for_driver_screen.dart';

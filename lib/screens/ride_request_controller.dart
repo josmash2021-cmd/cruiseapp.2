@@ -1772,12 +1772,38 @@ extension _RideRequestController on _RideRequestScreenState {
       showTestMode: true,
     );
     if (picked == null || !mounted) return;
+    
+    // Handle Tap to Pay selection
+    if (picked == PaymentMethodId.tapToPay) {
+      _setState(() => _selectedPaymentMethod = PaymentMethodId.tapToPay);
+      return;
+    }
+    
     final mapped = picked == 'card' ? 'credit_card' : picked;
     _setState(() => _selectedPaymentMethod = mapped);
     if (mapped == 'credit_card' &&
         !_linkedPaymentMethods.contains('credit_card')) {
       // No card on file yet — jump straight to the credit-card entry screen.
       await _openCreditCardScreen(c, option);
+    }
+  }
+
+  /// Confirms Tap to Pay payment using Stripe Terminal
+  Future<bool> _confirmTapToPay(int amountCents, RideOption option) async {
+    try {
+      final double amount = amountCents / 100.0;
+      
+      final result = await showTapToPayScreen(
+        context: context,
+        amount: amount,
+        currency: 'USD',
+        rideDescription: option.name,
+      );
+      
+      return result == true;
+    } catch (e) {
+      debugPrint('Tap to Pay error: $e');
+      return false;
     }
   }
 
@@ -1879,6 +1905,9 @@ extension _RideRequestController on _RideRequestScreenState {
       methods.add('google_pay');
     }
     
+    // Tap to Pay is always available (uses Stripe Terminal)
+    methods.add('tap_to_pay');
+    
     // Check for saved card
     if (await LocalDataService.getStripePaymentMethodId() != null) {
       methods.add('credit_card');
@@ -1898,6 +1927,8 @@ extension _RideRequestController on _RideRequestScreenState {
           return await _confirmApplePay(amountCents, option.name);
         case 'google_pay':
           return await _confirmGooglePay(amountCents, option.name);
+        case 'tap_to_pay':
+          return await _confirmTapToPay(amountCents, option);
         case 'credit_card':
           return await _confirmCard(amountCents);
         case 'paypal':
@@ -1925,6 +1956,8 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       if (isNativePay) {
         return await _confirmNativePayment(option);
+      } else if (_selectedPaymentMethod == 'tap_to_pay') {
+        return await _confirmTapToPay(amountCents, option);
       } else if (_selectedPaymentMethod == 'paypal') {
         return await _confirmPayPal(amountCents);
       } else {
@@ -1949,6 +1982,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final methods = [
       if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),
       if (!Platform.isIOS) ('google_pay', 'Google Pay', true),
+      ('tap_to_pay', 'Tap to Pay', true),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null
@@ -2034,6 +2068,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                               const Icon(Icons.apple, color: Colors.white, size: 24)
                             else if (id == 'google_pay')
                               const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
+                            else if (id == 'tap_to_pay')
+                              Icon(Icons.contactless, color: Color(0xFF4A90D9), size: 24)
                             else if (id == 'test_mode')
                               const Icon(Icons.bug_report_rounded, color: Color(0xFFFF3B30), size: 24)
                             else
@@ -2178,6 +2214,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
       case 'paypal':
       case 'apple_pay':
       case 'google_pay':
+      case 'tap_to_pay':
         return true;
       case 'credit_card':
         return _linkedPaymentMethods.contains('credit_card') &&
@@ -2195,6 +2232,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         return 'Apple Pay';
       case 'google_pay':
         return 'Google Pay';
+      case 'tap_to_pay':
+        return 'Tap to Pay';
       case 'credit_card':
         if (_savedCardLast4 != null && _savedCardBrand != null) {
           return '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4';

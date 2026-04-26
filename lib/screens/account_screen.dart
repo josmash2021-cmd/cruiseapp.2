@@ -369,7 +369,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final photoUrl = _user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -490,9 +490,8 @@ class _AccountScreenState extends State<AccountScreen> {
       spacing: 12,
       runSpacing: 12,
       children: items.map((item) {
-        final isDisabled = item.id == 'referral';
         return GestureDetector(
-          onTap: isDisabled ? null : () async {
+          onTap: () async {
             switch (item.id) {
               case 'help':
                 Navigator.of(
@@ -519,6 +518,11 @@ class _AccountScreenState extends State<AccountScreen> {
                   context,
                 ).push(slideFromRightRoute(const PromoCodeScreen()));
                 break;
+              case 'referral':
+                Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const ReferralScreen()));
+                break;
               case 'safety':
                 Navigator.of(
                   context,
@@ -534,66 +538,32 @@ class _AccountScreenState extends State<AccountScreen> {
                 break;
             }
           },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
+          child: Container(
+            width: (MediaQuery.of(context).size.width - 48 - 12) / 2,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: c.isDark
+                  ? null
+                  : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            ),
+            child: Row(
               children: [
-                Opacity(
-                  opacity: isDisabled ? 0.45 : 1.0,
-                  child: Container(
-                    width: (MediaQuery.of(context).size.width - 48 - 12) / 2,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: c.isDark
-                          ? null
-                          : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                Icon(item.icon, color: _gold, size: 24),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
                     ),
-                    child: Row(
-                      children: [
-                        Icon(item.icon, color: c.textPrimary, size: 24),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            item.label,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: c.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ],
-                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
-                // "Coming Soon" ribbon
-                if (isDisabled)
-                  Positioned(
-                    top: 8,
-                    right: -22,
-                    child: Transform.rotate(
-                      angle: 0.45,
-                      child: Container(
-                        width: 100,
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        color: const Color(0xFFD4A843),
-                        child: Text(
-                          S.of(context).comingSoon,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -659,7 +629,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 color: c.bg,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: c.textSecondary, size: 20),
+              child: Icon(icon, color: _gold, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(

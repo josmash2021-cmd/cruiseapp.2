@@ -1328,18 +1328,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     // pop + uncaught navigator error still frees the lock.
     if (_openingScheduleFlow) return;
     _openingScheduleFlow = true;
-    debugPrint('[ScheduleFlow] entered _showScheduleSheet');
     try {
       // First show Airport/Schedule choice — now a full-screen picker
       // with animated cards and dynamic calendar date.
       final choice = await Navigator.of(context).push<String>(
         slideUpFadeRoute(const ChooseRideTypeScreen()),
       );
-      debugPrint('[ScheduleFlow] ChooseRideTypeScreen returned: $choice');
 
       // If cancelled or no choice, revert to Now
       if (choice == null || !mounted) {
-        debugPrint('[ScheduleFlow] cancelled (choice=null or unmounted)');
         if (mounted) setState(() => _rideNow = true);
         return;
       }
@@ -1348,10 +1345,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // picker FIRST. Difference: Airport jumps to AirportTerminalSheet
       // afterwards, Schedule jumps to pickup/dropoff search.
       final result = await showScheduleRideFlow(context);
-      debugPrint('[ScheduleFlow] showScheduleRideFlow returned: $result');
 
       if (result == null || !mounted) {
-        debugPrint('[ScheduleFlow] cancelled (result=null or unmounted)');
         if (mounted) setState(() => _rideNow = true);
         return;
       }
@@ -1360,7 +1355,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // The Airport card forces the airport flow regardless of the
       // picker's internal toggle.
       final bool isAirportTrip = choice == 'airport' || isAirportFromToggle;
-      debugPrint('[ScheduleFlow] scheduledAt=$scheduledAt isAirport=$isAirportTrip');
 
       if (!await _ensureVerified()) return;
       if (!mounted) return;
@@ -1441,9 +1435,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           ? dropoffLabel
           : dropoffDetails.address;
 
-      debugPrint(
-        '[ScheduleFlow] pushing RideRequestScreen with scheduledAt=$scheduledAt',
-      );
       Navigator.of(context).push(
         slideUpFadeRoute(
           RideRequestScreen(

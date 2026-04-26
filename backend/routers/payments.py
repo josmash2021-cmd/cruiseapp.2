@@ -45,7 +45,15 @@ async def _get_or_create_stripe_customer(user: User, db: AsyncSession) -> Option
     Stripe API every request. Returns None if Stripe is not configured.
 
     All saved cards / SetupIntents / off_session charges hang off this
-    customer — without it PaymentMethods are orphaned and unusable."""
+    customer — without it PaymentMethods are orphaned and unusable.
+
+    The incoming `user` may be detached from `db` (different session
+    from the one that resolved the dependency), so we always re-fetch
+    the row inside this session before mutating it. Without the
+    re-fetch, db.commit() raised:
+        Instance '<User>' is not persistent within this Session
+    in production logs 2026-04-27.
+    """
     if not _HAS_STRIPE:
         return None
     if user.stripe_customer_id:
@@ -57,9 +65,19 @@ async def _get_or_create_stripe_customer(user: User, db: AsyncSession) -> Option
             name=" ".join([(user.first_name or ""), (user.last_name or "")]).strip() or None,
             metadata={"user_id": str(user.id)},
         )
-        user.stripe_customer_id = customer.id
+        # Re-fetch user inside THIS session so it's attached and
+        # commit() can persist the new stripe_customer_id.
+        rs = await db.execute(select(User).where(User.id == user.id))
+        attached_user = rs.scalar_one_or_none()
+        if attached_user is None:
+            # User vanished between auth and now — extremely unlikely
+            # but bail out cleanly rather than crashing.
+            return customer.id
+        attached_user.stripe_customer_id = customer.id
         await db.commit()
-        await db.refresh(user)
+        # Sync the in-memory user instance the caller is holding so the
+        # next access doesn't re-trigger the create path.
+        user.stripe_customer_id = customer.id
         return customer.id
     except Exception as e:
         logging.error("[stripe] Customer.create failed for user %s: %s", user.id, e)

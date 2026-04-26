@@ -1,16 +1,11 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:pay/pay.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/error_service.dart';
 import '../services/local_data_service.dart';
-import '../services/payment_service.dart';
 import 'credit_card_screen.dart';
-import 'paypal_checkout_screen.dart';
 
 /// Screen where users can link / manage their payment accounts
 /// (Google Pay, PayPal) and manage saved cards.
@@ -24,37 +19,22 @@ class PaymentAccountsScreen extends StatefulWidget {
 class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   static const _gold = Color(0xFFE8C547);
 
-  // Local state (SharedPreferences)
-  bool _googlePayLinked = false;
-  bool _applePayLinked = false;
-  bool _paypalLinked = false;
+  // Local state (SharedPreferences) — only persistent methods live here.
+  // Apple Pay / Google Pay are device wallets, not saved methods, so they
+  // are NOT tracked here. They surface automatically at checkout when the
+  // device wallet is configured.
   String? _savedCardLast4;
   String? _savedCardBrand;
 
-  // Server-synced methods (cards + bank accounts)
+  // Server-synced methods (cards only — bank account is "coming soon")
   List<Map<String, dynamic>> _serverMethods = [];
   bool _loadingServer = true;
-
-  // Platform availability
-  bool _googlePayAvailable = false;
-  bool _applePayAvailable = false;
 
   @override
   void initState() {
     super.initState();
     _loadLinkedState();
-    _checkPlatformAvailability();
     _loadServerMethods();
-  }
-
-  Future<void> _checkPlatformAvailability() async {
-    final gpay = await PaymentService.isGooglePayAvailable();
-    final apay = await PaymentService.isApplePayAvailable();
-    if (!mounted) return;
-    setState(() {
-      _googlePayAvailable = gpay;
-      _applePayAvailable = apay;
-    });
   }
 
   Future<void> _loadLinkedState() async {
@@ -63,9 +43,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     final cardBrand = await LocalDataService.getCreditCardBrand();
     if (!mounted) return;
     setState(() {
-      _googlePayLinked = linked.contains('google_pay');
-      _applePayLinked = linked.contains('apple_pay');
-      _paypalLinked = linked.contains('paypal');
       if (linked.contains('credit_card') && cardLast4 != null) {
         _savedCardLast4 = cardLast4;
         _savedCardBrand = cardBrand;
@@ -89,11 +66,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     }
   }
 
+  /// Only persistent payment methods belong on this screen. Apple Pay and
+  /// Google Pay are device wallets — they cannot be "saved", they appear
+  /// at checkout when the device has them configured.
   bool _isAllowedMethodType(String methodType) {
-    if (methodType == 'stripe_card' || methodType == 'paypal') return true;
-    if (Platform.isIOS) return methodType == 'apple_pay';
-    if (Platform.isAndroid) return methodType == 'google_pay';
-    return false;
+    return methodType == 'stripe_card' ||
+        methodType == 'paypal' ||
+        methodType == 'bank_account';
   }
 
   Future<void> _deleteServerMethod(int id) async {
@@ -114,62 +93,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       await _loadServerMethods();
     } catch (_) {
       _showSnack('Could not update default. Try again.');
-    }
-  }
-
-  // ── External app launchers ──
-
-  // ── Google Pay / Apple Pay via `pay` package ──
-
-  Future<void> _linkGooglePay() async {
-    if (!_googlePayAvailable) {
-      // Device doesn't have Google Pay set up — open Google Wallet to add a card
-      _showSnack(S.of(context).setupGooglePayFirst);
-      await _launchGooglePayWallet();
-      return;
-    }
-    // Device already supports Google Pay → show native payment sheet with $0.01
-    // verification charge just to confirm the account is ready.
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _GooglePayLinkSheet(
-        onSuccess: (result) async {
-          await LocalDataService.linkPaymentMethod('google_pay');
-          try {
-            await ApiService.addRiderPaymentMethod(
-              methodType: 'google_pay',
-              displayName: 'Google Pay',
-              setDefault: false,
-            );
-          } catch (_) {
-            if (!mounted) return;
-            ErrorService.show(context, 'Failed to save Google Pay on server. Please retry.');
-          }
-          if (!mounted) return;
-          setState(() => _googlePayLinked = true);
-          _showSnack(S.of(context).googlePayLinked);
-          await _loadServerMethods();
-        },
-      ),
-    );
-  }
-
-  /// Opens the Google Pay / Google Wallet app on the device.
-  Future<void> _launchGooglePayWallet() async {
-    const List<String> uris = [
-      'intent://pay.google.com/#Intent;scheme=https;package=com.google.android.apps.walletnfcrel;end',
-      'https://pay.google.com/gp/w/home',
-      'https://play.google.com/store/apps/details?id=com.google.android.apps.walletnfcrel',
-    ];
-    for (final u in uris) {
-      try {
-        if (await canLaunchUrl(Uri.parse(u))) {
-          await launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (_) {}
     }
   }
 
@@ -239,69 +162,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         ],
       ),
     );
-  }
-
-  // ── Apple Pay ──
-  Future<void> _linkApplePay() async {
-    if (!_applePayAvailable) {
-      _showSnack(S.of(context).setupApplePayInSettings);
-      return;
-    }
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _ApplePayLinkSheet(
-        onSuccess: (result) async {
-          await LocalDataService.linkPaymentMethod('apple_pay');
-          try {
-            await ApiService.addRiderPaymentMethod(
-              methodType: 'apple_pay',
-              displayName: 'Apple Pay',
-              setDefault: false,
-            );
-          } catch (_) {
-            if (!mounted) return;
-            ErrorService.show(context, 'Failed to save Apple Pay on server. Please retry.');
-          }
-          if (!mounted) return;
-          setState(() => _applePayLinked = true);
-          _showSnack(S.of(context).applePayLinked);
-          await _loadServerMethods();
-        },
-      ),
-    );
-  }
-
-  // ── PayPal via PayPalCheckoutScreen (WebView + REST API) ──
-  // ignore: unused_element
-  Future<void> _linkPayPal() async {
-    if (!mounted) return;
-    final approved = await Navigator.of(context).push<bool>(
-      slideFromRightRoute(PayPalCheckoutScreen(
-        amount: '1.00',
-        currency: 'USD',
-        description: S.of(context).cruiseAccountVerificationDesc,
-      )),
-    );
-    if (!mounted) return;
-    if (approved == true) {
-      final paypalMsg = S.of(context).paypalLinked;
-      await LocalDataService.linkPaymentMethod('paypal');
-      try {
-        await ApiService.addRiderPaymentMethod(
-          methodType: 'paypal',
-          displayName: 'PayPal',
-          setDefault: false,
-        );
-      } catch (_) {
-        if (mounted) ErrorService.show(context, 'Failed to save PayPal on server. Please retry.');
-      }
-      if (!mounted) return;
-      setState(() => _paypalLinked = true);
-      _showSnack(paypalMsg);
-      await _loadServerMethods();
-    }
   }
 
   Future<void> _linkCreditCard() async {
@@ -427,32 +287,11 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ),
               const SizedBox(height: 10),
 
-              // PayPal was removed per product decision. Apple Pay, Google
-              // Pay, Credit / Debit Card and Bank Account remain.
-
-              // ── Google Pay (Android only) ──
-              if (Platform.isAndroid) ...[
-                _accountTile(
-                  c: c,
-                  logoWidget: _googlePayLogo(),
-                  label: 'Google Pay',
-                  linked: _googlePayLinked,
-                  onTap: _linkGooglePay,
-                ),
-                Divider(color: c.divider, height: 1),
-              ],
-
-              // ── Apple Pay (iOS only) ──
-              if (Platform.isIOS) ...[
-                _accountTile(
-                  c: c,
-                  logoWidget: _applePayLogo(),
-                  label: 'Apple Pay',
-                  linked: _applePayLinked,
-                  onTap: _linkApplePay,
-                ),
-                Divider(color: c.divider, height: 1),
-              ],
+              // Apple Pay / Google Pay are device wallets, not saved
+              // methods. They show up automatically at checkout when the
+              // device wallet is configured — there's nothing to "save"
+              // here. Only persistent methods (cards, bank, PayPal) live
+              // on this screen.
 
               // ── Credit / Debit Card ──
               _accountTile(
@@ -484,6 +323,14 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 linked: false,
                 onTap: _linkBankAccount,
               ),
+
+              const SizedBox(height: 24),
+
+              // ── Device-wallet explainer ──
+              // Replaces the old fake "Add Apple Pay / Add Google Pay"
+              // tiles. Communicates that those wallets are detected at
+              // checkout and don't need to be linked here.
+              const _DeviceWalletNote(),
 
               // ── Saved methods from server ──
               if (_loadingServer) ...[
@@ -609,48 +456,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
 
   // ── Brand logos ──
 
-  Widget _googlePayLogo() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 0.5),
-      ),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/images/google_logo.png', width: 16, height: 16, fit: BoxFit.contain),
-            const SizedBox(width: 1),
-            const Text('Pay', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF5F6368))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _paypalLogo() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 0.5),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Image.asset(
-          'assets/images/paypal_logo.png',
-          fit: BoxFit.contain,
-          cacheWidth: 80,
-        ),
-      ),
-    );
-  }
-
   Widget _cardBrandLogo(String? brand) {
     final Map<String, ({String letter, Color color, bool italic})> brands = {
       'visa': (letter: 'V', color: const Color(0xFF1A1F71), italic: true),
@@ -698,129 +503,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
             fontStyle: info.italic ? FontStyle.italic : FontStyle.normal,
             fontFamily: 'Roboto',
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _applePayLogo() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Center(
-        child: Icon(Icons.apple, color: Colors.white, size: 22),
-      ),
-    );
-  }
-
-  /// Wide Apple Pay / Google Pay logo (no extra text outside).
-  Widget _nativePayLogoWide(String id) {
-    if (id == 'apple_pay') {
-      return Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-        ),
-        child: const Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.apple, color: Colors.white, size: 28),
-              SizedBox(width: 6),
-              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
-            ],
-          ),
-        ),
-      );
-    }
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-      ),
-      child: Center(
-        child: RichText(
-          text: const TextSpan(
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            children: [
-              TextSpan(text: 'G', style: TextStyle(color: Color(0xFF4285F4))),
-              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFEA4335))),
-              TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
-              TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
-              TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
-              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Account tile for Apple Pay / Google Pay with wide logo, no text label.
-  Widget _nativePayAccountTile({
-    required AppColors c,
-    required String id,
-    required bool available,
-    required String unavailableHint,
-    required bool linked,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _nativePayLogoWide(id),
-                  if (!available)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        unavailableHint,
-                        style: TextStyle(fontSize: 11, color: c.textSecondary),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            if (linked)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  S.of(context).added,
-                  style: const TextStyle(color: Color(0xFFE8C547), fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _gold,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  S.of(context).addBtn,
-                  style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              ),
-          ],
         ),
       ),
     );
@@ -896,204 +578,73 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-//  Google Pay bottom sheet (confirms account is ready)
-// ─────────────────────────────────────────────────────────────────
-class _GooglePayLinkSheet extends StatefulWidget {
-  final void Function(Map<String, dynamic>) onSuccess;
-  const _GooglePayLinkSheet({required this.onSuccess});
-  @override
-  State<_GooglePayLinkSheet> createState() => _GooglePayLinkSheetState();
-}
-
-class _GooglePayLinkSheetState extends State<_GooglePayLinkSheet> {
-  static const _gold = Color(0xFFE8C547);
-  PaymentConfiguration? _config;
-
-  @override
-  void initState() {
-    super.initState();
-    PaymentService.googlePayConfig().then((c) {
-      if (mounted) setState(() => _config = c);
-    });
-  }
+/// Subtle informational tile that explains why Apple Pay / Google Pay
+/// don't appear in the "Add Payment Method" list. Shown only on the
+/// Payment Accounts screen — replaces the old fake "Add Apple Pay /
+/// Add Google Pay" rows that did a $0.00 verification and stored a flag.
+///
+/// Reasoning:
+///   Apple Pay and Google Pay are device wallets, not saved payment
+///   methods. They cannot be persisted on our side — what gets passed to
+///   Stripe is a single-use, per-transaction tokenized PAN. Asking the
+///   user to "link" them is double-friction with zero value: the same
+///   Face ID / Touch ID prompt happens at the moment of the actual ride.
+class _DeviceWalletNote extends StatelessWidget {
+  const _DeviceWalletNote();
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     return Container(
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 40,
-            height: 4,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: c.divider,
-              borderRadius: BorderRadius.circular(2),
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.smartphone_rounded,
+              color: Color(0xFFE8C547),
+              size: 20,
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            S.of(context).confirmGooglePay,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: c.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            S.of(context).confirmGooglePayVerifyMsg,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: c.textSecondary),
-          ),
-          const SizedBox(height: 24),
-          if (_config == null)
-            const Center(child: CircularProgressIndicator(color: _gold))
-          else
-            GooglePayButton(
-              paymentConfiguration: _config!,
-              paymentItems: [
-                PaymentItem(
-                  label: S.of(context).accountVerification,
-                  amount: '0.00',
-                  status: PaymentItemStatus.final_price,
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Apple Pay & Google Pay',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  "Available automatically at checkout when your device "
+                  "wallet is set up. Nothing to add here — pick it when "
+                  "you request a ride.",
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12.5,
+                    height: 1.4,
+                    color: Color(0xFFB0B0B6),
+                  ),
                 ),
               ],
-              type: GooglePayButtonType.pay,
-              theme: GooglePayButtonTheme.dark,
-              height: 54,
-              onPaymentResult: (result) {
-                Navigator.of(context).pop();
-                widget.onSuccess(result);
-              },
-              loadingIndicator: const Center(
-                child: CircularProgressIndicator(color: _gold),
-              ),
-              onError: (error) {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(S.of(context).googlePayError('$error')),
-                  ),
-                );
-              },
-            ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              S.of(context).cancel,
-              style: TextStyle(color: c.textTertiary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Apple Pay bottom sheet (iOS only)
-// ─────────────────────────────────────────────────────────────────
-class _ApplePayLinkSheet extends StatefulWidget {
-  final void Function(Map<String, dynamic>) onSuccess;
-  const _ApplePayLinkSheet({required this.onSuccess});
-  @override
-  State<_ApplePayLinkSheet> createState() => _ApplePayLinkSheetState();
-}
-
-class _ApplePayLinkSheetState extends State<_ApplePayLinkSheet> {
-  static const _gold = Color(0xFFE8C547);
-  PaymentConfiguration? _config;
-
-  @override
-  void initState() {
-    super.initState();
-    PaymentService.applePayConfig().then((c) {
-      if (mounted) setState(() => _config = c);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: c.divider,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            S.of(context).confirmApplePay,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: c.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            S.of(context).confirmApplePayVerifyMsg,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: c.textSecondary),
-          ),
-          const SizedBox(height: 24),
-          if (_config == null)
-            const Center(child: CircularProgressIndicator(color: _gold))
-          else
-            ApplePayButton(
-              paymentConfiguration: _config!,
-              paymentItems: [
-                PaymentItem(
-                  label: S.of(context).accountVerification,
-                  amount: '0.00',
-                  status: PaymentItemStatus.final_price,
-                ),
-              ],
-              type: ApplePayButtonType.inStore,
-              style: ApplePayButtonStyle.black,
-              height: 54,
-              onPaymentResult: (result) {
-                Navigator.of(context).pop();
-                widget.onSuccess(result);
-              },
-              loadingIndicator: const Center(
-                child: CircularProgressIndicator(color: _gold),
-              ),
-              onError: (error) {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(S.of(context).applePayError('$error')),
-                  ),
-                );
-              },
-            ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              S.of(context).cancel,
-              style: TextStyle(color: c.textTertiary),
             ),
           ),
         ],

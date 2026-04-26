@@ -809,31 +809,42 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
 
     // Label geometry — keeps the pill clear of the pin glyph.
-    // - pin glyph half-width ≈ 16px, so a 20px gap keeps the label off it.
-    // - pill height ≈ 52px (padding 12 + icon 22 + small extra), so we offset
-    //   top by half that to vertically center the pill against the pin tip.
     const double pinHalfWidth = 16.0;
     const double sideGap = 20.0;
     const double pillHalfHeight = 26.0;
+    const double pillHeight = pillHalfHeight * 2;
     const double pillEstimatedWidth = 230.0; // icon+gap+maxWidth(180)+padding
 
     // Map viewport bounds so we can clamp the label inside the visible area.
     final mq = MediaQuery.of(context);
     final screenW = mq.size.width;
+    final screenH = mq.size.height;
+    // Reserve space for top notch + estimated bottom sheet so the
+    // label never paints on top of UI chrome.
+    final topSafe = mq.padding.top + 12;
+    final bottomSafe = screenH * 0.55; // sheet covers bottom ~45%
+
+    // Polyline projected to screen coords for collision detection.
+    final routePts = _routeScreenPoints;
 
     final pickupPos = _pickupScreenOffset;
     if (pickupPos != null && s.pickupLabel.isNotEmpty) {
-      // Default: label to the RIGHT of the pin.
       double left = pickupPos.dx + pinHalfWidth + sideGap;
-      // If it would overflow the right edge, flip to the LEFT side.
       final bool flipLeft = left + pillEstimatedWidth > screenW - 8;
       if (flipLeft) {
         left = pickupPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
       }
+      // Clamp inside the viewport (left/right + top/bottom).
+      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      double top = pickupPos.dy - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      // Collision: dim if polyline crosses the label's bounding rect.
+      final rect = Rect.fromLTWH(left, top, pillEstimatedWidth, pillHeight);
+      final dimmed = _polylineIntersectsRect(routePts, rect);
       widgets.add(
         Positioned(
           left: left,
-          top: pickupPos.dy - pillHalfHeight,
+          top: top,
           child: AnimatedMapLabel(
             kind: MapLabelKind.pickup,
             address: s.pickupLabel,
@@ -841,6 +852,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             dropoffText: dropoffText,
             visible: _pickupLabelRevealed,
             alignEnd: flipLeft,
+            dimmedByRoute: dimmed,
           ),
         ),
       );
@@ -848,17 +860,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     final dropoffPos = _dropoffScreenOffset;
     if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
-      // Default: label to the LEFT of the pin.
       double left = dropoffPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
-      // If it would overflow the left edge, flip to the RIGHT side.
       final bool flipRight = left < 8;
       if (flipRight) {
         left = dropoffPos.dx + pinHalfWidth + sideGap;
       }
+      // Clamp inside the viewport.
+      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      double top = dropoffPos.dy - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      final rect = Rect.fromLTWH(left, top, pillEstimatedWidth, pillHeight);
+      final dimmed = _polylineIntersectsRect(routePts, rect);
       widgets.add(
         Positioned(
           left: left,
-          top: dropoffPos.dy - pillHalfHeight,
+          top: top,
           child: AnimatedMapLabel(
             kind: MapLabelKind.dropoff,
             address: s.dropoffLabel,
@@ -866,11 +882,46 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             dropoffText: dropoffText,
             visible: _dropoffLabelRevealed,
             alignEnd: !flipRight,
+            dimmedByRoute: dimmed,
           ),
         ),
       );
     }
     return widgets;
+  }
+
+  /// True if any segment of the polyline crosses the label rect.
+  bool _polylineIntersectsRect(List<Offset> pts, Rect rect) {
+    if (pts.length < 2) return false;
+    for (int i = 0; i < pts.length - 1; i++) {
+      if (_segIntersectsRect(pts[i], pts[i + 1], rect)) return true;
+    }
+    return false;
+  }
+
+  bool _segIntersectsRect(Offset a, Offset b, Rect r) {
+    if (r.contains(a) || r.contains(b)) return true;
+    if ((a.dx < r.left && b.dx < r.left) ||
+        (a.dx > r.right && b.dx > r.right) ||
+        (a.dy < r.top && b.dy < r.top) ||
+        (a.dy > r.bottom && b.dy > r.bottom)) {
+      return false;
+    }
+    return _segCross(a, b, r.topLeft, r.topRight) ||
+        _segCross(a, b, r.topRight, r.bottomRight) ||
+        _segCross(a, b, r.bottomRight, r.bottomLeft) ||
+        _segCross(a, b, r.bottomLeft, r.topLeft);
+  }
+
+  bool _segCross(Offset p1, Offset p2, Offset p3, Offset p4) {
+    double cross(Offset o, Offset a, Offset b) =>
+        (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
+    final d1 = cross(p3, p4, p1);
+    final d2 = cross(p3, p4, p2);
+    final d3 = cross(p1, p2, p3);
+    final d4 = cross(p1, p2, p4);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
 
   // Single horizontal card shown when a tier has been picked and the
@@ -1322,39 +1373,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Car image with a soft black drop shadow under it so
-                  // the vehicle reads as if it's resting on the card.
-                  // Slightly larger than before (130x90) for visual weight.
-                  Stack(
-                    alignment: Alignment.bottomCenter,
-                    children: [
-                      // Black ground shadow ellipse — sits behind the car.
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Container(
-                          width: 96,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(50),
-                            gradient: RadialGradient(
-                              colors: [
-                                Colors.black.withValues(alpha: 0.55),
-                                Colors.black.withValues(alpha: 0.0),
-                              ],
-                              stops: const [0.0, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 130,
-                        height: 90,
-                        child: Image.asset(
-                          _carAssetForOption(opt.name),
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ],
+                  // Car image with a real silhouette drop shadow — uses
+                  // ColorFiltered to render a black-tinted copy of the
+                  // PNG behind the original, offset down + blurred.
+                  // The shadow follows the actual outline of the
+                  // vehicle (windows, mirrors, wheels) instead of a
+                  // generic ellipse blob.
+                  _CarWithDropShadow(
+                    asset: _carAssetForOption(opt.name),
+                    width: 130,
+                    height: 90,
                   ),
                   const SizedBox(height: 6),
                   // Vehicle name - web: Poppins, 14px, bold, white, centered
@@ -3418,4 +3446,63 @@ class _SearchingCardParticlesPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SearchingCardParticlesPainter old) =>
       old.t != t;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Real silhouette drop shadow for vehicle PNGs.
+//  Renders a black-tinted copy of the asset behind the original,
+//  offset slightly down + blurred. Follows the exact outline of the
+//  vehicle (windows, mirrors, wheels) so the shadow looks like an
+//  actual cast shadow instead of a generic ellipse beneath the car.
+// ═══════════════════════════════════════════════════════════════════
+class _CarWithDropShadow extends StatelessWidget {
+  final String asset;
+  final double width;
+  final double height;
+
+  const _CarWithDropShadow({
+    required this.asset,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height + 10, // extra room for the shadow to spill below
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          // Shadow layer: same PNG, tinted black, offset down + blurred.
+          Positioned(
+            top: 8,
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+              child: ColorFiltered(
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withValues(alpha: 0.55),
+                  BlendMode.srcIn,
+                ),
+                child: Image.asset(
+                  asset,
+                  width: width,
+                  height: height,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          // Original car on top.
+          Image.asset(
+            asset,
+            width: width,
+            height: height,
+            fit: BoxFit.contain,
+          ),
+        ],
+      ),
+    );
+  }
 }

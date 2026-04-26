@@ -1002,6 +1002,42 @@ extension _RideRequestMap on _RideRequestScreenState {
         _setState(() => _dropoffScreenOffset =
             Offset(px.x.toDouble(), px.y.toDouble()));
       }
+      // Project the polyline (route) into screen coords so the labels
+      // can detect when the gold line is about to overlap them and
+      // fade to 10% during the overlap. Sample every Nth point on
+      // long routes (>50 pts) so we never run more than ~50 segment
+      // checks per frame.
+      final routePts = _ctrl.state.route?.points ?? const [];
+      if (routePts.length >= 2) {
+        final stride =
+            routePts.length > 50 ? (routePts.length / 50).ceil() : 1;
+        final sampled = <Offset>[];
+        for (int i = 0; i < routePts.length; i += stride) {
+          final p = routePts[i];
+          final px = await mc.pixelForCoordinate(mapbox.Point(
+            coordinates: mapbox.Position(p.longitude, p.latitude),
+          ));
+          if (!mounted) return;
+          sampled.add(Offset(px.x.toDouble(), px.y.toDouble()));
+        }
+        // Always include the last point so the label near dropoff
+        // detects the route ending under it.
+        if (sampled.isNotEmpty &&
+            sampled.length * stride < routePts.length) {
+          final last = routePts.last;
+          final px = await mc.pixelForCoordinate(mapbox.Point(
+            coordinates: mapbox.Position(last.longitude, last.latitude),
+          ));
+          if (mounted) {
+            sampled.add(Offset(px.x.toDouble(), px.y.toDouble()));
+          }
+        }
+        if (mounted) {
+          _setState(() => _routeScreenPoints = sampled);
+        }
+      } else if (_routeScreenPoints.isNotEmpty) {
+        _setState(() => _routeScreenPoints = const []);
+      }
     } catch (e) {
       // Mapbox throws if called before the map is ready — log so we can
       // notice if labels stop syncing unexpectedly.

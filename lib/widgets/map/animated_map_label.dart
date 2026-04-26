@@ -20,6 +20,11 @@ class AnimatedMapLabel extends StatefulWidget {
   final bool visible;
   final bool alignEnd;
   final int revealDelayMs;
+  /// When true, the label fades to ~10% opacity so the gold polyline
+  /// passing under it stays readable. Smooth 220ms tween — when the
+  /// polyline moves away, the label fades back in. Driven by the
+  /// parent's collision detector (label rect vs polyline segments).
+  final bool dimmedByRoute;
 
   const AnimatedMapLabel({
     super.key,
@@ -30,6 +35,7 @@ class AnimatedMapLabel extends StatefulWidget {
     required this.visible,
     this.alignEnd = false,
     this.revealDelayMs = 0,
+    this.dimmedByRoute = false,
   });
 
   @override
@@ -110,13 +116,22 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
 
         return Opacity(
           opacity: opacity,
-          child: Transform(
-            alignment: widget.alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, 0.0025) // perspective
-              ..rotateY(rotY)
-              ..scaleByDouble(scale, scale, 1.0, 1.0),
-            child: _pill(kindText, widget.address, icon, glowAlpha, blur),
+          child: AnimatedOpacity(
+            // When the polyline crosses under us, fade to 10% so the
+            // gold route stays readable. 220ms = perceptually instant
+            // but smooth enough to not flash on transient overlaps.
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            opacity: widget.dimmedByRoute ? 0.10 : 1.0,
+            child: Transform(
+              alignment:
+                  widget.alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.0025) // perspective
+                ..rotateY(rotY)
+                ..scaleByDouble(scale, scale, 1.0, 1.0),
+              child: _pill(kindText, widget.address, icon, glowAlpha, blur),
+            ),
           ),
         );
       },
@@ -128,7 +143,8 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
     return Container(
       padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
       decoration: BoxDecoration(
-        color: const Color(0xF50F1120),
+        // Pure black per the 2026-04-27 spec — was navy (0xF50F1120).
+        color: Colors.black,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _gold.withValues(alpha: 0.35),

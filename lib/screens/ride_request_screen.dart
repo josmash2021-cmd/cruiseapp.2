@@ -506,6 +506,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Offset? _dropoffScreenOffset;
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
+  // Polyline projected to screen coordinates each camera tick — used
+  // to dim labels that the gold route would otherwise paint over.
+  // Empty when no route yet; sampled (every Nth point) so the
+  // collision check stays cheap on long routes.
+  List<Offset> _routeScreenPoints = const [];
 
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same

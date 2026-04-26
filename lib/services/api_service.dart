@@ -1880,26 +1880,46 @@ class ApiService {
   //  REFERRAL ENDPOINTS
   // ═══════════════════════════════════════════════════════
 
-  /// Get or generate the user's unique referral code + stats.
-  static Future<Map<String, dynamic>> getReferralCode() async {
+  /// Combined fetch for the Invite Friends screen: rider's permanent
+  /// referral code, current Cruise Cash balance, and the list of
+  /// referees with their per-row 0/2 -> 2/2 progress.
+  /// Backed by GET /referrals/me.
+  static Future<Map<String, dynamic>> getMyReferralInfo() async {
     final token = await getToken();
-    if (token == null) return {};
-    final res = await _cachedGet(
-      Uri.parse('$_baseUrl/auth/referral-code'),
-      headers: _jsonHeaders(token),
-      cacheTtl: const Duration(minutes: 10),
-    );
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
-    return {};
+    if (token == null) {
+      return {
+        'referral_code': '',
+        'balance_cents': 0,
+        'lifetime_earned_cents': 0,
+        'lifetime_spent_cents': 0,
+        'referees': <Map<String, dynamic>>[],
+      };
+    }
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/referrals/me'),
+            headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    return {
+      'referral_code': '',
+      'balance_cents': 0,
+      'lifetime_earned_cents': 0,
+      'lifetime_spent_cents': 0,
+      'referees': <Map<String, dynamic>>[],
+    };
   }
 
-  /// Apply a referral code entered by the user.
-  static Future<Map<String, dynamic>> applyReferralCode(String code) async {
+  /// Redeem someone else's referral code (one-time, at signup).
+  /// Backend rejects self-referral, repeat-redemption, and same-
+  /// email/phone as the inviter.
+  static Future<Map<String, dynamic>> redeemReferralCode(String code) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
         .post(
-          Uri.parse('$_baseUrl/auth/apply-referral'),
+          Uri.parse('$_baseUrl/referrals/redeem'),
           headers: _jsonHeaders(token),
           body: jsonEncode({'code': code}),
         )
@@ -1907,15 +1927,51 @@ class ApiService {
     return _parse(res);
   }
 
-  /// Get list of users I've referred and total bonus earned.
-  static Future<Map<String, dynamic>> getMyReferrals() async {
+  /// Transfer Cruise Cash to another rider by their referral code.
+  /// Amount is in dollars on the wire.
+  static Future<Map<String, dynamic>> transferCruiseCash({
+    required String recipientCode,
+    required double amount,
+    String? note,
+  }) async {
     final token = await getToken();
-    if (token == null) return {'referrals': [], 'total_bonus': 0.0};
+    if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
-        .get(Uri.parse('$_baseUrl/auth/referrals'), headers: _jsonHeaders(token))
+        .post(
+          Uri.parse('$_baseUrl/cruise-cash/transfer'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({
+            'recipient_code': recipientCode,
+            'amount': amount,
+            if (note != null && note.isNotEmpty) 'note': note,
+          }),
+        )
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
-    return {'referrals': [], 'total_bonus': 0.0};
+    return _parse(res);
+  }
+
+  /// Cruise Cash transactions log for the wallet detail view.
+  static Future<Map<String, dynamic>> getCruiseCashHistory({int limit = 50}) async {
+    final token = await getToken();
+    if (token == null) {
+      return {
+        'balance_cents': 0,
+        'transactions': <Map<String, dynamic>>[],
+      };
+    }
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/cruise-cash/history?limit=$limit'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    return {
+      'balance_cents': 0,
+      'transactions': <Map<String, dynamic>>[],
+    };
   }
 
   /// Get next scheduled auto-payout date and pending balance.

@@ -872,6 +872,18 @@ extension _RideRequestController on _RideRequestScreenState {
     _rideFlowLocked = true;
     setSheetState(() => _isProcessingPayment = true);
     _setState(() => _isProcessingPayment = true);
+    // Safety fuse — see _startRideDirectly. 45 s without a finished
+    // payment IPC frees the button so the rider can retry.
+    _stuckPaymentFuse?.cancel();
+    _stuckPaymentFuse = Timer(const Duration(seconds: 45), () {
+      if (!mounted) return;
+      if (_isProcessingPayment || _rideFlowLocked) {
+        debugPrint('[RideRequest] payment fuse fired (modal) — clearing stuck state');
+        _rideFlowLocked = false;
+        _setState(() => _isProcessingPayment = false);
+        try { setSheetState(() => _isProcessingPayment = false); } catch (_) {}
+      }
+    });
 
     try {
       try {
@@ -913,10 +925,12 @@ extension _RideRequestController on _RideRequestScreenState {
       _ctrl.setHeldPaymentIntentId(_heldPaymentIntentId);
       _ctrl.requestRide();
     } finally {
+      _stuckPaymentFuse?.cancel();
+      _stuckPaymentFuse = null;
       _rideFlowLocked = false;
       // Safety net: ensure button never stays stuck regardless of exception path.
       if (mounted) {
-        setSheetState(() => _isProcessingPayment = false);
+        try { setSheetState(() => _isProcessingPayment = false); } catch (_) {}
         _setState(() => _isProcessingPayment = false);
       }
     }
@@ -927,6 +941,22 @@ extension _RideRequestController on _RideRequestScreenState {
     if (option == null) return;
     if (_rideFlowLocked || _isProcessingPayment) return;
     _rideFlowLocked = true;
+    // Show the spinner immediately so the rider sees feedback even
+    // before the native sheet opens. The try/finally below guarantees
+    // it's reset on every exit path (success, cancel, error, unmount).
+    _setState(() => _isProcessingPayment = true);
+    // Safety fuse: if anything below hangs (Stripe SDK never returns,
+    // OS sheet stuck, etc.) force-release after 45 s so the button
+    // can't get permanently locked.
+    _stuckPaymentFuse?.cancel();
+    _stuckPaymentFuse = Timer(const Duration(seconds: 45), () {
+      if (!mounted) return;
+      if (_isProcessingPayment || _rideFlowLocked) {
+        debugPrint('[RideRequest] payment fuse fired — clearing stuck state');
+        _rideFlowLocked = false;
+        _setState(() => _isProcessingPayment = false);
+      }
+    });
 
     try {
       final nav = Navigator.of(context);
@@ -1297,6 +1327,8 @@ extension _RideRequestController on _RideRequestScreenState {
       }
       // requestRide() already started above — nothing more to do here
     } finally {
+      _stuckPaymentFuse?.cancel();
+      _stuckPaymentFuse = null;
       _rideFlowLocked = false;
       if (mounted) _setState(() => _isProcessingPayment = false);
     }

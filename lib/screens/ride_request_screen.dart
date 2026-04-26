@@ -456,6 +456,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   String? _savedCardLast4;
   String? _savedCardBrand;
   bool _isProcessingPayment = false;
+  // Hard timeout that frees the Request Ride / Pay button if the payment
+  // pipeline hangs (Stripe SDK never returns, OS sheet stuck, network
+  // blip mid-IPC). Cancelled by the try/finally in the payment flow.
+  Timer? _stuckPaymentFuse;
   bool _rideFlowLocked = false;
   bool _showPaymentDeclinedBanner = false;
   String? _heldPaymentIntentId;
@@ -775,6 +779,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void dispose() {
     _shimmerTimeoutTimer?.cancel();
+    _stuckPaymentFuse?.cancel();
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _driverFoundTimer?.cancel();

@@ -504,7 +504,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0D0E14),
+        backgroundColor: Colors.black,
         body: Column(
           children: [
             // ── App bar ──
@@ -534,7 +534,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: EdgeInsets.only(top: topPad + 8, bottom: 12, left: 8, right: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF161820),
+        color: const Color(0xFF111111),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -930,7 +930,7 @@ class _ChatScreenState extends State<ChatScreen> {
         bottom: bottomPad > 0 ? 8 : safePad + 8,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF161820),
+        color: const Color(0xFF111111),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),

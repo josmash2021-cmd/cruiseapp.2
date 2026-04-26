@@ -1606,19 +1606,15 @@ extension _HomeScreenWidgets on _HomeScreenState {
               _showFastRideUnavailableDialog();
               return;
             }
-            if (!await _ensureVerified()) return;
-            if (!mounted) return;
-            _openingRideFlow = true;
-            try {
-              await Navigator.of(context).push(
-                slideUpFadeRoute(const RideRequestScreen(fastRide: true)),
-              );
-            } finally {
-              if (mounted) {
-                _openingRideFlow = false;
-                _loadSavedData();
-              }
-            }
+            // 2026-04-26: Priority now opens the *standard* Request Now
+            // flow (pickup/dropoff search → RideRequestScreen with all
+            // tier options). The old `fastRide: true` branch jumped
+            // straight into ride_request without picking pickup/dropoff
+            // first, so for users who hadn't searched yet the sheet had
+            // no rideOptions and showed an empty mapped view. Routing
+            // through _openSearchThenRide() keeps the UX consistent
+            // with the hero "Where to?" CTA and the Now toggle.
+            await _openSearchThenRide();
           },
         ),
         // Clock — real clock animation with ticking hands

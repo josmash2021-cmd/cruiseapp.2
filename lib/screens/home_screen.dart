@@ -796,21 +796,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
 
     if (confirmed == true && mounted) {
-      // Mark promo as used and set 3-trip counter for next unlock
-      await LocalDataService.setPromoUsed();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('promo_trips_left', 3);
-      if (mounted) {
-        setState(() {
-          _promoUsed = true;
-          _promoTripsLeft = 3;
-        });
-      }
-      if (!await _ensureVerified()) return;
-      if (!mounted) return;
-      Navigator.of(
-        context,
-      ).push(slideUpFadeRoute(const RideRequestScreen(applyPromo: true)));
+      // Do NOT mark the promo as used here. The previous flow burned
+      // the discount the moment the rider tapped "Apply and Ride",
+      // even if they backed out without requesting the trip. Now the
+      // promo is only consumed once the ride is actually confirmed
+      // (LocalDataService.usePromo is called inside the trip-request
+      // success path). If the rider cancels along the way, the 10%
+      // stays available on the next attempt.
+      //
+      // Reuse the standard Now flow (search -> ride_request) so the
+      // promo button shares the same re-entry guards and pickup/dropoff
+      // experience, just with applyPromo=true so the picked vehicle
+      // card shows the discounted price.
+      await _openSearchThenRide(applyPromo: true);
     }
   }
 

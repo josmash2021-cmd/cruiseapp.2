@@ -574,10 +574,14 @@ class LocalDataService {
     return prefs.getBool('first_ride_promo_used') ?? false;
   }
 
-  /// Mark first-ride 10% promo as used.
+  /// Mark first-ride 10% promo as used and start the 3-trip cooldown
+  /// so the rider has to complete 3 rides before unlocking the next
+  /// monthly discount. Both writes happen together so the home screen
+  /// always sees a consistent state on the next _loadSavedData.
   static Future<void> setPromoUsed() async {
     final prefs = _p;
     await prefs.setBool('first_ride_promo_used', true);
+    await prefs.setInt('promo_trips_left', 3);
   }
 
   /// Generate a monthly promo if none exists for the current month.

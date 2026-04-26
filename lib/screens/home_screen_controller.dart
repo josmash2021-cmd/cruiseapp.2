@@ -761,7 +761,7 @@ extension _HomeScreenController on _HomeScreenState {
 
   /// Open the search screen (photo 3) directly, then push RideRequestScreen
   /// with the pickup/dropoff results pre-filled.
-  Future<void> _openSearchThenRide({String? rideId}) async {
+  Future<void> _openSearchThenRide({String? rideId, bool applyPromo = false}) async {
     // Re-entry guard. If a previous tap already opened the search /
     // ride_request stack, ignore the new tap until the first finishes.
     // Without this, double-taps on a tier card (or fast tap-cancel-tap
@@ -852,6 +852,7 @@ extension _HomeScreenController on _HomeScreenState {
             initialDropoffAddress: effectiveDropoffLabel,
             initialRideId: rideId,
             preloadedRoute: preloadedRoute,
+            applyPromo: applyPromo,
           ),
         ),
       );

@@ -880,7 +880,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final IconData? badgeIcon = isVIP ? Icons.diamond : null;
     final String badgeGlyph = isPremium ? '★' : '✦';
 
-    final priceText = '\$${opt.priceEstimate.toStringAsFixed(2)}';
+    // Promo math: when the rider entered through the 10% off button,
+    // widget.applyPromo is true and the rendered price is 90% of the
+    // estimate. We keep the original priceEstimate visible (struck
+    // through, smaller, gray) so they SEE the discount being applied.
+    final bool promoOn = widget.applyPromo;
+    final double basePrice = opt.priceEstimate;
+    final double finalPrice = promoOn ? basePrice * 0.9 : basePrice;
+    final String priceText = '\$${finalPrice.toStringAsFixed(2)}';
+    final String oldPriceText = '\$${basePrice.toStringAsFixed(2)}';
 
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
@@ -1039,16 +1047,64 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
           const SizedBox(width: 10),
 
-          // ── Right: price ──
-          Text(
-            priceText,
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
-            ),
+          // ── Right: price (with crossed-out original when 10% promo) ──
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (promoOn) ...[
+                Text(
+                  oldPriceText,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.lineThrough,
+                    decorationColor: Colors.white.withValues(alpha: 0.45),
+                    decorationThickness: 1.5,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
+              Text(
+                priceText,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: promoOn ? const Color(0xFFE8C547) : Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              if (promoOn) ...[
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: const Text(
+                    '10% OFF',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFFE8C547),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

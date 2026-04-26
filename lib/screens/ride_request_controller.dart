@@ -957,7 +957,14 @@ extension _RideRequestController on _RideRequestScreenState {
           
           // NEW: Try smart retry with fallback options
           _setState(() => _isProcessingPayment = false);
-          final amountCents = (option.priceEstimate * 100).round();
+          // Apply 10% promo to the charged amount when active so the
+          // backend / Stripe receive the discounted price the rider
+          // saw on the picked vehicle card. Otherwise we'd display the
+          // discount but still charge full price.
+          final double effectivePrice = widget.applyPromo
+              ? option.priceEstimate * 0.9
+              : option.priceEstimate;
+          final amountCents = (effectivePrice * 100).round();
           final retryOk = await _handlePaymentFailure(
             error: e,
             amountCents: amountCents,
@@ -1009,7 +1016,14 @@ extension _RideRequestController on _RideRequestScreenState {
                           return await _confirmNativePayment(option);
                         } catch (e) {
                           // Payment failed - try smart retry with fallback
-                          final amountCents = (option.priceEstimate * 100).round();
+                          // Apply 10% promo to the charged amount when active so the
+          // backend / Stripe receive the discounted price the rider
+          // saw on the picked vehicle card. Otherwise we'd display the
+          // discount but still charge full price.
+          final double effectivePrice = widget.applyPromo
+              ? option.priceEstimate * 0.9
+              : option.priceEstimate;
+          final amountCents = (effectivePrice * 100).round();
                           return await _handlePaymentFailure(
                             error: e,
                             amountCents: amountCents,
@@ -1293,7 +1307,10 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Throws on failure.
   Future<bool> _confirmNativePayment(RideOption? option) async {
     if (option == null) return false;
-    final amountCents = (option.priceEstimate * 100).round();
+    final double effectivePrice = widget.applyPromo
+        ? option.priceEstimate * 0.9
+        : option.priceEstimate;
+    final amountCents = (effectivePrice * 100).round();
     final label = 'Cruise · ${option.name}';
 
     // Sandbox mode: simulate successful payment with brief delay

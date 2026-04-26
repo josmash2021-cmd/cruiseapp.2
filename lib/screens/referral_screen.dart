@@ -32,7 +32,7 @@ class _ReferralScreenState extends State<ReferralScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _bg = Colors.black;
-  static const _card = Color(0xFF111111);
+  static const _card = Color(0xFF252528);
   static const _chip = Color(0xFF1A1A1F);
 
   bool _loading = true;

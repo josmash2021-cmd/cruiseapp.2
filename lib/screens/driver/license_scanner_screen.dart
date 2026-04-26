@@ -299,7 +299,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: _capturedPath != null ? _buildPreview() : _buildScanner(),
     );
   }

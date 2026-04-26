@@ -45,7 +45,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     final s = S.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: const Color(0xFF252528),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -145,7 +145,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     return PopScope(
       canPop: widget.returnOnly,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF1A1A1F),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),

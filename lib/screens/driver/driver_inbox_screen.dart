@@ -143,7 +143,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

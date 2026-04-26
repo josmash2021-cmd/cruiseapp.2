@@ -99,7 +99,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: SafeArea(
         child: _loading
             ? const Center(

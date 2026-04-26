@@ -56,7 +56,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final s = S.of(context);
     final filters = [s.allFilter, s.completedFilter, s.cancelledFilter];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [

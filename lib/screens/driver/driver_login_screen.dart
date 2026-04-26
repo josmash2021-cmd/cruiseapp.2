@@ -219,7 +219,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
     final pad = MediaQuery.of(context).padding;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(

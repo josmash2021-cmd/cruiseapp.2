@@ -94,7 +94,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _earningsPill(bool isDark) {
     final pillBg = isDark
-        ? const Color(0xFF1A1A1A).withValues(alpha: 0.85)
+        ? const Color(0xFF252528).withValues(alpha: 0.85)
         : Colors.white.withValues(alpha: 0.9);
     final pillBorder = isDark
         ? Colors.white.withValues(alpha: 0.06)
@@ -369,7 +369,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   ) {
     final bot = MediaQuery.of(context).padding.bottom;
     // â”€â”€ Always use dark styling for offer cards â”€â”€
-    const cCardBg = Color(0xFF1A1A1A);
+    const cCardBg = Color(0xFF252528);
     final cCardBorder = _gold.withValues(alpha: 0.12);
     final cRejectBg = Colors.red.withValues(alpha: 0.08);
     const cRejectText = Color(0xFFFF6B6B);
@@ -536,7 +536,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF111111),
+                          color: const Color(0xFF252528),
                           border: Border(
                             top: BorderSide(
                               color: Colors.white.withValues(alpha: 0.06),
@@ -587,7 +587,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// Shows the Go Offline bottom sheet (accessible from Finding trips bar)
   void _showGoOfflineSheet() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? const Color(0xFF111111) : Colors.white;
+    final surface = isDark ? const Color(0xFF252528) : Colors.white;
     final textPrimary = isDark ? Colors.white : Colors.black;
     final textMuted = isDark
         ? Colors.white.withValues(alpha: 0.5)
@@ -1060,7 +1060,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
+                    color: const Color(0xFF252528),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: const Color(0xFFE53935).withValues(alpha: 0.4),
@@ -1291,7 +1291,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: const Color(0xFF252528),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -1521,7 +1521,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: const Color(0xFF252528),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -1596,7 +1596,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final subColor = darkMode
         ? Colors.white.withValues(alpha: 0.45)
         : const Color(0xFF666666);
-    final mainColor = darkMode ? Colors.white : const Color(0xFF111111);
+    final mainColor = darkMode ? Colors.white : const Color(0xFF252528);
     final lineColor = darkMode
         ? Colors.white.withValues(alpha: 0.15)
         : const Color(0xFFCCCCCC);
@@ -1700,7 +1700,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       tripDistMi = tripDistKm * 0.621371;
     }
 
-    const cCardBg = Color(0xFF1A1A1A); // ignore: unused_local_variable
+    const cCardBg = Color(0xFF252528); // ignore: unused_local_variable
     const cTextPrimary = Colors.white;
     final cTextMuted = Colors.white.withValues(alpha: 0.5);
     final cBorderC = Colors.white.withValues(alpha: 0.06);
@@ -2498,7 +2498,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 child: ElevatedButton(
                   onPressed: _arrivePickup,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
+                    backgroundColor: const Color(0xFF1A1A1F),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -2851,7 +2851,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1A1A1A) : Colors.grey.shade100,
+                  color: isDark ? const Color(0xFF252528) : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -3829,7 +3829,7 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: const Color(0xFF252528),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: Color.lerp(

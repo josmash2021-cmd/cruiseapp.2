@@ -201,7 +201,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     final s = S.of(context);
     final periods = [s.today, s.thisWeek, s.thisMonth];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [

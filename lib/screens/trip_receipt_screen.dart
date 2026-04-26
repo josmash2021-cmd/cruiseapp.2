@@ -89,7 +89,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -152,7 +152,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         padding: const EdgeInsets.symmetric(
                             vertical: 32, horizontal: 24),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF111111),
+                          color: const Color(0xFF252528),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
                             color: _gold.withValues(alpha: 0.30),

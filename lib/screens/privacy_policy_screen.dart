@@ -10,7 +10,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       appBar: AppBar(
         title: Text(S.of(context).privacyPolicy),
         backgroundColor: c.surface,

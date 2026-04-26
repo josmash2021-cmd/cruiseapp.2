@@ -1901,7 +1901,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: const Color(0xFF252528),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Active Offer',

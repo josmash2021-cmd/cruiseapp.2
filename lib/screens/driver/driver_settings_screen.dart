@@ -23,7 +23,7 @@ class DriverSettingsScreen extends StatefulWidget {
 class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF111111);
+  static const _surface = Color(0xFF252528);
   // ignore: unused_field
   static const _card = Color(0xFF1C1C1E);
 
@@ -74,7 +74,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     final top = MediaQuery.of(context).padding.top;
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: Column(
         children: [
           // ── Top bar ──

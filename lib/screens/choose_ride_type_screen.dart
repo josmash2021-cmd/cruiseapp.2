@@ -48,7 +48,7 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
     final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: SafeArea(
         child: Stack(
           children: [

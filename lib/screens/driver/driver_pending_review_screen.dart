@@ -413,7 +413,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF1A1A1F),
         body: SafeArea(
           child: _status == 'approved'
               ? _buildApproved()

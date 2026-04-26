@@ -406,7 +406,7 @@ class PlusCardScreen extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF2D2D2D), Color(0xFF1A1A1A)],
+              colors: [Color(0xFF2D2D2D), Color(0xFF252528)],
             ),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(

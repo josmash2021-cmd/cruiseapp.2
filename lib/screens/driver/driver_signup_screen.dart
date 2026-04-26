@@ -879,7 +879,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       resizeToAvoidBottomInset: true,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),

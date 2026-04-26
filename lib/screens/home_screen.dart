@@ -1155,7 +1155,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: FadeTransition(
         opacity: _rideFadeCtrl,
         child: Stack(

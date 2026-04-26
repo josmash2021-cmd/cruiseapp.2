@@ -159,7 +159,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
         child: child,
       ),
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF1A1A1F),
         body: Stack(
           fit: StackFit.expand,
           children: [

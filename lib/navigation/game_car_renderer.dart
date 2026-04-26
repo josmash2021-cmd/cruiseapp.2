@@ -223,7 +223,7 @@ class GameCarRenderer {
         ..lineTo(cx + 20, cy + 72)
         ..lineTo(cx + 25, cy + 65)
         ..close(),
-      Paint()..color = const Color(0xFF111111),
+      Paint()..color = const Color(0xFF252528),
     );
 
     // ── LÍNEAS DE CONTORNO ──

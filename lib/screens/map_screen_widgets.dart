@@ -3131,7 +3131,7 @@ class _PinInfoChip extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Color(0xFF111111),
+            color: Color(0xFF252528),
             fontSize: 12,
             fontWeight: FontWeight.w600,
             height: 1.0,

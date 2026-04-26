@@ -209,7 +209,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       body: Stack(
         children: [
           _loading

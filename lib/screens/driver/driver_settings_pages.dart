@@ -20,7 +20,7 @@ class DriverEditAddressScreen extends StatefulWidget {
 class _DriverEditAddressScreenState extends State<DriverEditAddressScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF111111);
+  static const _surface = Color(0xFF252528);
 
   final _homeCtrl = TextEditingController();
   final _workCtrl = TextEditingController();
@@ -877,7 +877,7 @@ class _SettingsTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF111111),
+      color: const Color(0xFF252528),
       padding: EdgeInsets.only(top: top + 8, bottom: 12, left: 16, right: 16),
       child: Row(
         children: [

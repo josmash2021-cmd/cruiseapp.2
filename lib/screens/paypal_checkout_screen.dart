@@ -103,9 +103,9 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1A1A1F),
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF1A1A1F),
         foregroundColor: Colors.white,
         title: Text(
           S.of(context).paypal,

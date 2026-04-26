@@ -128,7 +128,7 @@ Future<Uint8List> _renderModernNavCarBytes() async {
   const bodyHighl   = Color(0xFF2E5A8F);
   const glassColor  = Color(0xFF0E1D30);
   const glassRefl   = Color(0xFF1E3850);
-  const tireColor   = Color(0xFF111111);
+  const tireColor   = Color(0xFF252528);
   const rimOuter    = Color(0xFF909AA8);
   const rimInner    = Color(0xFFC8CED6);
   const headlCol    = Color(0xFFD8ECFF);

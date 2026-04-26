@@ -13,17 +13,20 @@ class DriverColors {
 
   static const gold = Color(0xFFE8C547);
 
-  Color get bg => _dark ? const Color(0xFF0A0A0A) : const Color(0xFFF2F2F7);
+  // Pure-black page background, grey-black widgets/cards, white text,
+  // gold icons (driver-side branding decision — see screenshots
+  // request 2026-04-26).
+  Color get bg => _dark ? Colors.black : const Color(0xFFF2F2F7);
   Color get surface =>
-      _dark ? const Color(0xFF141414) : const Color(0xFFE8E8ED);
-  Color get card => _dark ? const Color(0xFF1C1C1E) : Colors.white;
+      _dark ? const Color(0xFF1A1A1F) : const Color(0xFFE8E8ED);
+  Color get card => _dark ? const Color(0xFF1A1A1F) : Colors.white;
   Color get text => _dark ? Colors.white : const Color(0xFF1C1C1E);
   Color get textSecondary => _dark ? Colors.white60 : const Color(0xFF6E6E73);
-  Color get icon => _dark ? Colors.white70 : const Color(0xFF3A3A3C);
+  Color get icon => _dark ? gold : const Color(0xFF3A3A3C);
   Color get divider => _dark
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.black.withValues(alpha: 0.08);
   Color get glassBg => _dark
-      ? const Color(0xFF2C2C2E)
+      ? const Color(0xFF1A1A1F)
       : const Color(0xFFE5E5EA);
 }

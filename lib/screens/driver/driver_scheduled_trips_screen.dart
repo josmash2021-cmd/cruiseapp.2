@@ -114,7 +114,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     final c = AppColors.of(context);
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
@@ -122,7 +122,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
-            backgroundColor: c.bg,
+            backgroundColor: Colors.black,
             surfaceTintColor: Colors.transparent,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),

@@ -792,18 +792,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Live-switch map style
     _applyMapStyle(isDark);
 
-    // Theme-aware colors
-    final bg = isDark ? const Color(0xFF0A0A0A) : const Color(0xFFF2F2F7);
-    final surface = isDark ? const Color(0xFF111111) : Colors.white;
-    final card = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    // Theme-aware colors — pure black bg, grey-black widgets/cards,
+    // gold icons (driver brand pass 2026-04-26).
+    final bg = isDark ? Colors.black : const Color(0xFFF2F2F7);
+    final surface = isDark ? const Color(0xFF1A1A1F) : Colors.white;
+    final card = isDark ? const Color(0xFF1A1A1F) : Colors.white;
     final fabBg = isDark
-        ? const Color(0xFF1A1A1A).withValues(alpha: 0.75)
+        ? const Color(0xFF1A1A1F)
         : Colors.white.withValues(alpha: 0.85);
     final fabBorder = isDark
-        ? Colors.white.withValues(alpha: 0.06)
+        ? const Color(0xFFE8C547).withValues(alpha: 0.18)
         : Colors.black.withValues(alpha: 0.06);
     final fabIcon = isDark
-        ? Colors.white.withValues(alpha: 0.8)
+        ? const Color(0xFFE8C547)
         : Colors.black.withValues(alpha: 0.65);
     final textPrimary = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final textMuted = isDark

@@ -74,12 +74,12 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     final top = MediaQuery.of(context).padding.top;
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: dc.bg,
+      backgroundColor: Colors.black,
       body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: dc.surface,
+            color: const Color(0xFF1A1A1F),
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,

@@ -988,7 +988,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: dc.bg,
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
           // ── Full-screen map ──
@@ -1052,7 +1052,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     if (_currentLatLng == null) {
       return Container(
-        color: dc.bg,
+        color: Colors.black,
         child: const Center(
           child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
         ),

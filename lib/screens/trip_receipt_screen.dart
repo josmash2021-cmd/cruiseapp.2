@@ -1,15 +1,9 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:share_plus/share_plus.dart';
 
 import '../config/app_theme.dart';
-import '../config/env.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
-import '../services/user_session.dart';
 import '../widgets/tier_badge.dart';
 
 class TripReceiptScreen extends StatefulWidget {
@@ -24,13 +18,9 @@ class TripReceiptScreen extends StatefulWidget {
 class _TripReceiptScreenState extends State<TripReceiptScreen>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
 
   late AnimationController _entryController;
   late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
-  bool _emailSending = false;
-  bool _emailSent = false;
   Map<String, dynamic>? _fareBreakdown;
 
   @override
@@ -44,10 +34,6 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       parent: _entryController,
       curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
     );
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
-        .animate(
-          CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
-        );
     _entryController.forward();
     _loadFareBreakdown();
   }
@@ -59,111 +45,6 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   }
 
   TripHistoryItem get trip => widget.trip;
-
-  // ── Send receipt via EmailJS ──
-  Future<void> _sendEmailReceipt() async {
-    if (_emailSending || _emailSent) return;
-    setState(() => _emailSending = true);
-
-    try {
-      final user = await UserSession.getUser();
-      final email = user?['email'] ?? '';
-      final name = user?['firstName'] ?? 'Cruise User';
-
-      if (email.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(S.of(context).noEmailError),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        setState(() => _emailSending = false);
-        return;
-      }
-
-      const serviceId = Env.emailjsServiceId;
-      const templateId = Env.emailjsTemplateId;
-      const publicKey = Env.emailjsPublicKey;
-      const privateKey = Env.emailjsPrivateKey;
-      const apiUrl = 'https://api.emailjs.com/api/v1.0/email/send';
-
-      final date = _formatDate(trip.createdAt);
-
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'origin': 'http://localhost',
-          'User-Agent': 'Mozilla/5.0',
-        },
-        body: jsonEncode({
-          'service_id': serviceId,
-          'template_id': templateId,
-          'user_id': publicKey,
-          'accessToken': privateKey,
-          'template_params': {
-            'to_email': email,
-            'to_name': name,
-            'code':
-                '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
-                '     CRUISE RIDE · RECEIPT\n'
-                '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'
-                '✓  Ride Completed\n\n'
-                'Ride Type:  ${trip.rideName}\n'
-                'Total:      ${trip.price}\n'
-                'Distance:   $_effectiveMiles\n'
-                'Duration:   $_effectiveDuration\n'
-                'Date:       $date\n\n'
-                '── Route ──────────────────────\n'
-                '◉  Pickup:   ${trip.pickup}\n'
-                '◉  Drop-off: ${trip.dropoff}\n\n'
-                '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
-                'Thank you for riding with Cruise!\n',
-          },
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        debugPrint('✅ Receipt email sent to $email');
-        if (mounted) {
-          setState(() {
-            _emailSending = false;
-            _emailSent = true;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(S.of(context).receiptSentToEmail(email)),
-              backgroundColor: _gold,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        }
-      } else {
-        debugPrint('❌ Receipt email error: ${response.statusCode}');
-        _emailError();
-      }
-    } catch (e) {
-      debugPrint('❌ Receipt email failed: $e');
-      _emailError();
-    }
-  }
-
-  void _emailError() {
-    if (mounted) {
-      setState(() => _emailSending = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).couldNotSendReceipt),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
 
   Future<void> _loadFareBreakdown() async {
     final tid = trip.tripId;
@@ -204,43 +85,11 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     return '0 min';
   }
 
-  // ── Share receipt as text ──
-  Future<void> _shareReceipt() async {
-    final date = _formatDate(trip.createdAt);
-    final receiptNum = _fareBreakdown?['receipt_number'] ?? 'CR-${trip.tripId ?? 0}';
-    final paymentMethod = _fareBreakdown?['payment_method'] as String?;
-    
-    final shareText = '''
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     CRUISE RIDE · RECEIPT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Receipt #: $receiptNum
-
-✓  Ride Completed
-
-Ride Type:  ${trip.rideName}
-Total:      ${trip.price}
-Distance:   $_effectiveMiles
-Duration:   $_effectiveDuration
-Date:       $date
-${paymentMethod != null ? 'Payment:    $paymentMethod\n' : ''}
-── Route ──────────────────────
-◉  Pickup:   ${trip.pickup}
-◉  Drop-off: ${trip.dropoff}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Thank you for riding with Cruise!
-''';
-    
-    await Share.share(shareText, subject: 'Cruise Ride Receipt - $receiptNum');
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -251,7 +100,7 @@ Thank you for riding with Cruise!
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                     children: [
-                      // ── TOP BAR (back + actions) ──
+                      // ── TOP BAR (back only — share + email removed) ──
                       Row(
                         children: [
                           GestureDetector(
@@ -260,63 +109,14 @@ Thank you for riding with Cruise!
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: c.surface,
+                                color: const Color(0xFF1A1A1F),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Icon(
+                              child: const Icon(
                                 Icons.arrow_back_ios_new_rounded,
-                                color: c.textPrimary,
+                                color: Colors.white,
                                 size: 18,
                               ),
-                            ),
-                          ),
-                          const Spacer(),
-                          // Share button
-                          GestureDetector(
-                            onTap: _shareReceipt,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: c.surface,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(
-                                Icons.share_outlined,
-                                color: c.textSecondary,
-                                size: 18,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          // Email button
-                          GestureDetector(
-                            onTap: _emailSending ? null : _sendEmailReceipt,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: _emailSent ? _gold.withValues(alpha: 0.15) : c.surface,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: _emailSending
-                                  ? Center(
-                                      child: SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          color: _gold,
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(
-                                      _emailSent
-                                          ? Icons.mark_email_read_rounded
-                                          : Icons.email_outlined,
-                                      color: _emailSent ? _gold : c.textSecondary,
-                                      size: 18,
-                                    ),
                             ),
                           ),
                         ],
@@ -345,77 +145,80 @@ Thank you for riding with Cruise!
                       ),
                       const SizedBox(height: 28),
 
-                      // ── TOTAL AMOUNT CARD (tier-colored) ──
-                      Builder(builder: (context) {
-                        final tier = TierInfo.from(trip.rideName);
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: tier.gradient,
+                      // ── TOTAL AMOUNT CARD (matches the rest of the
+                      // black/gold theme — was a tier-colored gradient
+                      // that fought the dark UI). ──
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 32, horizontal: 24),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF111111),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.30),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.10),
+                              blurRadius: 22,
+                              spreadRadius: 1,
                             ),
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: tier.gradient.first.withValues(alpha: 0.3),
-                                blurRadius: 24,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              // Status badge
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0x2208090C),
-                                  borderRadius: BorderRadius.circular(20),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            // Status badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 5),
+                              decoration: BoxDecoration(
+                                color:
+                                    _gold.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: _gold.withValues(alpha: 0.35),
+                                  width: 1,
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.check_circle_rounded,
-                                      color: Color(0xFF08090C),
-                                      size: 13,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: _gold,
+                                    size: 13,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    S.of(context).completedOnDate(
+                                        _formatDate(trip.createdAt)),
+                                    style: const TextStyle(
+                                      color: _gold,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      S.of(context).completedOnDate(_formatDate(trip.createdAt)),
-                                      style: const TextStyle(
-                                        color: Color(0xBB08090C),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 18),
-                              // Total amount
-                              Text(
-                                trip.price,
-                                style: const TextStyle(
-                                  color: Color(0xFF08090C),
-                                  fontSize: 44,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -1,
-                                ),
+                            ),
+                            const SizedBox(height: 18),
+                            // Total amount in gold
+                            Text(
+                              trip.price,
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 44,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -1,
                               ),
-                              const SizedBox(height: 8),
-                              // Animated tier badge
-                              TierBadge(
-                                rideName: trip.rideName,
-                                fontSize: 11,
-                                iconSize: 13,
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+                            ),
+                            const SizedBox(height: 12),
+                            // Tier badge (now 1:1 with Choose a Vehicle)
+                            TierBadge(rideName: trip.rideName),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 16),
 
                       // ── TRIP DETAILS CARD ──
@@ -535,18 +338,8 @@ Thank you for riding with Cruise!
                               address: trip.pickup,
                             ),
                             Padding(
-                              padding: const EdgeInsets.only(left: 5),
-                              child: Column(
-                                children: List.generate(
-                                  3,
-                                  (_) => Container(
-                                    width: 1.5,
-                                    height: 6,
-                                    margin: const EdgeInsets.symmetric(vertical: 2),
-                                    color: _gold.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                              ),
+                              padding: const EdgeInsets.only(left: 4),
+                              child: const _ShimmerConnector(),
                             ),
                             _routePoint(
                               c,
@@ -559,89 +352,6 @@ Thank you for riding with Cruise!
                       ),
 
                       const SizedBox(height: 20),
-
-                      // ── ACTION BUTTONS ROW ──
-                      Row(
-                        children: [
-                          // Share button
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _shareReceipt,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                decoration: BoxDecoration(
-                                  color: c.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: c.border),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.share_outlined, color: c.textSecondary, size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      S.of(context).shareBtn,
-                                      style: TextStyle(
-                                        color: c.textSecondary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          // Email button
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _emailSending ? null : _sendEmailReceipt,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                decoration: BoxDecoration(
-                                  color: _emailSent ? _gold.withValues(alpha: 0.12) : c.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: _emailSent ? _gold.withValues(alpha: 0.3) : c.border,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (_emailSending)
-                                      SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          color: _gold,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    else
-                                      Icon(
-                                        _emailSent ? Icons.mark_email_read_rounded : Icons.email_outlined,
-                                        color: _emailSent ? _gold : c.textSecondary,
-                                        size: 18,
-                                      ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _emailSent ? S.of(context).sentLabel : S.of(context).sendReceipt,
-                                      style: TextStyle(
-                                        color: _emailSent ? _gold : c.textSecondary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
                       Center(
                         child: Text(
                           S.of(context).thankYouForRiding,
@@ -721,16 +431,33 @@ Thank you for riding with Cruise!
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 12,
-          height: 12,
-          margin: const EdgeInsets.only(top: 2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isPickup ? Colors.transparent : _gold,
-            border: isPickup ? Border.all(color: _gold, width: 2.5) : null,
-          ),
-        ),
+        // Pickup = gold dot. Dropoff = white square (matches Your Trips
+        // card so endpoints are visually distinct at a glance).
+        isPickup
+            ? Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              )
+            : Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.30),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
@@ -810,3 +537,67 @@ Thank you for riding with Cruise!
     );
   }
 }
+
+/// Vertical shimmer connector between pickup and dropoff dots — same
+/// component used in [RideHistoryScreen]. 1.5 px wide, 18 px tall, gold
+/// gradient with a brighter highlight that travels top -> bottom on a
+/// 1.6 s loop.
+class _ShimmerConnector extends StatefulWidget {
+  const _ShimmerConnector();
+
+  @override
+  State<_ShimmerConnector> createState() => _ShimmerConnectorState();
+}
+
+class _ShimmerConnectorState extends State<_ShimmerConnector>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 1.5,
+      height: 18,
+      child: AnimatedBuilder(
+        animation: _ctl,
+        builder: (_, __) {
+          final t = _ctl.value;
+          final start = (t - 0.15).clamp(0.0, 1.0);
+          final mid = t.clamp(0.0, 1.0);
+          final end = (t + 0.15).clamp(0.0, 1.0);
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: const [
+                  Color(0x55E8C547),
+                  Color(0xFFFFFFFF),
+                  Color(0x55E8C547),
+                ],
+                stops: [start, mid, end],
+              ),
+              borderRadius: BorderRadius.circular(1),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+

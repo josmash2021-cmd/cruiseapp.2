@@ -117,6 +117,7 @@ MIGRATIONS = [
     # ── Referrals + Cruise Cash ──
     ("users", "referral_code", "VARCHAR(20)"),
     ("users", "referred_by_user_id", "INTEGER"),
+    ("users", "stripe_customer_id", "VARCHAR(100)"),
     ("referrals", "qualified_trips_count", "INTEGER DEFAULT 0"),
     ("referrals", "qualified_trips_required", "INTEGER DEFAULT 2"),
     ("referrals", "qualifying_min_fare", "FLOAT DEFAULT 50.0"),

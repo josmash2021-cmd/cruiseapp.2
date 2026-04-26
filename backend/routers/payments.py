@@ -34,17 +34,65 @@ except ImportError:
 
 router = APIRouter()
 
-@router.post("/payments/setup-intent", dependencies=[Depends(_verify_api_key)])
-async def create_setup_intent(user: User = Depends(_get_current_user)):
-    """Create a Stripe SetupIntent so the rider's card is authorised for future off-session charges."""
+
+# ─────────────────────────────────────────────────────────────────
+#  Stripe Customer helper
+# ─────────────────────────────────────────────────────────────────
+
+async def _get_or_create_stripe_customer(user: User, db: AsyncSession) -> Optional[str]:
+    """Return the Stripe customer_id for this user, creating one on
+    first use. Stored on users.stripe_customer_id so we don't hit the
+    Stripe API every request. Returns None if Stripe is not configured.
+
+    All saved cards / SetupIntents / off_session charges hang off this
+    customer — without it PaymentMethods are orphaned and unusable."""
     if not _HAS_STRIPE:
-        return {"client_secret": "seti_mock_secret_for_testing"}
+        return None
+    if user.stripe_customer_id:
+        return user.stripe_customer_id
     try:
-        intent = _stripe_mod.SetupIntent.create(
-            usage="off_session",
+        customer = _stripe_mod.Customer.create(
+            email=user.email or None,
+            phone=user.phone or None,
+            name=" ".join([(user.first_name or ""), (user.last_name or "")]).strip() or None,
             metadata={"user_id": str(user.id)},
         )
-        return {"client_secret": intent.client_secret}
+        user.stripe_customer_id = customer.id
+        await db.commit()
+        await db.refresh(user)
+        return customer.id
+    except Exception as e:
+        logging.error("[stripe] Customer.create failed for user %s: %s", user.id, e)
+        return None
+
+@router.post("/payments/setup-intent", dependencies=[Depends(_verify_api_key)])
+async def create_setup_intent(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a Stripe SetupIntent attached to the rider's Stripe
+    customer so the saved card can be charged off_session later.
+
+    Without `customer=`, the resulting PaymentMethod is orphaned and
+    every future off_session charge fails with "No customer attached".
+    The helper lazily creates the customer on first call and caches the
+    id on users.stripe_customer_id."""
+    if not _HAS_STRIPE:
+        return {"client_secret": "seti_mock_secret_for_testing"}
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        raise HTTPException(500, "Could not initialise payment customer")
+    try:
+        intent = _stripe_mod.SetupIntent.create(
+            customer=customer_id,
+            usage="off_session",
+            payment_method_types=["card"],
+            metadata={"user_id": str(user.id)},
+        )
+        return {
+            "client_secret": intent.client_secret,
+            "customer_id": customer_id,
+        }
     except _stripe_mod.error.StripeError as e:
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
@@ -84,9 +132,16 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
             "currency": body.currency,
             "metadata": {"rider_id": str(user.id)},
         }
+        # Always pass customer when we have one — required by Stripe to
+        # use a saved PaymentMethod (off_session charges) and lets the
+        # rider's saved cards / bank accounts surface in payment sheets.
+        customer_id = await _get_or_create_stripe_customer(user, db)
+        if customer_id:
+            intent_params["customer"] = customer_id
         if body.payment_method_id:
             intent_params["payment_method"] = body.payment_method_id
             intent_params["confirm"] = True
+            intent_params["off_session"] = True
             intent_params["automatic_payment_methods"] = {
                 "enabled": True,
                 "allow_redirects": "never",

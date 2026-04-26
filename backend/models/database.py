@@ -137,6 +137,10 @@ class User(Base):
     referral_code = Column(String(20), nullable=True, unique=True, index=True)
     # Set on signup if the new user redeemed someone else's referral code.
     referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Stripe Customer ID — created lazily the first time the rider tries
+    # to save a card so all PaymentMethods attach to the same customer
+    # and off_session charges can find them later.
+    stripe_customer_id = Column(String(100), nullable=True, index=True)
 
 
 class ConsentLog(Base):

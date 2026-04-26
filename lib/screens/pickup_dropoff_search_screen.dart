@@ -14,6 +14,7 @@ import '../services/local_data_service.dart';
 import '../services/places_service.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
+import '../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Design tokens (match Shopify "vipRide__locPicker")
@@ -545,7 +546,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       child: Scaffold(
         backgroundColor: _bg,
         resizeToAvoidBottomInset: true,
-        body: Stack(
+        body: GoldParticlesBackground(child: Stack(
           children: [
             SafeArea(
               child: Padding(
@@ -602,7 +603,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

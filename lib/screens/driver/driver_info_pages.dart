@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
 import 'driver_profile_photo_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  Reusable dark-themed info page shell
@@ -899,7 +900,7 @@ class _NewDriverInstructionsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           children: [
             // ── Top bar ──
@@ -1147,7 +1148,7 @@ class _NewDriverInstructionsScreenState
               ),
           ],
         ),
-      ),
+      )),
     );
   }
 

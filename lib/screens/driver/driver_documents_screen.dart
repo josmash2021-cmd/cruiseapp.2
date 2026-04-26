@@ -9,6 +9,7 @@ import '../../services/firebase_storage_service.dart';
 import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 import 'background_check_consent_screen.dart';
+import '../../widgets/gold_particles_background.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
 
@@ -320,7 +321,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: dc.bg,
-      body: _loading
+      body: GoldParticlesBackground(child: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
             )
@@ -556,7 +557,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   ),
                 ),
               ],
-            ),
+            )),
     );
   }
 

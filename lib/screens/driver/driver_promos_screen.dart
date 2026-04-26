@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — PROMOTIONS SCREEN
@@ -264,7 +265,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
+      body: GoldParticlesBackground(child: SafeArea(
         child: Column(
           children: [
             // ── Top bar ──
@@ -385,7 +386,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

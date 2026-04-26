@@ -7,6 +7,7 @@ import '../../services/firebase_storage_service.dart';
 import '../../services/photo_recovery_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
+import '../../widgets/gold_particles_background.dart';
 
 /// Driver Manage Account page — edit photo, email, phone.
 class DriverManageAccountScreen extends StatefulWidget {
@@ -176,7 +177,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
     if (_loading) {
       return Scaffold(
         backgroundColor: _bg,
-        body: const Center(child: CircularProgressIndicator(color: _gold)),
+        body: GoldParticlesBackground(child: const Center(child: CircularProgressIndicator(color: _gold))),
       );
     }
 
@@ -186,7 +187,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: Column(
+      body: GoldParticlesBackground(child: Column(
         children: [
           // ── Top bar ──
           Container(
@@ -388,7 +389,7 @@ class _DriverManageAccountScreenState extends State<DriverManageAccountScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

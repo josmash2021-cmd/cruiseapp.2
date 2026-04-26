@@ -25,6 +25,7 @@ import 'scheduled_rides_screen.dart';
 import '../about_screen.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/responsive.dart';
+import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — FULL-SCREEN MENU (Uber Driver style)
@@ -215,7 +216,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: dc.bg,
-      body: Column(
+      body: GoldParticlesBackground(child: Column(
         children: [
           // ── Top bar ──
           Container(
@@ -473,7 +474,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../services/api_service.dart';
 import 'transfer_cruise_cash_screen.dart';
+import '../widgets/gold_particles_background.dart';
 
 /// Invite Friends screen — Cruise Cash referral system.
 ///
@@ -170,7 +171,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
+      body: GoldParticlesBackground(child: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: _gold))
             : RefreshIndicator(
@@ -200,7 +201,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                   ],
                 ),
               ),
-      ),
+      )),
     );
   }
 

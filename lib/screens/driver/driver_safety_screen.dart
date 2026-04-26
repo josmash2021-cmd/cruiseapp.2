@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER SAFETY SCREEN — In-navigation safety actions
@@ -36,7 +37,7 @@ class DriverSafetyScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
+      body: GoldParticlesBackground(child: SafeArea(
         top: false,
         child: Column(
           children: [
@@ -153,7 +154,7 @@ class DriverSafetyScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

@@ -61,9 +61,17 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
   mapbox.PolylineAnnotationManager? _polyMgr;
   mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
-  
+
   List<LatLng> _routePoints = [];
   bool _routeFetching = false;
+  // 2026-04-27: track the on-screen coordinates of the pickup/dropoff
+  // pins so the labels can sit beside the pin instead of being pinned
+  // at hardcoded screen positions (top + 80 / bottom + 280) that
+  // ignored the camera state. Updated every 250ms via the camera-sync
+  // timer below so the labels follow the pin during the smooth zoom-out.
+  Offset? _pickupScreenPos;
+  Offset? _dropoffScreenPos;
+  Timer? _cameraSyncTimer;
   
   // Animations
   late final AnimationController _slideCtrl;
@@ -122,6 +130,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     _slideCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _cameraSyncTimer?.cancel();
     if (_driverFoundCb != null) {
       widget.driverFound?.removeListener(_driverFoundCb!);
     }
@@ -167,10 +176,66 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
-    
+
     // Add pins
     _addSmartPins();
-    
+
+    // Smooth zoom-out so both pickup + dropoff land in view together.
+    // Initial cameraOptions zoom is 13.5 which on long trips leaves
+    // one pin off-screen — easeTo to a fitted bounds over 1.6s gives
+    // a cinematic reveal of the full route.
+    Future.delayed(const Duration(milliseconds: 400), () async {
+      if (!mounted || _mapCtrl == null) return;
+      try {
+        final cam = await _mapCtrl!.cameraForCoordinatesPadding(
+          [
+            mapbox.Point(coordinates: mapbox.Position(
+              widget.pickupLatLng.longitude,
+              widget.pickupLatLng.latitude,
+            )),
+            mapbox.Point(coordinates: mapbox.Position(
+              widget.dropoffLatLng.longitude,
+              widget.dropoffLatLng.latitude,
+            )),
+          ],
+          mapbox.CameraOptions(bearing: _calculateBearing(), pitch: 35.0),
+          mapbox.MbxEdgeInsets(
+            top: MediaQuery.of(context).padding.top + 120,
+            bottom: 280,
+            left: 60,
+            right: 60,
+          ),
+          null, null,
+        );
+        if (!mounted || _mapCtrl == null) return;
+        // Clamp zoom so we never zoom IN more than the initial view —
+        // a short trip should stay at 13.5, long trips zoom OUT.
+        final z = (cam.zoom ?? 13.5).clamp(9.0, 13.5);
+        _mapCtrl!.easeTo(
+          mapbox.CameraOptions(
+            center: cam.center,
+            zoom: z,
+            bearing: cam.bearing,
+            pitch: cam.pitch,
+            padding: cam.padding,
+          ),
+          mapbox.MapAnimationOptions(duration: 1600),
+        );
+      } catch (e) {
+        debugPrint('[WaitingForDriver] zoom-out failed: $e');
+      }
+    });
+
+    // Start syncing pin screen positions so floating labels can follow
+    // them as the camera moves (zoom-out cinematic). 250ms is fast
+    // enough that the eye doesn't see the labels lag behind the pins.
+    _cameraSyncTimer?.cancel();
+    _cameraSyncTimer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _syncPinScreenPositions(),
+    );
+    unawaited(_syncPinScreenPositions());
+
     // Draw route
     while (_routeFetching && mounted) {
       await Future.delayed(const Duration(milliseconds: 50));
@@ -179,6 +244,49 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     if (_routePoints.length >= 2) {
       await _animateRouteDraw();
     }
+  }
+
+  /// Project the pickup + dropoff lat/lng to the current screen
+  /// coordinates so the floating labels can sit beside them. Returns
+  /// null for any pin that isn't currently inside the visible map area
+  /// (the label hides when the pin is off-screen).
+  Future<void> _syncPinScreenPositions() async {
+    final mc = _mapCtrl;
+    if (mc == null || !mounted) return;
+    try {
+      final mq = MediaQuery.of(context);
+      final screenW = mq.size.width;
+      final screenH = mq.size.height;
+
+      final pickPx = await mc.pixelForCoordinate(mapbox.Point(
+        coordinates: mapbox.Position(
+          widget.pickupLatLng.longitude,
+          widget.pickupLatLng.latitude,
+        ),
+      ));
+      final dropPx = await mc.pixelForCoordinate(mapbox.Point(
+        coordinates: mapbox.Position(
+          widget.dropoffLatLng.longitude,
+          widget.dropoffLatLng.latitude,
+        ),
+      ));
+      if (!mounted) return;
+      // Reserve top-bar (80px) + bottom sheet area (~280px) so a label
+      // never paints over the chrome. Pin is "visible" only if its
+      // pixel position is inside the map's clear area.
+      const topReserve = 80.0;
+      const bottomReserve = 280.0;
+      bool inView(num x, num y) =>
+          x >= 0 && x <= screenW && y >= topReserve && y <= screenH - bottomReserve;
+      setState(() {
+        _pickupScreenPos = inView(pickPx.x, pickPx.y)
+            ? Offset(pickPx.x.toDouble(), pickPx.y.toDouble())
+            : null;
+        _dropoffScreenPos = inView(dropPx.x, dropPx.y)
+            ? Offset(dropPx.x.toDouble(), dropPx.y.toDouble())
+            : null;
+      });
+    } catch (_) {/* mapbox not ready yet */}
   }
 
   Future<void> _addSmartPins() async {
@@ -536,31 +644,80 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
   }
 
   Widget _buildFloatingLabels() {
+    // 2026-04-27 FIX: labels now SIT NEXT TO THE PIN they describe
+    // (pickup label beside pickup pin, dropoff label beside dropoff
+    // pin). Previously they were pinned to fixed screen offsets
+    // (top + 80 / bottom + 280) so when a pin moved off-viewport
+    // its label still rendered at its fixed slot up top — looked
+    // disconnected from the actual pin location.
+    //
+    // _pickupScreenPos / _dropoffScreenPos are projected lat/lng
+    // every 250ms by _syncPinScreenPositions. Each is null when the
+    // pin is OFF-SCREEN, in which case we hide its label entirely
+    // (the user requested: "if dropoff isn't visible the label
+    // shouldn't appear up top either").
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+
+    // Geometry to keep labels clear of the pin and clamped on screen.
+    const double pillEstimatedWidth = 230.0;
+    const double pillHalfHeight = 26.0;
+    const double pillHeight = pillHalfHeight * 2;
+    const double pinHalfWidth = 16.0;
+    const double sideGap = 14.0;
+    final topSafe = mq.padding.top + 12;
+    final bottomSafe = mq.size.height - 280; // bottom sheet area
+
+    Widget? pickupLabel;
+    final pp = _pickupScreenPos;
+    if (pp != null) {
+      // Default RIGHT side; flip LEFT if it'd overflow.
+      double left = pp.dx + pinHalfWidth + sideGap;
+      if (left + pillEstimatedWidth > screenW - 8) {
+        left = pp.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+      }
+      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      double top = pp.dy - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      pickupLabel = Positioned(
+        left: left,
+        top: top,
+        child: _buildMapLabel(
+          icon: Icons.person_pin,
+          title: 'RECOGIDA',
+          address: widget.pickupAddress,
+          isPickup: true,
+        ),
+      );
+    }
+
+    Widget? dropoffLabel;
+    final dp = _dropoffScreenPos;
+    if (dp != null) {
+      // Default LEFT side for dropoff; flip RIGHT if it'd overflow.
+      double left = dp.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+      if (left < 8) {
+        left = dp.dx + pinHalfWidth + sideGap;
+      }
+      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      double top = dp.dy - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      dropoffLabel = Positioned(
+        left: left,
+        top: top,
+        child: _buildMapLabel(
+          icon: Icons.location_on,
+          title: 'DESTINO',
+          address: widget.dropoffAddress,
+          isPickup: false,
+        ),
+      );
+    }
+
     return Stack(
       children: [
-        // Label DESTINO (dropoff)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 80,
-          left: 16,
-          child: _buildMapLabel(
-            icon: Icons.location_on,
-            title: 'DESTINO',
-            address: widget.dropoffAddress,
-            isPickup: false,
-          ),
-        ),
-        
-        // Label RECOGIDA (pickup)
-        Positioned(
-          bottom: 280,
-          right: 16,
-          child: _buildMapLabel(
-            icon: Icons.person_pin,
-            title: 'RECOGIDA',
-            address: widget.pickupAddress,
-            isPickup: true,
-          ),
-        ),
+        if (pickupLabel != null) pickupLabel,
+        if (dropoffLabel != null) dropoffLabel,
       ],
     );
   }

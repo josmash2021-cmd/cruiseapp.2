@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
+import 'tap_to_pay_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Payment Method — Grid 2×2 de tarjetas cuadradas como en la web de Shopify
@@ -12,6 +13,8 @@ import '../l10n/app_localizations.dart';
 //    - Apple Pay (fondo negro, icono blanco)
 //    - Google Pay (fondo blanco, icono de colores)
 //    - Tarjeta Débito/Crédito (fondo gris oscuro, icono blanco)
+//    - Tap to Pay (fondo azul oscuro, icono NFC azul)
+//    - Bank Account (coming soon)
 //    - Modo de Prueba (fondo oscuro dorado, icono dorado)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -25,6 +28,7 @@ class PaymentMethodId {
   static const google = 'google_pay';
   static const card = 'card';
   static const bank = 'bank_account';
+  static const tapToPay = 'tap_to_pay';
   static const test = 'test_mode';
 }
 
@@ -176,6 +180,23 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                         size: 28,
                       ),
                       onTap: () => _pick(PaymentMethodId.card),
+                    ),
+                    // Tap to Pay - NFC Contactless Payment
+                    _PayCard(
+                      entryCtl: _entryCtl,
+                      staggerDelay: 0.12,
+                      id: PaymentMethodId.tapToPay,
+                      selected: _selected == PaymentMethodId.tapToPay,
+                      iconBg: const Color(0xFF1A237E), // Deep blue
+                      iconBorder: const Color(0xFF4A90D9).withValues(alpha: 0.5),
+                      label: 'Tap to Pay',
+                      secondary: 'Hold card to phone',
+                      icon: const Icon(
+                        Icons.contactless,
+                        color: Color(0xFF4A90D9),
+                        size: 32,
+                      ),
+                      onTap: () => _pick(PaymentMethodId.tapToPay),
                     ),
                     _PayCard(
                       entryCtl: _entryCtl,

@@ -2488,3 +2488,195 @@ async def email_sched_enroute(request: Request):
         logging.error("[email sched-enroute] %s", e)
         raise HTTPException(500, "email send failed")
 
+
+# ═══════════════════════════════════════════════════════════════════════
+#  STRIPE TERMINAL - TAP TO PAY (NFC Contactless Payments)
+# ═══════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel, Field
+
+class ConnectionTokenResponse(BaseModel):
+    secret: str
+
+class CreatePaymentIntentRequest(BaseModel):
+    amount: int = Field(..., gt=0, description="Amount in cents (e.g., 1000 = $10.00)")
+    currency: str = Field(default="usd", pattern="^[a-z]{3}$")
+    description: Optional[str] = Field(default="Cruise Ride Payment")
+
+class CreatePaymentIntentResponse(BaseModel):
+    id: str
+    client_secret: str
+    status: str
+    amount: int
+    currency: str
+
+class CapturePaymentIntentRequest(BaseModel):
+    payment_intent_id: str
+
+class PaymentStatusResponse(BaseModel):
+    id: str
+    status: str
+    amount: int
+    currency: str
+    charges: List[dict] = []
+
+
+@router.post("/stripe/connection-token", response_model=ConnectionTokenResponse)
+async def get_stripe_connection_token(
+    user: User = Depends(_get_current_user),
+):
+    """Generate a ConnectionToken for Stripe Terminal SDK.
+    
+    The Terminal SDK uses this token to authenticate with Stripe's servers
+    and establish a secure connection for processing in-person payments.
+    Tokens are short-lived and should be generated fresh for each session.
+    """
+    if not _HAS_STRIPE:
+        # Return mock token for testing without Stripe configured
+        return ConnectionTokenResponse(secret="pst_mock_token_for_testing")
+    
+    try:
+        # Create a ConnectionToken using Stripe's API
+        token = _stripe_mod.terminal.ConnectionToken.create()
+        return ConnectionTokenResponse(secret=token.secret)
+    except Exception as e:
+        logging.error("[stripe terminal] Failed to create connection token: %s", e)
+        raise HTTPException(500, "Failed to initialize payment terminal")
+
+
+@router.post("/stripe/create-payment-intent", response_model=CreatePaymentIntentResponse)
+async def create_tap_to_pay_payment_intent(
+    request: CreatePaymentIntentRequest,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a PaymentIntent for Tap to Pay (NFC card-present transaction).
+    
+    This creates a PaymentIntent configured for card-present payments using
+    Stripe Terminal. The client_secret is used by the Terminal SDK to
+    collect the payment method from the NFC card.
+    """
+    if not _HAS_STRIPE:
+        # Return mock response for testing
+        mock_id = f"pi_mock_{secrets.token_hex(12)}"
+        return CreatePaymentIntentResponse(
+            id=mock_id,
+            client_secret=f"{mock_id}_secret_mock",
+            status="requires_payment_method",
+            amount=request.amount,
+            currency=request.currency,
+        )
+    
+    try:
+        # Get or create Stripe customer
+        customer_id = await _get_or_create_stripe_customer(user, db)
+        
+        # Create PaymentIntent for card-present payment
+        intent = _stripe_mod.PaymentIntent.create(
+            amount=request.amount,
+            currency=request.currency,
+            customer=customer_id,
+            description=request.description,
+            payment_method_types=["card_present"],
+            capture_method="automatic",
+            metadata={
+                "user_id": str(user.id),
+                "payment_type": "tap_to_pay",
+                "integration_type": "terminal",
+            },
+        )
+        
+        return CreatePaymentIntentResponse(
+            id=intent.id,
+            client_secret=intent.client_secret,
+            status=intent.status,
+            amount=intent.amount,
+            currency=intent.currency,
+        )
+        
+    except Exception as e:
+        logging.error("[stripe terminal] Failed to create payment intent: %s", e)
+        raise HTTPException(500, "Failed to create payment")
+
+
+@router.post("/stripe/capture-payment-intent")
+async def capture_tap_to_pay_payment(
+    request: CapturePaymentIntentRequest,
+    user: User = Depends(_get_current_user),
+):
+    """Capture a PaymentIntent after card-present payment is confirmed.
+    
+    For automatic capture, this endpoint verifies the payment succeeded.
+    For manual capture, this would capture the authorized funds.
+    """
+    if not _HAS_STRIPE:
+        return {"status": "succeeded", "payment_intent_id": request.payment_intent_id}
+    
+    try:
+        # Retrieve the PaymentIntent to check status
+        intent = _stripe_mod.PaymentIntent.retrieve(request.payment_intent_id)
+        
+        # If not captured and requires capture, capture it
+        if intent.status == "requires_capture":
+            intent = _stripe_mod.PaymentIntent.capture(request.payment_intent_id)
+        
+        return {
+            "status": intent.status,
+            "payment_intent_id": intent.id,
+            "amount": intent.amount,
+            "currency": intent.currency,
+            "charges": [
+                {
+                    "id": charge.id,
+                    "status": charge.status,
+                    "receipt_url": charge.receipt_url,
+                }
+                for charge in intent.charges.data
+            ] if intent.charges else [],
+        }
+        
+    except Exception as e:
+        logging.error("[stripe terminal] Failed to capture payment: %s", e)
+        raise HTTPException(500, "Failed to process payment")
+
+
+@router.get("/stripe/payment-status/{payment_intent_id}", response_model=PaymentStatusResponse)
+async def get_tap_to_pay_payment_status(
+    payment_intent_id: str,
+    user: User = Depends(_get_current_user),
+):
+    """Get the current status of a PaymentIntent.
+    
+    Used to verify payment status after Tap to Pay transaction.
+    """
+    if not _HAS_STRIPE:
+        return PaymentStatusResponse(
+            id=payment_intent_id,
+            status="succeeded",
+            amount=0,
+            currency="usd",
+        )
+    
+    try:
+        intent = _stripe_mod.PaymentIntent.retrieve(payment_intent_id)
+        
+        return PaymentStatusResponse(
+            id=intent.id,
+            status=intent.status,
+            amount=intent.amount,
+            currency=intent.currency,
+            charges=[
+                {
+                    "id": charge.id,
+                    "status": charge.status,
+                    "receipt_url": charge.receipt_url,
+                    "payment_method_details": charge.payment_method_details.to_dict() if charge.payment_method_details else None,
+                }
+                for charge in intent.charges.data
+            ] if intent.charges else [],
+        )
+        
+    except Exception as e:
+        logging.error("[stripe terminal] Failed to retrieve payment status: %s", e)
+        raise HTTPException(500, "Failed to retrieve payment status")
+

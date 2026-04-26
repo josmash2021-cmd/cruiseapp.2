@@ -533,12 +533,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // check, picking a future date AFTER the screen
                         // is already mounted leaves the label stuck on
                         // "Request Ride".
-                        label: (widget.scheduledAt != null ||
-                                widget.isAirportTrip ||
-                                _ctrl.state.scheduledAt != null ||
-                                _ctrl.state.isAirportTrip)
-                            ? S.of(context).bookScheduledRide
-                            : S.of(context).requestRide,
+                        label: () {
+                          final isReserve = widget.scheduledAt != null ||
+                              widget.isAirportTrip ||
+                              _ctrl.state.scheduledAt != null ||
+                              _ctrl.state.isAirportTrip;
+                          // Debug print so we can see in the device
+                          // logs WHY the wrong label is being shown if
+                          // the user reports it again.
+                          debugPrint(
+                            '[RideReqLabel] scheduledAt(w)=${widget.scheduledAt} '
+                            'airport(w)=${widget.isAirportTrip} '
+                            'scheduledAt(s)=${_ctrl.state.scheduledAt} '
+                            'airport(s)=${_ctrl.state.isAirportTrip} '
+                            '-> ${isReserve ? "Reserve Now" : "Request Ride"}',
+                          );
+                          return isReserve
+                              ? S.of(context).bookScheduledRide
+                              : S.of(context).requestRide;
+                        }(),
                         onTap: () {
                           HapticFeedback.mediumImpact();
                           _startRideDirectly(c, option);

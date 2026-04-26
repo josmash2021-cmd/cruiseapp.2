@@ -26,6 +26,8 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     this.driverId,
     this.driverRating,
     this.vehiclePlate,
+    this.rideTier,
+    this.isAirportTrip = false,
   });
 
   final String driverName;
@@ -36,6 +38,10 @@ class RiderConfirmPickupScreen extends StatefulWidget {
   final String? driverId;
   final double? driverRating;
   final String? vehiclePlate;
+  /// Optional: 'standard' | 'premium' | 'vip'. If null we infer from vehicleDesc.
+  final String? rideTier;
+  /// Airport rides get a longer free wait window (10 min) regardless of tier.
+  final bool isAirportTrip;
 
   /// Called when the rider presses the confirm button OR when the driver
   /// starts the trip from their side.
@@ -76,9 +82,52 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   bool _driverStarted = false; // true when driver slides "Start Trip"
   StreamSubscription? _tripSub;
 
+  // ── Wait time fee tracking (Uber/Lyft style) ──
+  // Per-tier policy. Airport overrides tier with a longer 10 min free window.
+  // Free wait counts DOWN (green); after it expires we count UP and accrue
+  // a per-minute charge that will be added to the final fare. Auto-cancel
+  // is enforced by the backend / dispatch — this UI only displays state.
+  late final int _freeWaitSec;
+  late final double _waitFeePerMin;
+  late final int _autoCancelSec;
+  Timer? _waitTimer;
+  // Seconds elapsed since the driver arrived. Drives both the count-down
+  // (while < _freeWaitSec) and the count-up (while >= _freeWaitSec).
+  int _waitElapsedSec = 0;
+
   @override
   void initState() {
     super.initState();
+
+    // ── Wait time policy per tier (Uber/Lyft inspired) ──
+    final tier = (widget.rideTier ?? _inferTierFromVehicleDesc(widget.vehicleDesc));
+    if (widget.isAirportTrip) {
+      _freeWaitSec = 10 * 60;
+      _waitFeePerMin = 0.40;
+      _autoCancelSec = 20 * 60;
+    } else {
+      switch (tier) {
+        case 'vip':
+          _freeWaitSec = 5 * 60;
+          _waitFeePerMin = 1.00;
+          _autoCancelSec = 15 * 60;
+          break;
+        case 'premium':
+          _freeWaitSec = 3 * 60;
+          _waitFeePerMin = 0.60;
+          _autoCancelSec = 10 * 60;
+          break;
+        default: // standard
+          _freeWaitSec = 2 * 60;
+          _waitFeePerMin = 0.40;
+          _autoCancelSec = 5 * 60;
+      }
+    }
+    // 1 Hz tick — cheap, drives both phases of the timer.
+    _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _pressed || _driverStarted) return;
+      setState(() => _waitElapsedSec++);
+    });
 
     // Content fade-in
     _fadeInCtrl = AnimationController(
@@ -216,8 +265,175 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (mounted) widget.onConfirmed();
   }
 
+  /// Visual badge shown under the gold confirm circle. Counts down the
+  /// free wait time in green, then switches to a red count-up + accrued
+  /// fee once the rider passes the per-tier threshold. Pure UI — no
+  /// charge happens client-side; the backend will compute the final
+  /// wait fee once the trip ends (Opción B en roadmap).
+  Widget _buildWaitTimerBadge() {
+    final isFreePhase = _waitElapsedSec < _freeWaitSec;
+    final freeRemaining = (_freeWaitSec - _waitElapsedSec).clamp(0, _freeWaitSec);
+    final extraSec = (_waitElapsedSec - _freeWaitSec).clamp(0, 99 * 60);
+    // Charge by the minute, started + rounded up so the rider sees the
+    // first $X.XX appear the moment the free window closes.
+    final extraMin = (extraSec / 60).ceil();
+    final extraFee = (extraMin * _waitFeePerMin);
+
+    String fmt(int totalSec) {
+      final m = (totalSec ~/ 60).toString();
+      final s = (totalSec % 60).toString().padLeft(2, '0');
+      return '$m:$s';
+    }
+
+    if (isFreePhase) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F1A12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFF22C55E).withValues(alpha: 0.40),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.schedule_rounded,
+                color: Color(0xFF22C55E), size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Free wait time',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              fmt(freeRemaining),
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Color(0xFF22C55E),
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Extra fee phase — count UP, accrued $ visible, gentle pulse.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.85, end: 1.0),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (_, t, child) => Opacity(
+        opacity: 0.85 + 0.15 * (1 - (t - 0.925).abs() * 13).clamp(0.0, 1.0),
+        child: child,
+      ),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A0E0E),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.55),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.18),
+              blurRadius: 14,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.warning_rounded,
+                    color: Color(0xFFEF4444), size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Extra wait fee active',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '+${fmt(extraSec)}',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFFEF4444),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  width: 4,
+                  height: 4,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '+\$${extraFee.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFFEF4444),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Best-effort tier inference from the vehicle description string.
+  /// Caller should pass `rideTier` explicitly when possible — this is a
+  /// fallback so the timer always picks a sensible policy.
+  String _inferTierFromVehicleDesc(String desc) {
+    final d = desc.toLowerCase();
+    if (d.contains('suburban') || d.contains('escalade') || d.contains('vip') ||
+        d.contains('black')) return 'vip';
+    if (d.contains('camry') || d.contains('accord') || d.contains('premium')) {
+      return 'premium';
+    }
+    return 'standard';
+  }
+
   @override
   void dispose() {
+    _waitTimer?.cancel();
     _tripSub?.cancel();
     _pulseCtrl.dispose();
     _rotateCtrl.dispose();
@@ -535,6 +751,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                             ],
                           ),
                         ),
+
+                        const SizedBox(height: 18),
+
+                        // ── Wait time fee badge (Uber/Lyft style) ──
+                        // Hidden once the rider confirms or the driver
+                        // starts the trip. Green count-down for free
+                        // wait time, red count-up + per-min fee after.
+                        if (!_pressed && !_driverStarted)
+                          _buildWaitTimerBadge(),
 
                         const Spacer(),
 

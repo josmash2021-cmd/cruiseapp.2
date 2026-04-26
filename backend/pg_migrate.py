@@ -19,6 +19,10 @@ async def migrate_postgresql_columns(conn):
         ("referred_by", "INTEGER"),
         ("total_earnings", "FLOAT DEFAULT 0.0"),
         ("pending_balance", "FLOAT DEFAULT 0.0"),
+        # Driver-to-driver referral program (added 2026-04-26).
+        # Lives on the same users row for fast lookup; details live in
+        # the driver_referrals table.
+        ("driver_referral_code", "VARCHAR(20)"),
     ]
     
     # Columns to add to trips table  
@@ -72,10 +76,14 @@ async def migrate_postgresql_columns(conn):
     # Create new tables if they don't exist (handled by SQLAlchemy, but let's be safe)
     new_tables = [
         "referrals",
-        "favorite_locations", 
+        "favorite_locations",
         "driver_incentives",
         "surge_zones",
-        "service_areas"
+        "service_areas",
+        # 2026-04-26: driver-to-driver referral program + generic
+        # admin-tunable config table.
+        "driver_referrals",
+        "app_config",
     ]
     
     for table_name in new_tables:

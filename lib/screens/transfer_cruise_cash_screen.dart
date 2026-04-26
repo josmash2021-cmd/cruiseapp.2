@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// Send Cruise Cash to another rider by their referral code.
 ///
@@ -109,9 +108,9 @@ class _TransferCruiseCashScreenState extends State<TransferCruiseCashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: _success ? _buildSuccess() : _buildForm(),
-      )),
+      ),
     );
   }
 

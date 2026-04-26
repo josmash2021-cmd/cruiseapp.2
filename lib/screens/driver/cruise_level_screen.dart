@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import 'dart:math' as math;
-import '../../widgets/gold_particles_background.dart';
 
 /// Cruise Level – Bronze → Silver → Gold → Platinum → Diamond
 class CruiseLevelScreen extends StatefulWidget {
@@ -211,7 +210,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: Stack(
+      body: Stack(
         children: [
           _loading
           ? const Center(
@@ -317,7 +316,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
           // Level-up celebration overlay
           if (_showLevelUp) _buildCelebrationOverlay(),
         ],
-      )),
+      ),
     );
   }
 

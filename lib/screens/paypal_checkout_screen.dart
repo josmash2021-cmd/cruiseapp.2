@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// PayPal checkout screen.
 ///
@@ -120,7 +119,7 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
           onPressed: () => Navigator.of(context).pop(false),
         ),
       ),
-      body: GoldParticlesBackground(child: Stack(
+      body: Stack(
         children: [
           if (_error != null)
             Center(
@@ -161,7 +160,7 @@ class _PayPalCheckoutScreenState extends State<PayPalCheckoutScreen> {
           if (_loading && _error == null)
             const Center(child: CircularProgressIndicator(color: _gold)),
         ],
-      )),
+      ),
     );
   }
 }

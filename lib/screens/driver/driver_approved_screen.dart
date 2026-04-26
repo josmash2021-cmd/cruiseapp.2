@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../config/page_transitions.dart';
 import 'driver_info_pages.dart';
-import '../../widgets/gold_particles_background.dart';
 
 /// Premium cinematic "Welcome to the Family" screen.
 /// Shows after dispatch approves a driver, auto-navigates after ~4 s.
@@ -140,7 +139,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
       canPop: false,
       child: Scaffold(
         backgroundColor: _bg,
-        body: GoldParticlesBackground(child: Stack(
+        body: Stack(
           children: [
             // ── Gold dust particles ──
             Positioned.fill(
@@ -278,7 +277,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
               ),
             ),
           ],
-        )),
+        ),
       ),
     );
   }

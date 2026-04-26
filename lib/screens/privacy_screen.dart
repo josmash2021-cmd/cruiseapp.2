@@ -7,7 +7,6 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_session.dart';
 import 'splash_screen.dart';
-import '../widgets/gold_particles_background.dart';
 
 class PrivacyScreen extends StatefulWidget {
   const PrivacyScreen({super.key});
@@ -335,7 +334,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -519,7 +518,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 

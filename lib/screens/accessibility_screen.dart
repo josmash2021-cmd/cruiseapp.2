@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show accessibilityNotifier;
-import '../widgets/gold_particles_background.dart';
 
 class AccessibilityScreen extends StatefulWidget {
   const AccessibilityScreen({super.key});
@@ -38,7 +37,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -186,7 +185,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 

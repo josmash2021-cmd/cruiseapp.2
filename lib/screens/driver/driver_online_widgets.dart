@@ -293,19 +293,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
           child: Container(
             decoration: BoxDecoration(
-              // Pure black + gold particles instead of surface (#1A1A1F)
-              // — same particle language as the rest of the app's
-              // dark surfaces. The animated gold border above is the
-              // searching pulse, particles add subtle depth.
+              // Pure black bg (no particles per 2026-04-27 spec —
+              // particles only on Searching + Waiting screens). The
+              // animated gold border above is the searching pulse.
               color: Colors.black,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
               border: Border(top: BorderSide(color: borderC)),
             ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-              child: GoldParticlesBackground(
-                particleCount: 12, // small bar — mini-bar collapsed state
-                child: SafeArea(
+            child: SafeArea(
               top: false,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -361,8 +356,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ),
       ),
-        ),  // close GoldParticlesBackground
-      ),    // close ClipRRect
         ),
       ),
     );
@@ -546,7 +539,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                          color: const Color(0xFF1A1A1F),
                           border: Border(
                             top: BorderSide(
                               color: Colors.white.withValues(alpha: 0.06),
@@ -630,13 +623,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
             ),
-            child: ClipRRect(
-              // Clip particles to the rounded top corners of the sheet
-              // so the field can't bleed past the panel edges.
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              child: GoldParticlesBackground(
-              particleCount: 26,
-              child: SafeArea(
+            child: SafeArea(
               top: false,
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
@@ -825,8 +812,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
             ),
-            ),  // close GoldParticlesBackground
-            ),  // close ClipRRect
           ),
         );
       },
@@ -1078,7 +1063,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                    color: const Color(0xFF1A1A1F),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: const Color(0xFFE53935).withValues(alpha: 0.4),
@@ -1309,7 +1294,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+            color: const Color(0xFF1A1A1F),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -1539,7 +1524,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+        color: const Color(0xFF1A1A1F),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -3847,7 +3832,7 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+            color: const Color(0xFF1A1A1F),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: Color.lerp(

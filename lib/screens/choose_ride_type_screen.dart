@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// Full-screen "Choose ride type" picker — replaces the old bottom sheet.
 ///
@@ -50,7 +49,7 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Stack(
           children: [
             // ─── Solid black background ───
@@ -132,7 +131,7 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 }
@@ -286,7 +285,7 @@ class _RideTypeCardState extends State<_RideTypeCard> {
                           width: 140,
                           height: 140,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                            color: const Color(0xFF1A1A1F),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
                               color: const Color(0xFFE8C547).withValues(alpha: 0.3),

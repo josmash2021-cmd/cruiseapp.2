@@ -1165,7 +1165,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       padding: EdgeInsets.fromLTRB(
           20, 22, 20, 22 + MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+        color: const Color(0xFF1A1A1F),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(

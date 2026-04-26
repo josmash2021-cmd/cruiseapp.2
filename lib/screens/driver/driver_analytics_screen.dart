@@ -6,7 +6,6 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../home_screen.dart';
-import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — ANALYTICS / DRIVING TIME SCREEN
@@ -177,7 +176,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
     final s = S.of(context);
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           children: [
             // ── Top bar ──
@@ -370,7 +369,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 

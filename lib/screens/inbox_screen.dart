@@ -9,7 +9,6 @@ import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../widgets/verified_avatar.dart';
-import '../widgets/gold_particles_background.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -41,7 +40,7 @@ class _InboxScreenState extends State<InboxScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -139,7 +138,7 @@ class _InboxScreenState extends State<InboxScreen>
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 }
@@ -705,7 +704,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: GoldParticlesBackground(child: sorted.isEmpty
+      body: sorted.isEmpty
           ? Center(
               child: Text(
                 S.of(context).noMessagesInConversation,
@@ -768,7 +767,7 @@ class _ConversationDetailScreen extends StatelessWidget {
                   ),
                 );
               },
-            )),
+            ),
     );
   }
 }

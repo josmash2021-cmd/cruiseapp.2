@@ -8,7 +8,6 @@ import '../services/firebase_storage_service.dart';
 import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
 import '../widgets/user_profile_photo.dart';
-import '../widgets/gold_particles_background.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -265,13 +264,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (_loading) {
       return Scaffold(
         backgroundColor: Colors.black,
-        body: GoldParticlesBackground(child: const Center(child: CircularProgressIndicator())),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           children: [
             // ── Header ──
@@ -450,7 +449,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 

@@ -12,7 +12,6 @@ import '../../models/lat_lng.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
 import '../../utils/responsive.dart';
-import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER RATE RIDER SCREEN — Post-trip feedback
@@ -151,7 +150,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       },
       child: Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Stack(
+      body: Stack(
         children: [
           // ── Blurred dark Mapbox map background ──
           Positioned.fill(
@@ -274,7 +273,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
             ),
           ),
         ],
-      )),
+      ),
     ),
     );
   }

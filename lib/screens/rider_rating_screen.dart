@@ -612,7 +612,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                               vertical: 16,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                              color: const Color(0xFF1A1A1F),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: _saveDriver

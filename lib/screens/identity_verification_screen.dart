@@ -14,7 +14,6 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// Rider identity verification flow:
 ///  Step 0 — Intro: choose document type
@@ -1459,7 +1458,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: _capturedPath != null ? _buildPreview() : _buildScanner()),
+      body: _capturedPath != null ? _buildPreview() : _buildScanner(),
     );
   }
 

@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/notification_service.dart';
-import '../../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════
 //  EDIT ADDRESS SCREEN
@@ -61,7 +60,7 @@ class _DriverEditAddressScreenState extends State<DriverEditAddressScreen> {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           _topBar(top, S.of(context).editAddress),
           Expanded(
@@ -118,7 +117,7 @@ class _DriverEditAddressScreenState extends State<DriverEditAddressScreen> {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 
@@ -213,7 +212,7 @@ class DriverSiriShortcutsScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).siriShortcuts),
           Expanded(
@@ -234,7 +233,7 @@ class DriverSiriShortcutsScreen extends StatelessWidget {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 
@@ -342,7 +341,7 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).communicationLabel),
           Expanded(
@@ -402,7 +401,7 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 
@@ -517,7 +516,7 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).navigationLabel),
           Expanded(
@@ -579,7 +578,7 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 
@@ -719,7 +718,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).soundsAndVoice),
           Expanded(
@@ -810,7 +809,7 @@ class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 
@@ -878,7 +877,7 @@ class _SettingsTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+      color: const Color(0xFF1A1A1F),
       padding: EdgeInsets.only(top: top + 8, bottom: 12, left: 16, right: 16),
       child: Row(
         children: [

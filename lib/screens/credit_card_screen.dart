@@ -5,7 +5,6 @@ import '../l10n/app_localizations.dart';
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
-import '../widgets/gold_particles_background.dart';
 
 class CreditCardScreen extends StatefulWidget {
   final String? firstName;
@@ -135,7 +134,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -319,7 +318,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
             ],
           ),
         ),
-      )),
+      ),
     );
   }
 

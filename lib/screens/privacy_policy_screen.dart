@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/gold_particles_background.dart';
 
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
@@ -17,7 +16,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
         backgroundColor: c.surface,
         elevation: 0,
       ),
-      body: GoldParticlesBackground(child: SingleChildScrollView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,7 +43,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             const SizedBox(height: 32),
           ],
         ),
-      )),
+      ),
     );
   }
 

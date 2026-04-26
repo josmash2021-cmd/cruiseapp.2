@@ -4,7 +4,6 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
-import '../../widgets/gold_particles_background.dart';
 
 /// Refer Friends — DRIVER program.
 ///
@@ -101,7 +100,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     final s = S.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: _loading
             ? const Center(
                 child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
@@ -203,7 +202,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                   ],
                 ),
               ),
-      )),
+      ),
     );
   }
 

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../l10n/app_localizations.dart';
-import '../../widgets/gold_particles_background.dart';
 
 /// Trip history screen with filterable past rides list.
 class DriverTripHistoryScreen extends StatefulWidget {
@@ -58,7 +57,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final filters = [s.allFilter, s.completedFilter, s.cancelledFilter];
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: CustomScrollView(
+      body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           SliverAppBar(
@@ -214,7 +213,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
-      )),
+      ),
     );
   }
 

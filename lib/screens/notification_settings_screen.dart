@@ -7,7 +7,6 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/notification_service.dart';
 import '../services/user_session.dart';
-import '../widgets/gold_particles_background.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -179,7 +178,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -397,7 +396,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 

@@ -32,7 +32,6 @@ import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
 import 'referral_screen.dart';
 import 'scheduled_rides_screen.dart';
-import '../widgets/gold_particles_background.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -371,7 +370,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -462,7 +461,7 @@ class _AccountScreenState extends State<AccountScreen> {
             ],
           ),
         ),
-      )),
+      ),
     );
   }
 
@@ -750,7 +749,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -878,7 +877,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             ],
           ),
         ),
-      )),
+      ),
     );
   }
 
@@ -1283,7 +1282,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -1448,7 +1447,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
             ],
           ),
         ),
-      )),
+      ),
     );
   }
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/gold_particles_background.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared constants & helpers
@@ -118,7 +117,7 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           children: [
             _Header(
@@ -221,7 +220,7 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 }
@@ -556,7 +555,7 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: Column(
           children: [
             _Header(
@@ -666,7 +665,7 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
             ),
           ],
         ),
-      )),
+      ),
     );
   }
 }

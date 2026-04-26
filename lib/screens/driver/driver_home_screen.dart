@@ -40,7 +40,6 @@ import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
-import '../../widgets/gold_particles_background.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/velocity_aware_panel.dart';
@@ -1164,29 +1163,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Greeting — pure black pill + gold particle field for the
-        // same look as the rest of the app.
+        // Greeting pill (pure black bg, no particles per the
+        // 2026-04-27 spec — particles only on Searching + Waiting).
         Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: Container(
+          child: Container(
             padding: EdgeInsets.symmetric(horizontal: Responsive.w(16), vertical: Responsive.h(10)),
             decoration: BoxDecoration(
               color: Colors.black,
               borderRadius: BorderRadius.circular(28),
               border: Border.all(color: dc.divider),
             ),
-            child: Stack(
-              children: [
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: GoldParticlesBackground(
-                      particleCount: 6, // tiny pill — only need a few
-                      child: SizedBox.shrink(),
-                    ),
-                  ),
-                ),
-                Row(
+            child: Row(
               children: [
                 // Avatar with gold border
                 VerifiedAvatar(
@@ -1238,10 +1225,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ],
             ),
-              ],  // close Stack children list
-            ),    // close Stack
-          ),      // close Container
-          ),      // close ClipRRect
+          ),
         ),
 
         const SizedBox(width: 12),
@@ -1592,11 +1576,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-        child: GoldParticlesBackground(
-          particleCount: 14, // smaller field — panel collapses to ~80px
-          child: Column(
+      child: Column(
         children: [
           // ── Drag handle — drag only registered here ──
           GestureDetector(
@@ -1772,10 +1752,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
           ],
         ),
-        ),  // close GoldParticlesBackground
-      ),    // close ClipRRect
-      ),    // close Container (was AnimatedContainer comment — wrong)
-    );      // close GestureDetector
+      ),
+    );
   }
 
   Widget _recommendItem(IconData icon, String label, VoidCallback onTap) {

@@ -11,7 +11,6 @@ import '../../main.dart' show themeNotifier;
 import '../privacy_screen.dart';
 import 'driver_manage_account_screen.dart';
 import 'driver_settings_pages.dart';
-import '../../widgets/gold_particles_background.dart';
 
 /// Driver settings: Uber Driver–style layout with Account & General sections.
 class DriverSettingsScreen extends StatefulWidget {
@@ -76,11 +75,11 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: Column(
+      body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+            color: const Color(0xFF1A1A1F),
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -215,7 +214,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
             ),
           ),
         ],
-      )),
+      ),
     );
   }
 

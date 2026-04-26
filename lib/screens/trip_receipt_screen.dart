@@ -5,7 +5,6 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../widgets/tier_badge.dart';
-import '../widgets/gold_particles_background.dart';
 
 class TripReceiptScreen extends StatefulWidget {
   final TripHistoryItem trip;
@@ -91,7 +90,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     final c = AppColors.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: Column(
@@ -110,7 +109,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                                color: const Color(0xFF1A1A1F),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
@@ -153,7 +152,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         padding: const EdgeInsets.symmetric(
                             vertical: 32, horizontal: 24),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
+                          color: const Color(0xFF1A1A1F),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
                             color: _gold.withValues(alpha: 0.30),
@@ -396,7 +395,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
               ],
             ),
           ),
-        )),
+        ),
     );
   }
 

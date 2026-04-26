@@ -6,7 +6,6 @@ import '../services/api_service.dart';
 import '../services/error_service.dart';
 import '../services/local_data_service.dart';
 import 'credit_card_screen.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// Screen where users can link / manage their payment accounts
 /// (Google Pay, PayPal) and manage saved cards.
@@ -239,7 +238,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GoldParticlesBackground(child: SafeArea(
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -451,7 +450,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
             ],
           ),
         ),
-      )),
+      ),
     );
   }
 

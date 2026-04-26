@@ -17,7 +17,6 @@ import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/preload_service.dart';
 import '../main.dart' show heavyInit;
-import '../widgets/gold_particles_background.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -472,7 +471,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: GoldParticlesBackground(child: AnimatedBuilder(
+      body: AnimatedBuilder(
         animation: Listenable.merge([_entranceCtrl, _glowCtrl, _exitCtrl]),
         builder: (context, _) {
           final glow = _glowCtrl.value;
@@ -575,7 +574,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           );
         },
-      )),
+      ),
     );
   }
 

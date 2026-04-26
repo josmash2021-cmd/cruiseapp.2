@@ -16,6 +16,7 @@ import '../services/places_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/tier_badge.dart';
 import 'airport_terminal_sheet.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
@@ -893,7 +894,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
               child: Row(
                 children: [
-                  _vehicleTierBadge(vehicleType),
+                  TierBadge(rideName: vehicleType),
                   if (fare != null && fare > 0) ...[
                     const SizedBox(width: 10),
                     Container(
@@ -1279,67 +1280,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               fontSize: 11,
               color: color,
               fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _vehicleTierBadge(String vehicleType) {
-    final tier = vehicleType.toUpperCase();
-    final isVIP = tier == 'VIP';
-    final isPremium = tier == 'PREMIUM';
-
-    final Color accent;
-    final List<Color> gradient;
-    final IconData icon;
-    final bool lightText;
-
-    if (isVIP) {
-      accent = _gold;
-      gradient = const [Color(0xFFE8C547), Color(0xFFD4A574)];
-      icon = Icons.star_rounded;
-      lightText = true;
-    } else if (isPremium) {
-      accent = const Color(0xFFCECECE);
-      gradient = const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
-      icon = Icons.diamond_rounded;
-      lightText = false;
-    } else {
-      accent = const Color(0xFF4CAF50);
-      gradient = const [Color(0xFF66BB6A), Color(0xFF388E3C)];
-      icon = Icons.eco_rounded;
-      lightText = false;
-    }
-
-    final textColor = lightText ? Colors.white : Colors.black87;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: textColor, size: 12),
-          const SizedBox(width: 5),
-          Text(
-            tier,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
             ),
           ),
         ],

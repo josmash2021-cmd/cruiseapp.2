@@ -1796,7 +1796,19 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
     }
 
 @router.get("/trips/{trip_id}/chat", dependencies=[Depends(_verify_api_key)])
-async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_chat_messages(
+    trip_id: int,
+    peek: bool = False,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch chat messages for a trip.
+
+    Default behavior marks inbound messages as read (caller is reading).
+    Pass ``?peek=true`` to read the same payload without flipping read
+    state — used by the unread-count badge polling on the rider tracking
+    screen so it does not silently zero itself the moment it polls.
+    """
     # Verify user is a participant
     trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = trip_result.scalar_one_or_none()
@@ -1806,11 +1818,12 @@ async def get_chat_messages(trip_id: int, user: User = Depends(_get_current_user
         select(ChatMessage).where(ChatMessage.trip_id == trip_id).order_by(ChatMessage.created_at.asc())
     )
     messages = result.scalars().all()
-    # Mark messages as read
-    for m in messages:
-        if m.receiver_id == user.id and not m.is_read:
-            m.is_read = True
-    await db.commit()
+    if not peek:
+        # Caller is actively reading the conversation — mark inbound as read.
+        for m in messages:
+            if m.receiver_id == user.id and not m.is_read:
+                m.is_read = True
+        await db.commit()
     return [
         {"id": m.id, "sender_id": m.sender_id, "receiver_id": m.receiver_id,
          "sender_role": "driver" if m.sender_id == trip.driver_id else "rider",

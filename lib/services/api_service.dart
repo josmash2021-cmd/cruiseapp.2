@@ -2721,10 +2721,17 @@ class ApiService {
   }
 
   /// Get chat messages for a trip.
-  static Future<List<Map<String, dynamic>>> getChatMessages(int tripId) async {
+  /// When [peek] is true, the server does NOT mark messages as read —
+  /// used by the unread-count badge so it can keep displaying the count
+  /// without forcing read state.
+  static Future<List<Map<String, dynamic>>> getChatMessages(
+    int tripId, {
+    bool peek = false,
+  }) async {
     final h = await _authHeaders();
+    final qs = peek ? '?peek=true' : '';
     final res = await _client
-        .get(Uri.parse('$_baseUrl/trips/$tripId/chat'), headers: h)
+        .get(Uri.parse('$_baseUrl/trips/$tripId/chat$qs'), headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;

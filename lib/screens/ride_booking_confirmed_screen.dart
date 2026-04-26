@@ -159,7 +159,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
         child: child,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A0D1A),
+        backgroundColor: Colors.black,
         body: Stack(
           fit: StackFit.expand,
           children: [
@@ -181,7 +181,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                 ),
               )
             else
-              const ColoredBox(color: Color(0xFF0A0D1A)),
+              const ColoredBox(color: Colors.black),
 
             // ── Gradient overlay ──
             Positioned.fill(
@@ -288,7 +288,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                           child: Container(
                             padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF151929).withValues(alpha: 0.92),
+                              color: const Color(0xFF1A1A1F),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
                                 color: _gold.withValues(alpha: 0.15),

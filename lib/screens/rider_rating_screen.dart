@@ -41,7 +41,8 @@ class RiderRatingScreen extends StatefulWidget {
 class _RiderRatingScreenState extends State<RiderRatingScreen>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0d0d1a);
+  static const _bg = Colors.black;
+  static const _surface = Color(0xFF1A1A1F);
 
   int _ratingStars = 5;
   double _tipAmount = 0;
@@ -241,7 +242,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                 child: BackdropFilter(
                   filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
                   child: Container(
-                    color: const Color(0xFF0d0d1a).withValues(alpha: 0.45),
+                    color: Colors.black.withValues(alpha: 0.45),
                   ),
                 ),
               ),
@@ -342,7 +343,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                             decoration: BoxDecoration(
                               color: sel
                                   ? _gold.withValues(alpha: 0.12)
-                                  : const Color(0xFF1A1A2E),
+                                  : const Color(0xFF1A1A1F),
                               borderRadius: BorderRadius.circular(22),
                               border: Border.all(
                                 color: sel
@@ -471,7 +472,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                 decoration: BoxDecoration(
                                   color: sel
                                       ? _gold.withValues(alpha: 0.10)
-                                      : const Color(0xFF1A1A2E),
+                                      : const Color(0xFF1A1A1F),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: sel
@@ -568,7 +569,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                                 color: Colors.white.withValues(alpha: 0.3),
                               ),
                               filled: true,
-                              fillColor: const Color(0xFF1A1A2E),
+                              fillColor: const Color(0xFF1A1A1F),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: const BorderSide(color: _gold),
@@ -611,7 +612,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                               vertical: 16,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A2E),
+                              color: const Color(0xFF1A1A1F),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: _saveDriver

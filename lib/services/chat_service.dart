@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
+import 'api_service.dart';
 
 /// Singleton service for real-time chat between driver and rider using
 /// Firebase Realtime Database. Messages are delivered in < 100ms.
@@ -70,24 +72,95 @@ class ChatService {
     });
   }
 
-  /// Stream of unread message count (messages from the OTHER role that are unread).
+  /// Stream of unread message count (messages from the OTHER role that are
+  /// unread). Combines two sources so the badge updates even when one fails:
+  ///   1. RTDB live stream  — sub-100ms updates, primary source
+  ///   2. REST polling      — every 8s, fallback when the driver app sent
+  ///                          the message via REST only (RTDB unavailable)
+  /// Emits the max of both at any moment so a stale "0" from one side never
+  /// hides a real unread on the other.
   Stream<int> unreadCountStream({
     required String rideId,
     required String readerRole,
   }) {
-    return _db
-        .ref('chats/$rideId/messages')
-        .orderByChild('read')
-        .equalTo(false)
-        .onValue
-        .map((event) {
-      if (event.snapshot.value == null) return 0;
-      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-      return data.values.where((v) {
-        final msg = Map<String, dynamic>.from(v as Map);
-        return msg['senderRole'] != readerRole;
-      }).length;
-    });
+    final controller = StreamController<int>.broadcast();
+    int rtdbCount = 0;
+    int restCount = 0;
+    void emit() {
+      if (!controller.isClosed) {
+        controller.add(rtdbCount > restCount ? rtdbCount : restCount);
+      }
+    }
+
+    // ── Source 1: RTDB live ─────────────────────────────────────
+    StreamSubscription<DatabaseEvent>? rtdbSub;
+    try {
+      rtdbSub = _db
+          .ref('chats/$rideId/messages')
+          .orderByChild('read')
+          .equalTo(false)
+          .onValue
+          .listen(
+        (event) {
+          if (event.snapshot.value == null) {
+            rtdbCount = 0;
+          } else {
+            final data =
+                Map<String, dynamic>.from(event.snapshot.value as Map);
+            rtdbCount = data.values.where((v) {
+              final msg = Map<String, dynamic>.from(v as Map);
+              return msg['senderRole'] != readerRole;
+            }).length;
+          }
+          emit();
+        },
+        onError: (e) {
+          debugPrint('[Chat] unread RTDB error: $e — REST fallback only');
+        },
+      );
+    } catch (e) {
+      debugPrint('[Chat] unread RTDB setup failed: $e');
+    }
+
+    // ── Source 2: REST polling ──────────────────────────────────
+    final tripId = int.tryParse(rideId);
+    Timer? pollTimer;
+    Future<void> pollOnce() async {
+      if (tripId == null) return;
+      try {
+        // peek=true so we don't auto-mark messages as read just by polling
+        // the count — that would zero the badge before the rider opens
+        // the chat.
+        final messages =
+            await ApiService.getChatMessages(tripId, peek: true);
+        restCount = messages.where((m) {
+          final senderRole = (m['sender_role'] ?? m['senderRole'] ?? '')
+              .toString()
+              .toLowerCase();
+          final read = (m['is_read'] ?? m['read']) == true;
+          return !read && senderRole != readerRole;
+        }).length;
+        emit();
+      } catch (_) {
+        // Silently keep last value — RTDB is still trying.
+      }
+    }
+
+    if (tripId != null) {
+      // Kick off immediately, then every 8s for the lifetime of the stream.
+      pollOnce();
+      pollTimer = Timer.periodic(
+        const Duration(seconds: 8),
+        (_) => pollOnce(),
+      );
+    }
+
+    controller.onCancel = () {
+      rtdbSub?.cancel();
+      pollTimer?.cancel();
+    };
+
+    return controller.stream;
   }
 
   // ── Typing ────────────────────────────────────────────────────────────────

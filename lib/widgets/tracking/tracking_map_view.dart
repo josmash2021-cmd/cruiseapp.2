@@ -575,8 +575,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       null, null,
     ).then((cam) {
       if (!mounted || _map == null) return;
-      // Clamp zoom: min 13 (not too far), max 16 (not too close)
-      final zoom = (cam.zoom ?? 14.0).clamp(13.0, 16.0);
+      // Allow wider zoom-out for long-distance trips so the rider can
+      // see pickup + driver + dropoff at once. Was clamped to min 13
+      // which on >10mi trips left half the route off-screen with a sea
+      // of empty map in the middle.
+      // Min 9  ≈ city-wide view (covers ~40mi diagonal).
+      // Max 16 ≈ block-level (avoids zooming in too tight when driver
+      //         is right next to dropoff).
+      final zoom = (cam.zoom ?? 14.0).clamp(9.0, 16.0);
       final clampedCam = mapbox.CameraOptions(
         center: cam.center,
         zoom: zoom,
@@ -823,15 +829,20 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             textureView: true,
             onMapCreated: (ctrl) async {
               _map = ctrl;
-              // Lock map: disable all user gestures
+              // Allow rider to pinch-zoom + pan + double-tap zoom so
+              // they can inspect the route at their own pace.
+              // Keep rotate / tilt disabled so the camera never breaks
+              // the cinematic perspective the auto-fit chooses.
+              // (Was fully locked — user reported they couldn't zoom
+              // out to see the full route on long distances.)
               ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-                scrollEnabled: false,
-                pinchToZoomEnabled: false,
-                doubleTapToZoomInEnabled: false,
-                doubleTouchToZoomOutEnabled: false,
+                scrollEnabled: true,
+                pinchToZoomEnabled: true,
+                doubleTapToZoomInEnabled: true,
+                doubleTouchToZoomOutEnabled: true,
                 rotateEnabled: false,
                 pitchEnabled: false,
-                quickZoomEnabled: false,
+                quickZoomEnabled: true,
               ));
               ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));

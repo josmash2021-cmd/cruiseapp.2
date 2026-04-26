@@ -606,6 +606,24 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
             cashout.status = "failed"
             await db.commit()
 
+    # For instant cashouts, surface the destination card details so the
+    # success screen can show "Visa ····1084" without an extra round-trip.
+    card_brand = None
+    card_last4 = None
+    if method == "instant" and instant_card is not None:
+        # display_name format: "Visa ····1084  [ext:card_xxx]"
+        raw = instant_card.display_name or ""
+        cleaned = raw.split("[ext:")[0].strip()
+        # Split on the bullet/dot run to get brand vs last4
+        for sep in ("····", "...."):
+            if sep in cleaned:
+                left, right = cleaned.split(sep, 1)
+                card_brand = left.strip() or None
+                card_last4 = right.strip() or None
+                break
+        if card_brand is None:
+            card_brand = cleaned or "Card"
+
     return {
         "id": cashout.id,
         "amount": cashout.amount,
@@ -615,6 +633,8 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         "status": cashout.status,
         "transfer_id": transfer_id,
         "stripe_error": stripe_error,
+        "card_brand": card_brand,
+        "card_last4": card_last4,
     }
 
 @router.get("/drivers/cashouts", dependencies=[Depends(_verify_api_key)])

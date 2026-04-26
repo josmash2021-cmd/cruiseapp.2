@@ -893,12 +893,13 @@ class _CashOutSheetState extends State<_CashOutSheet>
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
       Navigator.pop(context);
-      _showSnack(
-        '✅ Cash out initiated: \$${_net.toStringAsFixed(2)}'
-        '${_selected == 'instant' ? ' (instant)' : ''}',
-        _gold,
-      );
       widget.onCashedOut();
+      _pushSuccessScreen(
+        net: _selected == 'instant' ? _net : widget.available,
+        instant: _selected == 'instant',
+        cardBrand: _selected == 'instant' ? 'Visa' : null,
+        cardLast4: _selected == 'instant' ? '1084' : null,
+      );
       return;
     }
 
@@ -912,14 +913,15 @@ class _CashOutSheetState extends State<_CashOutSheet>
       final transferId = result['transfer_id'] as String?;
       final stripeErr = result['stripe_error'] as String?;
       if (transferId != null) {
-        _showSnack(
-          _selected == 'instant'
-              ? '⚡ Instant cashout sent: \$${_net.toStringAsFixed(2)} '
-                '(fee \$${_fee.toStringAsFixed(2)})'
-              : '✅ Cash out initiated: \$${widget.available.toStringAsFixed(2)}',
-          _gold,
-        );
         widget.onCashedOut();
+        final netAmt = (result['net_amount'] as num?)?.toDouble() ??
+            (_selected == 'instant' ? _net : widget.available);
+        _pushSuccessScreen(
+          net: netAmt,
+          instant: _selected == 'instant',
+          cardBrand: result['card_brand'] as String?,
+          cardLast4: result['card_last4'] as String?,
+        );
       } else if (stripeErr != null) {
         debugPrint('Cashout Stripe error: $stripeErr');
         _showSnack(
@@ -947,6 +949,32 @@ class _CashOutSheetState extends State<_CashOutSheet>
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _pushSuccessScreen({
+    required double net,
+    required bool instant,
+    String? cardBrand,
+    String? cardLast4,
+  }) {
+    // Find the root navigator context — the sheet's own Navigator was
+    // already popped, so we walk up to the earnings screen instead.
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.push(
+      PageRouteBuilder(
+        opaque: true,
+        pageBuilder: (_, __, ___) => _CashoutSuccessScreen(
+          netAmount: net,
+          instant: instant,
+          cardBrand: cardBrand,
+          cardLast4: cardLast4,
+        ),
+        transitionDuration: const Duration(milliseconds: 320),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(opacity: anim, child: child);
+        },
+      ),
+    );
   }
 
   void _showSnack(String msg, Color bg) {
@@ -1415,4 +1443,382 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CASHOUT SUCCESS — Lyft-style full screen, Cruise gold theme
+// ═══════════════════════════════════════════════════════════════════
+
+class _CashoutSuccessScreen extends StatefulWidget {
+  final double netAmount;
+  final bool instant;
+  final String? cardBrand;
+  final String? cardLast4;
+
+  const _CashoutSuccessScreen({
+    required this.netAmount,
+    required this.instant,
+    this.cardBrand,
+    this.cardLast4,
+  });
+
+  @override
+  State<_CashoutSuccessScreen> createState() => _CashoutSuccessScreenState();
+}
+
+class _CashoutSuccessScreenState extends State<_CashoutSuccessScreen>
+    with TickerProviderStateMixin {
+  static const _gold = Color(0xFFE8C547);
+
+  late AnimationController _iconCtrl;
+  late AnimationController _sparkleCtrl;
+  late AnimationController _textCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _iconCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _sparkleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _textCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    HapticFeedback.mediumImpact();
+    _iconCtrl.forward();
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _sparkleCtrl.repeat();
+    });
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) _textCtrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _iconCtrl.dispose();
+    _sparkleCtrl.dispose();
+    _textCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = widget.cardBrand ?? 'card';
+    final last4 = widget.cardLast4 ?? '';
+    final destination = last4.isNotEmpty
+        ? '$brand ····$last4'
+        : (widget.instant ? 'your debit card' : 'your bank account');
+
+    final timing = widget.instant
+        ? 'Funds should arrive in 30 minutes, but can take up to 1 day depending on your bank.'
+        : 'Funds typically arrive in 1–2 business days.';
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned(
+              top: 8,
+              left: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 180,
+                      height: 180,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Sparkles — orbit around the icon
+                          AnimatedBuilder(
+                            animation: _sparkleCtrl,
+                            builder: (_, __) {
+                              return CustomPaint(
+                                size: const Size(180, 180),
+                                painter: _SparklePainter(_sparkleCtrl.value),
+                              );
+                            },
+                          ),
+                          // Bill stack with elastic pop
+                          ScaleTransition(
+                            scale: CurvedAnimation(
+                              parent: _iconCtrl,
+                              curve: Curves.elasticOut,
+                            ),
+                            child: const _GoldBillIcon(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    FadeTransition(
+                      opacity: _textCtrl,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.15),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                          parent: _textCtrl,
+                          curve: Curves.easeOutCubic,
+                        )),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Your \$${widget.netAmount.toStringAsFixed(2)} '
+                              'transfer was initiated',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                height: 1.25,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontSize: 14,
+                                  height: 1.45,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'Your transfer to '),
+                                  TextSpan(
+                                    text: destination,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const TextSpan(text: ' is on its way. '),
+                                  TextSpan(text: timing),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 28,
+              child: FadeTransition(
+                opacity: _textCtrl,
+                child: SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Got It',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoldBillIcon extends StatelessWidget {
+  const _GoldBillIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFE8C547);
+    const goldDeep = Color(0xFFC9A227);
+    return SizedBox(
+      width: 130,
+      height: 110,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Back bill (slightly rotated, deeper gold)
+          Positioned(
+            left: 28,
+            top: 18,
+            child: Transform.rotate(
+              angle: 0.18,
+              child: Container(
+                width: 96,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: goldDeep,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.black, width: 2),
+                ),
+              ),
+            ),
+          ),
+          // Front bill
+          Positioned(
+            left: 14,
+            top: 28,
+            child: Container(
+              width: 100,
+              height: 62,
+              decoration: BoxDecoration(
+                color: gold,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.black, width: 2),
+              ),
+              child: Center(
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black, width: 2.2),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '\$',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Check badge (top-left)
+          Positioned(
+            left: -2,
+            top: -2,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: gold,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black, width: 2.5),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.check_rounded,
+                  color: Colors.black,
+                  size: 28,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SparklePainter extends CustomPainter {
+  final double progress; // 0..1, repeating
+  _SparklePainter(this.progress);
+
+  static const _gold = Color(0xFFE8C547);
+
+  // (angle deg, radius factor, base size, phase offset 0..1)
+  static const _stars = <List<double>>[
+    [-15, 0.95, 8, 0.0],
+    [40, 0.98, 6, 0.25],
+    [110, 0.92, 7, 0.5],
+    [200, 0.96, 5, 0.15],
+    [255, 0.94, 7, 0.7],
+    [320, 0.97, 6, 0.4],
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2;
+    final paint = Paint()..color = _gold;
+    for (final s in _stars) {
+      final angleRad = s[0] * 3.14159 / 180.0;
+      final dx = center.dx + r * s[1] * (s[0] == 0 ? 0 : (1.0)) * _cos(angleRad);
+      final dy = center.dy + r * s[1] * (s[0] == 0 ? 0 : (1.0)) * _sin(angleRad);
+      final t = ((progress + s[3]) % 1.0);
+      // Scale: pop in 0..0.4, hold 0.4..0.7, fade 0.7..1.0
+      double scale;
+      double opacity;
+      if (t < 0.4) {
+        scale = t / 0.4;
+        opacity = (t / 0.4).clamp(0.0, 1.0);
+      } else if (t < 0.7) {
+        scale = 1.0;
+        opacity = 1.0;
+      } else {
+        final f = (t - 0.7) / 0.3;
+        scale = 1.0 - 0.3 * f;
+        opacity = 1.0 - f;
+      }
+      paint.color = _gold.withValues(alpha: opacity * 0.95);
+      _drawSparkle(canvas, Offset(dx, dy), s[2] * scale, paint);
+    }
+  }
+
+  void _drawSparkle(Canvas canvas, Offset c, double size, Paint paint) {
+    if (size <= 0.5) return;
+    // Four-point star: vertical bar + horizontal bar with tapered ends.
+    final path = Path()
+      ..moveTo(c.dx, c.dy - size)
+      ..lineTo(c.dx + size * 0.25, c.dy)
+      ..lineTo(c.dx, c.dy + size)
+      ..lineTo(c.dx - size * 0.25, c.dy)
+      ..close()
+      ..moveTo(c.dx - size, c.dy)
+      ..lineTo(c.dx, c.dy - size * 0.25)
+      ..lineTo(c.dx + size, c.dy)
+      ..lineTo(c.dx, c.dy + size * 0.25)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  double _cos(double rad) {
+    // dart:math import is via the file's existing 'dart:math' import.
+    return cos(rad);
+  }
+
+  double _sin(double rad) {
+    return sin(rad);
+  }
+
+  @override
+  bool shouldRepaint(_SparklePainter old) => old.progress != progress;
 }

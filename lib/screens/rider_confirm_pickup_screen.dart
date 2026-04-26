@@ -49,7 +49,7 @@ class RiderConfirmPickupScreen extends StatefulWidget {
 class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0d0d1a);
+  static const _bg = Color(0xFF000000);
 
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
@@ -293,22 +293,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           body: SizedBox.expand(
             child: Stack(
               children: [
-                // ── Subtle gradient overlay ──
-                Positioned.fill(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0xFF111122),
-                          Color(0xFF0d0d1a),
-                          Color(0xFF0d0d1a),
-                        ],
-                        stops: [0.0, 0.4, 1.0],
-                      ),
-                    ),
-                  ),
+                // ── Pure black background (no gradient) ──
+                const Positioned.fill(
+                  child: ColoredBox(color: Colors.black),
                 ),
 
                 // ── Main content ──

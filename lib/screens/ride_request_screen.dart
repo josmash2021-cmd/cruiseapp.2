@@ -398,6 +398,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // ── Trip controller ──
   final RiderTripController _ctrl = RiderTripController();
 
+  // ── Cruise Cash (referral credit) ──
+  // Loaded once when ride_request opens. Displayed on the picked
+  // vehicle horizontal card as a discount badge ("-$10.00 Cruise
+  // Cash") when > 0. Backend applies it for real at dispatch time;
+  // this is just the visible preview for the rider.
+  int _cruiseCashCents = 0;
+
   // ── Map elements (raw bytes) ──
   Uint8List? _goldPinIcon;
   Uint8List? _goldDropoffPinIcon;
@@ -544,6 +551,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void initState() {
     super.initState();
+
+    // Load Cruise Cash balance once so the picked vehicle card can show
+    // the discount preview. Fire-and-forget — failure is silent (the
+    // backend still applies it at dispatch time regardless).
+    _loadCruiseCashBalance();
 
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -746,6 +758,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
   }
 
+
+  /// Fetch the rider's Cruise Cash balance so the picked vehicle card
+  /// can show "-$X.XX Cruise Cash" preview. Silent on failure — the
+  /// backend still applies it at dispatch time regardless of the UI.
+  Future<void> _loadCruiseCashBalance() async {
+    try {
+      final res = await ApiService.getMyReferralInfo();
+      final cents = (res['balance_cents'] as num?)?.toInt() ?? 0;
+      if (mounted && cents != _cruiseCashCents) {
+        setState(() => _cruiseCashCents = cents);
+      }
+    } catch (_) {/* silent — display only */}
+  }
 
   @override
   void dispose() {

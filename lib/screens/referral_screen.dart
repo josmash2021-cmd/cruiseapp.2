@@ -43,6 +43,12 @@ class _ReferralScreenState extends State<ReferralScreen>
   List<Map<String, dynamic>> _referees = [];
   List<Map<String, dynamic>> _transactions = [];
 
+  // Redeem-someone-else's-code mini form
+  final _redeemCtl = TextEditingController();
+  bool _redeeming = false;
+  String? _redeemError;
+  String? _redeemSuccess;
+
   late final AnimationController _entryCtl;
 
   @override
@@ -58,7 +64,37 @@ class _ReferralScreenState extends State<ReferralScreen>
   @override
   void dispose() {
     _entryCtl.dispose();
+    _redeemCtl.dispose();
     super.dispose();
+  }
+
+  Future<void> _redeem() async {
+    final code = _redeemCtl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() {
+      _redeeming = true;
+      _redeemError = null;
+      _redeemSuccess = null;
+    });
+    try {
+      final res = await ApiService.redeemReferralCode(code);
+      if (!mounted) return;
+      _redeemCtl.clear();
+      setState(() {
+        _redeeming = false;
+        _redeemSuccess = (res['inviter_first_name'] as String?) != null
+            ? "You're now linked to ${res['inviter_first_name']}!"
+            : 'Code redeemed!';
+      });
+      HapticFeedback.mediumImpact();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _redeeming = false;
+        _redeemError = e.toString().replaceFirst('ApiException: ', '');
+      });
+      HapticFeedback.heavyImpact();
+    }
   }
 
   Future<void> _load() async {
@@ -155,10 +191,12 @@ class _ReferralScreenState extends State<ReferralScreen>
                     _entryItem(2, _buildShareButtons()),
                     const SizedBox(height: 28),
                     _entryItem(3, _buildHowItWorks()),
-                    const SizedBox(height: 28),
-                    _entryItem(4, _buildRefereesSection()),
                     const SizedBox(height: 24),
-                    _entryItem(5, _buildTransactionsSection()),
+                    _entryItem(4, _buildRedeemBlock()),
+                    const SizedBox(height: 28),
+                    _entryItem(5, _buildRefereesSection()),
+                    const SizedBox(height: 24),
+                    _entryItem(6, _buildTransactionsSection()),
                   ],
                 ),
               ),
@@ -556,6 +594,125 @@ class _ReferralScreenState extends State<ReferralScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRedeemBlock() {
+    final showSuccess = _redeemSuccess != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Got an invite code?',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _chip,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.05), width: 1),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _redeemCtl,
+                  textCapitalization: TextCapitalization.characters,
+                  enabled: !_redeeming && !showSuccess,
+                  cursorColor: _gold,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'XXXX-XXXX',
+                    hintStyle: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.30),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.2,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: (_redeeming || showSuccess) ? null : _redeem,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: showSuccess
+                        ? const Color(0xFF22C55E)
+                        : _gold,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: _redeeming
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, color: Colors.black),
+                        )
+                      : Text(
+                          showSuccess ? '✓' : 'REDEEM',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_redeemError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 4),
+            child: Text(
+              _redeemError!,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Color(0xFFEF9A9A),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        if (_redeemSuccess != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 4),
+            child: Text(
+              _redeemSuccess!,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Color(0xFF22C55E),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

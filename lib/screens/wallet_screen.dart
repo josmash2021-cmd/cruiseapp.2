@@ -6,6 +6,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import 'payment_accounts_screen.dart';
+import 'referral_screen.dart';
 
 /// WalletScreen - Rider payment methods configured for trip payments.
 class WalletScreen extends StatefulWidget {
@@ -21,11 +22,22 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _methods = [];
   String? _error;
+  int _cruiseCashCents = 0;
 
   @override
   void initState() {
     super.initState();
     _loadMethods();
+    _loadCruiseCash();
+  }
+
+  Future<void> _loadCruiseCash() async {
+    try {
+      final res = await ApiService.getMyReferralInfo();
+      if (!mounted) return;
+      setState(() => _cruiseCashCents =
+          (res['balance_cents'] as num?)?.toInt() ?? 0);
+    } catch (_) {/* silent */}
   }
 
   Future<void> _loadMethods() async {
@@ -246,11 +258,17 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _buildContent(AppColors c, S loc) {
     return RefreshIndicator(
-      onRefresh: () async => _loadMethods(),
+      onRefresh: () async {
+        await _loadMethods();
+        await _loadCruiseCash();
+      },
       color: _gold,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // ── Cruise Cash card — referral credit balance ──
+          _buildCruiseCashCard(c),
+          const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
@@ -276,6 +294,81 @@ class _WalletScreenState extends State<WalletScreen> {
           else
             ..._methods.map((m) => _buildMethodItem(m, c)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCruiseCashCard(AppColors c) {
+    final dollars = (_cruiseCashCents / 100.0).toStringAsFixed(2);
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ReferralScreen()),
+        );
+        if (mounted) _loadCruiseCash();
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _gold.withValues(alpha: 0.30), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: _gold.withValues(alpha: 0.10),
+              blurRadius: 22,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: _gold.withValues(alpha: 0.40), width: 1),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.card_giftcard_rounded,
+                  color: _gold, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CRUISE CASH',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: _gold.withValues(alpha: 0.80),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '\$$dollars',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: _gold,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: _gold, size: 22),
+          ],
+        ),
       ),
     );
   }

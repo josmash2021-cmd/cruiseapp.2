@@ -886,7 +886,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // through, smaller, gray) so they SEE the discount being applied.
     final bool promoOn = widget.applyPromo;
     final double basePrice = opt.priceEstimate;
-    final double finalPrice = promoOn ? basePrice * 0.9 : basePrice;
+    final double promoPrice = promoOn ? basePrice * 0.9 : basePrice;
+    // Cruise Cash preview: capped at $50/ride and never below 0. Backend
+    // re-applies the same math at dispatch time, so what the rider sees
+    // here is what they'll be charged.
+    final double ccApplied = (_cruiseCashCents / 100.0)
+        .clamp(0.0, 50.0)
+        .clamp(0.0, promoPrice);
+    final bool hasCC = ccApplied > 0;
+    final double finalPrice = (promoPrice - ccApplied).clamp(0.0, double.infinity);
     final String priceText = '\$${finalPrice.toStringAsFixed(2)}';
     final String oldPriceText = '\$${basePrice.toStringAsFixed(2)}';
 
@@ -1047,13 +1055,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
           const SizedBox(width: 10),
 
-          // ── Right: price (with crossed-out original when 10% promo) ──
+          // ── Right: price (with crossed-out original when 10% promo
+          // or when Cruise Cash is being applied) ──
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (promoOn) ...[
+              if (promoOn || hasCC) ...[
                 Text(
                   oldPriceText,
                   style: TextStyle(
@@ -1073,7 +1082,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 priceText,
                 style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: promoOn ? const Color(0xFFE8C547) : Colors.white,
+                  color:
+                      (promoOn || hasCC) ? const Color(0xFFE8C547) : Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.4,
@@ -1095,6 +1105,31 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   child: const Text(
                     '10% OFF',
                     style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFFE8C547),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+              if (hasCC) ...[
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Text(
+                    '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
+                    style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: Color(0xFFE8C547),
                       fontSize: 8,

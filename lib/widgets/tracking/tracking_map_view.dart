@@ -435,6 +435,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       tripRoute = [widget.pickupLatLng, widget.dropoffLatLng];
     }
 
+    // Snap the polyline endpoints to the EXACT pickup/dropoff coordinates.
+    // Mapbox Directions returns the route snapped to the nearest road, which
+    // can be a few meters off the actual pin. Replacing the first/last
+    // points guarantees the gold line visually touches both pins instead of
+    // leaving a small gap at the start or end.
+    if (tripRoute.length >= 2) {
+      tripRoute[0] = widget.pickupLatLng;
+      tripRoute[tripRoute.length - 1] = widget.dropoffLatLng;
+    }
+
     // Always store trip route for later use when trip starts (pickup→dropoff)
     _tripRoutePts = tripRoute;
 

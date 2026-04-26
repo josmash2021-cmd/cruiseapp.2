@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
@@ -239,6 +240,32 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         (1.0 / (1.0 + (lat.abs() * 3.14159265 / 180.0).clamp(0.0, 1.2)));
   }
 
+  /// Generate a GeoJSON Polygon approximating a geodesic circle of
+  /// [radiusMeters] around (lat,lng). 64 vertices is plenty smooth at
+  /// city zoom and keeps the per-frame update cheap.
+  Map<String, dynamic> _circlePolygon(double lat, double lng, double radiusMeters) {
+    const steps = 64;
+    const earthRadius = 6378137.0; // meters
+    final coords = <List<double>>[];
+    final latRad = lat * math.pi / 180.0;
+    for (int i = 0; i <= steps; i++) {
+      final theta = 2 * math.pi * (i / steps);
+      final dx = radiusMeters * math.cos(theta);
+      final dy = radiusMeters * math.sin(theta);
+      final dLng = (dx / (earthRadius * math.cos(latRad))) * 180.0 / math.pi;
+      final dLat = (dy / earthRadius) * 180.0 / math.pi;
+      coords.add([lng + dLng, lat + dLat]);
+    }
+    return {
+      'type': 'Feature',
+      'geometry': {
+        'type': 'Polygon',
+        'coordinates': [coords],
+      },
+      'properties': {},
+    };
+  }
+
   Future<void> _startMapRipple() async {
     final map = _mapCtrl;
     if (map == null) return;
@@ -246,40 +273,40 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     final lng = _center.longitude;
     final lat = _center.latitude;
 
-    // Create a GeoJSON point source at the pin location
-    final geojson = jsonEncode({
-      'type': 'FeatureCollection',
-      'features': [
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Point',
-            'coordinates': [lng, lat],
-          },
-          'properties': {},
-        }
-      ],
-    });
-
-    try {
-      await map.style.addSource(mapbox.GeoJsonSource(id: 'ripple-source', data: geojson));
-    } catch (_) {
-      // Source might already exist
-    }
-
-    // Add circle layers for each wave (staggered)
+    // Add a per-wave GeoJSON source + Fill layer. We use FillLayer (not
+    // CircleLayer) so the rings are real ground polygons that inherit
+    // the map's pitch — when the camera is tilted they read as ellipses
+    // on the road instead of flat overlay circles in screen space.
     for (int i = 0; i < _waveCount; i++) {
-      final layerId = 'ripple-wave-$i';
+      final sourceId = 'ripple-source-$i';
+      final fillLayerId = 'ripple-fill-$i';
+      final lineLayerId = 'ripple-line-$i';
       try {
-        await map.style.addLayer(mapbox.CircleLayer(
-          id: layerId,
-          sourceId: 'ripple-source',
-          circleRadius: 0.0,
-          circleColor: 0xFFD4A843,
-          circleOpacity: 0.0,
-          circleStrokeWidth: 2.5,
-          circleStrokeColor: 0xFFE8C547,
-          circleStrokeOpacity: 0.0,
+        await map.style.addSource(mapbox.GeoJsonSource(
+          id: sourceId,
+          data: jsonEncode({
+            'type': 'FeatureCollection',
+            'features': [_circlePolygon(lat, lng, 0.5)],
+          }),
+        ));
+      } catch (_) {}
+      try {
+        // Soft gold fill — barely there at peak.
+        await map.style.addLayer(mapbox.FillLayer(
+          id: fillLayerId,
+          sourceId: sourceId,
+          fillColor: 0xFFD4A843,
+          fillOpacity: 0.0,
+        ));
+      } catch (_) {}
+      try {
+        // Crisper gold edge so the ring is readable.
+        await map.style.addLayer(mapbox.LineLayer(
+          id: lineLayerId,
+          sourceId: sourceId,
+          lineColor: 0xFFE8C547,
+          lineWidth: 2.5,
+          lineOpacity: 0.0,
         ));
       } catch (_) {}
     }
@@ -302,8 +329,13 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     final map = _mapCtrl;
     if (map == null) return;
 
+    final lat = _center.latitude;
+    final lng = _center.longitude;
+
     for (int i = 0; i < _waveCount; i++) {
-      final layerId = 'ripple-wave-$i';
+      final sourceId = 'ripple-source-$i';
+      final fillLayerId = 'ripple-fill-$i';
+      final lineLayerId = 'ripple-line-$i';
       // Stagger each wave by 150ms
       final waveOffset = i * 150.0;
       final waveTime = (_rippleElapsed - waveOffset).clamp(0.0, _rippleDurationMs - waveOffset);
@@ -313,22 +345,44 @@ class _MapPickerScreenState extends State<MapPickerScreen>
 
       // Ease out curve for natural deceleration
       final eased = 1.0 - (1.0 - progress) * (1.0 - progress);
-      // Max radius grows with each wave (outer waves go further)
-      final maxRadius = 80.0 + (i * 30.0);
-      final radius = maxRadius * eased;
-      // Opacity: peaks early then fades out
+      // Max radius grows with each wave (outer waves go further).
+      // GeoJSON polygons use METERS — at zoom 15 the previous 80-110px
+      // values map roughly to 35-55m on the ground. Tweak feels good
+      // for typical pickup spots.
+      final maxRadiusM = 35.0 + (i * 14.0);
+      final radiusM = maxRadiusM * eased;
       final opacity = progress < 0.15
           ? (progress / 0.15) * 0.35
           : 0.35 * (1.0 - ((progress - 0.15) / 0.85));
-      final fillOpacity = opacity * 0.25; // fill is more subtle
+      final fillOpacity = opacity * 0.25;
       final strokeOpacity = opacity;
       final strokeWidth = (3.0 * (1.0 - eased * 0.5)).clamp(0.5, 3.0);
 
-      // Update layer properties
-      map.style.setStyleLayerProperty(layerId, 'circle-radius', radius);
-      map.style.setStyleLayerProperty(layerId, 'circle-opacity', fillOpacity);
-      map.style.setStyleLayerProperty(layerId, 'circle-stroke-opacity', strokeOpacity);
-      map.style.setStyleLayerProperty(layerId, 'circle-stroke-width', strokeWidth);
+      // Update the source geometry so the polygon expands. Mapbox
+      // re-renders projected onto the ground plane — pitch comes for
+      // free, the rings now sit on the road instead of on the screen.
+      try {
+        (map.style as dynamic).updateGeoJSONSourceFeatures(
+          sourceId,
+          'ripple-feature',
+          [_circlePolygon(lat, lng, radiusM.clamp(0.5, double.infinity))],
+        );
+      } catch (_) {
+        // Fallback: replace whole source data string.
+        try {
+          map.style.setStyleSourceProperty(
+            sourceId,
+            'data',
+            jsonEncode({
+              'type': 'FeatureCollection',
+              'features': [_circlePolygon(lat, lng, radiusM.clamp(0.5, double.infinity))],
+            }),
+          );
+        } catch (_) {}
+      }
+      map.style.setStyleLayerProperty(fillLayerId, 'fill-opacity', fillOpacity);
+      map.style.setStyleLayerProperty(lineLayerId, 'line-opacity', strokeOpacity);
+      map.style.setStyleLayerProperty(lineLayerId, 'line-width', strokeWidth);
     }
   }
 
@@ -336,9 +390,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     final map = _mapCtrl;
     if (map == null) return;
     for (int i = 0; i < _waveCount; i++) {
-      try { await map.style.removeStyleLayer('ripple-wave-$i'); } catch (_) {}
+      try { await map.style.removeStyleLayer('ripple-fill-$i'); } catch (_) {}
+      try { await map.style.removeStyleLayer('ripple-line-$i'); } catch (_) {}
+      try { await map.style.removeStyleSource('ripple-source-$i'); } catch (_) {}
     }
-    try { await map.style.removeStyleSource('ripple-source'); } catch (_) {}
   }
 
   @override

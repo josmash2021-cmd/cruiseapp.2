@@ -180,10 +180,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
 
     // ── Schedule (non-airport) branch ─────────────────────────────
-    // Step 2: Open search screen for destination
+    // Step 2: Open search screen for destination. Pass scheduledAt so
+    // any pushReplacement to RideRequestScreen from inside the search
+    // (map picker handoff) keeps the Reserve Now context intact.
     final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
       sharedAxisZRoute(
-        const PickupDropoffSearchScreen(),
+        PickupDropoffSearchScreen(scheduledAt: scheduledAt),
         opaque: false,
       ),
     );

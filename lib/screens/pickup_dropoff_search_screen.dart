@@ -32,12 +32,22 @@ class PickupDropoffSearchScreen extends StatefulWidget {
   final String initialPickupText;
   final double? initialPickupLat;
   final double? initialPickupLng;
+  // 2026-04-27 fix: when entered from the Schedule / Airport flow this
+  // screen used to pushReplacement RideRequestScreen WITHOUT carrying
+  // scheduledAt / isAirportTrip forward. Result: the next screen reset
+  // to immediate-dispatch mode and the CTA showed "Request Ride"
+  // instead of "Reserve Now". Now the schedule wrapper passes these
+  // through and the screen forwards them on every push it does.
+  final DateTime? scheduledAt;
+  final bool isAirportTrip;
 
   const PickupDropoffSearchScreen({
     super.key,
     this.initialPickupText = 'Current location',
     this.initialPickupLat,
     this.initialPickupLng,
+    this.scheduledAt,
+    this.isAirportTrip = false,
   });
 
   @override
@@ -370,6 +380,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           handoffLng: lng,
           pickerMode: true,
           pickerIsPickup: _editingPickup,
+          // Forward Schedule/Airport context so the destination CTA
+          // says "Reserve Now" instead of "Request Ride".
+          scheduledAt: widget.scheduledAt,
+          isAirportTrip: widget.isAirportTrip,
         ),
       ),
     );
@@ -529,6 +543,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           handoffZoom: _handoffZoom,
           handoffBearing: _handoffBearing,
           handoffPitch: _handoffPitch,
+          // Forward Schedule/Airport context so the destination CTA
+          // says "Reserve Now" instead of "Request Ride".
+          scheduledAt: widget.scheduledAt,
+          isAirportTrip: widget.isAirportTrip,
         ),
       ),
     );

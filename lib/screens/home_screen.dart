@@ -1394,13 +1394,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
 
       // Schedule (non-airport) branch — pickup/dropoff search, then
-      // ride_request with scheduledAt.
+      // ride_request with scheduledAt. Pass scheduledAt + isAirportTrip
+      // through so if the user goes via the search screen's pickReplacement
+      // path (map picker), the context survives.
       final searchResult =
           await Navigator.of(context).push<Map<String, dynamic>>(
         sharedAxisZRoute(
           PickupDropoffSearchScreen(
             initialPickupLat: _currentLatLng?.latitude,
             initialPickupLng: _currentLatLng?.longitude,
+            scheduledAt: scheduledAt,
+            isAirportTrip: false,
           ),
           opaque: false,
         ),

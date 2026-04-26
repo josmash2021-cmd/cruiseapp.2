@@ -964,6 +964,22 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             logging.warning("[referrals] credit hook failed for trip %s: %s",
                             trip.id, e)
 
+    # Driver-to-driver referral hook — if THIS DRIVER was referred,
+    # increment their ride counter. When they hit the configured
+    # threshold (50 by default) within the 60-day window, the referrer
+    # earns a flat $200 (configurable) bonus credited to pending_balance.
+    # Separate system from the rider Cruise Cash flow above. Safe no-op
+    # for non-referred drivers and already-qualified/expired referrals.
+    if canonical_new == "completed" and trip.driver_id:
+        try:
+            from routers.driver_referrals import bump_driver_referral_progress
+            await bump_driver_referral_progress(db, trip.driver_id)
+        except Exception as e:
+            logging.warning(
+                "[driver_referrals] bump hook failed for trip %s: %s",
+                trip.id, e,
+            )
+
     await db.commit()
     await db.refresh(trip)
 

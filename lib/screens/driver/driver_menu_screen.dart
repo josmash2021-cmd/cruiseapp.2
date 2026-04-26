@@ -17,6 +17,7 @@ import 'driver_documents_screen.dart';
 import 'driver_settings_screen.dart';
 import 'driver_profile_screen.dart';
 import 'driver_info_pages.dart';
+import 'driver_referral_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
@@ -344,7 +345,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     () {
                       Navigator.of(
                         context,
-                      ).push(slideFromRightRoute(const ReferFriendsScreen()));
+                      ).push(slideFromRightRoute(const DriverReferralScreen()));
                     },
                   ),
 

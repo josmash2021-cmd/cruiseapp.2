@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
@@ -300,119 +299,10 @@ class WorkHubScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  REFER FRIENDS SCREEN
+//  REFER FRIENDS SCREEN — moved to driver_referral_screen.dart and
+//  upgraded to a live, end-to-end driver-to-driver referral flow
+//  (see lib/screens/driver/driver_referral_screen.dart).
 // ═══════════════════════════════════════════════════════════════
-
-class ReferFriendsScreen extends StatelessWidget {
-  const ReferFriendsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return _InfoPageShell(
-      title: S.of(context).referFriends,
-      icon: Icons.person_add_rounded,
-      iconColor: const Color(0xFF4CAF50),
-      children: [
-        // Coming Soon banner
-        Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: const Color(0xFFE8C547).withValues(alpha: 0.4),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.access_time_rounded,
-                color: Color(0xFFE8C547),
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                S.of(context).comingSoon,
-                style: const TextStyle(
-                  color: Color(0xFFE8C547),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF1C1C1E), Color(0xFF2A2A2E)],
-            ),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            children: [
-              Text(
-                S.of(context).referEarn200,
-                style: const TextStyle(
-                  color: Color(0xFFE8C547),
-                  fontSize: 36,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                S.of(context).referFriendsSubtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    Share.share(S.of(context).referDriverShareText);
-                  },
-                  icon: const Icon(Icons.share_rounded),
-                  label: Text(
-                    S.of(context).shareInviteLinkBtn,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8C547),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _card(
-          S.of(context).howItWorksTitle,
-          S.of(context).howItWorksDesc,
-          icon: Icons.info_outline_rounded,
-        ),
-        _card(
-          S.of(context).noLimitTitle,
-          S.of(context).noLimitDesc,
-          icon: Icons.all_inclusive_rounded,
-        ),
-      ],
-    );
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  INSURANCE SCREEN

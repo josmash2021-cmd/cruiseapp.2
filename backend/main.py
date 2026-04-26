@@ -328,6 +328,8 @@ async def lifespan(app: FastAPI):
         logging.info("Scheduled Rides Available Notifier ACTIVE -- notify online drivers every 15m")
         asyncio.create_task(_nightly_reconcile_loop())
         logging.info("Nightly Money Reconciliation ACTIVE -- runs every 24h after 5m warmup")
+        asyncio.create_task(_driver_referral_expiry_loop())
+        logging.info("Driver Referral Expiry Loop ACTIVE -- runs every 6h")
 
     asyncio.create_task(_bg_init())
     # Start SSE heartbeat + stale connection cleanup
@@ -366,6 +368,10 @@ from routers.admin import router as admin_router
 from routers.misc import router as misc_router
 from routers.scheduled import router as scheduled_router
 from routers.referrals import router as referrals_router
+from routers.driver_referrals import (
+    router as driver_referrals_router,
+    expire_stale_driver_referrals,
+)
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -379,6 +385,7 @@ app.include_router(admin_router)
 app.include_router(misc_router)
 app.include_router(scheduled_router)
 app.include_router(referrals_router)
+app.include_router(driver_referrals_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
@@ -1268,6 +1275,33 @@ async def _scheduled_ride_reminder_loop():
 
         except Exception as e:
             logging.error("[Reminder] Scheduled ride reminder loop error: %s", e)
+
+
+# -------------------------------------------------------
+#  DRIVER REFERRAL EXPIRY (background task, every 6h)
+# -------------------------------------------------------
+
+async def _driver_referral_expiry_loop():
+    """Every 6 hours, flip pending DriverReferral rows whose 60-day
+    window has elapsed to status='expired'. Pure cleanup — no money
+    movement, no notifications. Safe to run concurrently with the trip
+    completion hook (each row is independent)."""
+    # Brief warmup so we don't compete with boot-time DB activity.
+    await asyncio.sleep(180)
+    while True:
+        try:
+            from routers.driver_referrals import expire_stale_driver_referrals
+            async with SessionLocal() as db:
+                n = await expire_stale_driver_referrals(db)
+                if n:
+                    logging.info(
+                        "[driver_referrals] expired %d stale referral(s)", n
+                    )
+        except Exception as e:
+            logging.warning(
+                "[driver_referrals] expiry loop error: %s", e
+            )
+        await asyncio.sleep(6 * 60 * 60)
 
 
 # -------------------------------------------------------

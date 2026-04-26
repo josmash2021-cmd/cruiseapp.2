@@ -110,6 +110,11 @@ class User(Base):
     fcm_token = Column(String(500), nullable=True)
     referral_code = Column(String(20), unique=True, nullable=True)
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Driver-to-driver referral program (separate from rider Cruise Cash).
+    # Stored on the same users row for fast lookup; details live in the
+    # DriverReferral table.
+    driver_referral_code = Column(String(20), unique=True, nullable=True,
+                                  index=True)
     total_earnings = Column(Float, default=0.0)
     pending_balance = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -490,6 +495,49 @@ class CruiseCashTransaction(Base):
                         default=lambda: datetime.now(timezone.utc), index=True)
 
 
+# ── Driver-to-driver referral program ──
+# Separate system from the rider Cruise Cash referrals (Referral table).
+# A driver shares their personal code; when another person signs up as a
+# driver using that code AND completes N rides as a driver within the
+# expiry window, the referrer gets a flat bonus credited to their
+# pending_balance (cashable in the next payout). Configurable via the
+# AppConfig table:
+#   driver_referral_amount_cents   (default 20000 = $200)
+#   driver_referral_rides_required (default 50)
+#   driver_referral_expiry_days    (default 60)
+class DriverReferral(Base):
+    __tablename__ = "driver_referrals"
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_driver_id = Column(Integer, ForeignKey("users.id"),
+                                nullable=False, index=True)
+    referred_driver_id = Column(Integer, ForeignKey("users.id"),
+                                nullable=False, unique=True, index=True)
+    referral_code = Column(String(20), nullable=False, index=True)
+    # 'pending' | 'qualified' (paid out) | 'expired'
+    status = Column(String(20), default="pending", index=True)
+    rides_completed = Column(Integer, default=0)
+    rides_required = Column(Integer, default=50)
+    bonus_amount_cents = Column(Integer, default=20000)  # $200
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    qualified_at = Column(DateTime(timezone=True), nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True),
+                        default=lambda: datetime.now(timezone.utc))
+
+
+# Generic key/value config table — admin can tune referral payouts and
+# other tunables without a redeploy. Values are stored as text and
+# parsed by the caller (int / float / json).
+class AppConfig(Base):
+    __tablename__ = "app_config"
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)
+    description = Column(String(255), nullable=True)
+    updated_at = Column(DateTime(timezone=True),
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class FavoriteLocation(Base):
     __tablename__ = "favorite_locations"
     id = Column(Integer, primary_key=True, index=True)
@@ -661,6 +709,7 @@ async def migrate_add_columns(conn):
         ("users", "stripe_connect_id", "VARCHAR(100)"),
         ("users", "referral_code", "VARCHAR(20)"),
         ("users", "referred_by", "INTEGER"),
+        ("users", "driver_referral_code", "VARCHAR(20)"),
         ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
         ("users", "verified_at", "DATETIME"),
@@ -719,6 +768,7 @@ async def migrate_postgres(conn):
         ("users", "stripe_connect_id", "VARCHAR(100)"),
         ("users", "referral_code", "VARCHAR(20)"),
         ("users", "referred_by", "INTEGER"),
+        ("users", "driver_referral_code", "VARCHAR(20)"),
         ("users", "total_earnings", "FLOAT DEFAULT 0.0"),
         ("users", "pending_balance", "FLOAT DEFAULT 0.0"),
         ("users", "fcm_token", "VARCHAR(500)"),

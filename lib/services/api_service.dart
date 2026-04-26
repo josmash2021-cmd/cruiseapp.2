@@ -1911,6 +1911,63 @@ class ApiService {
     };
   }
 
+  /// Driver-only: combined fetch for the Refer Friends screen — code,
+  /// settings (amount/rides/expiry), aggregated totals, and the list of
+  /// referred drivers with their per-row 0/50 ride progress.
+  /// Backed by GET /driver-referrals/me.
+  static Future<Map<String, dynamic>> getMyDriverReferralInfo() async {
+    final token = await getToken();
+    if (token == null) {
+      return {
+        'code': '',
+        'settings': {
+          'amount_cents': 20000,
+          'rides_required': 50,
+          'expiry_days': 60,
+        },
+        'total_earned_cents': 0,
+        'pending_cents': 0,
+        'referees_count': 0,
+        'referees': <Map<String, dynamic>>[],
+      };
+    }
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/driver-referrals/me'),
+            headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    return {
+      'code': '',
+      'settings': {
+        'amount_cents': 20000,
+        'rides_required': 50,
+        'expiry_days': 60,
+      },
+      'total_earned_cents': 0,
+      'pending_cents': 0,
+      'referees_count': 0,
+      'referees': <Map<String, dynamic>>[],
+    };
+  }
+
+  /// Driver-only: apply a referrer's code at onboarding. Server ensures
+  /// one-redemption-per-driver, no self-referral, and starts the 60-day
+  /// expiry clock.
+  static Future<Map<String, dynamic>> redeemDriverReferralCode(String code) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/driver-referrals/redeem'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({'code': code}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Redeem someone else's referral code (one-time, at signup).
   /// Backend rejects self-referral, repeat-redemption, and same-
   /// email/phone as the inviter.

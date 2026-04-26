@@ -2818,6 +2818,39 @@ class S {
       ? 'Refiere a tantos amigos como quieras — no hay límite de cuánto puedes ganar.'
       : "Refer as many friends as you want — there's no cap on how much you can earn.";
 
+  // ── Driver Referral Screen (live, end-to-end) ──────────────────────────────
+  String driverEarnHero(String amount) =>
+      _es ? 'GANA $amount' : 'EARN $amount';
+  String driverEarnSub(int rides, int days) => _es
+      ? 'por cada conductor que refieras y complete sus primeros $rides viajes en $days días'
+      : 'for every driver you refer who completes their first $rides rides within $days days';
+  String driverShareIntro(String amount) => _es
+      ? '¡Conduce con Cruise y gana $amount cuando completes tus primeros viajes!'
+      : 'Drive with Cruise and earn $amount when you complete your first rides!';
+  String driverShareSteps(int rides) => _es
+      ? '1. Regístrate como conductor con mi código\n2. Completa $rides viajes\n3. Tu referidor gana un bono'
+      : '1. Sign up as a driver with my code\n2. Complete $rides rides\n3. Your referrer earns a bonus';
+  String get driverShareSubject =>
+      _es ? 'Conduce con Cruise' : 'Drive with Cruise';
+  String get driverHowStep1 => _es
+      ? 'Comparte tu código único con otros conductores.'
+      : 'Share your unique code with other drivers.';
+  String driverHowStep2(int rides, int days) => _es
+      ? 'Se registra como conductor con tu código y completa $rides viajes en $days días.'
+      : 'They sign up as a driver with your code and complete $rides rides within $days days.';
+  String driverHowStep3(String amount) => _es
+      ? 'Ganas $amount, agregado a tu balance pendiente y disponible en tu próximo retiro.'
+      : 'You earn $amount, added to your pending balance and available in your next payout.';
+  String get yourCode => _es ? 'TU CÓDIGO' : 'YOUR CODE';
+  String get yourReferrals => _es ? 'TUS REFERIDOS' : 'YOUR REFERRALS';
+  String get earnedLabel => _es ? 'Ganado' : 'Earned';
+  String get pendingLabel => _es ? 'Pendiente' : 'Pending';
+  String get referralsLabel => _es ? 'Referidos' : 'Referrals';
+  String get statusPaid => _es ? 'PAGADO' : 'PAID';
+  String get statusExpired => _es ? 'EXPIRADO' : 'EXPIRED';
+  String get statusInProgress => _es ? 'EN PROGRESO' : 'IN PROGRESS';
+  String get ridesLabel => _es ? 'viajes' : 'rides';
+
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>
       _es ? 'Protección para Conductores Cruise' : 'Cruise Driver Protection';

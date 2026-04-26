@@ -16,6 +16,7 @@ import '../services/places_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
+import 'airport_terminal_sheet.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'schedule_ride_flow.dart';
@@ -145,6 +146,39 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     if (result == null || !mounted) return;
     final (scheduledAt, isAirport) = result;
 
+    // ── Airport branch ────────────────────────────────────────────
+    // When the user toggled "Airport trip" in the schedule picker, we
+    // must run the same flow as the home screen's Airport card: open
+    // AirportTerminalSheet to capture airport / terminal / airline /
+    // flight, then push ride_request with both scheduledAt AND the
+    // airport selection. Without this branch the toggle was a no-op
+    // because we'd skip straight to the generic pickup/dropoff search.
+    if (isAirport) {
+      final airportResult = await showModalBottomSheet<AirportSelection>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        useSafeArea: true,
+        builder: (_) =>
+            AirportTerminalSheet(isDark: AppColors.of(context).isDark),
+      );
+      if (airportResult == null || !mounted) return;
+
+      await Navigator.of(context).push(
+        slideUpFadeRoute(
+          RideRequestScreen(
+            scheduledAt: scheduledAt,
+            isAirportTrip: true,
+            airportSelection: airportResult,
+          ),
+        ),
+      );
+
+      if (mounted) _loadTrips();
+      return;
+    }
+
+    // ── Schedule (non-airport) branch ─────────────────────────────
     // Step 2: Open search screen for destination
     final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
       sharedAxisZRoute(
@@ -170,7 +204,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       slideUpFadeRoute(
         RideRequestScreen(
           scheduledAt: scheduledAt,
-          isAirportTrip: isAirport,
+          isAirportTrip: false,
           initialPickupDetails: pickupDetails,
           initialDropoffDetails: dropoffDetails,
           initialPickupLabel: pickupLabel,

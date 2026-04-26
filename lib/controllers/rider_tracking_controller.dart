@@ -267,27 +267,43 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (lateralM < 150) {
         _offRouteCount = 0; // back on route
         final clampedM = projectedM.clamp(0.0, _segDist.last);
-        if (clampedM >= _traveledM - 5) {
-          final newTarget = math.max(clampedM, _traveledM);
-          // Use real driver speed from RTDB when available (most accurate).
-          // Fall back to calculated velocity from GPS deltas.
-          final now = DateTime.now();
-          final dtSec = now.difference(_lastGpsTime).inMilliseconds / 1000.0;
-          if (speed != null && speed > 0.1) {
-            // Real driver speed — smooth with 30/70 blend for stability
-            final realVel = speed.clamp(0.0, 35.0);
-            _velocityMps = _velocityMps * 0.3 + realVel * 0.7;
-          } else if (dtSec > 0.05 && dtSec < 5.0) {
-            final distDelta = newTarget - _tgtTraveledM;
-            if (distDelta > 0) {
-              // Calculated velocity — cap to prevent spikes
-              final newVel = (distDelta / dtSec).clamp(0.0, 35.0);
-              _velocityMps = _velocityMps * 0.4 + newVel * 0.6;
-            }
+        // 2026-04-27 FIX: was `clampedM >= _traveledM - 5` which silently
+        // dropped every GPS update where the driver appeared to retreat
+        // even slightly (GPS jitter, snap projecting backward, brief
+        // stop). Result: _tgtTraveledM never updated, _velocityMps stayed
+        // 0, the car pin froze on screen even though the driver was
+        // actually moving. New rule: ALWAYS accept the projection;
+        // never let the target go backward, just clamp to current.
+        final newTarget = math.max(clampedM, _traveledM);
+        // Use real driver speed from RTDB when available (most accurate).
+        // Fall back to calculated velocity from GPS deltas.
+        final now = DateTime.now();
+        final dtSec = now.difference(_lastGpsTime).inMilliseconds / 1000.0;
+        if (speed != null && speed > 0.1) {
+          // Real driver speed — smooth with 30/70 blend for stability.
+          // Always honored even if delta is 0 (GPS jitter on a moving
+          // driver) so the ticker has velocity to advance with.
+          final realVel = speed.clamp(0.0, 35.0);
+          _velocityMps = _velocityMps * 0.3 + realVel * 0.7;
+        } else if (dtSec > 0.05 && dtSec < 5.0) {
+          final distDelta = newTarget - _tgtTraveledM;
+          if (distDelta > 0) {
+            // Calculated velocity — cap to prevent spikes
+            final newVel = (distDelta / dtSec).clamp(0.0, 35.0);
+            _velocityMps = _velocityMps * 0.4 + newVel * 0.6;
           }
-          _lastGpsTime = now;
-          _tgtTraveledM = newTarget;
         }
+        // Anti-stall: if we got several GPS updates in a row but
+        // velocity is still ~0 AND the target IS ahead of where we are
+        // visually, kick in a minimum 4 m/s (~9 mph, slow city pace) so
+        // the ticker has something to advance with. The proportional
+        // correction (corrStep, 8%/frame) will tune it to the real
+        // pace within ~0.5s.
+        if (_velocityMps < 0.5 && newTarget - _traveledM > 3) {
+          _velocityMps = 4.0;
+        }
+        _lastGpsTime = now;
+        _tgtTraveledM = newTarget;
         _directTargetPos = null;
         _directTargetBearing = null;
       } else {

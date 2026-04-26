@@ -250,6 +250,9 @@ class PayoutMethod(Base):
     method_type = Column(String(50), nullable=False)
     display_name = Column(String(255), nullable=False)
     is_default = Column(Boolean, default=False)
+    # When the row was created. Used by the 7-day cooldown gate that
+    # unlocks instant cashout for debit-card methods.
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class RiderPaymentMethod(Base):
@@ -297,6 +300,9 @@ class Cashout(Base):
     amount = Column(Float, nullable=False)
     status = Column(String(20), default="pending")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # "standard" (default, free, 1-2 days) or "instant" (1.5% fee, minutes).
+    method = Column(String(20), default="standard")
+    fee = Column(Float, default=0.0)
 
 
 class Vehicle(Base):

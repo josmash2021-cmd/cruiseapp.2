@@ -155,6 +155,8 @@ class DriverLocationIn(BaseModel):
 
 class CashoutIn(BaseModel):
     amount: float
+    # "standard" (free, 1-2 days, default) or "instant" (1.5% fee, minutes).
+    method: str = "standard"
 
 
 # ═══════════════════════════════════════════════════════

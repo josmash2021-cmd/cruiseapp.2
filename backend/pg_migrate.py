@@ -61,7 +61,7 @@ async def migrate_postgresql_columns(conn):
         try:
             # Check if column exists
             result = await conn.execute(text(f"""
-                SELECT column_name FROM information_schema.columns 
+                SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'trips' AND column_name = '{col_name}'
             """))
             if result.scalar() is None:
@@ -72,6 +72,44 @@ async def migrate_postgresql_columns(conn):
                 logger.info(f"  Column trips.{col_name} already exists")
         except Exception as e:
             logger.error(f"Failed to add trips.{col_name}: {e}")
+
+    # Cashouts: instant-cashout fields (added 2026-04-26).
+    cashout_columns = [
+        ("method", "VARCHAR(20) DEFAULT 'standard'"),
+        ("fee", "FLOAT DEFAULT 0.0"),
+    ]
+    for col_name, col_type in cashout_columns:
+        try:
+            result = await conn.execute(text(f"""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'cashouts' AND column_name = '{col_name}'
+            """))
+            if result.scalar() is None:
+                await conn.execute(text(f"ALTER TABLE cashouts ADD COLUMN {col_name} {col_type}"))
+                logger.info(f"✓ Added column cashouts.{col_name}")
+            else:
+                logger.info(f"  Column cashouts.{col_name} already exists")
+        except Exception as e:
+            logger.error(f"Failed to add cashouts.{col_name}: {e}")
+
+    # Payout methods: created_at backfills the 7-day cooldown that
+    # unlocks instant cashout for newly-linked debit cards.
+    payout_method_columns = [
+        ("created_at", "TIMESTAMPTZ DEFAULT NOW()"),
+    ]
+    for col_name, col_type in payout_method_columns:
+        try:
+            result = await conn.execute(text(f"""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'payout_methods' AND column_name = '{col_name}'
+            """))
+            if result.scalar() is None:
+                await conn.execute(text(f"ALTER TABLE payout_methods ADD COLUMN {col_name} {col_type}"))
+                logger.info(f"✓ Added column payout_methods.{col_name}")
+            else:
+                logger.info(f"  Column payout_methods.{col_name} already exists")
+        except Exception as e:
+            logger.error(f"Failed to add payout_methods.{col_name}: {e}")
     
     # Create new tables if they don't exist (handled by SQLAlchemy, but let's be safe)
     new_tables = [

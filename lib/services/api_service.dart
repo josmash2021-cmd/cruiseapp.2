@@ -1841,8 +1841,13 @@ class ApiService {
   }
 
   /// Request a cashout of driver earnings.
+  ///
+  /// [method] is "standard" (free, 1-2 days) or "instant" (1.5% fee,
+  /// minutes). Instant requires a debit card linked >=7 days and a
+  /// minimum amount of $50 — backend enforces both.
   static Future<Map<String, dynamic>> requestCashout({
     required double amount,
+    String method = 'standard',
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -1851,10 +1856,32 @@ class ApiService {
         .post(
           Uri.parse('$_baseUrl/drivers/cashout'),
           headers: _jsonHeaders(token),
-          body: jsonEncode({'amount': amount}),
+          body: jsonEncode({'amount': amount, 'method': method}),
         )
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 12));
     return _parse(res);
+  }
+
+  /// Check whether the driver can use Instant Cashout right now.
+  /// Returns ``{instant_enabled, reason?, days_remaining?, min_amount,
+  /// fee_rate, fee_min, cooldown_days}``.
+  static Future<Map<String, dynamic>> getCashoutEligibility() async {
+    final token = await getToken();
+    if (token == null) {
+      return {'instant_enabled': false, 'reason': 'not_logged_in'};
+    }
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/drivers/cashout/eligibility'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return {'instant_enabled': false, 'reason': 'error'};
   }
 
   /// Get list of driver's cashout history.

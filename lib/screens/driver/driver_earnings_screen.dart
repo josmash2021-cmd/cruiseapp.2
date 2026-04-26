@@ -795,175 +795,531 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(28),
-          decoration: const BoxDecoration(
-            color: _card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        return _CashOutSheet(
+          available: _total,
+          onCashedOut: _fetchEarnings,
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CASHOUT SHEET — Instant vs Standard, Uber-style with PREMIUM glow
+// ═══════════════════════════════════════════════════════════════════
+
+class _CashOutSheet extends StatefulWidget {
+  final double available;
+  final VoidCallback onCashedOut;
+  const _CashOutSheet({required this.available, required this.onCashedOut});
+
+  @override
+  State<_CashOutSheet> createState() => _CashOutSheetState();
+}
+
+class _CashOutSheetState extends State<_CashOutSheet>
+    with SingleTickerProviderStateMixin {
+  static const _gold = Color(0xFFE8C547);
+  static const _card = Color(0xFF1C1C1E);
+
+  // Local mirrors of backend constants — backend is the source of truth
+  // and re-validates everything, but the UI uses these to decide enable
+  // states without an extra round-trip.
+  static const double _instantFeeRate = 0.015;
+  static const double _instantFeeMin = 0.50;
+  static const double _instantMinAmount = 50.0;
+
+  String _selected = 'standard'; // "instant" or "standard"
+  bool _loadingEligibility = true;
+  bool _instantEnabled = false;
+  String? _ineligibleReason;
+  int _daysRemaining = 0;
+  bool _submitting = false;
+
+  late AnimationController _glowCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _loadEligibility();
+  }
+
+  @override
+  void dispose() {
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadEligibility() async {
+    final e = await ApiService.getCashoutEligibility();
+    if (!mounted) return;
+    setState(() {
+      _loadingEligibility = false;
+      _instantEnabled = e['instant_enabled'] == true;
+      _ineligibleReason = e['reason'] as String?;
+      _daysRemaining = (e['days_remaining'] as num?)?.toInt() ?? 0;
+    });
+  }
+
+  double get _fee {
+    if (_selected != 'instant') return 0.0;
+    final raw = widget.available * _instantFeeRate;
+    return raw < _instantFeeMin ? _instantFeeMin : double.parse(raw.toStringAsFixed(2));
+  }
+
+  double get _net => double.parse((widget.available - _fee).toStringAsFixed(2));
+
+  bool get _canConfirm {
+    if (_submitting) return false;
+    if (widget.available <= 0) return false;
+    if (_selected == 'instant') {
+      if (!_instantEnabled) return false;
+      if (widget.available < _instantMinAmount) return false;
+    }
+    return true;
+  }
+
+  Future<void> _confirm() async {
+    setState(() => _submitting = true);
+    HapticFeedback.mediumImpact();
+
+    if (AppConfig.sandboxPayments) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showSnack(
+        '✅ Cash out initiated: \$${_net.toStringAsFixed(2)}'
+        '${_selected == 'instant' ? ' (instant)' : ''}',
+        _gold,
+      );
+      widget.onCashedOut();
+      return;
+    }
+
+    try {
+      final result = await ApiService.requestCashout(
+        amount: widget.available,
+        method: _selected,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      final transferId = result['transfer_id'] as String?;
+      final stripeErr = result['stripe_error'] as String?;
+      if (transferId != null) {
+        _showSnack(
+          _selected == 'instant'
+              ? '⚡ Instant cashout sent: \$${_net.toStringAsFixed(2)} '
+                '(fee \$${_fee.toStringAsFixed(2)})'
+              : '✅ Cash out initiated: \$${widget.available.toStringAsFixed(2)}',
+          _gold,
+        );
+        widget.onCashedOut();
+      } else if (stripeErr != null) {
+        debugPrint('Cashout Stripe error: $stripeErr');
+        _showSnack(
+          'Cashout could not be completed. Please try again or contact support.',
+          Colors.orange,
+        );
+      } else {
+        _showSnack(
+          'Cashout requested. Set up Stripe payouts to receive funds automatically.',
+          _gold,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      debugPrint('Cashout error: $e');
+      final msg = e.toString().contains('Insufficient')
+          ? 'Insufficient balance.'
+          : e.toString().contains('Instant cashout requires')
+              ? 'Instant cashout requires a minimum of \$${_instantMinAmount.toStringAsFixed(0)}.'
+              : e.toString().contains('Instant cashout not available')
+                  ? 'Instant cashout not available yet — debit card cooldown not cleared.'
+                  : 'Please try again or contact support.';
+      _showSnack(msg, Colors.red);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _showSnack(String msg, Color bg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  void _onSelect(String method) {
+    if (method == 'instant' && !_instantEnabled) {
+      // Card disabled — explain why with a snack instead of selecting.
+      final reason = _ineligibleReason;
+      String msg;
+      if (reason == 'no_debit_card') {
+        msg = 'Add a debit card in Payout methods to unlock Instant Cashout.';
+      } else if (reason == 'cooldown') {
+        msg = 'Instant unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.';
+      } else {
+        msg = 'Instant Cashout is not available right now.';
+      }
+      _showSnack(msg, Colors.orange);
+      HapticFeedback.lightImpact();
+      return;
+    }
+    HapticFeedback.selectionClick();
+    setState(() => _selected = method);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 16,
+        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 18),
+          Center(
+            child: Column(
+              children: [
+                Text(
+                  'Available balance',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$${widget.available.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              'How fast do you want it?',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          // ── INSTANT CARD ──
+          AnimatedBuilder(
+            animation: _glowCtrl,
+            builder: (_, child) {
+              final glow = _selected == 'instant' && _instantEnabled
+                  ? 0.35 + (_glowCtrl.value * 0.35)
+                  : 0.0;
+              return Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: glow > 0
+                      ? [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: glow),
+                            blurRadius: 20,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: child,
+              );
+            },
+            child: _OptionCard(
+              icon: Icons.flash_on_rounded,
+              iconColor: _gold,
+              title: 'Instant',
+              badge: 'PREMIUM',
+              badgeColor: _gold,
+              subtitle: 'Get it in minutes',
+              receiveLabel: _instantEnabled
+                  ? 'You receive \$${_net.toStringAsFixed(2)}'
+                  : (_ineligibleReason == 'cooldown'
+                      ? 'Unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}'
+                      : (_ineligibleReason == 'no_debit_card'
+                          ? 'Add a debit card to unlock'
+                          : 'Not available')),
+              detail: _instantEnabled
+                  ? 'Fee \$${_fee.toStringAsFixed(2)} (1.5%) • Min \$${_instantMinAmount.toStringAsFixed(0)}'
+                  : null,
+              selected: _selected == 'instant',
+              enabled: _instantEnabled && !_loadingEligibility,
+              loading: _loadingEligibility,
+              onTap: () => _onSelect('instant'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── STANDARD CARD ──
+          _OptionCard(
+            icon: Icons.account_balance_rounded,
+            iconColor: Colors.white.withValues(alpha: 0.7),
+            title: 'Standard',
+            badge: 'FREE',
+            badgeColor: Colors.white.withValues(alpha: 0.4),
+            subtitle: 'Arrives in 1–2 business days',
+            receiveLabel: 'You receive \$${widget.available.toStringAsFixed(2)}',
+            detail: null,
+            selected: _selected == 'standard',
+            enabled: true,
+            loading: false,
+            onTap: () => _onSelect('standard'),
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: ElevatedButton(
+              onPressed: _canConfirm ? _confirm : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor: _gold.withValues(alpha: 0.3),
+                disabledForegroundColor: Colors.black.withValues(alpha: 0.6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation(Colors.black),
+                      ),
+                    )
+                  : Text(
+                      _selected == 'instant'
+                          ? 'Cash out \$${_net.toStringAsFixed(2)} instantly'
+                          : 'Cash out \$${widget.available.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OptionCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String badge;
+  final Color badgeColor;
+  final String subtitle;
+  final String receiveLabel;
+  final String? detail;
+  final bool selected;
+  final bool enabled;
+  final bool loading;
+  final VoidCallback onTap;
+
+  const _OptionCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.badge,
+    required this.badgeColor,
+    required this.subtitle,
+    required this.receiveLabel,
+    required this.detail,
+    required this.selected,
+    required this.enabled,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFE8C547);
+    final borderColor = selected
+        ? gold
+        : Colors.white.withValues(alpha: 0.08);
+    final bg = selected
+        ? gold.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.02);
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: borderColor,
+            width: selected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Opacity(
+          opacity: enabled ? 1.0 : 0.55,
+          child: Row(
             children: [
               Container(
-                width: 36,
-                height: 4,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(2),
+                  color: iconColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Icon(icon, color: iconColor, size: 22),
               ),
-              const SizedBox(height: 24),
-              const Icon(Icons.account_balance_rounded, color: _gold, size: 40),
-              SizedBox(height: 16),
-              Text(
-                S.of(ctx).cashOut,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                S.of(ctx).availableBalance(_total.toStringAsFixed(2)),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                S.of(ctx).fundsTransferDesc,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    // Sandbox mode: simulate successful cashout
-                    if (AppConfig.sandboxPayments) {
-                      await Future.delayed(const Duration(milliseconds: 800));
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '✅ ${S.of(context).cashOutInitiated(_total.toStringAsFixed(2))}',
-                          ),
-                          backgroundColor: _gold,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      );
-                      _fetchEarnings();
-                      return;
-                    }
-                    try {
-                      final result = await ApiService.requestCashout(amount: _total);
-                      if (!mounted) return;
-                      final transferId = result['transfer_id'] as String?;
-                      final stripeErr = result['stripe_error'] as String?;
-                      if (transferId != null) {
-                        // Real Stripe transfer initiated
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '✅ ${S.of(context).cashOutInitiated(_total.toStringAsFixed(2))}',
-                            ),
-                            backgroundColor: _gold,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: badgeColor.withValues(alpha: 0.4),
+                              width: 0.8,
                             ),
                           ),
-                        );
-                        _fetchEarnings();
-                      } else if (stripeErr != null) {
-                        // Transfer failed — show clean message, log raw error
-                        debugPrint('Cashout Stripe error: $stripeErr');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Cashout could not be completed. Please try again or contact support.',
-                            ),
-                            backgroundColor: Colors.orange,
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 6),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                          child: Text(
+                            badge,
+                            style: TextStyle(
+                              color: badgeColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.6,
                             ),
                           ),
-                        );
-                      } else {
-                        // No Stripe Connect — cashout pending manual processing
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Cashout requested. Set up Stripe payouts below to receive funds automatically.',
-                            ),
-                            backgroundColor: _gold,
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (!mounted) return;
-                      debugPrint('Cashout error: $e');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            S.of(context).cashOutFailed('Please try again or contact support.'),
-                          ),
-                          backgroundColor: Colors.red,
-                          behavior: SnackBarBehavior.floating,
                         ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      ],
                     ),
-                  ),
-                  child: Text(
-                    S.of(ctx).confirmCashOut,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12.5,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    if (loading)
+                      Container(
+                        height: 12,
+                        width: 110,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      )
+                    else ...[
+                      Text(
+                        receiveLabel,
+                        style: TextStyle(
+                          color: enabled
+                              ? Colors.white.withValues(alpha: 0.85)
+                              : Colors.white.withValues(alpha: 0.45),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (detail != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          detail!,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  S.of(ctx).cancel,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? gold : Colors.white.withValues(alpha: 0.2),
+                size: 22,
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

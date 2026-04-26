@@ -382,10 +382,112 @@ async def get_stripe_connect_status(
     except Exception as e:
         return {"connected": False, "error": str(e)[:100]}
 
+# Business rules for Instant Cashout (kept as constants so the
+# eligibility endpoint and the cashout endpoint stay in sync).
+INSTANT_FEE_RATE = 0.015         # 1.5% of amount
+INSTANT_FEE_MIN = 0.50           # at least $0.50
+INSTANT_MIN_AMOUNT = 50.00       # driver must request >= $50 for instant
+INSTANT_COOLDOWN_DAYS = 7        # debit card must have been linked 7+ days ago
+
+
+def _instant_fee(amount: float) -> float:
+    """Stripe Instant Payout fee: 1.5% of amount, minimum $0.50."""
+    return round(max(amount * INSTANT_FEE_RATE, INSTANT_FEE_MIN), 2)
+
+
+async def _eligible_debit_card(db: AsyncSession, user_id: int):
+    """Return the oldest debit-card payout method that has cleared the
+    7-day cooldown, or ``None`` if the driver isn't eligible yet.
+
+    Picking the OLDEST eligible row (rather than newest) means a driver
+    who linked a card weeks ago and a brand-new card last night still
+    keeps the older card available for instant — adding a new card never
+    locks them out of instant.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=INSTANT_COOLDOWN_DAYS)
+    r = await db.execute(
+        select(PayoutMethod)
+        .where(
+            PayoutMethod.user_id == user_id,
+            PayoutMethod.method_type == "debit_card",
+            PayoutMethod.created_at <= cutoff,
+        )
+        .order_by(PayoutMethod.created_at.asc())
+    )
+    return r.scalars().first()
+
+
+def _ext_id_from_display(display_name: str) -> str:
+    """Pull the Stripe external_account id out of the
+    ``"Visa ····1234  [ext:card_xxx]"`` display_name suffix."""
+    idx = display_name.find("[ext:")
+    if idx < 0:
+        return ""
+    end = display_name.find("]", idx)
+    if end < 0:
+        return ""
+    return display_name[idx + 5:end]
+
+
+@router.get("/drivers/cashout/eligibility", dependencies=[Depends(_verify_api_key)])
+async def get_cashout_eligibility(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tells the frontend whether the driver can use Instant Cashout
+    right now, and if not, why. Drives the UI state of the instant card.
+    """
+    cards_r = await db.execute(
+        select(PayoutMethod)
+        .where(
+            PayoutMethod.user_id == user.id,
+            PayoutMethod.method_type == "debit_card",
+        )
+        .order_by(PayoutMethod.created_at.asc())
+    )
+    cards = cards_r.scalars().all()
+    now = datetime.now(timezone.utc)
+    if not cards:
+        return {
+            "instant_enabled": False,
+            "reason": "no_debit_card",
+            "min_amount": INSTANT_MIN_AMOUNT,
+            "fee_rate": INSTANT_FEE_RATE,
+            "fee_min": INSTANT_FEE_MIN,
+            "cooldown_days": INSTANT_COOLDOWN_DAYS,
+        }
+    oldest = cards[0]
+    linked_at = oldest.created_at or now
+    elapsed_days = (now - linked_at).total_seconds() / 86400.0
+    if elapsed_days < INSTANT_COOLDOWN_DAYS:
+        days_remaining = max(0, INSTANT_COOLDOWN_DAYS - int(elapsed_days))
+        return {
+            "instant_enabled": False,
+            "reason": "cooldown",
+            "days_remaining": days_remaining,
+            "unlocks_at": (linked_at + timedelta(days=INSTANT_COOLDOWN_DAYS)).isoformat(),
+            "min_amount": INSTANT_MIN_AMOUNT,
+            "fee_rate": INSTANT_FEE_RATE,
+            "fee_min": INSTANT_FEE_MIN,
+            "cooldown_days": INSTANT_COOLDOWN_DAYS,
+        }
+    return {
+        "instant_enabled": True,
+        "min_amount": INSTANT_MIN_AMOUNT,
+        "fee_rate": INSTANT_FEE_RATE,
+        "fee_min": INSTANT_FEE_MIN,
+        "cooldown_days": INSTANT_COOLDOWN_DAYS,
+    }
+
+
 @router.post("/drivers/cashout", dependencies=[Depends(_verify_api_key)])
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if body.amount <= 0:
         raise HTTPException(400, "Cashout amount must be positive")
+    method = (body.method or "standard").lower()
+    if method not in ("standard", "instant"):
+        raise HTTPException(400, "method must be 'standard' or 'instant'")
+
     # Lock the driver row for the duration of the transaction so two
     # concurrent cashout requests from the same driver can't both pass
     # the balance check with stale data. Without FOR UPDATE a driver
@@ -397,6 +499,24 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     locked_user = lock_r.scalar_one_or_none()
     if not locked_user:
         raise HTTPException(404, "Driver not found")
+
+    # ── Instant Cashout gates (min amount + 7-day cooldown + debit card) ──
+    instant_card = None
+    fee_amount = 0.0
+    if method == "instant":
+        if body.amount < INSTANT_MIN_AMOUNT:
+            raise HTTPException(
+                400,
+                f"Instant cashout requires a minimum of ${INSTANT_MIN_AMOUNT:.2f}",
+            )
+        instant_card = await _eligible_debit_card(db, user.id)
+        if not instant_card:
+            raise HTTPException(
+                400,
+                "Instant cashout not available — link a debit card and wait "
+                f"{INSTANT_COOLDOWN_DAYS} days before instant unlocks.",
+            )
+        fee_amount = _instant_fee(body.amount)
 
     # Calculate available balance from driver payout (not rider gross fare).
     # We subtract refund clawbacks (trip.driver_earnings is reduced by the
@@ -416,12 +536,17 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     available_balance = round(total_earnings - total_cashouts, 2)
     if body.amount > available_balance:
         raise HTTPException(400, f"Insufficient balance. Available: ${available_balance:.2f}")
-    cashout = Cashout(user_id=user.id, amount=body.amount)
+    cashout = Cashout(
+        user_id=user.id,
+        amount=body.amount,
+        method=method,
+        fee=fee_amount,
+    )
     db.add(cashout)
     await db.commit()
     await db.refresh(cashout)
 
-    # â"€â"€ Stripe Connect Transfer (real payout to driver's bank) â"€â"€
+    # ── Stripe payout — Transfer (standard) OR Instant Payout (instant) ──
     transfer_id = None
     stripe_error = None
     if user.stripe_connect_id and STRIPE_SECRET:
@@ -430,14 +555,42 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
             _s.api_key = STRIPE_SECRET
             # Amount in cents; Stripe requires positive integer
             amount_cents = max(int(body.amount * 100), 50)
-            transfer = _s.Transfer.create(
-                amount=amount_cents,
-                currency="usd",
-                destination=user.stripe_connect_id,
-                description=f"Cruise driver payout - cashout #{cashout.id}",
-                metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
-            )
-            transfer_id = transfer["id"]
+            if method == "instant":
+                # Stripe Instant Payouts run on the Connect account itself
+                # and route to a specific debit-card external_account.
+                ext_id = _ext_id_from_display(instant_card.display_name)
+                if not ext_id:
+                    raise RuntimeError("Debit card external_account id missing")
+                payout = _s.Payout.create(
+                    amount=amount_cents,
+                    currency="usd",
+                    method="instant",
+                    destination=ext_id,
+                    description=f"Cruise instant cashout #{cashout.id}",
+                    metadata={
+                        "cashout_id": str(cashout.id),
+                        "driver_id": str(user.id),
+                        "fee_charged_to_driver": f"{fee_amount:.2f}",
+                    },
+                    stripe_account=user.stripe_connect_id,
+                )
+                transfer_id = payout["id"]
+                logging.info(
+                    "[Cashout] Stripe Instant Payout %s for driver %s - "
+                    "gross $%.2f, fee $%.2f, net $%.2f",
+                    transfer_id, user.id, body.amount, fee_amount,
+                    body.amount - fee_amount,
+                )
+            else:
+                transfer = _s.Transfer.create(
+                    amount=amount_cents,
+                    currency="usd",
+                    destination=user.stripe_connect_id,
+                    description=f"Cruise driver payout - cashout #{cashout.id}",
+                    metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
+                )
+                transfer_id = transfer["id"]
+                logging.info("[Cashout] Stripe Transfer %s created for driver %s - $%.2f", transfer_id, user.id, body.amount)
             cashout.status = "completed"
             # Deduct from pending_balance
             result2 = await db.execute(select(User).where(User.id == user.id))
@@ -446,10 +599,9 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
             await db.commit()
             await db.refresh(cashout)
-            logging.info("[Cashout] Stripe Transfer %s created for driver %s - $%.2f", transfer_id, user.id, body.amount)
         except Exception as _se:
             stripe_error = str(_se)[:200]
-            logging.error("[Cashout] Stripe Transfer failed for driver %s: %s", user.id, _se)
+            logging.error("[Cashout] Stripe %s failed for driver %s: %s", method, user.id, _se)
             # Mark as failed so it doesn't block future cashout attempts
             cashout.status = "failed"
             await db.commit()
@@ -457,6 +609,9 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     return {
         "id": cashout.id,
         "amount": cashout.amount,
+        "method": cashout.method,
+        "fee": cashout.fee,
+        "net_amount": round(cashout.amount - cashout.fee, 2),
         "status": cashout.status,
         "transfer_id": transfer_id,
         "stripe_error": stripe_error,

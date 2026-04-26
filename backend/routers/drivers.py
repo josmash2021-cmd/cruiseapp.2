@@ -395,6 +395,43 @@ def _instant_fee(amount: float) -> float:
     return round(max(amount * INSTANT_FEE_RATE, INSTANT_FEE_MIN), 2)
 
 
+# Module-level cache for the platform's instant_payouts capability.
+# Stripe rarely flips this state (request → approval), so a 10-min TTL
+# is plenty and avoids hitting Stripe on every eligibility check.
+_instant_capability_cache = {"value": None, "checked_at": 0.0}
+_INSTANT_CAPABILITY_TTL_SEC = 600
+
+
+def _platform_instant_payouts_active() -> bool:
+    """Whether THIS Stripe Connect platform has the instant_payouts
+    capability granted. Drivers can't use Instant Cashout until Stripe
+    approves the capability — this gate keeps the UI honest until then.
+
+    Cached for 10 minutes. Returns False on any error (fail-closed).
+    """
+    import time as _time
+    now = _time.time()
+    cached = _instant_capability_cache["value"]
+    last = _instant_capability_cache["checked_at"]
+    if cached is not None and (now - last) < _INSTANT_CAPABILITY_TTL_SEC:
+        return cached
+    if not STRIPE_SECRET:
+        _instant_capability_cache.update({"value": False, "checked_at": now})
+        return False
+    try:
+        import stripe as _s
+        _s.api_key = STRIPE_SECRET
+        acct = _s.Account.retrieve()
+        caps = acct.get("capabilities", {}) or {}
+        active = caps.get("instant_payouts") == "active"
+        _instant_capability_cache.update({"value": active, "checked_at": now})
+        return active
+    except Exception as e:
+        logging.warning("[InstantCapability] check failed, fail-closed: %s", e)
+        _instant_capability_cache.update({"value": False, "checked_at": now})
+        return False
+
+
 async def _eligible_debit_card(db: AsyncSession, user_id: int):
     """Return the oldest debit-card payout method that has cleared the
     7-day cooldown, or ``None`` if the driver isn't eligible yet.
@@ -437,6 +474,20 @@ async def get_cashout_eligibility(
     """Tells the frontend whether the driver can use Instant Cashout
     right now, and if not, why. Drives the UI state of the instant card.
     """
+    # Platform-wide gate: if Stripe hasn't granted the instant_payouts
+    # capability to our Connect platform yet, no driver can ever use
+    # instant — surface that as "coming_soon" so the UI shows the
+    # Coming Soon badge instead of a teasing-but-broken option.
+    if not _platform_instant_payouts_active():
+        return {
+            "instant_enabled": False,
+            "reason": "coming_soon",
+            "min_amount": INSTANT_MIN_AMOUNT,
+            "fee_rate": INSTANT_FEE_RATE,
+            "fee_min": INSTANT_FEE_MIN,
+            "cooldown_days": INSTANT_COOLDOWN_DAYS,
+        }
+
     cards_r = await db.execute(
         select(PayoutMethod)
         .where(
@@ -504,6 +555,12 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     instant_card = None
     fee_amount = 0.0
     if method == "instant":
+        if not _platform_instant_payouts_active():
+            raise HTTPException(
+                400,
+                "Instant cashout is coming soon — capability not yet "
+                "enabled on the platform.",
+            )
         if body.amount < INSTANT_MIN_AMOUNT:
             raise HTTPException(
                 400,

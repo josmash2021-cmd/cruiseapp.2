@@ -995,14 +995,16 @@ class _CashOutSheetState extends State<_CashOutSheet>
       // Card disabled — explain why with a snack instead of selecting.
       final reason = _ineligibleReason;
       String msg;
-      if (reason == 'no_debit_card') {
+      if (reason == 'coming_soon') {
+        msg = '⚡ Instant Cashout is coming soon. Stay tuned!';
+      } else if (reason == 'no_debit_card') {
         msg = 'Add a debit card in Payout methods to unlock Instant Cashout.';
       } else if (reason == 'cooldown') {
         msg = 'Instant unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.';
       } else {
         msg = 'Instant Cashout is not available right now.';
       }
-      _showSnack(msg, Colors.orange);
+      _showSnack(msg, _gold);
       HapticFeedback.lightImpact();
       return;
     }
@@ -1102,19 +1104,25 @@ class _CashOutSheetState extends State<_CashOutSheet>
               icon: Icons.flash_on_rounded,
               iconColor: _gold,
               title: 'Instant',
-              badge: 'PREMIUM',
+              badge: _ineligibleReason == 'coming_soon' ? 'COMING SOON' : 'PREMIUM',
               badgeColor: _gold,
-              subtitle: 'Get it in minutes',
+              subtitle: _ineligibleReason == 'coming_soon'
+                  ? 'Launching soon — get ready ⚡'
+                  : 'Get it in minutes',
               receiveLabel: _instantEnabled
                   ? 'You receive \$${_net.toStringAsFixed(2)}'
-                  : (_ineligibleReason == 'cooldown'
-                      ? 'Unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}'
-                      : (_ineligibleReason == 'no_debit_card'
-                          ? 'Add a debit card to unlock'
-                          : 'Not available')),
+                  : (_ineligibleReason == 'coming_soon'
+                      ? 'Available very soon'
+                      : (_ineligibleReason == 'cooldown'
+                          ? 'Unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}'
+                          : (_ineligibleReason == 'no_debit_card'
+                              ? 'Add a debit card to unlock'
+                              : 'Not available'))),
               detail: _instantEnabled
                   ? 'Fee \$${_fee.toStringAsFixed(2)} (1.5%) • Min \$${_instantMinAmount.toStringAsFixed(0)}'
-                  : null,
+                  : (_ineligibleReason == 'coming_soon'
+                      ? 'Cash out to your debit card in minutes'
+                      : null),
               selected: _selected == 'instant',
               enabled: _instantEnabled && !_loadingEligibility,
               loading: _loadingEligibility,

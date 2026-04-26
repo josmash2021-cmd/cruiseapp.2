@@ -132,6 +132,11 @@ class User(Base):
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
     average_rating = Column(Float, default=5.0)
+    # Unique referral code shown to the rider (e.g. "JHON-A4F9"). Used by
+    # invitees during signup to credit the referrer once they qualify.
+    referral_code = Column(String(20), nullable=True, unique=True, index=True)
+    # Set on signup if the new user redeemed someone else's referral code.
+    referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
 
 class ConsentLog(Base):
@@ -423,14 +428,62 @@ class PasswordResetToken(Base):
 class Referral(Base):
     __tablename__ = "referrals"
     id = Column(Integer, primary_key=True, index=True)
-    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    referral_code = Column(String(20), nullable=False)
+    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    referral_code = Column(String(20), nullable=False, index=True)
+    # status: 'pending' | 'qualified' (referrer earned the reward)
     status = Column(String(20), default="pending")
-    referrer_bonus = Column(Float, default=10.0)
-    referee_bonus = Column(Float, default=10.0)
+    # Referrer earns $50 in Cruise Cash once the referee completes 2 trips
+    # whose fare is > $50 each. We track that progress here so the rider
+    # can see a 0/2 -> 1/2 -> 2/2 progress bar in real time.
+    qualified_trips_count = Column(Integer, default=0)
+    qualified_trips_required = Column(Integer, default=2)
+    qualifying_min_fare = Column(Float, default=50.0)
+    referrer_bonus = Column(Float, default=50.0)
+    referee_bonus = Column(Float, default=50.0)
+    referrer_paid = Column(Boolean, default=False)
+    referee_paid = Column(Boolean, default=False)
+    qualified_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+# ── Cruise Cash: in-app, non-withdrawable credit ──
+# Earned via referrals (rider gets $50 once their referee completes 2
+# trips of >$50). Spendable on any ride: covers the full fare if
+# fare <= $50, or covers $50 of the fare if it's larger and Stripe
+# bills the difference. Riders can also transfer Cruise Cash to each
+# other rider-to-rider. Two tables: a balance row per user and an
+# append-only transactions log so we can show full history in-app.
+class CruiseCashBalance(Base):
+    __tablename__ = "cruise_cash_balances"
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    balance_cents = Column(Integer, default=0, nullable=False)
+    lifetime_earned_cents = Column(Integer, default=0, nullable=False)
+    lifetime_spent_cents = Column(Integer, default=0, nullable=False)
+    updated_at = Column(DateTime(timezone=True),
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class CruiseCashTransaction(Base):
+    __tablename__ = "cruise_cash_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # 'earned_referral' | 'spent_ride' | 'transferred_in' |
+    # 'transferred_out' | 'admin_adjustment'
+    kind = Column(String(30), nullable=False, index=True)
+    # Signed amount: positive = credit, negative = debit. Kept in cents
+    # so rounding errors never bleed into Stripe.
+    amount_cents = Column(Integer, nullable=False)
+    balance_after_cents = Column(Integer, nullable=False)
+    # Optional refs depending on kind.
+    ref_trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True, index=True)
+    ref_referral_id = Column(Integer, ForeignKey("referrals.id"), nullable=True)
+    counterparty_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True),
+                        default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class FavoriteLocation(Base):

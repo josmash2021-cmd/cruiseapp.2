@@ -114,6 +114,15 @@ MIGRATIONS = [
     ("trips", "guest_phone", "VARCHAR(30)"),
     ("trips", "guest_email", "VARCHAR(200)"),
     ("trips", "guest_lang", "VARCHAR(5)"),
+    # ── Referrals + Cruise Cash ──
+    ("users", "referral_code", "VARCHAR(20)"),
+    ("users", "referred_by_user_id", "INTEGER"),
+    ("referrals", "qualified_trips_count", "INTEGER DEFAULT 0"),
+    ("referrals", "qualified_trips_required", "INTEGER DEFAULT 2"),
+    ("referrals", "qualifying_min_fare", "FLOAT DEFAULT 50.0"),
+    ("referrals", "referrer_paid", "BOOLEAN DEFAULT FALSE"),
+    ("referrals", "referee_paid", "BOOLEAN DEFAULT FALSE"),
+    ("referrals", "qualified_at", "TIMESTAMP WITH TIME ZONE"),
 ]
 
 

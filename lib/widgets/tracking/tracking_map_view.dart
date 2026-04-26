@@ -1003,7 +1003,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
         image: _pickupPinBytes!,
-        iconSize: 1.05,
+        iconSize: 0.80,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
@@ -1052,7 +1052,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
-      // Animate pin pop: 0.01 → 1.15 → 0.95 → 1.05 over 500ms
+      // Animate pin pop: 0.01 → 0.90 → 0.72 → 0.80 over 500ms
+      // (final 0.80 matches the smaller pickup-pin baseline)
       _animateDropoffPinPop();
     } catch (e) {
       debugPrint('[TrackingMap] Failed to create dropoff pin: $e');
@@ -1068,11 +1069,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       onTick: (t) {
         double scale;
         if (t < 0.4) {
-          scale = 0.01 + (1.15 - 0.01) * (t / 0.4);
+          scale = 0.01 + (0.90 - 0.01) * (t / 0.4);
         } else if (t < 0.7) {
-          scale = 1.15 + (0.95 - 1.15) * ((t - 0.4) / 0.3);
+          scale = 0.90 + (0.72 - 0.90) * ((t - 0.4) / 0.3);
         } else {
-          scale = 0.95 + (1.05 - 0.95) * ((t - 0.7) / 0.3);
+          scale = 0.72 + (0.80 - 0.72) * ((t - 0.7) / 0.3);
         }
         try {
           _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);
@@ -1111,10 +1112,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       onTick: (t) {
         double scale;
         if (t < 0.35) {
-          scale = 1.05 + (1.6 - 1.05) * (t / 0.35); // grow
+          scale = 0.80 + (1.25 - 0.80) * (t / 0.35); // grow
         } else {
           final st = (t - 0.35) / 0.65;
-          scale = 1.6 * (1.0 - st * st); // ease-in shrink
+          scale = 1.25 * (1.0 - st * st); // ease-in shrink
         }
         try {
           _pointAnnotMgr!.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));

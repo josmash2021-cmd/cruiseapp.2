@@ -1797,7 +1797,7 @@ extension _RideRequestController on _RideRequestScreenState {
     String errorCode = 'unknown';
     
     if (error is stripe.StripeException) {
-      errorCode = error.error.code?.toString() ?? 'unknown';
+      errorCode = error.error.code.toString();
       switch (error.error.code) {
         case stripe.FailureCode.Canceled:
           // User cancelled - no dialog needed
@@ -1822,6 +1822,10 @@ extension _RideRequestController on _RideRequestScreenState {
     final availableMethods = await _getAvailablePaymentMethods();
     final hasAlternativeMethod = availableMethods.any((m) => m != originalMethod);
     final hasSavedCard = await LocalDataService.getStripePaymentMethodId() != null;
+
+    // mounted guard required: two awaits above mean the user could have
+    // navigated away (back-tap, app backgrounded etc) before we get here.
+    if (!mounted) return false;
 
     // Show smart retry dialog
     final retryAction = await showDialog<_RetryAction>(

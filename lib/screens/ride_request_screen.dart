@@ -190,7 +190,6 @@ class _PaymentRetryDialog extends StatelessWidget {
   final String originalMethod;
 
   const _PaymentRetryDialog({
-    super.key,
     required this.title,
     required this.message,
     required this.errorCode,

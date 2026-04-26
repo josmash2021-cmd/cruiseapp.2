@@ -46,15 +46,15 @@ class _CacheEntry {
 enum _CircuitState { closed, open, halfOpen }
 
 class _CircuitBreaker {
-  _CircuitBreaker({
-    this.failureThreshold = 4,
-    this.openDuration = const Duration(seconds: 30),
-    this.halfOpenRetryDelay = const Duration(seconds: 60),
-  });
+  _CircuitBreaker();
 
-  final int failureThreshold;
-  final Duration openDuration;
-  final Duration halfOpenRetryDelay;
+  // Tunables — not exposed via the constructor because there's only one
+  // breaker (per backend URL) and these defaults have shipped unchanged
+  // for months. If a future flow needs to override them, switch back to
+  // named params and pass them in at the singleton init site.
+  static const int failureThreshold = 4;
+  static const Duration openDuration = Duration(seconds: 30);
+  static const Duration halfOpenRetryDelay = Duration(seconds: 60);
 
   _CircuitState _state = _CircuitState.closed;
   int _consecutiveFailures = 0;

@@ -67,7 +67,7 @@ extension _HomeScreenMap on _HomeScreenState {
   /// off-centre between updates and felt jumpy).
   void _animateToLocation(LatLng target) {
     _locAnimTo = target;
-    if (_locAnimFrom == null) _locAnimFrom = target;
+    _locAnimFrom ??= target;
 
     // Wake ticker if sleeping
     if (_locTicker != null && _locTicker!.isActive) {

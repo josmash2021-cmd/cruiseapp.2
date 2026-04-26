@@ -1480,7 +1480,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // Accept genuinely failed — offer is gone. Reset local state
         // but do NOT try to cancel the trip (the driver never owned it
         // anyway). The local reset brings the driver back to searching.
-        _snack(S.of(context).tripNoLongerAvailable);
+        // mounted guard required: previous await (getTrip) means context
+        // may be defunct if the driver navigated away mid-verify.
+        if (mounted) {
+          _snack(S.of(context).tripNoLongerAvailable);
+        }
         _resetToSearchingOnRemoteCancel();
         return;
       }

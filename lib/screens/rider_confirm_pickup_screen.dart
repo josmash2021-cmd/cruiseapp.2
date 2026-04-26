@@ -424,7 +424,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   String _inferTierFromVehicleDesc(String desc) {
     final d = desc.toLowerCase();
     if (d.contains('suburban') || d.contains('escalade') || d.contains('vip') ||
-        d.contains('black')) return 'vip';
+        d.contains('black')) {
+      return 'vip';
+    }
     if (d.contains('camry') || d.contains('accord') || d.contains('premium')) {
       return 'premium';
     }

@@ -472,9 +472,26 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
 
     _boot();
+
+    // Mount the heavy MapWidget after the 400ms page transition has
+    // finished animating. The placeholder shown until then is the same
+    // dark color as the map's "no GPS" state, so the user sees no flash.
+    Future.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      setState(() => _mapMounted = true);
+    });
   }
 
   bool _appInForeground = true;
+
+  // ── Defer Mapbox mount to eliminate the ~1s entry freeze ──
+  // Mounting MapWidget creates a native PlatformView (SurfaceView on
+  // Android, native view on iOS) synchronously, which blocks the UI
+  // thread for several hundred ms. If that happens during the 400ms
+  // page transition, the driver sees a hard freeze the moment they
+  // tap "Go Online". We render a dark placeholder during the transition
+  // and mount the real map a few frames after it ends.
+  bool _mapMounted = false;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {

@@ -15,6 +15,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
       );
     }
+    // Defer the heavy PlatformView mount until after the page
+    // transition — same dark fill as above, so no visible flash.
+    if (!_mapMounted) {
+      return Container(color: const Color(0xFF07080D));
+    }
     return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,

@@ -335,23 +335,31 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   bool _updatingLocAnnot = false;
 
+  /// Write-then-flush update of the driver's gold-dot annotation.
+  /// Same pattern as the rider home dot (1.0.2+376) — the previous
+  /// full-await guard dropped every frame that landed mid-IPC, so the
+  /// dot only moved ~1×/sec. Now we always write the freshest position
+  /// into the annotation in memory (cheap), and only fire mgr.update()
+  /// when the previous IPC finished. The next IPC always carries the
+  /// latest position, no information lost.
   Future<void> _updateMyLocAnnotation() async {
-    if (_updatingLocAnnot) return;
-    _updatingLocAnnot = true;
-    try {
-      final mgr = _pointAnnotMgr;
-      if (mgr == null) return;
-      final bytes = _goldDot.currentBytes;
-      if (bytes == null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+    final bytes = _goldDot.currentBytes;
+    if (bytes == null) return;
 
-      // Use interpolated position from GoldLocationDot for smooth gliding
-      final lat = _goldDot.lat ?? _currentLatLng?.latitude;
-      final lng = _goldDot.lng ?? _currentLatLng?.longitude;
-      if (lat == null || lng == null) return;
+    final lat = _goldDot.lat ?? _currentLatLng?.latitude;
+    final lng = _goldDot.lng ?? _currentLatLng?.longitude;
+    if (lat == null || lng == null) return;
 
-      final point = mapbox.Point(coordinates: mapbox.Position(lng, lat));
+    final point = mapbox.Point(coordinates: mapbox.Position(lng, lat));
 
-      if (_myLocAnnot == null) {
+    // First-time creation must be guarded — without it the per-frame
+    // ticker would parallel-create N annotations and stack dots.
+    if (_myLocAnnot == null) {
+      if (_updatingLocAnnot) return;
+      _updatingLocAnnot = true;
+      try {
         _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
@@ -359,11 +367,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
-      } else {
-        _myLocAnnot!.geometry = point;
-        _myLocAnnot!.image = bytes;
-        try { await mgr.update(_myLocAnnot!); } catch (_) {}
+      } catch (_) {
+        // creation failed — leave null so we retry next frame
+      } finally {
+        _updatingLocAnnot = false;
       }
+      return;
+    }
+
+    // Subsequent updates: skip-if-busy.
+    try {
+      _myLocAnnot!.geometry = point;
+      _myLocAnnot!.image = bytes;
+    } catch (_) {
+      _myLocAnnot = null;
+      return;
+    }
+    if (_updatingLocAnnot) return;
+    _updatingLocAnnot = true;
+    try {
+      await mgr.update(_myLocAnnot!);
+    } catch (_) {
+      _myLocAnnot = null;
     } finally {
       _updatingLocAnnot = false;
     }
@@ -490,12 +515,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         mapbox.MapAnimationOptions(duration: 800),
       );
 
-      // ── Real-time GPS stream (high accuracy, 10m filter — battery-friendly) ──
+      // ── Real-time GPS stream (raw fixes for SmoothMotion) ──
+      // distanceFilter: 0 -> accept every fix (~1 Hz iOS / 1-2 Hz Android)
+      // so the GoldLocationDot ticker has dense data to glide between.
+      // The previous 5 m threshold made the OS suppress fixes during
+      // slow drives, leaving the dot still then jumping.
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 5, // 5 m — smooth golden dot movement
+          distanceFilter: 0,
         ),
       ).listen((p) {
         if (!mounted) return;

@@ -7,15 +7,17 @@ part of 'driver_online_screen.dart';
 extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Update the driver car / golden dot annotation on the Mapbox map.
-  /// Uses a boolean lock to prevent overlapping async updates from the 60fps ticker.
+  /// Write-then-flush update of the driver annotations (gold dot in
+  /// searching mode, nav car in navigation mode). Same pattern as the
+  /// rider home dot (1.0.2+376) — the previous full-await guard
+  /// dropped every frame that landed mid-IPC, so the dot/car only
+  /// moved ~1×/sec. Now we always write the freshest geometry into
+  /// the in-memory annotation (cheap), and only fire mgr.update()
+  /// when the previous IPC finished. The next IPC always carries the
+  /// latest position, no information lost.
   Future<void> _updateDriverAnnotation() async {
-    if (!mounted || _annotUpdateBusy) return;
-    _annotUpdateBusy = true;
-    try {
-      await _updateDriverAnnotationInner();
-    } finally {
-      _annotUpdateBusy = false;
-    }
+    if (!mounted) return;
+    await _updateDriverAnnotationInner();
   }
 
   Future<void> _updateDriverAnnotationInner() async {
@@ -32,48 +34,63 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final dotBytes = _goldDot.currentBytes;
       if (dotBytes == null) return;
       // Remove car annotation if switching to gold dot
-      if (_carAnnot != null) {
+      if (_carAnnot != null && !_annotUpdateBusy) {
+        _annotUpdateBusy = true;
         try { await pointMgr.delete(_carAnnot!); } catch (_) {}
         _carAnnot = null;
+        _annotUpdateBusy = false;
       }
-      if (_goldDotAnnot != null) {
-        try {
-          _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
-          _goldDotAnnot!.image = dotBytes;
-          _goldDotAnnot!.iconSize = _dotPopScale;
-          await pointMgr.update(_goldDotAnnot!);
-        } catch (_) { _goldDotAnnot = null; }
-      }
-      if (_pos == null) return;
+      // First-time creation: must guard so the per-frame ticker can't
+      // parallel-create N stacked dots.
       if (_goldDotAnnot == null) {
-        _goldDotAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          image: dotBytes,
-          iconSize: _dotPopScale,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconOffset: [0, 0],
-        ));
-        // Trigger fade+pop on first creation
-        if (!_dotPopDone) _animateDotPop();
+        if (_annotUpdateBusy) return;
+        _annotUpdateBusy = true;
+        try {
+          _goldDotAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+            image: dotBytes,
+            iconSize: _dotPopScale,
+            iconAnchor: mapbox.IconAnchor.CENTER,
+            iconOffset: [0, 0],
+          ));
+          if (!_dotPopDone) _animateDotPop();
+        } catch (_) {} finally { _annotUpdateBusy = false; }
+        return;
       }
+      // Subsequent updates: write fresh geometry every frame, flush
+      // only when previous IPC done.
+      try {
+        _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
+        _goldDotAnnot!.image = dotBytes;
+        _goldDotAnnot!.iconSize = _dotPopScale;
+      } catch (_) {
+        _goldDotAnnot = null;
+        return;
+      }
+      if (_annotUpdateBusy) return;
+      _annotUpdateBusy = true;
+      try { await pointMgr.update(_goldDotAnnot!); }
+      catch (_) { _goldDotAnnot = null; }
+      finally { _annotUpdateBusy = false; }
     } else if (isNav) {
       // ── Navigation mode: nav car icon ──
-      // Remove dot annotation if switching to car
-      if (_goldDotAnnot != null) {
+      // Remove dot annotation if switching to car (guarded so the
+      // ticker can't double-delete during the transition).
+      if (_goldDotAnnot != null && !_annotUpdateBusy) {
+        _annotUpdateBusy = true;
         try { await pointMgr.delete(_goldDotAnnot!); } catch (_) {}
         _goldDotAnnot = null;
+        _annotUpdateBusy = false;
       }
 
       final Uint8List? navCarBytes = _navCarIconBytes ?? _vehicleIconBytes ?? _arrowIconBytes;
-      if (navCarBytes != null) {
-        if (_carAnnot != null) {
-          try {
-            _carAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
-            _carAnnot!.iconRotate = _heading;
-            await pointMgr.update(_carAnnot!);
-          } catch (_) { _carAnnot = null; }
-        }
-        if (_carAnnot == null) {
+      if (navCarBytes == null) return;
+
+      // First-time creation: must guard.
+      if (_carAnnot == null) {
+        if (_annotUpdateBusy) return;
+        _annotUpdateBusy = true;
+        try {
           _carAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
             image: navCarBytes,
@@ -87,8 +104,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             await _map?.style.setStyleLayerProperty(
               pointMgr.id, 'icon-rotation-alignment', 'map');
           } catch (_) {}
-        }
+        } catch (_) {} finally { _annotUpdateBusy = false; }
+        return;
       }
+
+      // Subsequent updates: write fresh geometry + heading every
+      // frame, flush only when previous IPC done.
+      try {
+        _carAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
+        _carAnnot!.iconRotate = _heading;
+      } catch (_) {
+        _carAnnot = null;
+        return;
+      }
+      if (_annotUpdateBusy) return;
+      _annotUpdateBusy = true;
+      try { await pointMgr.update(_carAnnot!); }
+      catch (_) { _carAnnot = null; }
+      finally { _annotUpdateBusy = false; }
     }
   }
 

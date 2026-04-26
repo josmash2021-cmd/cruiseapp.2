@@ -759,7 +759,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 2, // 2 meters — frequent updates feed smoother rider-side interpolation
+            // distanceFilter: 0 -> raw stream so SmoothMotion can glide
+            // every fix instead of waiting for 2 m of movement. Matches
+            // the rider home dot fix in 1.0.2+376.
+            distanceFilter: 0,
           ),
         ).listen((pos) {
           if (!mounted) return;

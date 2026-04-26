@@ -359,7 +359,7 @@ Thank you for riding with Cruise!
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
                               BoxShadow(
-                                color: tier.color.withValues(alpha: 0.3),
+                                color: tier.gradient.first.withValues(alpha: 0.3),
                                 blurRadius: 24,
                                 offset: const Offset(0, 8),
                               ),

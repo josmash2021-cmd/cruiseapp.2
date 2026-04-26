@@ -1,171 +1,145 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Tier color/label info derived from ride name.
+/// Color palette + glyph match the Choose a Vehicle horizontal card
+/// (ride_request_widgets.dart) so badges look identical wherever they
+/// appear: VIP=black-on-gold-border-with-diamond, PREMIUM=gold-with-
+/// star, COMFORT=silver-with-sparkle.
 class TierInfo {
-  final Color color;
-  final Color highlight;
+  final List<Color> bgGradient;
+  final Color textColor;
+  final IconData? icon;
+  final String? glyph;
   final String label;
-  final IconData icon;
-  final bool isGold;
-  final bool isSilver;
-  final bool isGreen;
+  final bool isVIP;
+  final bool isPremium;
+  final bool isComfort;
 
   const TierInfo._({
-    required this.color,
-    required this.highlight,
+    required this.bgGradient,
+    required this.textColor,
     required this.label,
-    required this.icon,
-    required this.isGold,
-    required this.isSilver,
-    required this.isGreen,
+    this.icon,
+    this.glyph,
+    required this.isVIP,
+    required this.isPremium,
+    required this.isComfort,
   });
 
   /// Resolve tier from ride/vehicle name (case-insensitive).
   factory TierInfo.from(String rideName) {
     final n = rideName.toLowerCase();
-    if (n.contains('vip') || n.contains('suv') || n.contains('suburban')) {
+    if (n.contains('vip') || n.contains('suv') || n.contains('suburban') ||
+        n.contains('black')) {
       return const TierInfo._(
-        color: Color(0xFFE8C547),
-        highlight: Color(0xFFFFF4A0),
+        bgGradient: [Color(0xFF1A1A1A), Color(0xFF000000)],
+        textColor: Colors.white,
         label: 'VIP',
-        icon: Icons.star_rounded,
-        isGold: true,
-        isSilver: false,
-        isGreen: false,
+        icon: Icons.diamond,
+        isVIP: true,
+        isPremium: false,
+        isComfort: false,
       );
     }
-    if (n.contains('premium') || n.contains('camry') || n.contains('comfort')) {
+    if (n.contains('premium') || n.contains('camry')) {
       return const TierInfo._(
-        color: Color(0xFFB8BCC8),
-        highlight: Color(0xFFFFFFFF),
+        bgGradient: [
+          Color(0xFFF5DC7A),
+          Color(0xFFE8C547),
+          Color(0xFFB08800),
+        ],
+        textColor: Colors.black,
         label: 'PREMIUM',
-        icon: Icons.auto_awesome_rounded,
-        isGold: false,
-        isSilver: true,
-        isGreen: false,
+        glyph: '★',
+        isVIP: false,
+        isPremium: true,
+        isComfort: false,
       );
     }
     return const TierInfo._(
-      color: Color(0xFF43A047),
-      highlight: Color(0xFFA5D6A7),
+      bgGradient: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+      textColor: Color(0xFF1A1A1A),
       label: 'COMFORT',
-      icon: Icons.savings_rounded,
-      isGold: false,
-      isSilver: false,
-      isGreen: true,
+      glyph: '✦',
+      isVIP: false,
+      isPremium: false,
+      isComfort: true,
     );
   }
 
-  /// Gradient colors for the amount card on receipts.
+  /// Gradient colors for the amount card on receipts (kept for callers
+  /// like trip_receipt_screen).
   List<Color> get gradient {
-    if (isGold) return const [Color(0xFFE8C547), Color(0xFFF5D990)];
-    if (isSilver) return const [Color(0xFF8E93A0), Color(0xFFB8BCC8)];
-    return const [Color(0xFF2E7D32), Color(0xFF43A047)];
+    if (isVIP) return const [Color(0xFF1A1A1A), Color(0xFF000000)];
+    if (isPremium) return const [Color(0xFFE8C547), Color(0xFFF5D990)];
+    return const [Color(0xFFB0B0B0), Color(0xFFE8E8E8)];
   }
 }
 
-/// Animated shimmer badge for VIP / Premium / Comfort tiers.
-class TierBadge extends StatefulWidget {
+/// Static fixed-size badge (78x22) — matches the Choose a Vehicle
+/// horizontal card 1:1 (ride_request_widgets.dart). No shimmer / pulse;
+/// same colors and glyphs across all surfaces.
+class TierBadge extends StatelessWidget {
   final String rideName;
-  final double fontSize;
-  final double iconSize;
 
   const TierBadge({
     super.key,
     required this.rideName,
-    this.fontSize = 9,
-    this.iconSize = 11,
+    // Kept for backward-compat with old call sites; not used.
+    double fontSize = 8,
+    double iconSize = 9,
   });
 
   @override
-  State<TierBadge> createState() => _TierBadgeState();
-}
-
-class _TierBadgeState extends State<TierBadge>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final tier = TierInfo.from(widget.rideName);
-
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final p = _controller.value;
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                _shimmerColor(tier, p, 0.0),
-                _shimmerColor(tier, p, 0.5),
-                _shimmerColor(tier, p, 1.0),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: [
-              BoxShadow(
-                color: tier.color.withValues(
-                  alpha: 0.3 + 0.2 * math.sin(p * math.pi * 2),
-                ),
-                blurRadius: 8 + 4 * math.sin(p * math.pi * 2),
-                offset: const Offset(0, 2),
-              ),
-            ],
+    final tier = TierInfo.from(rideName);
+    return SizedBox(
+      width: 78,
+      height: 22,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: tier.bgGradient,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Transform.scale(
-                scale: 0.8 + 0.2 * math.sin(
-                  p * math.pi * (tier.isGreen ? 2 : 3),
-                ),
-                child: Icon(
-                  tier.icon,
-                  size: widget.iconSize,
-                  color: Colors.white.withValues(alpha: 0.95),
-                ),
-              ),
-              const SizedBox(width: 4),
+          borderRadius: BorderRadius.circular(6),
+          border: tier.isVIP
+              ? Border.all(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                  width: 1,
+                )
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tier.icon != null)
+              Icon(tier.icon, size: 9, color: tier.textColor)
+            else
               Text(
-                tier.label,
+                tier.glyph ?? '',
                 style: TextStyle(
-                  fontSize: widget.fontSize,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: 0.8,
+                  color: tier.textColor,
+                  fontSize: 8,
+                  height: 1,
                 ),
               ),
-            ],
-          ),
-        );
-      },
+            const SizedBox(width: 3),
+            Text(
+              tier.label,
+              style: TextStyle(
+                color: tier.textColor,
+                fontSize: 8,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.64,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-  }
-
-  Color _shimmerColor(TierInfo tier, double progress, double position) {
-    final shimmerPos = (progress * 2 + position) % 2;
-    final intensity = shimmerPos < 0.5
-        ? shimmerPos * 2
-        : (1 - shimmerPos) * 2;
-    return Color.lerp(tier.color, tier.highlight, intensity * 0.65)!;
   }
 }

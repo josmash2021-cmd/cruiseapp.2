@@ -921,13 +921,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          Center(
+                          const Center(
                             child: Icon(
                               Icons.calendar_today_rounded,
                               size: 22,
-                              color: _scheduledAvailCount > 0
-                                  ? const Color(0xFFE8C547)
-                                  : Colors.white.withValues(alpha: 0.35),
+                              color: Color(0xFFE8C547),
                             ),
                           ),
                           if (_scheduledAvailCount > 0)

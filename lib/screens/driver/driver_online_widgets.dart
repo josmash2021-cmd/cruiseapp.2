@@ -94,7 +94,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _earningsPill(bool isDark) {
     final pillBg = isDark
-        ? const Color(0xFF1A1A1F).withValues(alpha: 0.85)
+        ? Colors.black
         : Colors.white.withValues(alpha: 0.9);
     final pillBorder = isDark
         ? Colors.white.withValues(alpha: 0.06)

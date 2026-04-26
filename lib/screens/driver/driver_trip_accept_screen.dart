@@ -190,6 +190,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   StreamSubscription? _riderConfirmSub;
   bool _riderConfirmedPickup = false;
 
+  // Safety-net: backend status poll. The Firestore listener above is the
+  // primary signal but can silently miss events (auth expired, doc not
+  // mirrored yet, transient network). Without this poll the driver can
+  // sit on the FINISH RIDE screen forever after dispatch cancels/completes.
+  Timer? _statusPollTimer;
+
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
   StreamSubscription<Position>? _dropoffGpsSub;
@@ -329,6 +335,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Listen for rider confirming pickup in Firestore
     _listenForRiderConfirmation();
+    _startStatusPoll();
 
     // Start continuous GPS → GpsService so RTDB stays fresh for rider tracking.
     // The online screen's stream may not reliably feed GpsService while this
@@ -404,6 +411,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
     _riderConfirmSub?.cancel();
+    _statusPollTimer?.cancel();
     _finishNavTimer?.cancel();
     _camCycleTimer?.cancel();
     _camCycleCtrl?.dispose();
@@ -715,6 +723,41 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // so the snapshot listener recovers on the next server push.
       if (e.toString().contains('permission-denied')) {
         FirebaseAuth.instance.signInAnonymously().ignore();
+      }
+    });
+  }
+
+  /// Backend status poll — runs every 8s and mirrors the Firestore
+  /// listener's exit logic. This is a safety net for cases where the
+  /// snapshot stream is lagging or muted (auth expired, doc not yet
+  /// mirrored, transient connectivity). Without it, dispatch can
+  /// cancel/complete a trip and the driver is stuck on FINISH RIDE.
+  void _startStatusPoll() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+      if (!mounted || _tripFinished) return;
+      try {
+        final trip = await ApiService.getTrip(widget.tripId);
+        if (!mounted || _tripFinished) return;
+        final status = (trip['status'] ?? '').toString().toLowerCase();
+        if (status == 'completed') {
+          debugPrint('[Driver] Backend poll: trip completed → onExternalCompletion');
+          _onExternalCompletion();
+        } else if (status == 'cancelled' || status == 'canceled') {
+          debugPrint('[Driver] Backend poll: trip cancelled → popping');
+          _tripFinished = true;
+          _statusPollTimer?.cancel();
+          _riderConfirmSub?.cancel();
+          try {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop('cancelled');
+            }
+          } catch (e) {
+            debugPrint('[Driver] poll-cancel-pop failed: $e');
+          }
+        }
+      } catch (_) {
+        // Ignore transient errors — next tick retries.
       }
     });
   }

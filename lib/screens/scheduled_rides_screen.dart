@@ -188,7 +188,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       floatingActionButton: _trips.isNotEmpty
           ? FloatingActionButton(
               onPressed: _startScheduleFlow,
@@ -203,7 +203,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
-            backgroundColor: c.bg,
+            backgroundColor: Colors.black,
             surfaceTintColor: Colors.transparent,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),

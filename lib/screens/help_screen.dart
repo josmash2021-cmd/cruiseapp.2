@@ -226,7 +226,7 @@ class _HelpScreenState extends State<HelpScreen> {
     final searchResults = _filteredTopics;
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -680,7 +680,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [

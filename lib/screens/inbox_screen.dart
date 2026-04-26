@@ -39,7 +39,7 @@ class _InboxScreenState extends State<InboxScreen>
     final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,7 +686,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ((a['timestamp'] as int?) ?? 0).compareTo((b['timestamp'] as int?) ?? 0));
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

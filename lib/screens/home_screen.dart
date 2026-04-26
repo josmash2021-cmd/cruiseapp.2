@@ -1040,6 +1040,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     // Start ride countdown if there's an active ride
     if (activeRide != null) {
+      // Verify against backend BEFORE auto-resuming. If dispatch cancelled
+      // the trip remotely while the rider was on home, the local cache
+      // can still hold a stale "active" ride — without this check we'd
+      // happily push the tracking screen for a dead trip.
+      _verifyActiveRideAgainstBackend(activeRide);
       _startCountdown(activeRide.etaMinutes ?? 10);
       // Auto-open tracking screen on app restart with active ride (once)
       if (!_didAutoResumeRide) {

@@ -656,25 +656,48 @@ extension _HomeScreenController on _HomeScreenState {
   void _onTripCompleted() {
     if (!mounted) return;
 
-    // Cancel subscriptions
+    // Cancel ALL trip-related subscriptions and timers up-front so a
+    // late RTDB / Firestore event can't re-render route/driver state
+    // after the reset starts.
     _driverLocationSub?.cancel();
+    _driverLocationSub = null;
+    _tripDocSub?.cancel();
+    _tripDocSub = null;
     _tripStatusSub?.cancel();
+    _tripStatusSub = null;
+    _trackedDriverId = null;
     _driverTicker?.dispose();
+    _driverTicker = null;
     _countdownTimer?.cancel();
+    _countdownTimer = null;
 
     // Fade out ride UI, then reset state
     _rideFadeCtrl.reverse().then((_) async {
       if (!mounted) return;
 
-      // Clear map annotations
+      // Clear map annotations (route polyline, dropoff pin, driver car)
       await _clearRouteFromMap();
+
+      // Drop the cached active ride from local storage so the next
+      // _loadSavedData() can't resurrect it. This is the path that
+      // matters when dispatch cancels remotely while the rider is on
+      // home — without this the next entry into _openSearchThenRide
+      // would mis-route to _resumeActiveRide() on a dead trip.
+      try {
+        await LocalDataService.clearActiveRide();
+      } catch (_) {}
 
       _setState(() {
         _activeRide = null;
         _driverLocation = null;
+        _pendingSearchTripId = null;
+        _didAutoResumeRide = false;
+        _rideRouteDrawn = false;
+        _routeProgress = 0.0;
       });
 
-      // Reset map to home
+      // Reset map back to the home default frame (pitch 0, north up,
+      // zoom 15) on the rider's current GPS so the canvas is clean.
       if (_miniMapController != null && _currentLatLng != null) {
         _miniMapController!.flyTo(
           mapbox.CameraOptions(
@@ -695,7 +718,8 @@ extension _HomeScreenController on _HomeScreenState {
       // Fade in normal content
       _rideFadeCtrl.forward();
 
-      // Refresh saved data to update UI
+      // Refresh saved data to update UI (reads fresh state — _activeRide
+      // will be null since we just cleared the cache).
       _loadSavedData();
     });
   }
@@ -1017,6 +1041,36 @@ extension _HomeScreenController on _HomeScreenState {
 
   /// Check backend for an active trip (handles reinstall / re-login where
   /// SharedPreferences are cleared but trip is still in-progress).
+  /// Cross-check a locally cached active ride against the backend.
+  /// If the backend says the trip is already cancelled or completed
+  /// (typical when dispatch cancels remotely while the rider is in
+  /// home), wipe the cache, the in-memory state, and the home map
+  /// annotations so the rider lands on a clean canvas. Without this
+  /// check the stale cache would auto-resume a dead trip.
+  Future<void> _verifyActiveRideAgainstBackend(ActiveRideInfo cached) async {
+    try {
+      final tripId = cached.tripId;
+      if (tripId == null) return;
+      final trip = await ApiService.getActiveTrip();
+      if (!mounted) return;
+      // No trip on backend at all OR backend trip id doesn't match the
+      // cached one → cache is stale. Same handling as cancelled.
+      final backendTripId = trip == null ? null : trip['id'] as int?;
+      final status = (trip?['status'] ?? '').toString();
+      final isDeadTrip = trip == null ||
+          backendTripId != tripId ||
+          status == 'completed' ||
+          status == 'canceled' ||
+          status == 'cancelled';
+      if (isDeadTrip) {
+        debugPrint('[HomeScreen] Cached active ride is dead (status=$status) — resetting');
+        _onTripCompleted();
+      }
+    } catch (_) {
+      // Network blip: keep the cache and let the next loadSavedData try.
+    }
+  }
+
   Future<void> _checkBackendActiveTrip() async {
     // Idempotency guard at entry: claim the auto-resume slot IMMEDIATELY
     // so a parallel _resumeActiveRide() triggered by the local cache

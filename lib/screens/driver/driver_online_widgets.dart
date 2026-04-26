@@ -620,7 +620,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
             ),
-            child: SafeArea(
+            child: ClipRRect(
+              // Clip particles to the rounded top corners of the sheet
+              // so the field can't bleed past the panel edges.
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: GoldParticlesBackground(
+              particleCount: 26,
+              child: SafeArea(
               top: false,
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
@@ -809,6 +815,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
             ),
+            ),  // close GoldParticlesBackground
+            ),  // close ClipRRect
           ),
         );
       },

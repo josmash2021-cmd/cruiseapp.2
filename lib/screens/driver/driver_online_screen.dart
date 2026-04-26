@@ -19,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
+import '../../widgets/gold_particles_background.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';

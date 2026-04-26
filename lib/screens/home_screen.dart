@@ -49,6 +49,7 @@ import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
+import '../widgets/gold_particles_background.dart';
 import '../widgets/searching_border_painter.dart';
 import '../widgets/smart_map_pin.dart';
 import '../widgets/user_profile_photo.dart';

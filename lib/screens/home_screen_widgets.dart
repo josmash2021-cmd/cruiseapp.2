@@ -375,7 +375,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
               ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
-            child: CustomScrollView(
+            // Gold-particle field behind the sheet's scroll content.
+            // Opacity tied to expandT so the particles fade in as the
+            // sheet expands and stay invisible behind the collapsed
+            // mini-bar (where the animated gold border owns the look).
+            child: Stack(children: [
+              if (expandT > 0.05)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: expandT * 0.9,
+                      child: const GoldParticlesBackground(
+                        particleCount: 28,
+                        child: SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+            CustomScrollView(
               controller: sc,
               physics: _activeRide != null
                   ? const NeverScrollableScrollPhysics()
@@ -539,9 +556,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
               )),
               ],
             ),
+            ]),  // close Stack(children:[ Positioned.fill, CustomScrollView ])
           ),
-            ],  // close Stack children
-          ),    // close Stack
+            ],  // close outer Stack children
+          ),    // close outer Stack
         );
       },
     );

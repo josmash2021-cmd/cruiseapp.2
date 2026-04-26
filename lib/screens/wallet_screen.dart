@@ -311,7 +311,7 @@ class _WalletScreenState extends State<WalletScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1F),
+          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _gold.withValues(alpha: 0.30), width: 1.2),
           boxShadow: [

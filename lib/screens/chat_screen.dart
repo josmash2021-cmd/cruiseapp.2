@@ -535,7 +535,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: EdgeInsets.only(top: topPad + 8, bottom: 12, left: 8, right: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -931,7 +931,7 @@ class _ChatScreenState extends State<ChatScreen> {
         bottom: bottomPad > 0 ? 8 : safePad + 8,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),

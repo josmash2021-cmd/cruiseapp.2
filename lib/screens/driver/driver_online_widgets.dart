@@ -536,7 +536,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F),
+                          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                           border: Border(
                             top: BorderSide(
                               color: Colors.white.withValues(alpha: 0.06),
@@ -1068,7 +1068,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F),
+                    color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: const Color(0xFFE53935).withValues(alpha: 0.4),
@@ -1299,7 +1299,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -1529,7 +1529,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -3837,7 +3837,7 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: Color.lerp(

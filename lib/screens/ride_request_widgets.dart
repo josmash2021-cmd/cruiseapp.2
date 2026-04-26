@@ -665,7 +665,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           height: 110,
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F), // Dark background
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88), // Dark background
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected
@@ -942,7 +942,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       key: ValueKey('horizontal_${opt.id}'),
       padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: const Color(0xFFE8C547).withValues(alpha: 0.45),
@@ -1320,7 +1320,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // Match the Airport / Schedule cards (choose_ride_type_screen):
             //   solid #1A1A1F, gold border + soft gold glow always on,
             //   stronger glow + brighter border when the card is picked.
-            color: const Color(0xFF1A1A1F),
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected
@@ -1973,7 +1973,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           height: 110,
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: const Color(0xFFE8C547).withValues(alpha: 0.2),

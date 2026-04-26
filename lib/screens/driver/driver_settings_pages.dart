@@ -877,7 +877,7 @@ class _SettingsTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF1A1A1F),
+      color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
       padding: EdgeInsets.only(top: top + 8, bottom: 12, left: 16, right: 16),
       child: Row(
         children: [

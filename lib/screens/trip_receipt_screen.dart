@@ -110,7 +110,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A1F),
+                                color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
@@ -153,7 +153,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                         padding: const EdgeInsets.symmetric(
                             vertical: 32, horizontal: 24),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F),
+                          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
                             color: _gold.withValues(alpha: 0.30),

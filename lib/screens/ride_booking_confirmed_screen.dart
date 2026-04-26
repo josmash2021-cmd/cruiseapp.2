@@ -288,7 +288,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                           child: Container(
                             padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A1F),
+                              color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
                                 color: _gold.withValues(alpha: 0.15),

@@ -612,7 +612,7 @@ class _FooterCardState extends State<_FooterCard> {
           20,
           22 + MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(

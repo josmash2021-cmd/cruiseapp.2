@@ -98,7 +98,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F),
+                    color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -217,7 +217,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1F),
+          color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Colors.white.withValues(alpha: 0.06),

@@ -286,7 +286,7 @@ class _RideTypeCardState extends State<_RideTypeCard> {
                           width: 140,
                           height: 140,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1F),
+                            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
                               color: const Color(0xFFE8C547).withValues(alpha: 0.3),

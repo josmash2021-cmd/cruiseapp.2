@@ -1,33 +1,31 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// Subtle premium gold-particle background.
+/// Premium gold-particle background — same look used on the
+/// "Matching with your driver" / SearchingDriverScreen so every dark
+/// surface in the app shares one cohesive visual language.
 ///
-/// Renders ~30 gold dots that drift slowly upward (bubble-like) with a
-/// gentle horizontal sway. Each particle has its own size, speed, alpha
-/// and phase so the field never looks tiled. When a particle reaches
-/// the top it wraps back to the bottom with a fresh random x.
+/// Spec mirrored from searching_driver_screen.dart:
+///   - 20 dots, size 2-4 px
+///   - alpha 0.1 → 0.4 (twinkles via 4 shared 800-1700ms controllers)
+///   - drift upward, speed 0.02-0.06 of height per particle loop
+///   - MaskFilter.blur radius = size * 0.4 → soft gold halo
+///
+/// Performance:
+///   - 1 drift Ticker + 4 twinkle Tickers (shared across 20 particles)
+///     instead of 20 individual tickers — visually identical, 5x cheaper.
+///   - RepaintBoundary + IgnorePointer wrap so the field never absorbs
+///     hits and the painter only redraws when its own animations tick.
 ///
 /// Usage:
 /// ```dart
-/// Scaffold(
-///   backgroundColor: Colors.black,
-///   body: GoldParticlesBackground(
-///     child: ...your normal screen content...,
-///   ),
+/// GoldParticlesBackground(
+///   child: ...your normal screen content...,
 /// )
 /// ```
 ///
-/// Performance:
-/// - 30 painted circles per frame, no shadows / blur layers, no stroke.
-/// - One Ticker (vsync) per screen instance — disposed when the widget
-///   leaves the tree.
-/// - The painter itself only redraws when `t` (animation value) changes.
-///
-/// Notes:
-/// - Designed for screens WITHOUT a heavy GPU widget below it (no Mapbox,
-///   no video). Stack it INSIDE the Scaffold body, NOT inside a screen
-///   that already runs a 60fps map render.
+/// Optional: pass particleCount to scale down for small surfaces
+/// (sheets / cards). Default 20 matches the Searching screen.
 class GoldParticlesBackground extends StatefulWidget {
   final Widget child;
   final int particleCount;
@@ -35,7 +33,7 @@ class GoldParticlesBackground extends StatefulWidget {
   const GoldParticlesBackground({
     super.key,
     required this.child,
-    this.particleCount = 30,
+    this.particleCount = 20,
   });
 
   @override
@@ -44,29 +42,53 @@ class GoldParticlesBackground extends StatefulWidget {
 }
 
 class _GoldParticlesBackgroundState extends State<GoldParticlesBackground>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
 
-  late final AnimationController _ctl;
+  late final AnimationController _driftCtrl;
+  late final List<AnimationController> _twinkleCtrls;
   late final List<_Particle> _particles;
-  final _rand = math.Random(42); // seeded so the field is stable per launch
 
   @override
   void initState() {
     super.initState();
+
+    final rng = math.Random(7); // seeded — stable field per launch
     _particles = List.generate(
       widget.particleCount,
-      (i) => _Particle.random(_rand),
+      (_) => _Particle(
+        x: rng.nextDouble(),
+        y: rng.nextDouble(),
+        size: 2.0 + rng.nextDouble() * 2.0,         // 2..4 px
+        driftSpeed: 0.02 + rng.nextDouble() * 0.04, // 0.02..0.06
+        phase: rng.nextDouble(),
+      ),
     );
-    _ctl = AnimationController(
+
+    // Single 4-second drift controller — every particle shares it.
+    _driftCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 30),
+      duration: const Duration(milliseconds: 4000),
     )..repeat();
+
+    // 4 staggered twinkle controllers (800/1100/1400/1700ms). Each
+    // particle picks one via index % 4 — visually indistinguishable
+    // from 20 individual controllers, 5x fewer tickers.
+    _twinkleCtrls = List.generate(4, (i) {
+      final ms = 800 + (i * 300);
+      return AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: ms),
+      )..repeat(reverse: true);
+    });
   }
 
   @override
   void dispose() {
-    _ctl.dispose();
+    _driftCtrl.dispose();
+    for (final c in _twinkleCtrls) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -78,11 +100,15 @@ class _GoldParticlesBackgroundState extends State<GoldParticlesBackground>
           child: IgnorePointer(
             child: RepaintBoundary(
               child: AnimatedBuilder(
-                animation: _ctl,
+                animation: Listenable.merge([_driftCtrl, ..._twinkleCtrls]),
                 builder: (_, __) => CustomPaint(
-                  painter: _GoldParticlesPainter(
+                  painter: _ParticlePainter(
                     particles: _particles,
-                    t: _ctl.value,
+                    drift: _driftCtrl.value,
+                    twinkleValues: List.generate(
+                      _particles.length,
+                      (i) => _twinkleCtrls[i % 4].value,
+                    ),
                     color: _gold,
                   ),
                 ),
@@ -97,77 +123,52 @@ class _GoldParticlesBackgroundState extends State<GoldParticlesBackground>
 }
 
 class _Particle {
-  // Normalized 0..1 coordinates so the field scales to any screen.
-  final double xSeed;        // base horizontal position (0..1)
-  final double ySeed;        // initial vertical phase (0..1)
-  final double radius;       // px
-  final double speed;        // 0.05..0.20 of screen height per loop
-  final double alpha;        // 0.04..0.18
-  final double swayAmp;      // 0..0.04 horizontal sway amplitude (0..1)
-  final double swayPhase;    // 0..2π
-
-  _Particle({
-    required this.xSeed,
-    required this.ySeed,
-    required this.radius,
-    required this.speed,
-    required this.alpha,
-    required this.swayAmp,
-    required this.swayPhase,
+  final double x;          // 0..1 horizontal position
+  final double y;          // 0..1 initial vertical position
+  final double size;       // px
+  final double driftSpeed; // 0..1 of height per controller loop
+  final double phase;      // 0..1 vertical offset
+  const _Particle({
+    required this.x,
+    required this.y,
+    required this.size,
+    required this.driftSpeed,
+    required this.phase,
   });
-
-  factory _Particle.random(math.Random r) {
-    return _Particle(
-      xSeed: r.nextDouble(),
-      ySeed: r.nextDouble(),
-      radius: 0.7 + r.nextDouble() * 1.6,         // 0.7..2.3 px
-      speed: 0.05 + r.nextDouble() * 0.15,        // 0.05..0.20
-      alpha: 0.04 + r.nextDouble() * 0.14,        // 0.04..0.18
-      swayAmp: r.nextDouble() * 0.04,             // 0..0.04
-      swayPhase: r.nextDouble() * math.pi * 2,
-    );
-  }
 }
 
-class _GoldParticlesPainter extends CustomPainter {
+class _ParticlePainter extends CustomPainter {
   final List<_Particle> particles;
-  final double t; // 0..1, loops
+  final double drift;
+  final List<double> twinkleValues;
   final Color color;
 
-  _GoldParticlesPainter({
+  _ParticlePainter({
     required this.particles,
-    required this.t,
+    required this.drift,
+    required this.twinkleValues,
     required this.color,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final w = size.width;
-    final h = size.height;
-
-    for (final p in particles) {
-      // Vertical: each particle moves upward at its own pace, wraps top→bottom.
-      final yProgress = ((p.ySeed - t * p.speed) % 1.0 + 1.0) % 1.0;
-      final y = yProgress * h;
-
-      // Horizontal: base position + gentle sine sway.
-      final sway = math.sin(t * 2 * math.pi + p.swayPhase) * p.swayAmp;
-      final x = ((p.xSeed + sway) % 1.0 + 1.0) % 1.0 * w;
-
-      // Fade in at the bottom and out near the top so wrap is invisible.
-      double edgeFade = 1.0;
-      if (yProgress < 0.08) edgeFade = yProgress / 0.08;
-      if (yProgress > 0.92) edgeFade = (1.0 - yProgress) / 0.08;
-
-      final paint = Paint()
-        ..color = color.withValues(alpha: p.alpha * edgeFade)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(x, y), p.radius, paint);
+    for (int i = 0; i < particles.length; i++) {
+      final p = particles[i];
+      final tw = twinkleValues[i];
+      final alpha = 0.1 + tw * 0.3; // 0.1 → 0.4
+      final dx = p.x * size.width;
+      final dy = ((p.y - drift * p.driftSpeed + p.phase) % 1.0) * size.height;
+      canvas.drawCircle(
+        Offset(dx, dy),
+        p.size,
+        Paint()
+          ..color = color.withValues(alpha: alpha)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size * 0.4),
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GoldParticlesPainter old) =>
-      old.t != t || old.particles != particles || old.color != color;
+  bool shouldRepaint(covariant _ParticlePainter old) => true;
 }

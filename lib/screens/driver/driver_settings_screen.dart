@@ -80,7 +80,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
         children: [
           // ── Top bar ──
           Container(
-            color: const Color(0xFF1A1A1F),
+            color: const Color(0xFF1A1A1F).withValues(alpha: 0.88),
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,

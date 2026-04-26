@@ -1104,9 +1104,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // happily push the tracking screen for a dead trip.
       _verifyActiveRideAgainstBackend(activeRide);
       _startCountdown(activeRide.etaMinutes ?? 10);
-      // Auto-open tracking screen on app restart with active ride (once)
+      // Auto-open tracking screen on app restart with active ride (once).
+      // Note: do NOT pre-set _didAutoResumeRide here — _resumeActiveRide()
+      // owns that flag. Setting it before the post-frame callback would
+      // make _resumeActiveRide() bail on its own guard and the rider
+      // would stay stuck on home with the "Ride in progress" banner
+      // instead of being pushed into the live tracking screen.
       if (!_didAutoResumeRide) {
-        _didAutoResumeRide = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _activeRide != null) _resumeActiveRide();
         });

@@ -248,51 +248,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _lastAnnotUpdateMs = 0;
 
   Future<void> _updateMiniMapAnnotation() async {
-    // Guard: prevent concurrent updates that create multiple pins
-    if (_updatingMiniMapAnnot) return;
-    _updatingMiniMapAnnot = true;
-    
-    try {
-      final mgr = _miniMapAnnotMgr;
-      if (mgr == null) return;
+    final mgr = _miniMapAnnotMgr;
+    if (mgr == null) return;
 
-      // Hide gold dot when an active ride route is drawn (route + car + dropoff shown instead)
-      if (_rideRouteDrawn && _activeRide != null) {
-        if (_miniMapAnnot != null) {
-          try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
-          _miniMapAnnot = null;
-        }
-        return;
+    // Hide gold dot when an active ride route is drawn (route + car + dropoff shown instead)
+    if (_rideRouteDrawn && _activeRide != null) {
+      if (_miniMapAnnot != null && !_updatingMiniMapAnnot) {
+        _updatingMiniMapAnnot = true;
+        try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
+        _miniMapAnnot = null;
+        _updatingMiniMapAnnot = false;
       }
+      return;
+    }
 
-      final bytes = _miniDot.currentBytes;
-      if (bytes == null) return;
-      final pos = _interpolatedLatLng;
-      
-      // If annotation already exists → update in-place (no delete+create)
-      if (_miniMapAnnot != null) {
-        try {
-          _miniMapAnnot!.geometry = mapbox.Point(
-            coordinates: mapbox.Position(pos.longitude, pos.latitude),
-          );
-          _miniMapAnnot!.image = bytes;
-          await mgr.update(_miniMapAnnot!);
-        } catch (_) {
-          // If update fails (e.g. annotation was invalidated), recreate
-          _miniMapAnnot = null;
-        }
-      }
-      
-      // Create annotation only if it doesn't exist yet
-      if (_miniMapAnnot == null && _currentLatLng != null) {
+    // First-time creation must be guarded — without it the per-frame
+    // ticker would attempt to create N annotations in parallel and we'd
+    // end up with stacked dots. Once the annotation exists, however,
+    // updates run concurrent-safe via the in-flight pattern below.
+    if (_miniMapAnnot == null) {
+      if (_updatingMiniMapAnnot) return;
+      if (_currentLatLng == null) return;
+      final firstBytes = _miniDot.currentBytes;
+      if (firstBytes == null) return;
+      _updatingMiniMapAnnot = true;
+      try {
+        final pos = _interpolatedLatLng;
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          image: bytes,
+          image: firstBytes,
           iconSize: 1.05,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
+      } catch (_) {
+        // creation failed — leave _miniMapAnnot null so we retry
+      } finally {
+        _updatingMiniMapAnnot = false;
       }
+      return;
+    }
+
+    // Subsequent updates: skip-if-busy pattern.
+    // The ticker runs at vsync (60-120 Hz) and calls into Mapbox via the
+    // platform channel which can take longer than 16 ms to round-trip on
+    // the home minimap. The previous full-await guard meant any frame
+    // that landed mid-IPC was DROPPED entirely, so the dot effectively
+    // updated ~1×/sec and looked like jumps.
+    //
+    // New pattern: update the in-memory geometry every frame so the
+    // next sent IPC always carries the freshest interpolated position;
+    // only fire mgr.update() when the previous one finished. End result
+    // is glass-smooth motion at the IPC's natural cadence (still 10-20
+    // updates per second) without the artificial stall.
+    final pos = _interpolatedLatLng;
+    final bytes = _miniDot.currentBytes;
+    if (bytes == null) return;
+    try {
+      _miniMapAnnot!.geometry = mapbox.Point(
+        coordinates: mapbox.Position(pos.longitude, pos.latitude),
+      );
+      _miniMapAnnot!.image = bytes;
+    } catch (_) {
+      _miniMapAnnot = null;
+      return;
+    }
+    if (_updatingMiniMapAnnot) return;
+    _updatingMiniMapAnnot = true;
+    try {
+      await mgr.update(_miniMapAnnot!);
+    } catch (_) {
+      _miniMapAnnot = null;
     } finally {
       _updatingMiniMapAnnot = false;
     }
@@ -643,9 +669,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _locationSub?.cancel();
       _locationSub =
           Geolocator.getPositionStream(
+            // distanceFilter: 0 -> raw stream, no thresholding. Without
+            // this the OS only fires when the rider has moved 10 m, and
+            // SmoothMotion has nothing to interpolate between → the dot
+            // sits still then jumps. With a 0-meter filter we get every
+            // GPS fix the device produces (~1 Hz on iOS, ~1-2 Hz on
+            // Android) and the ticker glides smoothly between them.
             locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.high,
-              distanceFilter: 10,
+              distanceFilter: 0,
             ),
           ).listen((Position p) {
             if (!mounted) return;

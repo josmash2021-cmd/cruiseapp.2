@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,6 +24,7 @@ class PaymentMethodId {
   static const apple = 'apple_pay';
   static const google = 'google_pay';
   static const card = 'card';
+  static const bank = 'bank_account';
   static const test = 'test_mode';
 }
 
@@ -110,6 +113,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     });
   }
 
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -130,32 +134,38 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.0, // Cuadrado perfecto
+                  childAspectRatio: 1.0,
                   physics: const BouncingScrollPhysics(),
+                  // iOS shows Apple Pay; Android shows Google Pay. Both
+                  // platforms also see Card + Bank Account (coming soon)
+                  // and — when enabled — the Test Mode tile for QA.
                   children: [
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: 0.00,
-                      id: PaymentMethodId.apple,
-                      selected: _selected == PaymentMethodId.apple,
-                      iconBg: Colors.black,
-                      label: 'Apple Pay',
-                      icon: const Icon(Icons.apple, color: Colors.white, size: 32),
-                      onTap: () => _pick(PaymentMethodId.apple),
-                    ),
+                    if (Platform.isIOS)
+                      _PayCard(
+                        entryCtl: _entryCtl,
+                        staggerDelay: 0.00,
+                        id: PaymentMethodId.apple,
+                        selected: _selected == PaymentMethodId.apple,
+                        iconBg: Colors.black,
+                        label: 'Apple Pay',
+                        icon: const Icon(Icons.apple,
+                            color: Colors.white, size: 32),
+                        onTap: () => _pick(PaymentMethodId.apple),
+                      ),
+                    if (Platform.isAndroid)
+                      _PayCard(
+                        entryCtl: _entryCtl,
+                        staggerDelay: 0.00,
+                        id: PaymentMethodId.google,
+                        selected: _selected == PaymentMethodId.google,
+                        iconBg: Colors.white,
+                        label: 'Google Pay',
+                        icon: _GoogleGLogo(size: 32),
+                        onTap: () => _pick(PaymentMethodId.google),
+                      ),
                     _PayCard(
                       entryCtl: _entryCtl,
                       staggerDelay: 0.08,
-                      id: PaymentMethodId.google,
-                      selected: _selected == PaymentMethodId.google,
-                      iconBg: Colors.white,
-                      label: 'Google Pay',
-                      icon: _GoogleGLogo(size: 32),
-                      onTap: () => _pick(PaymentMethodId.google),
-                    ),
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: 0.16,
                       id: PaymentMethodId.card,
                       selected: _selected == PaymentMethodId.card,
                       iconBg: const Color(0xFF2A2A2A),
@@ -167,6 +177,23 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       ),
                       onTap: () => _pick(PaymentMethodId.card),
                     ),
+                    _PayCard(
+                      entryCtl: _entryCtl,
+                      staggerDelay: 0.16,
+                      id: PaymentMethodId.bank,
+                      // Never selected — wrapped in the coming-soon
+                      // ribbon below; tap is a no-op until the real
+                      // ACH integration lands.
+                      selected: false,
+                      iconBg: const Color(0xFF0F1A12),
+                      iconBorder:
+                          const Color(0xFF22C55E).withValues(alpha: 0.45),
+                      label: 'Bank Account',
+                      icon: const Icon(Icons.account_balance_rounded,
+                          color: Color(0xFF22C55E), size: 28),
+                      comingSoon: true,
+                      onTap: () {/* disabled */},
+                    ),
                     if (widget.showTestMode)
                       _PayCard(
                         entryCtl: _entryCtl,
@@ -177,11 +204,10 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                         iconBorder: _gold.withValues(alpha: 0.50),
                         label: s.testModeLabel,
                         secondary: s.simulatePayment,
-                        icon: const Icon(Icons.tune_rounded, color: _gold, size: 28),
+                        icon: const Icon(Icons.tune_rounded,
+                            color: _gold, size: 28),
                         onTap: () => _pick(PaymentMethodId.test),
-                      )
-                    else
-                      const SizedBox.shrink(),
+                      ),
                   ],
                 ),
               ),
@@ -266,6 +292,10 @@ class _PayCard extends StatefulWidget {
   final String? secondary;
   final Widget icon;
   final VoidCallback onTap;
+  /// When true the card is dimmed (45% opacity) and a gold "Coming Soon"
+  /// diagonal ribbon is overlaid in the upper-right corner. Tap is
+  /// effectively swallowed.
+  final bool comingSoon;
 
   const _PayCard({
     required this.entryCtl,
@@ -278,6 +308,7 @@ class _PayCard extends StatefulWidget {
     this.secondary,
     required this.icon,
     required this.onTap,
+    this.comingSoon = false,
   });
 
   @override
@@ -310,8 +341,47 @@ class _PayCardState extends State<_PayCard> {
           ),
         );
       },
-      child: GestureDetector(
-        onTap: widget.onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            Opacity(
+              opacity: widget.comingSoon ? 0.55 : 1.0,
+              child: _buildCardBody(),
+            ),
+            if (widget.comingSoon)
+              Positioned(
+                top: 14,
+                right: -28,
+                child: Transform.rotate(
+                  angle: 0.45,
+                  child: Container(
+                    width: 110,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    color: const Color(0xFFE8C547),
+                    child: const Text(
+                      'COMING SOON',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.black,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardBody() {
+    return GestureDetector(
+        onTap: widget.comingSoon ? null : widget.onTap,
         onTapDown: (_) => setState(() => _pressed = true),
         onTapCancel: () => setState(() => _pressed = false),
         onTapUp: (_) => setState(() => _pressed = false),
@@ -390,7 +460,6 @@ class _PayCardState extends State<_PayCard> {
             ],
           ),
         ),
-      ),
     );
   }
 }

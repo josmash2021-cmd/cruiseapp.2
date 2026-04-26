@@ -246,6 +246,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;
+    // 2026-04-27 diagnostic: log every incoming GPS so we can see in
+    // device logs whether the rider is even RECEIVING the driver
+    // updates. If this never prints while the car sits frozen, the
+    // problem is upstream (RTDB rules / driver app GPS / listener).
+    // If it DOES print but the car still doesn't move, the bug is in
+    // the interp pipeline below.
+    debugPrint(
+      '[RiderTracking] GPS in: lat=${ll.latitude.toStringAsFixed(5)} '
+      'lng=${ll.longitude.toStringAsFixed(5)} '
+      'speed=${speed?.toStringAsFixed(1) ?? "n/a"} '
+      'phase=$_phase '
+      'segDist=${_segDist.length} routePts=${_routePts.length} '
+      'traveledM=${_traveledM.toStringAsFixed(1)} '
+      'tgtTraveledM=${_tgtTraveledM.toStringAsFixed(1)} '
+      'velMps=${_velocityMps.toStringAsFixed(2)} '
+      'animPos=(${_animPos.latitude.toStringAsFixed(5)},${_animPos.longitude.toStringAsFixed(5)}) '
+      'tickerActive=${_interpTicker?.isActive ?? false}',
+    );
     // Always wake up the ticker on new GPS data — restarts if idle or stopped.
     _interpIdle = false;
     if (_interpTicker != null && !_interpTicker!.isActive) {

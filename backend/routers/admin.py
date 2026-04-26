@@ -238,6 +238,34 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     return _trip_dict(trip)
 
 
+# TEMPORARY: no-auth probe so the platform owner can verify Instant
+# Payouts capability before any driver is connected. Read-only against
+# Stripe Account.retrieve(). DELETE this endpoint once verified.
+@router.get("/_probe/instant-payouts")
+async def probe_instant_payouts():
+    from config import STRIPE_SECRET
+    if not STRIPE_SECRET:
+        return {"ok": False, "error": "STRIPE_SECRET not configured"}
+    try:
+        import stripe as _s
+        _s.api_key = STRIPE_SECRET
+        acct = _s.Account.retrieve()
+        caps = acct.get("capabilities", {}) or {}
+        return {
+            "ok": True,
+            "country": acct.get("country"),
+            "instant_payouts_capability": caps.get("instant_payouts"),
+            "all_capabilities": caps,
+            "verdict": (
+                "✅ ENABLED — Instant Payouts will work for drivers."
+                if caps.get("instant_payouts") == "active"
+                else "❌ NOT ENABLED — request the capability via Stripe support."
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @router.get("/admin/stripe/instant-payouts-status", dependencies=[Depends(_verify_api_key)])
 async def admin_check_instant_payouts():
     """Verify whether Instant Payouts is enabled at the platform level.

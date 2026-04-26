@@ -525,8 +525,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // airport bookings (both go through pre-pickup
                         // confirmation flow). "Request Ride" only for
                         // immediate dispatch from the home Where-to.
+                        //
+                        // Reads from BOTH widget params (set at push
+                        // time) and controller state (mutable — flips
+                        // when an inline schedule picker fires
+                        // _ctrl.setSchedule). Without the controller
+                        // check, picking a future date AFTER the screen
+                        // is already mounted leaves the label stuck on
+                        // "Request Ride".
                         label: (widget.scheduledAt != null ||
-                                widget.isAirportTrip)
+                                widget.isAirportTrip ||
+                                _ctrl.state.scheduledAt != null ||
+                                _ctrl.state.isAirportTrip)
                             ? S.of(context).bookScheduledRide
                             : S.of(context).requestRide,
                         onTap: () {

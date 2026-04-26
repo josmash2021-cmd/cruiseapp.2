@@ -3451,6 +3451,79 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  STRIPE TERMINAL - TAP TO PAY (NFC Contactless Payments)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// Obtiene un token de conexión para Stripe Terminal SDK
+  static Future<String> getConnectionToken() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/connection-token'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    final data = _parse(res);
+    return data['secret'] ?? '';
+  }
+
+  /// Crea un PaymentIntent para Tap to Pay
+  static Future<Map<String, dynamic>> createTapToPayPaymentIntent({
+    required int amount,
+    String currency = 'usd',
+    String? description,
+  }) async {
+    final h = await _authHeaders();
+    h['Content-Type'] = 'application/json';
+    final body = jsonEncode({
+      'amount': amount,
+      'currency': currency,
+      'description': description ?? 'Cruise Ride Payment',
+    });
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/create-payment-intent'),
+          headers: h,
+          body: body,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Confirma un PaymentIntent de Tap to Pay
+  static Future<Map<String, dynamic>> confirmTapToPayPayment({
+    required String paymentIntentId,
+  }) async {
+    final h = await _authHeaders();
+    h['Content-Type'] = 'application/json';
+    final body = jsonEncode({
+      'payment_intent_id': paymentIntentId,
+    });
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/capture-payment-intent'),
+          headers: h,
+          body: body,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Obtiene el estado de un PaymentIntent
+  static Future<Map<String, dynamic>> getTapToPayPaymentStatus({
+    required String paymentIntentId,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/stripe/payment-status/$paymentIntentId'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
 }
 
 /// Simple exception with HTTP status code.

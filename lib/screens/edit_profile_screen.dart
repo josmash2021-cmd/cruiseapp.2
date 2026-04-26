@@ -263,13 +263,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     if (_loading) {
       return Scaffold(
-        backgroundColor: c.bg,
+        backgroundColor: Colors.black,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [

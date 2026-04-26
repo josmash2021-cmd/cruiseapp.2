@@ -333,7 +333,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

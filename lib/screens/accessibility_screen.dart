@@ -36,7 +36,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
     final n = accessibilityNotifier;
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

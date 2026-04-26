@@ -10,7 +10,7 @@ class TermsOfServiceScreen extends StatelessWidget {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(S.of(context).termsOfService),
         backgroundColor: c.surface,

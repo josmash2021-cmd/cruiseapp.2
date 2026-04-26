@@ -253,35 +253,45 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // the bottom. No Material/ConstrainedBox/AnimatedOpacity needed —
     // those layers were introducing the intrinsic-height ambiguity that
     // kept collapsing the sheet on iOS.
+    // Floating sheet: 14px side margins, 24px bottom gap from screen
+    // edge so it visibly hovers above the map instead of hugging the
+    // bottom. Stronger drop shadow + subtle gold-tinted top glow sells
+    // the "lifted" feel.
     return Positioned(
       top: 0,
-      left: 8,
-      right: 8,
-      bottom: 10,
+      left: 14,
+      right: 14,
+      bottom: 24,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Container(
             decoration: BoxDecoration(
               color: Colors.black,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.06),
+                color: Colors.white.withValues(alpha: 0.08),
               ),
               boxShadow: [
                 BoxShadow(
                   color:
-                      const Color(0xFFE8C547).withValues(alpha: 0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+                      const Color(0xFFE8C547).withValues(alpha: 0.10),
+                  blurRadius: 16,
+                  offset: const Offset(0, -2),
                 ),
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.50),
-                  blurRadius: 40,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: 0.65),
+                  blurRadius: 48,
+                  offset: const Offset(0, 12),
                 ),
               ],
             ),
-            child: SafeArea(
+            child: ClipRRect(
+              // ClipRRect so the gold-particle field can't bleed past
+              // the sheet's rounded corners.
+              borderRadius: BorderRadius.circular(24),
+              child: GoldParticlesBackground(
+              particleCount: 18, // smaller field for a small surface
+              child: SafeArea(
               top: false,
               child: Padding(
                 // Bottom is tighter than the other 3 sides so the panel
@@ -511,7 +521,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         enabled: !_isProcessingPayment &&
                             _hasAnyPaymentMethod,
                         isLoading: _isProcessingPayment,
-                        label: widget.scheduledAt != null
+                        // "Reserve Now" for both scheduled rides AND
+                        // airport bookings (both go through pre-pickup
+                        // confirmation flow). "Request Ride" only for
+                        // immediate dispatch from the home Where-to.
+                        label: (widget.scheduledAt != null ||
+                                widget.isAirportTrip)
                             ? S.of(context).bookScheduledRide
                             : S.of(context).requestRide,
                         onTap: () {
@@ -525,6 +540,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ),
             ),
+            ),  // close GoldParticlesBackground
+            ),  // close ClipRRect
           ),
         ),
       );

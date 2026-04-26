@@ -168,7 +168,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   // ── Map-first draggable sheet ──
   final DraggableScrollableController _sheetController = DraggableScrollableController();
-  final GlobalKey _mapKey = GlobalKey();
+  // Bump this counter to fully tear down + rebuild the MapWidget. Used
+  // after a trip cancellation when Mapbox's internal style state can
+  // get stuck and renders the canvas as a flat grey vector layer
+  // (no dark-navy background, no gold accents). A fresh widget with a
+  // new ValueKey forces re-creation of the underlying native view.
+  int _mapEpoch = 0;
+  Key get _mapKey => ValueKey('home_map_$_mapEpoch');
 
   // User profile data
   String _firstName = '';

@@ -694,6 +694,14 @@ extension _HomeScreenController on _HomeScreenState {
         _didAutoResumeRide = false;
         _rideRouteDrawn = false;
         _routeProgress = 0.0;
+        // Bump the map epoch so the MapWidget gets a fresh ValueKey
+        // and Flutter rebuilds the native view from scratch. Without
+        // this, after a cancel the Mapbox canvas sometimes renders
+        // as a flat grey layer (lost the dark-navy style) until the
+        // user manually pans/zooms.
+        _mapEpoch++;
+        _miniMapController = null;
+        _miniMapAnnotMgr = null;
       });
 
       // Reset map back to the home default frame (pitch 0, north up,

@@ -185,68 +185,18 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                       ),
                     );
                   },
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(horizontal: Responsive.w(14), vertical: Responsive.h(10)),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF262626),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
-                        ),
-                        child: Text(
-                          S.of(context).typeMessage,
-                          style: TextStyle(color: Colors.white30, fontSize: Responsive.sp(13)),
-                        ),
-                      ),
-                      if (widget.tripId != null)
-                        Positioned(
-                          right: -4, top: -4,
-                          child: StreamBuilder<int>(
-                            stream: ChatService().unreadCountStream(
-                              rideId: widget.tripId.toString(),
-                              readerRole: 'rider',
-                            ),
-                            builder: (context, snap) {
-                              final count = snap.data ?? 0;
-                              if (count == 0) return const SizedBox.shrink();
-                              return TweenAnimationBuilder<double>(
-                                key: ValueKey(count),
-                                tween: Tween(begin: 0.0, end: 1.0),
-                                duration: const Duration(milliseconds: 400),
-                                curve: Curves.elasticOut,
-                                builder: (context, scale, child) =>
-                                    Transform.scale(scale: scale, child: child),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEF4444),
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFEF4444).withValues(alpha: 0.5),
-                                        blurRadius: 6,
-                                        spreadRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                                  child: Text(
-                                    count > 9 ? '9+' : '$count',
-                                    style: const TextStyle(
-                                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              );
-                            },
+                  child: widget.tripId != null
+                      ? StreamBuilder<int>(
+                          stream: ChatService().unreadCountStream(
+                            rideId: widget.tripId.toString(),
+                            readerRole: 'rider',
                           ),
-                        ),
-                    ],
-                  ),
+                          builder: (context, snap) {
+                            final count = snap.data ?? 0;
+                            return _ChatPromptPill(count: count);
+                          },
+                        )
+                      : const _ChatPromptPill(count: 0),
                 ),
               ),
               SizedBox(width: Responsive.w(8)),
@@ -538,6 +488,156 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           child: Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: Responsive.sp(18)),
         ),
       ),
+    );
+  }
+}
+
+/// Chat input pill on the rider tracking driver-info card.
+/// - Idle: dark "Type a message..." chip with subtle gold border.
+/// - Unread > 0: turns gold, shows "X new message(s) from driver" with
+///   a shimmer sweep that loops every 1.8s to draw the eye, plus a
+///   small unread counter on the right.
+class _ChatPromptPill extends StatefulWidget {
+  final int count;
+  const _ChatPromptPill({required this.count});
+
+  @override
+  State<_ChatPromptPill> createState() => _ChatPromptPillState();
+}
+
+class _ChatPromptPillState extends State<_ChatPromptPill>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.count > 0) _shimmer.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatPromptPill old) {
+    super.didUpdateWidget(old);
+    if (widget.count > 0 && !_shimmer.isAnimating) {
+      _shimmer.repeat();
+    } else if (widget.count == 0 && _shimmer.isAnimating) {
+      _shimmer.stop();
+      _shimmer.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = widget.count > 0;
+    final s = S.of(context);
+
+    if (!hasUnread) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+            horizontal: Responsive.w(14), vertical: Responsive.h(10)),
+        decoration: BoxDecoration(
+          color: const Color(0xFF262626),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+              color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+        ),
+        child: Text(
+          s.typeMessage,
+          style: TextStyle(color: Colors.white30, fontSize: Responsive.sp(13)),
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _shimmer,
+      builder: (context, _) {
+        final t = _shimmer.value;
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+              horizontal: Responsive.w(14), vertical: Responsive.h(10)),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFE8C547), Color(0xFFD4A574)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: AppColors.kGold.withValues(alpha: 0.9), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.kGold.withValues(alpha: 0.35),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Shimmer sweep overlay — bright streak slides L -> R.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Transform.translate(
+                      offset: Offset(380 * (t * 1.4 - 0.4), 0),
+                      child: Transform.rotate(
+                        angle: 0.25,
+                        child: Container(
+                          width: 60,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                Colors.white.withValues(alpha: 0.55),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.chat_bubble_rounded,
+                        color: Colors.black, size: Responsive.sp(14)),
+                    SizedBox(width: Responsive.w(8)),
+                    Flexible(
+                      child: Text(
+                        s.newMessagesFromDriver(widget.count),
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: Responsive.sp(13),
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

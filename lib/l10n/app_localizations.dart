@@ -568,6 +568,10 @@ class S {
   // ── Chat ──────────────────────────────────────────────────────────────────
   String get chat => 'Chat';
   String get typeMessage => _es ? 'Escribe un mensaje...' : 'Type a message...';
+  String newMessagesFromDriver(int count) => _es
+      ? '$count nuevo${count > 1 ? "s" : ""} mensaje${count > 1 ? "s" : ""} del conductor'
+      : '$count new message${count > 1 ? "s" : ""} from driver';
+  String get newMessageFromDriverPushTitle => _es ? 'Nuevo mensaje del conductor' : 'New message from driver';
 
   // ── Trip Receipt ──────────────────────────────────────────────────────────
   String get tripReceipt => _es ? 'Recibo del Viaje' : 'Trip Receipt';

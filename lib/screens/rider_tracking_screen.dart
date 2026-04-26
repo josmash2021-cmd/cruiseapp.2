@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_keys.dart';
 import 'chat_screen.dart';
 import '../services/chat_service.dart';
+import '../models/chat_message.dart';
 import 'help_screen.dart';
 import 'home_screen.dart';
 import 'rider_confirm_pickup_screen.dart';
@@ -257,6 +258,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Rider own location dot (uses Mapbox native location puck — no drift on zoom) ──
   StreamSubscription<Position>? _riderLocSub;
 
+  // ── Chat: local-notification fallback ──
+  // Listens to RTDB chat messages and fires a flutter_local_notification
+  // when a driver message arrives while the rider is not viewing the
+  // tracking screen in foreground. Avoids needing a server-side FCM
+  // round-trip for the local push case.
+  StreamSubscription<List<ChatMessage>>? _chatMsgsSub;
+  int _lastSeenChatTs = 0;
+
   late AnimationController _etaPulse;
 
   @override
@@ -298,6 +307,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       if (mounted) _startRealTimeTracking();
     });
     _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
+    // Listen to chat messages so we can fire a local push whenever a
+    // driver-sent message arrives while the app is not in the foreground
+    // (or the rider is on a different screen). The in-card pill shimmer
+    // already covers the in-app case.
+    _initChatNotificationsListener();
     // Only send notifications on FRESH trip — not on app resume
     final isFreshTrip = widget.initialStatus == null || widget.initialStatus!.isEmpty;
     if (isFreshTrip) {
@@ -328,6 +342,43 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     NetworkService().onlineNotifier.addListener(_networkListener!);
   }
 
+  /// Subscribe to RTDB chat for the active trip and fire a local
+  /// notification ("New message from driver") for every fresh
+  /// driver-sent message that lands while the rider is not actively
+  /// looking at the chat in the foreground. The in-card pill shimmer
+  /// already handles the foreground case via its own StreamBuilder.
+  void _initChatNotificationsListener() {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    // Capture the localized title up-front; using S.of(context) inside
+    // an async listener is unsafe across context lifecycle.
+    final pushTitle = S.of(context).newMessageFromDriverPushTitle;
+    _chatMsgsSub?.cancel();
+    _chatMsgsSub =
+        ChatService().messagesStream(tripId.toString()).listen((messages) {
+      if (messages.isEmpty) return;
+      final last = messages.last;
+      final lastTs = last.timestamp;
+      // Skip the initial dump on first subscribe so the rider doesn't
+      // get a fake notification for chat history when they reopen.
+      if (_lastSeenChatTs == 0) {
+        _lastSeenChatTs = lastTs;
+        return;
+      }
+      if (lastTs <= _lastSeenChatTs) return;
+      _lastSeenChatTs = lastTs;
+      // Only notify on driver-sent messages.
+      if (last.senderRole == 'rider') return;
+      NotificationService.show(
+        id: 7710 + (tripId % 1000),
+        title: pushTitle,
+        body: last.text,
+        type: 'chat_message',
+        payload: 'trip:$tripId',
+      );
+    });
+  }
+
   @override
   void dispose() {
     if (_networkListener != null) {
@@ -340,6 +391,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
+    _chatMsgsSub?.cancel();
     _tripStatusSub?.cancel();
     _fallbackTripStatusSub?.cancel();
     _statusPollTimer?.cancel();

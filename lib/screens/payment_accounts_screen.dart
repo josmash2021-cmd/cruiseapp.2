@@ -173,8 +173,75 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     }
   }
 
-  // ── Apple Pay ──
+  // ── Bank Account (ACH) ──
+  // Stub for now: shows an informational dialog. Full Stripe Financial
+  // Connections / Plaid integration ships in a follow-up commit; the
+  // entry point is wired so the UI is feature-complete.
+  Future<void> _linkBankAccount() async {
+    if (!mounted) return;
+    final c = AppColors.of(context);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.account_balance_rounded,
+                  color: Color(0xFF22C55E), size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Bank Account',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Linking your bank account is coming soon. You\'ll be able to '
+          'connect your account via secure ACH and pay directly from your '
+          'balance.',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            color: c.textSecondary,
+            fontSize: 13.5,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFFE8C547),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
+  // ── Apple Pay ──
   Future<void> _linkApplePay() async {
     if (!_applePayAvailable) {
       _showSnack(S.of(context).setupApplePayInSettings);
@@ -207,7 +274,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   }
 
   // ── PayPal via PayPalCheckoutScreen (WebView + REST API) ──
-
+  // ignore: unused_element
   Future<void> _linkPayPal() async {
     if (!mounted) return;
     final approved = await Navigator.of(context).push<bool>(
@@ -360,8 +427,11 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ),
               const SizedBox(height: 10),
 
+              // PayPal was removed per product decision. Apple Pay, Google
+              // Pay, Credit / Debit Card and Bank Account remain.
+
               // ── Google Pay (Android only) ──
-              if (Platform.isAndroid) ...[                
+              if (Platform.isAndroid) ...[
                 _accountTile(
                   c: c,
                   logoWidget: _googlePayLogo(),
@@ -373,7 +443,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               ],
 
               // ── Apple Pay (iOS only) ──
-              if (Platform.isIOS) ...[                
+              if (Platform.isIOS) ...[
                 _accountTile(
                   c: c,
                   logoWidget: _applePayLogo(),
@@ -384,16 +454,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 Divider(color: c.divider, height: 1),
               ],
 
-              // ── PayPal ──
-              _accountTile(
-                c: c,
-                logoWidget: _paypalLogo(),
-                label: 'PayPal',
-                linked: _paypalLinked,
-                onTap: _linkPayPal,
-              ),
-              Divider(color: c.divider, height: 1),
-
               // ── Credit / Debit Card ──
               _accountTile(
                 c: c,
@@ -403,6 +463,26 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                     : S.of(context).creditOrDebitCard,
                 linked: _savedCardLast4 != null,
                 onTap: _linkCreditCard,
+              ),
+              Divider(color: c.divider, height: 1),
+
+              // ── Bank Account (ACH — coming soon dialog for now) ──
+              _accountTile(
+                c: c,
+                logoWidget: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.account_balance_rounded,
+                      color: Color(0xFF22C55E), size: 20),
+                ),
+                label: 'Bank Account',
+                linked: false,
+                onTap: _linkBankAccount,
               ),
 
               // ── Saved methods from server ──

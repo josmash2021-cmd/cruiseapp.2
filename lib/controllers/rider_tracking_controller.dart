@@ -104,12 +104,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
       // Forward ANY actionable status — the handler has its own dedup/guards.
       // Intentionally broad: missing a transition is worse than a no-op update.
+      // 2026-04-27 fix: include 'accepted' / 'driver_en_route' so the RTDB
+      // listener bootstrap inside _onTripStatusUpdate fires for cold-start
+      // riders who land on the tracking screen with widget.driverId == null.
+      // Without those entries the rider could see the route but never the
+      // moving car, because the listener was never started.
       const actionableStatuses = {
+        'accepted', 'driver_en_route', 'driver_enroute', 'enroute',
         'completed', 'cancelled', 'canceled',
         'arrived', 'driver_arrived', 'arrived_pickup', 'arrived_at_pickup',
         'in_trip', 'in_progress', 'rider_onboard', 'on_trip', 'trip_started',
       };
-      if (actionableStatuses.contains(status)) {
+      // Also forward unconditionally if we have a driver_id and our RTDB
+      // listener isn't running yet — guarantees the car appears even if a
+      // status string we haven't seen before sneaks in from a future
+      // backend change.
+      final driverId = data['driver_id']?.toString() ?? '';
+      final needsBootstrap = driverId.isNotEmpty &&
+          driverId != '0' &&
+          (_rtdbDriverId == null || _rtdbDriverId != driverId);
+      if (actionableStatuses.contains(status) || needsBootstrap) {
         _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
       }
     } catch (e) {

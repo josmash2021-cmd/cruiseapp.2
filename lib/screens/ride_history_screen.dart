@@ -291,11 +291,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             ),
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Container(
-                width: 1.5,
-                height: 18,
-                color: c.textTertiary.withValues(alpha: 0.3),
-              ),
+              child: const _ShimmerConnector(),
             ),
 
             // ── Dropoff ──
@@ -303,12 +299,21 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
+                  // White SQUARE for the dropoff (was a gold circle).
+                  // Pickup keeps its gold dot above; the change makes
+                  // the two endpoints visually distinct at a glance.
                   width: 10,
                   height: 10,
                   margin: const EdgeInsets.only(top: 4),
                   decoration: BoxDecoration(
-                    color: _gold,
-                    borderRadius: BorderRadius.circular(5),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.30),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -343,6 +348,71 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Vertical shimmer connector between pickup and dropoff dots.
+/// 1.5 px wide, 18 px tall, gold gradient with a brighter highlight
+/// that travels top -> bottom on a 1.6 s loop. Subtle on idle, draws
+/// the eye to follow the pickup -> dropoff line.
+class _ShimmerConnector extends StatefulWidget {
+  const _ShimmerConnector();
+
+  @override
+  State<_ShimmerConnector> createState() => _ShimmerConnectorState();
+}
+
+class _ShimmerConnectorState extends State<_ShimmerConnector>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 1.5,
+      height: 18,
+      child: AnimatedBuilder(
+        animation: _ctl,
+        builder: (_, __) {
+          final t = _ctl.value;
+          // Highlight travels top -> bottom: stops shift each frame so
+          // the bright band slides through the gradient.
+          final start = (t - 0.15).clamp(0.0, 1.0);
+          final mid = t.clamp(0.0, 1.0);
+          final end = (t + 0.15).clamp(0.0, 1.0);
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: const [
+                  Color(0x55E8C547), // faint gold
+                  Color(0xFFFFFFFF), // white highlight band
+                  Color(0x55E8C547), // faint gold
+                ],
+                stops: [start, mid, end],
+              ),
+              borderRadius: BorderRadius.circular(1),
+            ),
+          );
+        },
       ),
     );
   }

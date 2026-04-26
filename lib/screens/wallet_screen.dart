@@ -154,7 +154,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final loc = S.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

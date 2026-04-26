@@ -50,7 +50,7 @@ class _AboutScreenState extends State<AboutScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),

@@ -377,7 +377,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),

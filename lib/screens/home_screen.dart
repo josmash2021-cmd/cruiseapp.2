@@ -186,6 +186,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   Ticker? _locTicker;
   LatLng? _locAnimFrom;      // start of interpolation
   LatLng? _locAnimTo;        // target (latest GPS)
+  // True while the rider is actively panning/pinching the home minimap.
+  // The per-frame camera-follow loop in _onLocAnimTick respects this so
+  // we don't fight the user's gesture. Today the home minimap doesn't
+  // expose pan gestures (the bottom sheet sits on top), so this stays
+  // false in practice, but the flag is here for when we do.
+  bool _userPanningMap = false;
   double _locAnimProgress = 1.0; // 0→1
   Duration _locAnimStart = Duration.zero;
   bool _locAnimNeedsRestart = false;

@@ -35,6 +35,23 @@ extension _HomeScreenMap on _HomeScreenState {
       _lastAnnotUpdateMs = dtMs;
       _updateMiniMapAnnotation();
     }
+    // ── Camera follow (Google Maps / Uber style) ──
+    // Move the camera to the interpolated position EVERY frame so the
+    // dot stays glued to the centre of the screen. Uses setCamera (not
+    // flyTo / easeTo) so there's no per-call animation queue to fight
+    // the per-frame writes; the smoothness comes from the per-frame
+    // interpolated position itself.
+    if (!_userPanningMap) {
+      try {
+        _miniMapController?.setCamera(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(newLng, newLat),
+            ),
+          ),
+        );
+      } catch (_) {}
+    }
     // Stop when close enough
     final latGap = (tgt.latitude - newLat).abs();
     final lngGap = (tgt.longitude - newLng).abs();
@@ -44,16 +61,13 @@ extension _HomeScreenMap on _HomeScreenState {
   }
 
   /// Start (or restart) smooth interpolation toward a new GPS target.
+  /// Camera follow happens inside the per-frame ticker instead of here,
+  /// so the camera glides at vsync (60-120 Hz) with the dot rather
+  /// than playing a 1200 ms flyTo every GPS fix (which left the dot
+  /// off-centre between updates and felt jumpy).
   void _animateToLocation(LatLng target) {
-    // Set target — the ticker's exponential decay will glide toward it
     _locAnimTo = target;
     if (_locAnimFrom == null) _locAnimFrom = target;
-
-    // Animate camera to target with smooth easing
-    _miniMapController?.flyTo(
-      mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude))),
-      mapbox.MapAnimationOptions(duration: 1200),
-    );
 
     // Wake ticker if sleeping
     if (_locTicker != null && _locTicker!.isActive) {

@@ -1802,14 +1802,27 @@ extension _RideRequestMap on _RideRequestScreenState {
       // Phase exits pickingLocation.
       //   - Both endpoints set: _tryFetchRoute() (triggered by
       //     setPickup/setDropoff above) flips phase → previewRoute.
-      //   - Only one set: bounce to selectingLocations so the rider
-      //     can go back to the search screen and pick the other leg.
-      final s = _ctrl.state;
+      //   - Missing endpoint: try to auto-fill the missing leg with
+      //     the user's current GPS so we stay on the same canvas
+      //     (mirrors the "Choose on map" pickup flow). Only bounce
+      //     back to search if GPS isn't resolved yet.
+      var s = _ctrl.state;
+      if (s.pickup == null && _userLocation != null) {
+        final curLabel = _currentAddress.isNotEmpty
+            ? _currentAddress
+            : 'Current location';
+        _ctrl.setPickup(
+          PlaceDetails(
+            address: curLabel,
+            lat: _userLocation!.latitude,
+            lng: _userLocation!.longitude,
+          ),
+          curLabel,
+        );
+        s = _ctrl.state;
+      }
       if (s.pickup == null || s.dropoff == null) {
         _ctrl.startLocationSelection();
-        // Pop back to the pickup/dropoff search so the user can
-        // complete the other leg. Without this the screen sits on a
-        // map with no visible UI other than the idle pill.
         if (mounted && Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
           return;

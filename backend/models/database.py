@@ -41,25 +41,27 @@ else:
     _is_private = ".railway.internal" in DATABASE_URL
 
     if _is_supabase:
-        # Supabase direct: small pool, fast recycle, no pre-ping overhead
-        _engine_kwargs["pool_size"] = 8
-        _engine_kwargs["max_overflow"] = 4
-        _engine_kwargs["pool_pre_ping"] = False  # Skip health check — faster checkout
-        _engine_kwargs["pool_recycle"] = 600     # 10 min — recycle before idle timeout
-        _engine_kwargs["pool_timeout"] = 3       # Fail fast if pool exhausted
-        _engine_kwargs["pool_use_lifo"] = True   # Reuse hot connection
+        # Supabase PgBouncer (pooler.supabase.com): MINIMAL pool.
+        # PgBouncer free tier has ~10-20 connection limit. We use
+        # pool_size=2 + max_overflow=0 = MAX 2 connections total.
+        # This is extremely conservative but prevents MaxClientsInSessionMode.
+        _engine_kwargs["pool_size"] = 2
+        _engine_kwargs["max_overflow"] = 0
+        _engine_kwargs["pool_pre_ping"] = False
+        _engine_kwargs["pool_recycle"] = 120     # 2 min — aggressive recycle
+        _engine_kwargs["pool_timeout"] = 2       # Fail fast
+        _engine_kwargs["pool_use_lifo"] = True
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
         _connect_args = {
-            "timeout": 3,           # Fast fail on connect
-            "command_timeout": 8,   # Queries must finish quickly
+            "timeout": 3,
+            "command_timeout": 8,
             "ssl": _ssl_ctx,
             "server_settings": {
-                "jit": "off",                    # Disable JIT for simple queries
+                "jit": "off",
                 "application_name": "cruise_fastapi",
-                "idle_in_transaction_session_timeout": "30000",  # 30s max idle tx
             },
         }
     elif _is_private:

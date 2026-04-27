@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 FULL_VERIFICATION = False  # Phase 2: flip to True to activate all checks
 
 # ── Configuration ─────────────────────────────────────────────────────
-SCAN_INTERVAL_SECONDS = 120     # Check every 2 minutes
+SCAN_INTERVAL_SECONDS = 300     # Check every 5 minutes (was 2m) — reduced for NullPool/PgBouncer efficiency
 PHOTO_CHECK_TIMEOUT = 8         # Seconds to wait for photo URL check
 
 # Phase 1: Vehicle document types that get auto-approved

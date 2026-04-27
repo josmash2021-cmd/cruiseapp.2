@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text,
-    UniqueConstraint, text, func,
+    UniqueConstraint, Index, text, func,
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -663,6 +663,22 @@ class AuditLog(Base):
     entry_hash = Column(String(64), nullable=False)  # SHA-256 of this entry
 
 
+class DriverLocationHistory(Base):
+    __tablename__ = "driver_location_history"
+    __table_args__ = (
+        Index("idx_driver_location_history_driver_recorded", "driver_id", "recorded_at"),
+        {"sqlite_autoincrement": True},
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    accuracy = Column(Float, nullable=True)
+    speed = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class SmsLog(Base):
     __tablename__ = "sms_log"
     __table_args__ = (
@@ -931,6 +947,24 @@ async def migrate_postgres(conn):
         "CREATE INDEX IF NOT EXISTS idx_dispatch_trip_status ON dispatch_offers (trip_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_trips_driver_status ON trips (driver_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_trips_rider_status ON trips (rider_id, status)",
+        # NEW: Scheduled ride dispatcher queries
+        "CREATE INDEX IF NOT EXISTS idx_trips_status_created_at ON trips (status, created_at) WHERE status IN ('requested', 'scheduled', 'scheduled_accepted')",
+        "CREATE INDEX IF NOT EXISTS idx_trips_scheduled_at_status ON trips (scheduled_at, status) WHERE scheduled_at IS NOT NULL",
+        # NEW: Rating lookups for driver
+        "CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings (to_user_id, created_at)",
+        # NEW: Trip history queries
+        "CREATE INDEX IF NOT EXISTS idx_trips_completed_driver ON trips (driver_id, completed_at) WHERE status = 'completed'",
+        "CREATE INDEX IF NOT EXISTS idx_trips_completed_rider ON trips (rider_id, completed_at) WHERE status = 'completed'",
+        # NEW: Driver location history
+        "CREATE INDEX IF NOT EXISTS idx_driver_locations_driver_time ON driver_location_history (driver_id, recorded_at)",
+        # NEW: Wallet transactions
+        "CREATE INDEX IF NOT EXISTS idx_wallet_txns_wallet_time ON wallet_transactions (wallet_id, created_at)",
+        # NEW: Support chat lookups
+        "CREATE INDEX IF NOT EXISTS idx_support_chats_user_status ON support_chats (user_id, status)",
+        # NEW: Notifications
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications (user_id, is_read) WHERE is_read = false",
+        # NEW: Audit logs
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_event_time ON audit_logs (event, ts)",
     ]
     for idx_sql in _indexes:
         try:

@@ -16,7 +16,7 @@ from db_url import resolve_database_url
 logger = logging.getLogger(__name__)
 
 BACKUP_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "backups"
-BACKUP_INTERVAL_HOURS = 6       # Run every 6 hours
+BACKUP_INTERVAL_HOURS = 12      # Run every 12 hours (was 6h) — reduced for NullPool/PgBouncer efficiency
 MAX_BACKUPS = 28                # Keep 7 days Ã— 4 backups/day
 
 _last_backup_time: datetime | None = None

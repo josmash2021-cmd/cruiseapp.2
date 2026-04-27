@@ -377,7 +377,7 @@ async def run_proactive_agent_loop() -> None:
     log.info("Proactive support agent started")
     while True:
         try:
-            await asyncio.sleep(600)  # 10 minutes
+            await asyncio.sleep(900)  # 15 minutes (was 10m) — reduced for NullPool/PgBouncer efficiency
             async with SessionLocal() as db:
                 count = await check_bad_trips(db)
                 if count > 0:

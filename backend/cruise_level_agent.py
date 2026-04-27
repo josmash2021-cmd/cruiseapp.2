@@ -35,7 +35,7 @@ TIERS = [
     {"name": "diamond",  "min_trips": 500, "min_rating": 4.9},
 ]
 
-SCAN_INTERVAL_SECONDS = 600  # 10 minutes
+SCAN_INTERVAL_SECONDS = 1800  # 30 minutes (was 10m) — reduced for NullPool/PgBouncer efficiency
 
 
 def compute_tier(completed_trips: int, avg_rating: float) -> str:

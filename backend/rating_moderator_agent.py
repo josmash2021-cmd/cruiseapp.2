@@ -30,7 +30,7 @@ from sqlalchemy import select, and_, func
 logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────
-SCAN_INTERVAL_MINUTES = 30
+SCAN_INTERVAL_MINUTES = 60      # Was 30m — reduced for NullPool/PgBouncer efficiency
 MIN_RATED_TRIPS = 10           # Minimum trips before actions apply
 ROLLING_WINDOW_DAYS = 30       # Use last 30 days for rating calculation
 

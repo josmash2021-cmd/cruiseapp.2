@@ -14,6 +14,7 @@ Usage:
 
 import time
 import logging
+import os
 from collections import defaultdict
 from fastapi import HTTPException
 
@@ -101,6 +102,7 @@ class RateLimiter:
     def get_stats(self) -> dict:
         """Return diagnostic info for /health endpoints."""
         return {
+            "backend": "memory",
             "tracked_keys": len(self._requests),
             "last_sweep": self._last_sweep,
         }
@@ -108,3 +110,50 @@ class RateLimiter:
 
 # Singleton instance — import this in middleware and dependencies.
 rate_limiter = RateLimiter()
+
+
+# ── Redis integration (optional) ──────────────────────────────────────
+# When REDIS_URL is available we transparently upgrade to the Redis-backed
+# limiter so that multi-instance deployments share state.
+
+_redis_limiter = None
+
+
+def _get_redis_url() -> str | None:
+    return os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
+
+
+def _try_redis_limiter():
+    """Attempt to instantiate the Redis-backed limiter.  Returns None on failure."""
+    global _redis_limiter
+    if _redis_limiter is not None:
+        return _redis_limiter
+
+    redis_url = _get_redis_url()
+    if not redis_url:
+        return None
+
+    try:
+        from middleware.redis_rate_limit import RedisRateLimiter
+        import redis.asyncio as aioredis
+
+        client = aioredis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_keepalive=True,
+            health_check_interval=30,
+        )
+        _redis_limiter = RedisRateLimiter(redis_client=client)
+        logger.info("[RateLimit] Redis limiter initialised (%s)", redis_url.split("@")[-1])
+        return _redis_limiter
+    except Exception as e:
+        logger.warning("[RateLimit] Redis limiter init failed: %s", e)
+        return None
+
+
+# Attempt lazy upgrade once at import time.  If Redis is not reachable the
+# in-memory singleton remains active.
+_redis_candidate = _try_redis_limiter()
+if _redis_candidate is not None:
+    rate_limiter = _redis_candidate

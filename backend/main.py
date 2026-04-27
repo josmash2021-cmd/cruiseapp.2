@@ -253,22 +253,33 @@ async def lifespan(app: FastAPI):
         safety_monitor_agent.set_db_session_maker(SessionLocal)
         await safety_monitor_agent.start()
 
-        # Phase 4: Periodic tasks (30s delay) — reduced set
+        # Phase 4: Periodic tasks (30s delay) — full set with DB-smart intervals
         await asyncio.sleep(15)
         asyncio.create_task(_audit_flush_loop())
         asyncio.create_task(_scheduled_ride_dispatcher())
         asyncio.create_task(_scheduled_ride_reminder_loop())
-        # Disabled to save PgBouncer connections:
-        # asyncio.create_task(_schedule_weekly_payouts())
-        # asyncio.create_task(_backup_scheduler())
-        # asyncio.create_task(run_proactive_agent_loop())
-        # asyncio.create_task(_scheduled_rides_available_notify_loop())
-        # asyncio.create_task(_nightly_reconcile_loop())
-        # asyncio.create_task(_driver_referral_expiry_loop())
-        # document_expiry_agent.start()
-        # document_approval_agent.start()
-        # rating_moderator_agent.start()
-        # cruise_level_agent.start()
+
+        # Re-enabled agents with longer intervals to reduce PgBouncer churn
+        # (NullPool creates a new connection per DB call)
+        asyncio.create_task(_schedule_weekly_payouts())          # weekly — very low frequency
+        asyncio.create_task(_backup_scheduler())                  # 12h interval (was 6h)
+        asyncio.create_task(run_proactive_agent_loop())           # 15 min interval (was 10m)
+        asyncio.create_task(_scheduled_rides_available_notify_loop())  # 30 min interval (was 15m)
+        asyncio.create_task(_nightly_reconcile_loop())            # 24h — very low frequency
+        asyncio.create_task(_driver_referral_expiry_loop())       # 12h interval (was 6h)
+
+        # Class-based autonomous agents — set DB session maker then start
+        document_expiry_agent.set_db_session_maker(SessionLocal)
+        await document_expiry_agent.start()      # 6h interval (unchanged)
+
+        document_approval_agent.set_db_session_maker(SessionLocal)
+        await document_approval_agent.start()    # 5 min interval (was 2m)
+
+        rating_moderator_agent.set_db_session_maker(SessionLocal)
+        await rating_moderator_agent.start()     # 60 min interval (was 30m)
+
+        cruise_level_agent.set_db_session_maker(SessionLocal)
+        await cruise_level_agent.start()         # 30 min interval (was 10m)
 
         # Cache sweep every 60s
         async def _cache_sweep():
@@ -337,6 +348,7 @@ from routers.driver_referrals import (
     expire_stale_driver_referrals,
 )
 from routers.vip import router as vip_router
+from routers.system import router as system_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -352,6 +364,7 @@ app.include_router(scheduled_router)
 app.include_router(referrals_router)
 app.include_router(driver_referrals_router)
 app.include_router(vip_router)
+app.include_router(system_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
@@ -861,10 +874,10 @@ async def _scheduled_ride_dispatcher():
 # -------------------------------------------------------
 
 async def _scheduled_rides_available_notify_loop():
-    """Every 15 minutes, notify online drivers who have no active trip
+    """Every 30 minutes, notify online drivers who have no active trip
     that there are scheduled rides available matching their vehicle type."""
     while True:
-        await asyncio.sleep(900)  # 15 minutes
+        await asyncio.sleep(1800)  # 30 minutes (was 15m) — reduced for NullPool/PgBouncer efficiency
         try:
             async with SessionLocal() as db:
                 from sqlalchemy import select as sa_select
@@ -1248,7 +1261,7 @@ async def _scheduled_ride_reminder_loop():
 # -------------------------------------------------------
 
 async def _driver_referral_expiry_loop():
-    """Every 6 hours, flip pending DriverReferral rows whose 60-day
+    """Every 12 hours, flip pending DriverReferral rows whose 60-day
     window has elapsed to status='expired'. Pure cleanup — no money
     movement, no notifications. Safe to run concurrently with the trip
     completion hook (each row is independent)."""
@@ -1267,7 +1280,7 @@ async def _driver_referral_expiry_loop():
             logging.warning(
                 "[driver_referrals] expiry loop error: %s", e
             )
-        await asyncio.sleep(6 * 60 * 60)
+        await asyncio.sleep(12 * 60 * 60)  # 12 hours (was 6h) — reduced for NullPool/PgBouncer efficiency
 
 
 # -------------------------------------------------------

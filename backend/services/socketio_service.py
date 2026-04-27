@@ -60,12 +60,33 @@ def _create_manager():
     return None
 
 
+# ── CORS origins ──────────────────────────────────────────────────────
+def _get_cors_origins():
+    """Return allowed Socket.io CORS origins based on environment.
+
+    Production defaults to the known app origins. Development defaults to
+    wildcard.  Override with SOCKETIO_CORS_ORIGINS (comma-separated).
+    """
+    env_origins = os.environ.get("SOCKETIO_CORS_ORIGINS")
+    if env_origins:
+        return [o.strip() for o in env_origins.split(",") if o.strip()]
+
+    if os.environ.get("RAILWAY_ENVIRONMENT") == "production":
+        return [
+            "https://cruiseapp2-production.up.railway.app",
+            "https://cruiseinride.com",
+        ]
+
+    # Development / unknown environment — allow all
+    return "*"
+
+
 # ── Socket.io server ──────────────────────────────────────────────────
 # async_mode='asgi' lets us mount inside the existing FastAPI app.
 # Uses Redis adapter when available for multi-server deployments.
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",          # TODO: restrict in production
+    cors_allowed_origins=_get_cors_origins(),
     logger=False,                      # toggle True for debug
     engineio_logger=False,
     ping_timeout=20,

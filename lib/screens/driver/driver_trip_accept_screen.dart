@@ -670,7 +670,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         .collection('trips')
         .doc(_fsDocId)
         .snapshots()
-        .listen((snap) {
+        .listen((snap) async {
       if (!mounted) return;
       final data = snap.data();
       if (data == null) return;
@@ -694,12 +694,45 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // widget may have been disposed between the snapshot arriving
         // and the cancel check.
         if (!mounted) return;
-        debugPrint('[Driver] Trip cancelled externally → returning to online');
+
+        // Check if this was a wait timeout (passenger no-show)
+        final cancelReason = (data['cancel_reason'] ??
+                data['cancelReason'] ??
+                data['cancellation_reason'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        final isWaitTimeout = cancelReason.contains('wait_timeout') ||
+            cancelReason.contains('no_show');
+
+        debugPrint('[Driver] Trip cancelled externally (wait_timeout=$isWaitTimeout) → returning to online');
         _tripFinished = true;
         _riderConfirmSub?.cancel();
+
+        // Show specific message for passenger no-show
+        if (isWaitTimeout && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Pasajero no apareció — Viaje cancelado por no-show.\n'
+                'Passenger no-show — Trip auto-cancelled.',
+                style: TextStyle(fontSize: 14),
+              ),
+              backgroundColor: const Color(0xFFEF4444),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              duration: const Duration(seconds: 5),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+          // Delay to let driver read the message
+          await Future.delayed(const Duration(seconds: 3));
+        }
+
         // Pop with 'cancelled' result so DriverOnlineController.
         // _resetToSearchingOnRemoteCancel() takes over. Wrap in try
         // so a stale Navigator can't crash the listener.
+        if (!mounted) return;
         try {
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop('cancelled');
@@ -744,10 +777,41 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           debugPrint('[Driver] Backend poll: trip completed → onExternalCompletion');
           _onExternalCompletion();
         } else if (status == 'cancelled' || status == 'canceled') {
-          debugPrint('[Driver] Backend poll: trip cancelled → popping');
+          // Check if this was a wait timeout (passenger no-show)
+          final cancelReason = (trip['cancel_reason'] ??
+                  trip['cancelReason'] ??
+                  trip['cancellation_reason'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+          final isWaitTimeout = cancelReason.contains('wait_timeout') ||
+              cancelReason.contains('no_show');
+
+          debugPrint('[Driver] Backend poll: trip cancelled (wait_timeout=$isWaitTimeout) → popping');
           _tripFinished = true;
           _statusPollTimer?.cancel();
           _riderConfirmSub?.cancel();
+
+          // Show specific message for passenger no-show
+          if (isWaitTimeout && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Pasajero no apareció — Viaje cancelado por no-show.\n'
+                  'Passenger no-show — Trip auto-cancelled.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                backgroundColor: const Color(0xFFEF4444),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                duration: const Duration(seconds: 5),
+                margin: const EdgeInsets.all(16),
+              ),
+            );
+            await Future.delayed(const Duration(seconds: 3));
+          }
+
+          if (!mounted) return;
           try {
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop('cancelled');

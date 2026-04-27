@@ -608,6 +608,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               _restartRouteAnimation();
             }
           },
+          onCancelled: () {
+            // Trip was cancelled (e.g., auto-cancel due to wait timeout).
+            // Navigate back to home screen.
+            if (mounted) {
+              Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+            }
+          },
         ),
       ),
     );

@@ -21,6 +21,7 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     required this.vehicleDesc,
     required this.firestoreTripId,
     required this.onConfirmed,
+    this.onCancelled,
     this.tripId,
     this.driverPhotoUrl,
     this.driverId,
@@ -46,6 +47,9 @@ class RiderConfirmPickupScreen extends StatefulWidget {
   /// Called when the rider presses the confirm button OR when the driver
   /// starts the trip from their side.
   final VoidCallback onConfirmed;
+
+  /// Called when the trip is cancelled (e.g., auto-cancel due to wait timeout).
+  final VoidCallback? onCancelled;
 
   @override
   State<RiderConfirmPickupScreen> createState() =>
@@ -214,9 +218,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _listenForTripStart();
   }
 
-  /// Listen to Firestore for the trip status changing to in_progress/in_trip.
-  /// This handles the case where the rider doesn't press the button and the
-  /// driver slides "Start Trip" on their end.
+  /// Listen to Firestore for the trip status changing to in_progress/in_trip
+  /// or cancelled. Handles driver starting trip OR trip auto-cancel due to wait timeout.
   void _listenForTripStart() {
     final fsId = widget.tripId != null
         ? 'sql_${widget.tripId}'
@@ -235,12 +238,69 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       final status = (data['status'] ?? '').toString().toLowerCase().trim();
       final hasStartedTs = data['startedAt'] != null || data['started_at'] != null || data['rideStartedAt'] != null;
 
+      // Trip started by driver
       if (status == 'in_trip' ||
           status == 'in_progress' ||
           status == 'rider_onboard' ||
           status == 'trip_started' ||
           hasStartedTs) {
         _onDriverStartedTrip();
+        return;
+      }
+
+      // Trip cancelled (e.g., auto-cancel due to wait timeout)
+      if (status == 'cancelled' || status == 'canceled') {
+        _onTripCancelled(data);
+      }
+    });
+  }
+
+  /// Called when the trip is cancelled while waiting at pickup.
+  /// Shows appropriate message and navigates back.
+  void _onTripCancelled(Map<String, dynamic> data) {
+    final cancelReason = (data['cancel_reason'] ??
+            data['cancelReason'] ??
+            data['cancellation_reason'] ??
+            '')
+        .toString()
+        .toLowerCase();
+
+    final isWaitTimeout = cancelReason.contains('wait_timeout') ||
+        cancelReason.contains('no_show');
+
+    // Stop animations
+    _waitTimer?.cancel();
+    _handCtrl.stop();
+    _ripple1Ctrl.stop();
+    _ripple2Ctrl.stop();
+    _ripple3Ctrl.stop();
+
+    if (!mounted) return;
+
+    // Show appropriate message based on cancel reason
+    final message = isWaitTimeout
+        ? 'Viaje cancelado: no te presentaste al pickup a tiempo.\nTrip cancelled: you did not arrive at pickup on time.'
+        : 'Viaje cancelado.\nTrip cancelled.';
+
+    // Show toast/snackbar before navigating
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isWaitTimeout ? const Color(0xFFEF4444) : Colors.black87,
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+
+    // Delay to let user read the message, then call onCancelled or pop
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      if (widget.onCancelled != null) {
+        widget.onCancelled!();
+      } else {
+        Navigator.of(context).pop();
       }
     });
   }

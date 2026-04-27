@@ -40,6 +40,7 @@ from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
 from cruise_level_agent import cruise_level_agent
 from proactive_support_agent import run_proactive_agent_loop
+from wait_timeout_agent import wait_timeout_agent
 
 # Automatic PostgreSQL backup system
 from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
@@ -304,6 +305,10 @@ async def lifespan(app: FastAPI):
         # Start Cruise Level Agent (auto-promotes/demotes drivers based on trips + rating)
         cruise_level_agent.set_db_session_maker(SessionLocal)
         await cruise_level_agent.start()
+
+        # Start Wait Timeout Agent — auto-cancels trips when passenger no-shows
+        wait_timeout_agent.set_db_session_maker(SessionLocal)
+        await wait_timeout_agent.start()
 
         # Start Proactive Support Agent (Agent 3) — detects bad trips, reaches out proactively
         asyncio.create_task(run_proactive_agent_loop())

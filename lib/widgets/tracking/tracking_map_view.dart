@@ -612,32 +612,51 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final visibleTop = topPad + 10 + topHeight + 32;
     final visibleBottom = bottomPad + 16 + bottomHeight + 32;
 
-    // Target: center the camera so driver appears at 35% from bottom of visible area
-    // This leaves 65% of visible map ahead of the car for the route
-    final targetLat = _animPos.latitude;
-    final targetLng = _animPos.longitude;
+    // Build bounds that include driver position AND destination
+    // so the rider can see the full route ahead, not just the car.
+    final pts = <mapbox.Point>[];
+    pts.add(mapbox.Point(
+      coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+    ));
+    pts.add(mapbox.Point(
+      coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude),
+    ));
+    // Also include pickup if we're near it (shows full trip context)
+    if (_phase == _TrackPhase.onTrip && _tripJustStarted) {
+      pts.add(mapbox.Point(
+        coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
+      ));
+    }
 
     _cameraAnimating = true;
-    const dur = 1000;
+    const dur = 1200;
     _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
 
-    _map!.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(targetLng, targetLat),
-        ),
-        zoom: 15.5,
-        bearing: 0,
-        pitch: 0,
-        padding: mapbox.MbxEdgeInsets(
-          top: visibleTop.toDouble(),
-          bottom: (visibleBottom * 1.35).toDouble(), // driver at ~35% from bottom
-          left: 28,
-          right: 28,
-        ),
+    // Use cameraForCoordinates to auto-fit zoom so full route is visible
+    _map!.cameraForCoordinatesPadding(
+      pts,
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
+      mapbox.MbxEdgeInsets(
+        top: visibleTop.toDouble(),
+        bottom: visibleBottom.toDouble(),
+        left: 28,
+        right: 28,
       ),
-      mapbox.MapAnimationOptions(duration: dur),
-    );
+      null,
+      null,
+    ).then((camera) {
+      if (!mounted || _map == null) return;
+      _map!.flyTo(
+        mapbox.CameraOptions(
+          center: camera.center,
+          zoom: math.max(12.0, math.min(17.0, camera.zoom ?? 15.0)),
+          bearing: 0,
+          pitch: 0,
+          padding: camera.padding,
+        ),
+        mapbox.MapAnimationOptions(duration: dur),
+      );
+    });
 
     Future.delayed(const Duration(milliseconds: dur), () {
       _cameraAnimating = false;

@@ -29,18 +29,19 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = 15
+    # Scaled pool for 4x workers (was 15, now 50) + overflow for bursts
+    _engine_kwargs["pool_size"] = 50
     _engine_kwargs["pool_pre_ping"] = True
     _engine_kwargs["pool_recycle"] = 1800
-    _engine_kwargs["pool_timeout"] = 5
+    _engine_kwargs["pool_timeout"] = 10
     _engine_kwargs["pool_use_lifo"] = True
     # Supabase PostgreSQL: SSL required, PgBouncer-compatible
     _is_private = ".railway.internal" in DATABASE_URL
     if _is_private:
-        _engine_kwargs["max_overflow"] = 10
+        _engine_kwargs["max_overflow"] = 30
         _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False}
     else:
-        _engine_kwargs["max_overflow"] = 5
+        _engine_kwargs["max_overflow"] = 20
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False

@@ -15,6 +15,7 @@ Architecture:
 
 import time
 import logging
+import os
 from typing import Dict, Set, Optional
 
 import socketio
@@ -33,8 +34,35 @@ def configure(jwt_secret: str, algorithm: str = "HS256"):
     _JWT_ALGORITHM = algorithm
 
 
+# ── Redis adapter for horizontal scaling ──────────────────────────────
+# If REDIS_URL is set, use Redis as the message broker so multiple
+# server instances can share Socket.io rooms and broadcasts.
+# Falls back to in-memory adapter (single-server only).
+_redis_manager = None
+
+def _get_redis_url() -> Optional[str]:
+    """Return Redis URL from environment, or None if not configured."""
+    return os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
+
+
+def _create_manager():
+    """Create Socket.io manager with Redis adapter if available."""
+    global _redis_manager
+    redis_url = _get_redis_url()
+    if redis_url:
+        try:
+            import socketio.redis_manager
+            _redis_manager = socketio.redis_manager.RedisManager(redis_url)
+            logger.info("[Socket.io] Redis adapter configured: %s", redis_url.split("@")[-1])
+            return _redis_manager
+        except Exception as e:
+            logger.warning("[Socket.io] Redis adapter failed, falling back to in-memory: %s", e)
+    return None
+
+
 # ── Socket.io server ──────────────────────────────────────────────────
 # async_mode='asgi' lets us mount inside the existing FastAPI app.
+# Uses Redis adapter when available for multi-server deployments.
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",          # TODO: restrict in production
@@ -43,6 +71,7 @@ sio = socketio.AsyncServer(
     ping_timeout=20,
     ping_interval=10,
     max_http_buffer_size=1_000_000,
+    client_manager=_create_manager(),
 )
 
 # In-memory connection registry

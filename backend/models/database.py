@@ -9,6 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from db_url import resolve_database_url
 
 # -- Config --
@@ -38,13 +39,11 @@ else:
     _is_private = ".railway.internal" in DATABASE_URL
 
     if _is_supabase_pooler:
-        # PgBouncer mode: pool_size=1, no overflow. Let Supabase handle pooling.
-        _engine_kwargs["pool_size"] = 1
-        _engine_kwargs["max_overflow"] = 0
-        _engine_kwargs["pool_pre_ping"] = True
-        _engine_kwargs["pool_recycle"] = 300  # 5 min — recycle faster for serverless
-        _engine_kwargs["pool_timeout"] = 5
-        _engine_kwargs["pool_use_lifo"] = True
+        # PgBouncer mode: NO local pool. Each request gets a fresh connection
+        # that PgBouncer handles. This eliminates prepared statement conflicts
+        # because asyncpg starts fresh on every connection.
+        _engine_kwargs["poolclass"] = NullPool
+        _engine_kwargs["pool_pre_ping"] = False
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -54,6 +53,9 @@ else:
             "command_timeout": 10,
             "ssl": _ssl_ctx,
             "statement_cache_size": 0,  # REQUIRED for PgBouncer
+            "server_settings": {
+                "jit": "off",  # Disable JIT for faster simple queries
+            },
         }
     elif _is_private:
         # Private Railway network (direct PostgreSQL)

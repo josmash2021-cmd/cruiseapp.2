@@ -20,6 +20,7 @@ import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/env.dart';
 import 'config/theme_notifier.dart';
+import 'config/feature_flags.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
@@ -324,10 +325,14 @@ void _navigateToScheduledTracking(int tripId) {
 }
 
 void main() async {
+  // Performance profiling: track cold start
+  final perfStopwatch = Stopwatch()..start();
+
   // Catch all unhandled async Dart errors
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      debugPrint('[Perf] Flutter binding: ${perfStopwatch.elapsedMilliseconds}ms');
 
       // M1: Catch platform-level errors (native threads, plugin exceptions)
       WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
@@ -387,13 +392,16 @@ void main() async {
         _initFirebase(),
         ApiService.preResolveDns(), // warm DNS cache early — eliminates first-request latency
       ]);
+      debugPrint('[Perf] Group 1 init: ${perfStopwatch.elapsedMilliseconds}ms');
 
       // Group 2: depend on Firebase being ready
       await Future.wait([
         ApiService.init(),
         AnalyticsService.instance.init(),
         SocketService.init(),
+        FeatureFlags.initRemoteConfig(),
       ]);
+      debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms');
 
       // Limit in-memory image cache to prevent OOM on long sessions
       PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50 MB — prevents OOM on low-end devices
@@ -404,6 +412,7 @@ void main() async {
       SystemChrome.setSystemUIOverlayStyle(
         const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
       );
+      debugPrint('[Perf] runApp: ${perfStopwatch.elapsedMilliseconds}ms');
       runApp(const UberCloneApp());
     },
     (error, stack) {

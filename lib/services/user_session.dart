@@ -133,7 +133,9 @@ class UserSession {
   /// Check if a user is logged in (has a valid JWT token).
   /// Resilient: keeps session alive even when backend is unreachable.
   static Future<bool> isLoggedIn() async {
+    final stopwatch = Stopwatch()..start();
     final token = await ApiService.getToken();
+    debugPrint('[Perf] Token fetch: ${stopwatch.elapsedMilliseconds}ms');
     if (token == null) return false;
 
     // Token exists — session is active.
@@ -141,6 +143,7 @@ class UserSession {
     // regardless of backend response. Only explicit sign-out ends session.
     try {
       final profile = await ApiService.getMe();
+      debugPrint('[Perf] Profile fetch: ${stopwatch.elapsedMilliseconds}ms');
       if (profile != null) {
         final profileUid = profile['id']?.toString() ?? '';
         if (profileUid.isNotEmpty) _cachedUid = profileUid;

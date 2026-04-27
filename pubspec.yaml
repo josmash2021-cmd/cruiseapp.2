@@ -48,6 +48,7 @@ dependencies:
   firebase_messaging: ^15.2.4
   firebase_crashlytics: ^4.3.0
   firebase_analytics: ^11.4.2
+  firebase_remote_config: ^5.4.2
   google_sign_in: ^6.2.2
   sign_in_with_apple: ^6.1.4
   intl: ^0.20.2

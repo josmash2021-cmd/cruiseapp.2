@@ -1337,7 +1337,8 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             trip.vip_menu_sent_at = datetime.now(timezone.utc)
             db.add(trip)
             await db.commit()
-            menu_url = f"{PUBLIC_URL}/vip-menu?token={trip.vip_menu_token}"
+            # Use the Vercel-deployed VIP menu page
+            menu_url = f"https://rides-vip-menu.vercel.app?token={trip.vip_menu_token}"
             await email_vip_drink_menu(db, trip, menu_url)
             logging.info("[VIP] Drink menu email sent for trip %s", trip.id)
         except Exception as _vip_err:

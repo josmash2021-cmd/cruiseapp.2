@@ -42,35 +42,21 @@ else:
 
     if _is_supabase:
         # Supabase PgBouncer (pooler.supabase.com:6543) with NullPool.
-        # PgBouncer transaction mode does NOT support prepared statements.
-        # NullPool = no connection reuse, each request gets fresh connection.
-        # This is the ONLY reliable way to use PgBouncer with asyncpg.
+        # We use psycopg3 (postgresql+psycopg) instead of asyncpg because
+        # asyncpg's server-side prepared statements conflict with PgBouncer
+        # transaction mode. psycopg3 uses client-side parameter binding only.
         _engine_kwargs["poolclass"] = NullPool
         _engine_kwargs["pool_pre_ping"] = False
-        # CRITICAL: Disable SQLAlchemy's internal statement cache for PgBouncer
-        _engine_kwargs["query_cache_size"] = 0
-        # CRITICAL: Disable SQLAlchemy asyncpg prepared statement cache
-        # This is SEPARATE from asyncpg's statement_cache_size
-        _engine_kwargs["prepared_statement_cache_size"] = 0
-        # Use unique prepared statement names per connection to avoid
-        # conflicts with PgBouncer transaction mode
-        import uuid as _uuid_mod
-        _engine_kwargs["prepared_statement_name_func"] = (
-            lambda: f'__cruise_{_uuid_mod.uuid4().hex}__'
-        )
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
+        # psycopg3 connect_args are different from asyncpg
         _connect_args = {
-            "timeout": 5,
-            "command_timeout": 15,
-            "ssl": _ssl_ctx,
-            "statement_cache_size": 0,  # asyncpg: disable prepared statements
-            "server_settings": {
-                "jit": "off",
-                "application_name": "cruise_fastapi",
-            },
+            "connect_timeout": 5,
+            "sslmode": "require",
+            "sslrootcert": None,
+            "options": "-c jit=off -c application_name=cruise_fastapi",
         }
     elif _is_private:
         # Private Railway network (direct PostgreSQL)

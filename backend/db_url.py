@@ -19,15 +19,30 @@ def _normalize_database_url(url: str, *, async_driver: bool, private: bool = Fal
     if private:
         url = _strip_ssl_params(url)
 
+    # Detect PgBouncer (Supabase pooler port 6543) — must use psycopg3
+    # instead of asyncpg because asyncpg's prepared statements conflict
+    # with PgBouncer transaction mode.
+    _is_pgbouncer = ":6543" in url or "pooler.supabase.com" in url
+
     if async_driver:
-        if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        if _is_pgbouncer:
+            # Use psycopg3 (no server-side prepared statements) for PgBouncer
+            if url.startswith("postgresql://"):
+                return url.replace("postgresql://", "postgresql+psycopg://", 1)
+            if url.startswith("postgres://"):
+                return url.replace("postgres://", "postgresql+psycopg://", 1)
+        else:
+            # Use asyncpg for direct PostgreSQL (better performance)
+            if url.startswith("postgresql://"):
+                return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if url.startswith("postgres://"):
+                return url.replace("postgres://", "postgresql+asyncpg://", 1)
         return url
 
     if url.startswith("postgresql+asyncpg://"):
         return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql://", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
     return url

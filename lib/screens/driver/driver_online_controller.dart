@@ -1219,15 +1219,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       });
       final firstOffer = filtered.first;
       if (_appInForeground) {
+        // Foreground: in-app sound + haptic is sufficient. The offer card
+        // UI is already visible. Don't show a local OS notification — the
+        // backend sends FCM push which the OS shows when backgrounded.
         NotificationService.playOfferSound();
+      } else {
+        // Background: show the local notification with fullscreen intent
+        // so the driver sees it even with the phone locked.
+        NotificationService.showOfferNotification(
+          title: S.of(context).newRideOffer,
+          body: '',
+          offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
+          payload: 'trip_offer',
+          appInForeground: false,
+        );
       }
-      NotificationService.showOfferNotification(
-        title: S.of(context).newRideOffer,
-        body: '',
-        offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
-        payload: 'trip_offer',
-        appInForeground: _appInForeground,
-      );
     }
 
     _setState(() {

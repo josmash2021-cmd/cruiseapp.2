@@ -94,12 +94,9 @@ extension _HomeScreenController on _HomeScreenState {
 
           if (!mounted) return;
 
-          // Show approval notification
-          NotificationService.show(
-            id: 7777,
-            title: S.of(context).accountApproved,
-            body: S.of(context).accountApprovedDesc,
-          );
+          // Approval notification is sent via FCM push from backend.
+          // No local notification needed — the OS shows the push when app
+          // is backgrounded, and the approval dialog below handles in-app UX.
 
           _setState(() {
             _isVerified = true;

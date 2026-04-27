@@ -1254,17 +1254,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
       if (!mounted) return;
       final newCount = trips.length;
-      // Notify driver when new scheduled trips appear
-      if (newCount > _lastNotifiedScheduledCount && newCount > 0) {
-        NotificationService.show(
-          id: 'scheduled_available'.hashCode,
-          title: 'Scheduled Rides Available',
-          body: newCount == 1
-              ? 'You have 1 reserved trip available'
-              : 'You have $newCount reserved trips available',
-          type: 'scheduled_available',
-        );
-      }
+      // Backend sends FCM push to 'drivers_available' topic when new scheduled
+      // rides enter the marketplace. No local notification needed here — the
+      // OS shows the push when the app is backgrounded, and the banner below
+      // handles the in-app visual cue.
       _lastNotifiedScheduledCount = newCount;
       setState(() => _scheduledAvailableCount = newCount);
     } catch (_) {}

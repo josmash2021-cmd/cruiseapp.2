@@ -573,7 +573,9 @@ Future<void> heavyInit() async {
               'driver_approved', 'driver_rejected',
             };
 
-            // Chat messages: show in-app only for drivers, suppress for riders (badge shows)
+            // Chat messages: suppress in-app notification — the OS already shows
+            // the FCM push when the app is backgrounded. When foreground, the user
+            // is already in the app and doesn't need an intrusive overlay.
             if (type == 'chat_message') {
               final tripId = int.tryParse(message.data['trip_id']?.toString() ?? '');
               // Always suppress if user is in that chat screen
@@ -581,23 +583,12 @@ Future<void> heavyInit() async {
                 debugPrint('[FCM] suppressed chat notification — user is in chat');
                 return;
               }
-              // For drivers: show the notification overlay in-app
-              UserSession.getMode().then((mode) {
-                if (mode == 'driver') {
-                  NotificationService.show(
-                    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                    title: title,
-                    body: body,
-                    type: type,
-                  );
-                }
-                // Always save to notification history
-                LocalDataService.addNotification(
-                  title: title,
-                  message: body,
-                  type: type,
-                );
-              });
+              // Save to notification history only (no local OS notification)
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+              );
               return;
             }
 
@@ -616,19 +607,17 @@ Future<void> heavyInit() async {
               return;
             }
 
-            NotificationService.show(
-              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-              title: title,
-              body: body,
-              type: type,
-            );
+            // Save to notification history only — the OS already shows FCM push
+            // notifications when the app is backgrounded. When foreground, we
+            // update the UI silently without an intrusive local notification overlay.
             LocalDataService.addNotification(
               title: title,
               message: body,
               type: type,
             );
 
-            // Play offer sound for trip offers
+            // Play offer sound for trip offers (foreground only — background
+            // offers already play sound via the FCM notification channel)
             if (type == 'trip_offer' || type == 'new_offer') {
               NotificationService.playOfferSound();
             }

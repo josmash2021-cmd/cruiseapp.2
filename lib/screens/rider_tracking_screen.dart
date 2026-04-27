@@ -322,9 +322,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     final isFreshTrip = widget.initialStatus == null || widget.initialStatus!.isEmpty;
     if (isFreshTrip) {
       Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
-      _sendRideNotification(
-        'Driver Assigned',
-        '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
+      // Driver assigned notification is sent via FCM push from backend.
+      // No local notification needed — rider is already on tracking screen.
+      // Save to inbox for history only.
+      LocalDataService.addNotification(
+        title: 'Driver Assigned',
+        message: '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
+        type: 'ride',
       );
     }
     // Save state is handled by _rideSaveTimer in the controller
@@ -375,13 +379,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       _lastSeenChatTs = lastTs;
       // Only notify on driver-sent messages.
       if (last.senderRole == 'rider') return;
-      NotificationService.show(
-        id: 7710 + (tripId % 1000),
-        title: pushTitle,
-        body: last.text,
-        type: 'chat_message',
-        payload: 'trip:$tripId',
-      );
+      // Chat notifications are sent via FCM push from backend.
+      // No local notification needed — rider is already on tracking screen
+      // and can see messages in the chat UI. The OS shows push when backgrounded.
     });
   }
 

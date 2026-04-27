@@ -748,9 +748,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _showRiderConfirmPickup();
       if (!_arrivedNotifSent) {
         _arrivedNotifSent = true;
-        _sendRideNotification(
-          'Your driver has arrived',
-          '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
+        // Driver arrived notification is sent via FCM push from backend.
+        // No local notification needed — rider is already on tracking screen
+        // and sees the "Driver Arrived" overlay. Save to inbox only.
+        LocalDataService.addNotification(
+          title: 'Your driver has arrived',
+          message: '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
+          type: 'ride',
         );
       }
       return;
@@ -1166,11 +1170,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         text: greetingText,
       );
     }
-  }
-
-  void _sendRideNotification(String title, String body) {
-    NotificationService.show(id: title.hashCode, title: title, body: body);
-    LocalDataService.addNotification(title: title, message: body, type: 'ride');
   }
 
   /// Initialize from persisted state or start fresh

@@ -26,3 +26,4 @@ twilio>=9.0.0
 cryptography>=41.0.0
 python-socketio==5.11.0
 redis>=5.0.0
+openai>=1.35.0

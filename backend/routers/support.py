@@ -1103,59 +1103,84 @@ async def _rehydrate_pending_reminders():
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """AI response engine: Intent Detection -> Context Response -> Cache -> Keywords -> Handoff.
+    """AI response engine: OpenAI GPT-4o with function calling.
+    Falls back to rule-based system if OpenAI is unavailable.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
+    from services.openai_support_service import generate_support_response
+
     lang = getattr(chat, "locale", "en") or "en"
     actions: list[dict] = []
 
-    # Auto-detect language from message if locale seems wrong
+    # Build conversation history for OpenAI
+    history = await _get_chat_history(chat.id, db, limit=20)
+    messages = []
+    for h in history:
+        messages.append({
+            "role": h.get("sender_role", "user"),
+            "content": h.get("message", ""),
+        })
+    # Add current message
+    messages.append({"role": "user", "content": user_msg})
+
+    # Build user context
+    ctx = await _get_user_context(chat.user_id, db, lang)
+    ctx["frustration_score"] = await _compute_frustration_score(chat.id, db)
+
+    # Try OpenAI first
+    try:
+        result = await generate_support_response(messages, ctx)
+        
+        # Handle function calls
+        if result.get("function_call"):
+            func = result["function_call"]
+            actions.append({
+                "type": func["name"],
+                "params": func["arguments"],
+            })
+        
+        # Handle escalation
+        if result.get("escalate"):
+            chat.needs_escalation = True
+            chat.bot_phase = "escalated"
+            db.add(chat)
+            await db.commit()
+        
+        return result["response"], actions
+
+    except Exception as e:
+        logging.warning("[Support] OpenAI failed, falling back to rule-based: %s", e)
+
+    # -- Fallback: Rule-based system (original code) --
     detected_lang = detect_language(user_msg)
     if detected_lang == "es" and not lang.startswith("es"):
         lang = "es"
         chat.locale = "es"
 
-    # -- Layer 1: Smart Intent Detection + Context-Aware Response --
     intent, confidence = detect_intent(user_msg)
     if confidence >= 20:
-        ctx = await _get_user_context(chat.user_id, db, lang)
-        ctx["frustration_score"] = await _compute_frustration_score(chat.id, db)
-
-        # Check if this is a follow-up (user already discussed this intent)
-        history = await _get_chat_history(chat.id, db, limit=6)
-        is_followup = len(history) >= 4  # 4+ messages means likely a follow-up
-
+        is_followup = len(history) >= 4
         response = generate_response(
-            intent=intent,
-            user_name=user_name,
-            lang=lang,
-            agent_name=agent_name,
-            is_followup=is_followup,
-            user_context=ctx,
-            frustration_score=ctx.get("frustration_score", 0),
+            intent=intent, user_name=user_name, lang=lang,
+            agent_name=agent_name, is_followup=is_followup,
+            user_context=ctx, frustration_score=ctx.get("frustration_score", 0),
         )
-
-        # Parse action markers from response
         clean_msg, actions = _parse_action_markers(response)
-        # Cache good responses for future use
         maybe_cache_response(user_msg, clean_msg, intent, lang)
         return clean_msg, actions
 
-    # -- Layer 2: Cached responses (instant) --
     cached = find_cached_response(user_msg, lang)
     if cached:
         varied = add_natural_variation(cached, agent_name, user_name, lang)
         return varied, []
 
-    # -- Layer 3: Smart keyword responses (existing system) --
     fallback = _generate_human_chat(user_msg, user_name, agent_name, lang)
     if fallback:
         return fallback, []
 
-    # -- Layer 4: Graceful general response --
     if lang.startswith("es"):
-        return f"Entiendo, {user_name}. Podria darme un poco mas de detalle sobre lo que necesita? Quiero asegurarme de ayudarle de la mejor manera.", []
-    return f"I understand, {user_name}. Could you give me a bit more detail about what you need? I want to make sure I help you in the best way.", []
+        return f"Entiendo, {user_name}. Podria darme un poco mas de detalle sobre lo que necesita?", []
+    return f"I understand, {user_name}. Could you give me a bit more detail?", []
 
 
 def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: str = "en") -> str:

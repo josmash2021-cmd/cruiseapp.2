@@ -30,34 +30,36 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    # ── Supabase PostgreSQL: ultra-fast PgBouncer config ──
-    # Supabase provides PgBouncer (connection pooler) on port 6543.
-    # We keep the LOCAL pool VERY small (1-2) because PgBouncer handles
-    # the heavy lifting. This eliminates "max clients reached" errors
-    # and keeps connection overhead minimal for ultra-fast responses.
-    _is_supabase_pooler = "pooler.supabase.com" in DATABASE_URL or ":6543" in DATABASE_URL
+    # ── Supabase PostgreSQL: optimized for ultra-fast responses ──
+    # Direct connection (port 5432) with tuned pool for minimal latency.
+    # Key optimizations:
+    #   - pool_pre_ping=False: eliminates 1 RTT per checkout
+    #   - pool_recycle=600: recycle before Supabase timeout
+    #   - pool_use_lifo=True: reuse most-recent connection (hot cache)
+    #   - connect_args: tuned for low-latency simple queries
+    _is_supabase = "supabase.com" in DATABASE_URL or "supabase.co" in DATABASE_URL
     _is_private = ".railway.internal" in DATABASE_URL
 
-    if _is_supabase_pooler:
-        # Supabase direct connection (port 5432) with small pool.
-        # PgBouncer (6543) causes prepared statement conflicts with asyncpg.
-        # We use direct connection with pool_size=5 which Supabase can handle.
-        _engine_kwargs["pool_size"] = 5
-        _engine_kwargs["max_overflow"] = 2
-        _engine_kwargs["pool_pre_ping"] = True
-        _engine_kwargs["pool_recycle"] = 300
-        _engine_kwargs["pool_timeout"] = 5
-        _engine_kwargs["pool_use_lifo"] = True
+    if _is_supabase:
+        # Supabase direct: small pool, fast recycle, no pre-ping overhead
+        _engine_kwargs["pool_size"] = 8
+        _engine_kwargs["max_overflow"] = 4
+        _engine_kwargs["pool_pre_ping"] = False  # Skip health check — faster checkout
+        _engine_kwargs["pool_recycle"] = 600     # 10 min — recycle before idle timeout
+        _engine_kwargs["pool_timeout"] = 3       # Fail fast if pool exhausted
+        _engine_kwargs["pool_use_lifo"] = True   # Reuse hot connection
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
         _connect_args = {
-            "timeout": 5,
-            "command_timeout": 10,
+            "timeout": 3,           # Fast fail on connect
+            "command_timeout": 8,   # Queries must finish quickly
             "ssl": _ssl_ctx,
             "server_settings": {
-                "jit": "off",  # Disable JIT for faster simple queries
+                "jit": "off",                    # Disable JIT for simple queries
+                "application_name": "cruise_fastapi",
+                "idle_in_transaction_session_timeout": "30000",  # 30s max idle tx
             },
         }
     elif _is_private:

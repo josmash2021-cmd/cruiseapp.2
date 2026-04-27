@@ -203,11 +203,15 @@ async def _schedule_weekly_payouts():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run ALL initialization in background so Railway healthcheck passes immediately
+    """Optimized startup: critical path first, agents staggered."""
+    from services.event_bus import event_bus as _eb
+    _eb.start_heartbeat()
+
     async def _bg_init():
-        await asyncio.sleep(1)  # Let uvicorn bind the port first
-        # DB init — retry up to 5 times
-        for _attempt in range(5):
+        await asyncio.sleep(0.5)  # Let uvicorn bind port
+
+        # ── CRITICAL PATH: DB init (fast, no retries blocking) ──
+        for _attempt in range(3):
             try:
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
@@ -217,136 +221,71 @@ async def lifespan(app: FastAPI):
                         await conn.execute(text("PRAGMA busy_timeout=30000"))
                         await conn.execute(text("PRAGMA cache_size=-64000"))
                         await _migrate_add_columns(conn)
-                    else:
-                        # PostgreSQL: run ALL column migrations as fallback
-                        # in case migrate.py failed during container startup.
-                        try:
-                            from migrate import MIGRATIONS as _PG_MIGRATIONS
-                            for _tbl, _col, _ctype in _PG_MIGRATIONS:
-                                try:
-                                    await conn.execute(text(
-                                        f"ALTER TABLE {_tbl} ADD COLUMN IF NOT EXISTS {_col} {_ctype}"
-                                    ))
-                                except Exception:
-                                    pass
-                            logging.info("PostgreSQL fallback migrations applied")
-                        except Exception as _mig_err:
-                            logging.warning("Fallback migration import failed: %s", _mig_err)
-                logging.info("Database initialized%s", " with WAL mode" if IS_SQLITE else " (PostgreSQL)")
+                logging.info("Database initialized")
                 break
             except Exception as _e:
-                logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e)
-                await asyncio.sleep(3)
-        # Firestore bulk sync after DB is ready
-        if _HAS_FIRESTORE:
-            try:
-                await firestore_sync.bulk_sync_all(SessionLocal)
-            except Exception as e:
-                logging.error("Bulk Firestore sync failed: %s", e)
-        # Start weekly auto-payout scheduler
-        asyncio.create_task(_schedule_weekly_payouts())
-        # Initialize support cache (Firestore + TF-IDF)
-        try:
-            load_cache()
-            logging.info("Support cache initialized")
-        except Exception as _e:
-            logging.warning("Support cache init failed: %s", _e)
-        # Rehydrate pending reminders from Firestore
-        if _HAS_FIRESTORE:
-            try:
-                await _rehydrate_pending_reminders()
-            except Exception as _e:
-                logging.warning("Reminder rehydration failed: %s", _e)
-        # Start Security Guardian heartbeat
-        await security_guardian.start_heartbeat()
-        logging.info("🛡️ Security Guardian Agent ACTIVE — blocking threats in real-time")
-        # Load revoked tokens from DB into memory (JWT logout persistence)
-        await load_revoked_tokens_from_db()
-        logging.info("🔐 Revoked token cache loaded from DB")
-        # Start periodic audit log flush to DB (tamper-evident persistent logs)
-        async def _audit_flush_loop():
-            while True:
-                await asyncio.sleep(30)
-                try:
-                    await flush_audit_logs_to_db()
-                except Exception:
-                    pass
-        asyncio.create_task(_audit_flush_loop())
-        logging.info("📋 Audit log persistence ACTIVE — flushing to DB every 30s")
-        # Start Guardian Agent (system health + connection keeper)
-        guardian_agent.set_db_session_maker(SessionLocal)
-        if _HAS_FIRESTORE:
-            try:
-                guardian_agent.set_firestore_db(firestore_sync._db)
-            except Exception as _e:
-                logging.warning("Could not set Firestore for guardian: %s", _e)
-        await guardian_agent.start()
-        logging.info("🛡️ Guardian Agent ACTIVE — all systems protected")
-        # Start automatic PostgreSQL backup scheduler
-        asyncio.create_task(_backup_scheduler())
-        logging.info("💾 DB Backup Scheduler ACTIVE — backing up every 6 hours")
+                logging.warning("DB init attempt %d/3 failed: %s", _attempt + 1, _e)
+                await asyncio.sleep(2)
 
-        # Start Ghost Driver Cleanup Agent
+        # ── Load revoked tokens (blocks JWT validation) ──
+        try:
+            await load_revoked_tokens_from_db()
+        except Exception as _e:
+            logging.warning("Revoked tokens load failed: %s", _e)
+
+        # ── Staggered agent startup (avoid thundering herd) ──
+        # Phase 1: Critical agents (0s delay)
+        guardian_agent.set_db_session_maker(SessionLocal)
+        await guardian_agent.start()
+        await security_guardian.start_heartbeat()
+
+        # Phase 2: Background agents (5s delay)
+        await asyncio.sleep(5)
         ghost_driver_agent.set_db_session_maker(SessionLocal)
         await ghost_driver_agent.start()
-
-        # Start Safety Monitor Agent
         safety_monitor_agent.set_db_session_maker(SessionLocal)
         await safety_monitor_agent.start()
-
-        # Start Document Expiry Agent
-        document_expiry_agent.set_db_session_maker(SessionLocal)
-        await document_expiry_agent.start()
-
-        # Start Document Approval Agent (auto-verify driver docs)
-        document_approval_agent.set_db_session_maker(SessionLocal)
-        await document_approval_agent.start()
-
-        # Start Rating Moderator Agent
-        rating_moderator_agent.set_db_session_maker(SessionLocal)
-        await rating_moderator_agent.start()
-
-        # Start Cruise Level Agent (auto-promotes/demotes drivers based on trips + rating)
-        cruise_level_agent.set_db_session_maker(SessionLocal)
-        await cruise_level_agent.start()
-
-        # Start Wait Timeout Agent — auto-cancels trips when passenger no-shows
         wait_timeout_agent.set_db_session_maker(SessionLocal)
         await wait_timeout_agent.start()
 
-        # Start Proactive Support Agent (Agent 3) — detects bad trips, reaches out proactively
-        asyncio.create_task(run_proactive_agent_loop())
-        logging.info("Proactive Support Agent ACTIVE — checking for bad trips every 10 minutes")
+        # Phase 3: Low-priority agents (15s delay)
+        await asyncio.sleep(10)
+        document_expiry_agent.set_db_session_maker(SessionLocal)
+        await document_expiry_agent.start()
+        document_approval_agent.set_db_session_maker(SessionLocal)
+        await document_approval_agent.start()
+        rating_moderator_agent.set_db_session_maker(SessionLocal)
+        await rating_moderator_agent.start()
+        cruise_level_agent.set_db_session_maker(SessionLocal)
+        await cruise_level_agent.start()
 
-        # Periodic cache sweep (memory safety for 1500+ users)
-        async def _cache_sweep_loop():
+        # Phase 4: Periodic tasks (30s delay)
+        await asyncio.sleep(15)
+        asyncio.create_task(_schedule_weekly_payouts())
+        asyncio.create_task(_audit_flush_loop())
+        asyncio.create_task(_backup_scheduler())
+        asyncio.create_task(run_proactive_agent_loop())
+        asyncio.create_task(_scheduled_ride_dispatcher())
+        asyncio.create_task(_scheduled_ride_reminder_loop())
+        asyncio.create_task(_scheduled_rides_available_notify_loop())
+        asyncio.create_task(_nightly_reconcile_loop())
+        asyncio.create_task(_driver_referral_expiry_loop())
+
+        # Cache sweep every 60s
+        async def _cache_sweep():
             while True:
                 await asyncio.sleep(60)
                 try:
                     sweep_caches()
                 except Exception:
                     pass
-        asyncio.create_task(_cache_sweep_loop())
+        asyncio.create_task(_cache_sweep())
 
-        # Start scheduled ride smart dispatcher + reminder loop
-        asyncio.create_task(_scheduled_ride_dispatcher())
-        logging.info("Scheduled Ride Dispatcher ACTIVE -- smart timing dispatch every 60s")
-        asyncio.create_task(_scheduled_ride_reminder_loop())
-        logging.info("Scheduled Ride Reminder Loop ACTIVE -- driver/rider reminders every 60s")
-        asyncio.create_task(_scheduled_rides_available_notify_loop())
-        logging.info("Scheduled Rides Available Notifier ACTIVE -- notify online drivers every 15m")
-        asyncio.create_task(_nightly_reconcile_loop())
-        logging.info("Nightly Money Reconciliation ACTIVE -- runs every 24h after 5m warmup")
-        asyncio.create_task(_driver_referral_expiry_loop())
-        logging.info("Driver Referral Expiry Loop ACTIVE -- runs every 6h")
+        logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")
 
     asyncio.create_task(_bg_init())
-    # Start SSE heartbeat + stale connection cleanup
-    from services.event_bus import event_bus as _eb
-    _eb.start_heartbeat()
-    # Monitor bot removed — dispatch app + security dashboard cover alerting
     yield
-    # Cleanup on shutdown
+    # Cleanup
     await security_guardian.stop_heartbeat()
     await guardian_agent.stop()
     await ghost_driver_agent.stop()
@@ -355,6 +294,16 @@ async def lifespan(app: FastAPI):
     await document_approval_agent.stop()
     await rating_moderator_agent.stop()
     await wait_timeout_agent.stop()
+
+
+async def _audit_flush_loop():
+    """Flush audit logs to DB every 30s."""
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await flush_audit_logs_to_db()
+        except Exception:
+            pass
 
 # Use orjson for 2-10x faster JSON serialization if available
 try:

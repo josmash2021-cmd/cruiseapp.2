@@ -35,6 +35,7 @@ import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/analytics_service.dart';
 import 'services/prefs_cache.dart';
+import 'services/socket_service.dart';
 import 'screens/chat_screen.dart';
 import 'screens/ride_request_screen.dart';
 import 'screens/home_screen.dart';
@@ -391,6 +392,7 @@ void main() async {
       await Future.wait([
         ApiService.init(),
         AnalyticsService.instance.init(),
+        SocketService.init(),
       ]);
 
       // Limit in-memory image cache to prevent OOM on long sessions

@@ -42,12 +42,16 @@ from cruise_level_agent import cruise_level_agent
 from proactive_support_agent import run_proactive_agent_loop
 from wait_timeout_agent import wait_timeout_agent
 
+# Socket.io real-time service
+from services.socketio_service import sio, configure as _configure_socketio
+
 # Automatic PostgreSQL backup system
 from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
 
 load_dotenv()  # Load .env file (gitignored)
 
 import base64
+import socketio
 from fastapi import FastAPI, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -350,6 +354,7 @@ async def lifespan(app: FastAPI):
     await document_expiry_agent.stop()
     await document_approval_agent.stop()
     await rating_moderator_agent.stop()
+    await wait_timeout_agent.stop()
 
 # Use orjson for 2-10x faster JSON serialization if available
 try:
@@ -360,6 +365,12 @@ except ImportError:
     _default_response_class = JSONResponse
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None, default_response_class=_default_response_class)
+
+# Configure Socket.io JWT (same secret as REST API)
+_configure_socketio(jwt_secret=JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+# Wrap FastAPI with Socket.io ASGI app
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/socket.io")
 
 # ── Router modules ─────────────────────────────────────────────
 from routers.auth import router as auth_router
@@ -1501,11 +1512,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("Server URL: http://0.0.0.0:8000")
-    print("API Docs: http://localhost:8000/docs")
+    print("Socket.io:  ws://0.0.0.0:8000/socket.io")
     print("=" * 60)
-    
+
     uvicorn.run(
-        app,
+        socket_app,
         host="0.0.0.0",
         port=8000,
         log_level="info",

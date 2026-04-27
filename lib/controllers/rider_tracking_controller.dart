@@ -141,29 +141,37 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Connect to backend poll + Firestore for trip status, RTDB for driver GPS.
+  /// Connect to Socket.io (primary) + backend poll + Firestore for trip status,
+  /// RTDB for driver GPS fallback.
   void _startRealTimeTracking() {
     final tripId = widget.tripId;
     final sqlDocId = tripId != null ? 'sql_$tripId' : null;
     final fallbackDocId = widget.firestoreTripId;
 
-    // ── 1. PRIMARY: backend poll starts INSTANTLY — no auth dependency ──
+    // ── 0. PRIMARY: Socket.io real-time channel ──
+    if (FeatureFlags.useSocketIO && tripId != null) {
+      _startSocketIOTracking(tripId);
+    }
+
+    // ── 1. BACKUP: backend poll — always active as fallback ──
     // Poll runs even when tripId is null — _pollBackendTripStatus uses /trips/active fallback.
-    // Aggressive 1.5s interval — the extra traffic is trivial vs the cost of
-    // a rider missing the "driver arrived" signal.
+    // Reduced to 3s interval when Socket.io is active (was 1.5s).
     _statusPollTimer?.cancel();
+    final pollInterval = FeatureFlags.useSocketIO
+        ? const Duration(seconds: 3)
+        : const Duration(milliseconds: 1500);
     _statusPollTimer = Timer.periodic(
-      const Duration(milliseconds: 1500),
+      pollInterval,
       (_) => _pollBackendTripStatus(),
     );
     unawaited(_pollBackendTripStatus()); // first poll fires now
-    debugPrint('[RiderTracking] 🟢 Poll started for trip $tripId (every 1.5s)');
+    debugPrint('[RiderTracking] 🟢 Poll started for trip $tripId (every ${pollInterval.inMilliseconds}ms)');
 
     // ── 2. BONUS: Firestore listener (instant when it works) ──
     // Firebase Auth + listener setup runs in parallel — never blocks the poll.
     _initFirebaseAndListeners(tripId, sqlDocId, fallbackDocId);
 
-    // ── 3. RTDB driver GPS — start immediately if driverId known ──
+    // ── 3. RTDB driver GPS — fallback when Socket.io is down ──
     final did = widget.driverId;
     if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
       _startRtdbDriverListener(did);
@@ -178,8 +186,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (mounted && _phase != _TrackPhase.completed) _saveRideState();
     });
 
-    // Fallback: if no RTDB GPS arrives within 5s during arriving phase,
-    // fetch approach route using the driver's last known Firestore position.
+    // Fallback: if no GPS arrives within 5s during arriving phase,
+    // fetch approach route using the driver's last known position.
     if (_phase == _TrackPhase.arriving && !_approachRouteFetched) {
       _gpsFallbackTimer?.cancel();
       _gpsFallbackTimer = Timer(const Duration(seconds: 5), () {
@@ -187,7 +195,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (_approachRouteFetched || _approachRouteFetching) return;
         // Use persisted driver position if available
         if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
-          debugPrint('[RiderTracking] No RTDB GPS in 5s — using persisted driver pos for approach route');
+          debugPrint('[RiderTracking] No GPS in 5s — using persisted driver pos for approach route');
           _onRealDriverLocation(_driverPos);
         } else {
           // Last resort: fetch driver position from backend
@@ -195,6 +203,57 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
       });
     }
+  }
+
+  /// Start Socket.io listeners for trip status and driver GPS.
+  void _startSocketIOTracking(int tripId) {
+    // Join trip room
+    SocketService.joinTrip(tripId);
+
+    // Listen for driver location updates
+    _socketLocationSub?.cancel();
+    _socketLocationSub = SocketService.driverLocationStream.listen((data) {
+      if (!mounted || _phase == _TrackPhase.completed) return;
+
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) return;
+
+      final bearing = (data['heading'] as num?)?.toDouble();
+      final speed = (data['speed'] as num?)?.toDouble();
+
+      // Log latency
+      final timestamp = data['timestamp'] as int?;
+      if (timestamp != null) {
+        final latency = DateTime.now().millisecondsSinceEpoch - timestamp;
+        debugPrint('[Socket.io] GPS latency: ${latency}ms');
+      }
+
+      _pollFailCount = 0;
+      if (_connectionLost) _setState(() => _connectionLost = false);
+      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
+    });
+
+    // Listen for trip status updates
+    _socketStatusSub?.cancel();
+    _socketStatusSub = SocketService.tripStatusStream.listen((data) {
+      if (!mounted || _phase == _TrackPhase.completed) return;
+
+      final status = data['status']?.toString().toLowerCase().trim();
+      if (status == null || status.isEmpty) return;
+
+      // Log latency
+      final timestamp = data['timestamp'] as int?;
+      if (timestamp != null) {
+        final latency = DateTime.now().millisecondsSinceEpoch - timestamp;
+        debugPrint('[Socket.io] Status latency: ${latency}ms');
+      }
+
+      debugPrint('[Socket.io] Trip status update: $status');
+      _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
+    });
+
+    debugPrint('[RiderTracking] 🔌 Socket.io tracking started for trip $tripId');
   }
 
   /// Firebase Auth + Firestore listeners (bonus instant channel).

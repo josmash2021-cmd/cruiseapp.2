@@ -245,11 +245,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   int _offRouteCount = 0; // consecutive off-route GPS updates
   bool _rerouteInProgress = false; // guard: prevents concurrent reroute fetches
 
-  // ── Real-time tracking via Firestore ──
+  // ── Real-time tracking: Socket.io (primary) + Firestore/RTDB (backup) ──
   StreamSubscription<LatLng>? _driverLocSub;
   StreamSubscription<Map<String, dynamic>?>? _tripStatusSub;
   StreamSubscription<Map<String, dynamic>?>? _fallbackTripStatusSub;
   StreamSubscription? _rtdbDriverLocSub;
+  StreamSubscription<Map<String, dynamic>>? _socketLocationSub;
+  StreamSubscription<Map<String, dynamic>>? _socketStatusSub;
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
   Timer? _rideSaveTimer;
@@ -391,6 +393,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
+    _socketLocationSub?.cancel();
+    _socketStatusSub?.cancel();
+    // Leave Socket.io trip room
+    if (widget.tripId != null) {
+      SocketService.leaveTrip(widget.tripId!);
+    }
     _chatMsgsSub?.cancel();
     _tripStatusSub?.cancel();
     _fallbackTripStatusSub?.cancel();

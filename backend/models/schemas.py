@@ -245,17 +245,3 @@ class AdminStatsResponse(BaseModel):
     total_revenue_today: float
     avg_trip_time: float
     completion_rate: float
-
-
-# ═══════════════════════════════════════════════════════
-#  Admin Schemas
-# ═══════════════════════════════════════════════════════
-
-class AdminStatsResponse(BaseModel):
-    total_trips_today: int
-    active_trips: int
-    pending_trips: int
-    active_drivers: int
-    total_revenue_today: float
-    avg_trip_time: float
-    completion_rate: float

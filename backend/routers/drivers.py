@@ -30,6 +30,7 @@ from config import (
     _nearby_cache, _NEARBY_CACHE_TTL,
 )
 from services.event_bus import event_bus
+from services.socketio_service import emit_driver_location
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,14 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
     if trip_row and body.is_online:
         asyncio.create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
+        # Socket.io primary channel (sub-200ms latency)
+        asyncio.create_task(emit_driver_location(
+            trip_id=trip_row,
+            lat=body.lat,
+            lng=body.lng,
+            heading=getattr(body, 'heading', 0.0),
+            speed=getattr(body, 'speed', 0.0),
+        ))
 
     # Sync driver location to Firestore (non-blocking).
     # When going offline, skip lat/lng update so the rider map isn't poisoned with (0,0).

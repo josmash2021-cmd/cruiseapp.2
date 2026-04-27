@@ -32,6 +32,7 @@ from services.n8n_webhooks import fire as _n8n_fire
 from routers.drivers import reevaluate_driver_tier
 from cruise_level_agent import evaluate_driver_level
 from services.event_bus import event_bus
+from services.socketio_service import emit_trip_status, notify_user, notify_driver_assigned
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     firestore_sync, _HAS_FIRESTORE,
@@ -1053,6 +1054,18 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             trip.id, _sms_outer_err,
         )
 
+    # --- Socket.io instant push (primary real-time channel) ===
+    asyncio.create_task(emit_trip_status(
+        trip_id=trip.id,
+        status=canonical_new,
+        extra={
+            "driver_id": trip.driver_id,
+            "rider_id": trip.rider_id,
+            "fare": float(trip.fare or 0),
+            "payment_status": trip.payment_status,
+        },
+    ))
+
     # --- SSE instant push to riders watching this trip (sub-second) ===
     await event_bus.push_trip_update(trip.id, {
         "status": canonical_new,
@@ -1061,7 +1074,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         "fare": float(trip.fare or 0),
     })
 
-    # Sync status to Firestore (non-blocking)
+    # Sync status to Firestore (non-blocking backup)
     if _HAS_FIRESTORE:
         _fs_dist = trip.distance
         _fs_dur = trip.duration

@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/lat_lng.dart';
+import '../config/feature_flags.dart';
+import 'socket_service.dart';
 
-/// Singleton service that uploads driver GPS to Firebase Realtime Database
-/// every 800 ms and manages online/offline presence automatically.
+/// Singleton service that uploads driver GPS via Socket.io (primary)
+/// and Firebase RTDB (backup), managing online/offline presence.
 ///
 /// Does NOT own a Geolocator stream — the screen feeds positions via
 /// [updatePosition] so there's only ONE system-wide GPS subscription.
@@ -16,38 +19,54 @@ class GpsService {
   GpsService._internal();
 
   final _database = FirebaseDatabase.instance;
-  static const Duration _uploadInterval = Duration(milliseconds: 800);
 
-  Timer? _uploadTimer;
-  LatLng? _lastUploadedPos;
+  // ── Intervals ───────────────────────────────────────────────────────
+  static const Duration _socketIOInterval = Duration(milliseconds: 500);
+  static const Duration _rtdbInterval = Duration(seconds: 5);
+  static const double _minDistanceMeters = 5.0; // delta compression
+
+  // ── Timers ──────────────────────────────────────────────────────────
+  Timer? _socketIOTimer;
+  Timer? _rtdbTimer;
+
+  // ── State ───────────────────────────────────────────────────────────
   LatLng? _currentPos;
   double _currentHeading = 0;
   double _currentSpeed = 0;
   String? _activeDriverId;
   String? _activeTripId;
   bool _presenceSetUp = false;
-  DateTime? _lastUploadAt;
+  DateTime? _lastSocketIOAt;
+  DateTime? _lastRTDBAt;
+  LatLng? _lastSocketIOPos;
   StreamSubscription? _presenceSub;
 
   /// Whether the service is actively uploading.
-  bool get isTracking => _uploadTimer != null;
+  bool get isTracking => _socketIOTimer != null || _rtdbTimer != null;
 
-  // Public API
+  // ── Public API ──────────────────────────────────────────────────────
 
-  /// Begin periodic RTDB uploads and set up presence for [driverId].
+  /// Begin periodic uploads and set up presence for [driverId].
   void startTracking(String driverId) {
-    if (_activeDriverId == driverId && _uploadTimer != null) return;
+    if (_activeDriverId == driverId && isTracking) return;
     stopTracking();
 
     _activeDriverId = driverId;
 
-    // Fallback heartbeat in case the caller pauses briefly between GPS updates.
-    _uploadTimer = Timer.periodic(
-      _uploadInterval,
+    // Primary: Socket.io every 500ms (when enabled)
+    _socketIOTimer = Timer.periodic(
+      _socketIOInterval,
+      (_) => unawaited(_uploadViaSocketIO()),
+    );
+
+    // Backup: Firebase RTDB every 5 seconds
+    _rtdbTimer = Timer.periodic(
+      _rtdbInterval,
       (_) => unawaited(_uploadToFirebase()),
     );
 
     _setupPresence(driverId);
+    debugPrint('[GPS] Started: Socket.io 500ms + RTDB 5s backup');
   }
 
   /// Attach or detach the driver's active trip context.
@@ -62,16 +81,26 @@ class GpsService {
     _currentSpeed = speed;
 
     final now = DateTime.now();
-    if (_lastUploadAt == null ||
-        now.difference(_lastUploadAt!) >= _uploadInterval) {
+
+    // Eager Socket.io upload if interval passed
+    if (FeatureFlags.useSocketIO &&
+        (_lastSocketIOAt == null ||
+            now.difference(_lastSocketIOAt!) >= _socketIOInterval)) {
+      unawaited(_uploadViaSocketIO());
+    }
+
+    // Eager RTDB upload if interval passed
+    if (_lastRTDBAt == null || now.difference(_lastRTDBAt!) >= _rtdbInterval) {
       unawaited(_uploadToFirebase());
     }
   }
 
   /// Stop uploads, mark driver offline in RTDB.
   void stopTracking() {
-    _uploadTimer?.cancel();
-    _uploadTimer = null;
+    _socketIOTimer?.cancel();
+    _socketIOTimer = null;
+    _rtdbTimer?.cancel();
+    _rtdbTimer = null;
     _presenceSub?.cancel();
     _presenceSub = null;
 
@@ -87,8 +116,9 @@ class GpsService {
     }
     _activeDriverId = null;
     _presenceSetUp = false;
-    _lastUploadedPos = null;
-    _lastUploadAt = null;
+    _lastSocketIOAt = null;
+    _lastRTDBAt = null;
+    _lastSocketIOPos = null;
   }
 
   /// Remove the active trip location from RTDB when the ride ends or cancels.
@@ -105,8 +135,9 @@ class GpsService {
       debugPrint('GPS clear trip location error: $e');
     } finally {
       _activeTripId = null;
-      _lastUploadedPos = null;
-      _lastUploadAt = null;
+      _lastSocketIOAt = null;
+      _lastRTDBAt = null;
+      _lastSocketIOPos = null;
     }
   }
 
@@ -114,14 +145,48 @@ class GpsService {
     stopTracking();
   }
 
-  // Private
+  // ── Upload methods ──────────────────────────────────────────────────
+
+  Future<void> _uploadViaSocketIO() async {
+    if (_currentPos == null || _activeDriverId == null) return;
+    if (!FeatureFlags.useSocketIO) return;
+    if (!SocketService.isConnected) return;
+
+    // Delta compression: skip if moved < 5m
+    if (_lastSocketIOPos != null) {
+      final dist = _haversineMeters(
+        _currentPos!.latitude,
+        _currentPos!.longitude,
+        _lastSocketIOPos!.latitude,
+        _lastSocketIOPos!.longitude,
+      );
+      if (dist < _minDistanceMeters) return;
+    }
+
+    final tripId = int.tryParse(_activeTripId ?? '');
+    if (tripId == null) return;
+
+    SocketService.sendDriverLocation(
+      tripId: tripId,
+      lat: _currentPos!.latitude,
+      lng: _currentPos!.longitude,
+      heading: _currentHeading,
+      speed: _currentSpeed,
+    );
+
+    _lastSocketIOPos = _currentPos;
+    _lastSocketIOAt = DateTime.now();
+  }
 
   Future<void> _uploadToFirebase() async {
     if (_currentPos == null || _activeDriverId == null) return;
-    // Always upload on periodic heartbeat so RTDB stays fresh even at slow speeds.
-    // Only skip if position truly unchanged AND last upload was very recent (< 2 s).
-    if (_currentPos == _lastUploadedPos && _lastUploadAt != null &&
-        DateTime.now().difference(_lastUploadAt!).inMilliseconds < 2000) {
+
+    // Skip if position truly unchanged AND last upload was very recent (< 2 s).
+    // This is different from _lastRTDBAt because we track the position too.
+    final now = DateTime.now();
+    if (_currentPos == _lastSocketIOPos &&
+        _lastRTDBAt != null &&
+        now.difference(_lastRTDBAt!).inMilliseconds < 2000) {
       return;
     }
 
@@ -139,14 +204,13 @@ class GpsService {
     try {
       await _database.ref('driver_locations/$_activeDriverId').set(payload);
       await _database.ref('drivers/$_activeDriverId/location').set(payload);
-      _lastUploadedPos = _currentPos;
-      _lastUploadAt = DateTime.now();
+      _lastRTDBAt = now;
     } catch (e) {
-      debugPrint('GPS upload error: $e');
+      debugPrint('GPS RTDB upload error: $e');
     }
   }
 
-  // Presence (auto offline on disconnect)
+  // ── Presence (auto offline on disconnect) ───────────────────────────
 
   void _setupPresence(String driverId) {
     if (_presenceSetUp) return;
@@ -168,4 +232,26 @@ class GpsService {
       }
     });
   }
+
+  // ── Helpers ─────────────────────────────────────────────────────────
+
+  static double _haversineMeters(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const R = 6371000; // Earth radius in meters
+    final dLat = _toRad(lat2 - lat1);
+    final dLon = _toRad(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(lat1)) *
+            cos(_toRad(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+
+  static double _toRad(double deg) => deg * (pi / 180.0);
 }

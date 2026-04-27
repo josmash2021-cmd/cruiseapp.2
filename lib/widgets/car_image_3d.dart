@@ -2,25 +2,20 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-/// Car image with the exact 3D floating shadow from the Shopify web widget:
+/// Car image with enhanced 3D floating shadow for dark vehicle cards.
 ///
-/// ```css
-/// filter: drop-shadow(0 3px 2px #000) drop-shadow(0 9px 12px #000);
-/// ```
+/// Replicates CSS drop-shadow that respects PNG alpha channel:
+///   filter: drop-shadow(0 3px 2px #000) drop-shadow(0 9px 12px #000)
+///         drop-shadow(0 16px 24px rgba(0,0,0,0.5));
 ///
-/// CSS `drop-shadow` respects the PNG alpha channel (unlike Flutter's
-/// [BoxShadow] which shadows the rectangular bounding box). We replicate it
-/// by stacking two PNG-aware copies under the real image: each copy is
-/// tinted solid black with [BlendMode.srcIn], offset down, then blurred.
-///
-/// Use this everywhere a ride card renders a vehicle PNG so every card
-/// feels physically lit the same way.
+/// Plus an optional gold glow when selected.
 class CarImage3D extends StatelessWidget {
   final String assetPath;
   final int? cacheWidth;
   final bool dimmed;
   final Duration dimDuration;
   final Widget? fallback;
+  final bool selected;
 
   const CarImage3D({
     super.key,
@@ -29,6 +24,7 @@ class CarImage3D extends StatelessWidget {
     this.dimmed = false,
     this.dimDuration = const Duration(milliseconds: 200),
     this.fallback,
+    this.selected = false,
   });
 
   @override
@@ -68,17 +64,44 @@ class CarImage3D extends StatelessWidget {
       );
     }
 
+    // Gold glow when selected
+    Widget goldGlow() {
+      if (!selected) return const SizedBox.shrink();
+      return Positioned.fill(
+        child: IgnorePointer(
+          child: Transform.translate(
+            offset: const Offset(0, 4),
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                  Color(0x40E8C547), // Gold with alpha
+                  BlendMode.srcIn,
+                ),
+                child: car,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return AnimatedOpacity(
-      opacity: dimmed ? 0.75 : 1.0,
+      opacity: dimmed ? 0.70 : 1.0,
       duration: dimDuration,
       child: Stack(
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
-          // drop-shadow(0 9px 12px #000) — ambient floating glow.
+          // Deep ambient shadow (farthest)
+          shadow(dy: 16, blur: 20, alpha: 0.45),
+          // Medium ambient shadow
           shadow(dy: 9, blur: 12, alpha: 0.55),
-          // drop-shadow(0 3px 2px #000) — tight contact shadow.
+          // Tight contact shadow (closest to ground)
           shadow(dy: 3, blur: 2, alpha: 0.85),
+          // Gold glow when selected
+          goldGlow(),
+          // Actual car image on top
           car,
         ],
       ),

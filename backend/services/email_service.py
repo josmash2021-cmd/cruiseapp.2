@@ -814,7 +814,7 @@ async def email_guest_no_driver(db, trip, refunded: bool = False) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 def _build_vip_drink_menu(trip, menu_url: str, lang: str) -> tuple[str, str, str]:
-    """Build the VIP drink selection email with link to the menu."""
+    """Build the VIP drink selection email with premium design matching Cruise brand."""
     pickup = _trip_pickup(trip)
     dropoff = _trip_dropoff(trip)
     tid = _trip_id_short(trip)
@@ -822,49 +822,96 @@ def _build_vip_drink_menu(trip, menu_url: str, lang: str) -> tuple[str, str, str
     if lang == "es":
         subject = f"🥂 Tu menú VIP de bebidas — {tid}"
         preheader = "Elige tu bebida complementaria para tu viaje VIP."
-        heading = "Viaje VIP — Elige tu bebida"
-        intro = ("¡Felicidades! Has reservado un viaje VIP. Como parte de tu experiencia, "
-                 "puedes elegir una bebida complementaria. Tienes 15 minutos antes del inicio "
-                 "del viaje para hacer tu selección.")
-        lbl_summary = "Detalles del viaje"
+        status_label = "VIAJE VIP"
+        heading = "¡Tu experiencia VIP te espera!"
+        intro = ("Has reservado un viaje VIP y queremos que disfrutes cada momento. "
+                 "Como parte de tu experiencia exclusiva, puedes elegir una bebida "
+                 "complementaria de nuestro menú premium.")
+        lbl_summary = "DETALLES DEL VIAJE"
         lbl_trip = "Viaje"
         lbl_pickup = "Recogida"
         lbl_dropoff = "Destino"
-        cta_text = "Elegir mi bebida"
+        lbl_deadline = "Tiempo límite"
+        deadline_text = "15 minutos antes del inicio"
+        cta_text = "ELEGIR MI BEBIDA"
         cta_sub = "Toca el botón para ver el menú y hacer tu selección"
-        footer = "Si no haces una selección, tu viaje continuará sin bebida."
+        selection_note = "Solo puedes hacer una selección. Elige con cuidado."
+        footer = "Si no haces una selección, tu viaje continuará sin bebida complementaria."
     else:
         subject = f"🥂 Your VIP Drink Menu — {tid}"
         preheader = "Choose your complimentary drink for your VIP ride."
-        heading = "VIP Ride — Choose Your Drink"
-        intro = ("Congratulations! You've booked a VIP ride. As part of your experience, "
-                 "you can choose a complimentary drink. You have until 15 minutes before "
-                 "your ride starts to make your selection.")
-        lbl_summary = "Ride details"
+        status_label = "VIP RIDE"
+        heading = "Your VIP experience awaits!"
+        intro = ("You've booked a VIP ride and we want you to enjoy every moment. "
+                 "As part of your exclusive experience, you can choose a complimentary "
+                 "drink from our premium menu.")
+        lbl_summary = "RIDE DETAILS"
         lbl_trip = "Trip"
         lbl_pickup = "Pickup"
         lbl_dropoff = "Dropoff"
-        cta_text = "Choose my drink"
+        lbl_deadline = "Selection deadline"
+        deadline_text = "15 minutes before ride starts"
+        cta_text = "CHOOSE MY DRINK"
         cta_sub = "Tap the button to view the menu and make your selection"
-        footer = "If you don't make a selection, your ride will continue without a drink."
+        selection_note = "You can only make one selection. Choose wisely."
+        footer = "If you don't make a selection, your ride will continue without a complimentary drink."
 
-    body = (
-        _heading(heading)
-        + _p(intro)
-        + _cta(cta_text, menu_url, cta_sub)
-        + _h3(lbl_summary)
-        + _row(lbl_trip, tid)
+    # VIP badge with crown icon
+    vip_badge = (
+        f'<div style="text-align:center;margin-bottom:20px;">'
+        f'<div style="display:inline-block;padding:10px 24px;border-radius:999px;'
+        f'background:linear-gradient(135deg, #E8C547 0%, #B08800 100%);'
+        f'color:#000000 !important;font-size:12px;font-weight:800;'
+        f'letter-spacing:.2em;text-transform:uppercase;box-shadow:0 4px 15px rgba(232,197,71,.3);">'
+        f'👑 {status_label}</div></div>'
+    )
+
+    # Premium CTA button with gold gradient
+    premium_cta = (
+        f'<div style="text-align:center;margin:28px 0;">'
+        f'<a href="{menu_url}" style="display:inline-block;padding:18px 48px;'
+        f'background:linear-gradient(135deg, #E8C547 0%, #B08800 100%);'
+        f'border-radius:999px;color:#000000 !important;font-size:14px;font-weight:800;'
+        f'text-decoration:none;letter-spacing:.1em;text-transform:uppercase;'
+        f'box-shadow:0 6px 25px rgba(232,197,71,.4);transition:transform .2s;">'
+        f'{cta_text}</a></div>'
+        f'<div style="text-align:center;font-size:12px;color:#8a7e4e !important;'
+        f'margin-top:8px;">{cta_sub}</div>'
+    )
+
+    # Info card with gold border accent
+    info_rows = (
+        _row(lbl_trip, tid)
         + _row(lbl_pickup, pickup)
         + _row(lbl_dropoff, dropoff)
+        + _row(lbl_deadline, deadline_text, last=True)
+    )
+
+    body = (
+        vip_badge
+        + _h1(heading)
+        + _p(intro)
+        + premium_cta
+        + _h2(lbl_summary)
+        + _info_card(info_rows)
+        + f'<div style="text-align:center;margin:16px 0 8px;">'
+        + _badge("✓ " + selection_note, "#4a7c59")
+        + '</div>'
         + _p(footer, muted=True)
     )
     text = (
+        f"{'='*50}\n"
+        f"  {status_label}\n"
+        f"{'='*50}\n\n"
         f"{heading}\n\n{intro}\n\n"
         f"{cta_text}: {menu_url}\n\n"
-        + (f"{lbl_trip}: {tid}\n" if tid != "—" else "")
-        + (f"{lbl_pickup}: {pickup}\n" if pickup != "—" else "")
-        + (f"{lbl_dropoff}: {dropoff}\n" if dropoff != "—" else "")
-        + f"\n{footer}"
+        f"{lbl_summary}:\n"
+        + (f"  {lbl_trip}: {tid}\n" if tid != "—" else "")
+        + (f"  {lbl_pickup}: {pickup}\n" if pickup != "—" else "")
+        + (f"  {lbl_dropoff}: {dropoff}\n" if dropoff != "—" else "")
+        + f"  {lbl_deadline}: {deadline_text}\n\n"
+        + f"{selection_note}\n\n"
+        + f"{footer}"
     )
     return subject, _shell(subject, preheader, body), text
 

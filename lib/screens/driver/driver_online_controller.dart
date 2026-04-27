@@ -1143,10 +1143,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
-    // Filter out locally rejected offers (prevents re-showing before backend processes rejection)
-    final filtered = offers.where((o) {
+    // Filter out locally rejected AND already-accepted offers
+    var filtered = offers.where((o) {
       final oid = o['offer_id'] as int?;
-      return oid == null || !_rejectedOfferIds.contains(oid);
+      if (oid == null) return true;
+      if (_rejectedOfferIds.contains(oid)) return false;
+      if (_acceptedOfferIds.contains(oid)) {
+        debugPrint('[DriverOnline] already-accepted offer dropped: $oid');
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // Deduplicate by offer_id — SSE + polling can receive the same offer
+    final seenIds = <int>{};
+    filtered = filtered.where((o) {
+      final oid = o['offer_id'] as int?;
+      if (oid == null) return true; // keep offers without id
+      if (seenIds.contains(oid)) {
+        debugPrint('[DriverOnline] duplicate offer dropped: $oid');
+        return false;
+      }
+      seenIds.add(oid);
+      return true;
     }).toList();
 
     final hadOffers = _pendingOffers.isNotEmpty;

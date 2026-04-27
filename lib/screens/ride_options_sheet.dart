@@ -143,11 +143,22 @@ class RideOptionsSheet extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            // Cards
-            for (int i = 0; i < options.length; i++) ...[
-              _buildCard(c, isDark, options[i], options[i].id == selected?.id),
-              if (i < options.length - 1) const SizedBox(height: 10),
-            ],
+            // Cards — 3-column grid like home screen
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: options.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final opt = entry.value;
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: i < options.length - 1 ? 8 : 0),
+                      child: _buildCard(c, isDark, opt, opt.id == selected?.id),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
 
             const SizedBox(height: 14),
 
@@ -274,194 +285,117 @@ class RideOptionsSheet extends StatelessWidget {
 
     final VehicleTier tier;
     final String displayName;
+    final String carImage;
     if (isSuv) {
       tier = VehicleTier.vip;
       displayName = 'BLACK';
+      carImage = 'cruise_3.png';
     } else if (isCamry) {
       tier = VehicleTier.premium;
       displayName = 'PREMIUM';
+      carImage = 'cruise_7.png';
     } else {
       tier = VehicleTier.comfort;
       displayName = 'STANDARD';
+      carImage = 'cruise_6.png';
     }
 
-    // Black background for all cards with gold particles
-    const cardBg = Colors.black;
     final borderColor = isSelected
         ? _gold.withValues(alpha: 0.70)
         : Colors.white.withValues(alpha: 0.08);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Semantics(
-        label: '${opt.name} ride option, \$${opt.priceEstimate.toStringAsFixed(2)}, ${opt.etaMinutes} minutes away${opt.surgeMultiplier > 1.0 ? ', ${opt.surgeMultiplier}x surge pricing' : ''}',
-        button: true,
-        selected: isSelected,
-        child: GestureDetector(
-          onTap: () => onSelect(opt),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            decoration: BoxDecoration(
-              color: cardBg,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: borderColor,
-                width: isSelected ? 2.0 : 1.0,
-              ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.25),
-                        blurRadius: 24,
-                        offset: const Offset(0, 6),
-                        spreadRadius: 2,
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.50),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.40),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+    return Semantics(
+      label: '${opt.name} ride option, \$${opt.priceEstimate.toStringAsFixed(2)}, ${opt.etaMinutes} minutes away',
+      button: true,
+      selected: isSelected,
+      child: GestureDetector(
+        onTap: () => onSelect(opt),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          height: 168,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: borderColor,
+              width: isSelected ? 2.0 : 1.5,
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: GoldParticlesBackground(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // Animated gold particle background
+              GoldParticlesBackground(
                 particleCount: isSelected ? 35 : 20,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      // Car image with enhanced shadow
-                      SizedBox(
-                        width: 108,
-                        height: 72,
-                        child: _buildCarImage(opt.id, isSelected),
-                      ),
-                      const SizedBox(width: 14),
-
-                      // Info column
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Name row
-                            Text(
-                              displayName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            // Badge inside the card (below name, not beside)
-                            VehicleTierBadge(tier: tier),
-                            const SizedBox(height: 5),
-                            // Description
-                            Text(
-                              opt.description,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.55),
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            // ETA + capacity chips
-                            Row(
-                              children: [
-                                _infoChip(
-                                  Icons.schedule_rounded,
-                                  '${opt.etaMinutes} min',
-                                  isDark,
-                                ),
-                                const SizedBox(width: 6),
-                                _infoChip(
-                                  Icons.person_rounded,
-                                  '${opt.capacity}',
-                                  isDark,
-                                ),
-                              ],
-                            ),
-                          ],
+                child: const SizedBox.expand(),
+              ),
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Car image with 3D shadows
+                    SizedBox(
+                      width: 130,
+                      height: 90,
+                      child: CarImage3D(
+                        assetPath: 'assets/images/$carImage',
+                        cacheWidth: 360,
+                        selected: isSelected,
+                        fallback: Icon(
+                          Icons.directions_car_rounded,
+                          color: _gold.withValues(alpha: 0.5),
+                          size: 40,
                         ),
                       ),
-
-                      // Price column
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '\$${opt.priceEstimate.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: isSelected ? _gold : Colors.white,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          if (opt.surgeMultiplier > 1.0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              margin: const EdgeInsets.only(bottom: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.redAccent.withValues(alpha: 0.20),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '⚡ ${opt.surgeMultiplier.toStringAsFixed(1)}x',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                            )
-                          else
-                            Text(
-                              'est. fare',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.white.withValues(alpha: 0.40),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          if (isSelected) ...[
-                            const SizedBox(height: 6),
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: const BoxDecoration(
-                                color: _gold,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.check_rounded,
-                                size: 14,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Display name
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Tier badge inside card, below name
+                    VehicleTierBadge(tier: tier),
+                  ],
                 ),
               ),
-            ),
+              // Selected checkmark
+              if (isSelected)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      color: _gold,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 14,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

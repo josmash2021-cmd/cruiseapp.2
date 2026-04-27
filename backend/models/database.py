@@ -197,6 +197,11 @@ class Trip(Base):
     wait_time_charge = Column(Float, default=0.0)
     distance = Column(Float, nullable=True)
     duration = Column(Integer, nullable=True)
+    # VIP drink selection
+    vip_drink_selected = Column(String(100), nullable=True)
+    vip_drink_selected_at = Column(DateTime(timezone=True), nullable=True)
+    vip_menu_token = Column(String(64), nullable=True, index=True)
+    vip_menu_sent_at = Column(DateTime(timezone=True), nullable=True)
     driver_earnings = Column(Float, nullable=True)
     platform_fee = Column(Float, nullable=True)
     refund_status = Column(String(20), nullable=True)

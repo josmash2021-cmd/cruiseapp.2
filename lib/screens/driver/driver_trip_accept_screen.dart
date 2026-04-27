@@ -496,9 +496,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Only VIP trips have a complimentary drink menu
     final vt = widget.vehicleType.toLowerCase();
     if (!vt.contains('vip')) return;
-    final drink = await ComplimentaryDrinkService.fetchForRider(
-      phone: widget.riderPhone,
-    );
+    // Fetch drink selection from backend using trip ID
+    final tripId = widget.tripId;
+    if (tripId <= 0) return;
+    final drink = await ComplimentaryDrinkService.fetchForTrip(tripId);
     if (!mounted) return;
     if (drink != null && drink.isNotEmpty) {
       setState(() => _complimentaryDrink = drink);

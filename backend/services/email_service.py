@@ -807,3 +807,75 @@ async def email_guest_no_driver(db, trip, refunded: bool = False) -> None:
         await _dispatch(db, trip.id, "no_driver", email, subject, html, text)
     except Exception as e:
         _log.warning("[EMAIL] email_guest_no_driver failed for trip %s: %s", getattr(trip, "id", "?"), e)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  VIP DRINK MENU EMAIL
+# ═══════════════════════════════════════════════════════════════════════
+
+def _build_vip_drink_menu(trip, menu_url: str, lang: str) -> tuple[str, str, str]:
+    """Build the VIP drink selection email with link to the menu."""
+    pickup = _trip_pickup(trip)
+    dropoff = _trip_dropoff(trip)
+    tid = _trip_id_short(trip)
+
+    if lang == "es":
+        subject = f"🥂 Tu menú VIP de bebidas — {tid}"
+        preheader = "Elige tu bebida complementaria para tu viaje VIP."
+        heading = "Viaje VIP — Elige tu bebida"
+        intro = ("¡Felicidades! Has reservado un viaje VIP. Como parte de tu experiencia, "
+                 "puedes elegir una bebida complementaria. Tienes 15 minutos antes del inicio "
+                 "del viaje para hacer tu selección.")
+        lbl_summary = "Detalles del viaje"
+        lbl_trip = "Viaje"
+        lbl_pickup = "Recogida"
+        lbl_dropoff = "Destino"
+        cta_text = "Elegir mi bebida"
+        cta_sub = "Toca el botón para ver el menú y hacer tu selección"
+        footer = "Si no haces una selección, tu viaje continuará sin bebida."
+    else:
+        subject = f"🥂 Your VIP Drink Menu — {tid}"
+        preheader = "Choose your complimentary drink for your VIP ride."
+        heading = "VIP Ride — Choose Your Drink"
+        intro = ("Congratulations! You've booked a VIP ride. As part of your experience, "
+                 "you can choose a complimentary drink. You have until 15 minutes before "
+                 "your ride starts to make your selection.")
+        lbl_summary = "Ride details"
+        lbl_trip = "Trip"
+        lbl_pickup = "Pickup"
+        lbl_dropoff = "Dropoff"
+        cta_text = "Choose my drink"
+        cta_sub = "Tap the button to view the menu and make your selection"
+        footer = "If you don't make a selection, your ride will continue without a drink."
+
+    body = (
+        _heading(heading)
+        + _p(intro)
+        + _cta(cta_text, menu_url, cta_sub)
+        + _h3(lbl_summary)
+        + _row(lbl_trip, tid)
+        + _row(lbl_pickup, pickup)
+        + _row(lbl_dropoff, dropoff)
+        + _p(footer, muted=True)
+    )
+    text = (
+        f"{heading}\n\n{intro}\n\n"
+        f"{cta_text}: {menu_url}\n\n"
+        + (f"{lbl_trip}: {tid}\n" if tid != "—" else "")
+        + (f"{lbl_pickup}: {pickup}\n" if pickup != "—" else "")
+        + (f"{lbl_dropoff}: {dropoff}\n" if dropoff != "—" else "")
+        + f"\n{footer}"
+    )
+    return subject, _shell(subject, preheader, body), text
+
+
+async def email_vip_drink_menu(db, trip, menu_url: str) -> None:
+    """Send VIP drink menu email to the rider."""
+    try:
+        email = _guest_email(trip)
+        if not email:
+            return
+        subject, html, text = _build_vip_drink_menu(trip, menu_url, _guest_lang(trip))
+        await _dispatch(db, trip.id, "vip_drink_menu", email, subject, html, text)
+    except Exception as e:
+        _log.warning("[EMAIL] email_vip_drink_menu failed for trip %s: %s", getattr(trip, "id", "?"), e)

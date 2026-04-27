@@ -18,7 +18,8 @@ from utils.security import (
 from utils.helpers import _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
 from services.fcm_service import _send_fcm_push
 from services.sms_service import notify_guest_welcome
-from services.email_service import email_guest_welcome
+from services.email_service import email_guest_welcome, email_vip_drink_menu
+from routers.vip import generate_vip_menu_token
 from sqlalchemy.exc import IntegrityError
 from jose import jwt, JWTError
 from config import (
@@ -1327,6 +1328,20 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         await email_guest_welcome(db, trip)
     except Exception as _email_err:
         logging.warning("[EMAIL] email_guest_welcome failed for trip %s: %s", trip.id, _email_err)
+
+    # Send VIP drink menu email for VIP rides
+    if trip.vehicle_type and trip.vehicle_type.lower() == "vip":
+        try:
+            from config import PUBLIC_URL
+            trip.vip_menu_token = generate_vip_menu_token()
+            trip.vip_menu_sent_at = datetime.now(timezone.utc)
+            db.add(trip)
+            await db.commit()
+            menu_url = f"{PUBLIC_URL}/vip-menu?token={trip.vip_menu_token}"
+            await email_vip_drink_menu(db, trip, menu_url)
+            logging.info("[VIP] Drink menu email sent for trip %s", trip.id)
+        except Exception as _vip_err:
+            logging.warning("[VIP] Failed to send drink menu for trip %s: %s", trip.id, _vip_err)
 
     if is_future_scheduled:
         logging.info(

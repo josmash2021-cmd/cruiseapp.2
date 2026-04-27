@@ -388,6 +388,7 @@ from routers.driver_referrals import (
     router as driver_referrals_router,
     expire_stale_driver_referrals,
 )
+from routers.vip import router as vip_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -402,6 +403,7 @@ app.include_router(misc_router)
 app.include_router(scheduled_router)
 app.include_router(referrals_router)
 app.include_router(driver_referrals_router)
+app.include_router(vip_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION

@@ -214,6 +214,9 @@ async def lifespan(app: FastAPI):
         for _attempt in range(3):
             try:
                 async with engine.begin() as conn:
+                    # Set search_path to public for schema creation
+                    if not IS_SQLITE:
+                        await conn.execute(text("SET search_path TO public"))
                     await conn.run_sync(Base.metadata.create_all)
                     if IS_SQLITE:
                         await conn.execute(text("PRAGMA journal_mode=WAL"))

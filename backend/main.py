@@ -222,24 +222,23 @@ async def lifespan(app: FastAPI):
                         await conn.execute(text("PRAGMA cache_size=-64000"))
                         await _migrate_add_columns(conn)
                 else:
-                    # PostgreSQL: use raw psycopg3 for DDL to avoid SQLAlchemy + PgBouncer issues
-                    import psycopg
+                    # PostgreSQL: use sync SQLAlchemy with psycopg3 for DDL
+                    # psycopg3 works for both sync and async in SQLAlchemy 2.0+
+                    from sqlalchemy import create_engine
                     from db_url import resolve_database_url
-                    pg_url = resolve_database_url(async_driver=False)
-                    # Strip driver prefix
+                    sync_url = resolve_database_url(async_driver=False)
+                    # Ensure we use plain postgresql:// for sync engine
                     for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
-                        if pg_url.startswith(prefix):
-                            pg_url = "postgresql://" + pg_url[len(prefix):]
+                        if sync_url.startswith(prefix):
+                            sync_url = "postgresql://" + sync_url[len(prefix):]
                             break
-                    conn = await psycopg.AsyncConnection.connect(pg_url, autocommit=True, sslmode="require", connect_timeout=15)
-                    try:
-                        # Use SQLAlchemy to generate DDL but execute via raw connection
-                        from sqlalchemy import create_engine
-                        sync_engine = create_engine(pg_url.replace("postgresql+psycopg://", "postgresql://"), echo=False)
-                        Base.metadata.create_all(sync_engine)
-                        sync_engine.dispose()
-                    finally:
-                        await conn.close()
+                    sync_engine = create_engine(
+                        sync_url,
+                        echo=False,
+                        connect_args={"sslmode": "require", "connect_timeout": 15},
+                    )
+                    Base.metadata.create_all(sync_engine)
+                    sync_engine.dispose()
                 logging.info("Database initialized")
                 break
             except Exception as _e:

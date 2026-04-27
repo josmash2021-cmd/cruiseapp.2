@@ -422,13 +422,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Use real driver velocity when available, then traffic-aware route duration, then distance fallback
       if (_velocityMps > 3.0) {
         final remainM = _distanceMiles * 1609.34;
-        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
       } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
         // Scale route duration by fraction of distance remaining
         final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
-        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
       } else {
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
       // Phase transitions (arriving→arrived, arrived→onTrip) are ONLY driven
       // by backend status updates in _onTripStatusUpdate(). Never auto-transition
@@ -446,13 +446,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // then traffic-aware route duration, then distance-based fallback
       if (_velocityMps > 3.0) {
         final remainM = _distanceMiles * 1609.34;
-        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
       } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
         final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
-        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
       } else {
         // Fallback: 0.4 mi/min ≈ 24 mph average urban
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
       // Transition to nearDestination when ETA <= 2 min
       if (_etaMinutes <= 2 && _phase == _TrackPhase.onTrip) {
@@ -590,9 +590,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _distanceMiles = result.distanceMeters / 1609.34;
       _routeDurationSec = result.durationSeconds;
       if (_routeDurationSec != null && _routeDurationSec! > 0) {
-        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 999);
       } else {
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
 
       _setState(() {});
@@ -861,7 +861,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_segDist.isNotEmpty) {
       final totalRouteM = _segDist.last;
       _distanceMiles = totalRouteM / 1609.34;
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
     }
     _setState(() {
       _phase = _TrackPhase.onTrip;
@@ -882,6 +882,41 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
     _startRideAnimationDone = false;
     _startStartRideAnimation();
+    // Start periodic traffic-aware route refresh for accurate ETA
+    _startTrafficRefreshTimer();
+  }
+
+  /// Periodic traffic-aware route refresh — fetches live traffic data
+  /// every 2 minutes to keep ETA accurate during the trip.
+  void _startTrafficRefreshTimer() {
+    _trafficRefreshTimer?.cancel();
+    _trafficRefreshTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+      if (!mounted || _phase != _TrackPhase.onTrip && _phase != _TrackPhase.nearDestination) {
+        _trafficRefreshTimer?.cancel();
+        return;
+      }
+      // Only refresh if we have driver position and haven't refreshed recently
+      if (_driverPos.latitude == 0 && _driverPos.longitude == 0) return;
+      try {
+        final ds = DirectionsService(ApiKeys.webServices);
+        final result = await ds.getRoute(
+          origin: _driverPos,
+          destination: widget.dropoffLatLng,
+        );
+        if (result != null && result.durationSeconds != null && result.durationSeconds! > 0) {
+          _routeDurationSec = result.durationSeconds;
+          _routePts = result.points;
+          _buildSegDist();
+          // Recalculate ETA with fresh traffic data
+          final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
+          _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
+          _setState(() {});
+          debugPrint('[RiderTracking] Traffic refresh: ETA updated to $_etaMinutes min');
+        }
+      } catch (e) {
+        debugPrint('[RiderTracking] Traffic refresh failed: $e');
+      }
+    });
   }
 
   /// Show the rider confirmation pickup overlay when driver has arrived.
@@ -1271,9 +1306,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _distanceMiles = remainingM / 1609.34;
     if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
       final fraction = (remainingM / _segDist.last).clamp(0.0, 1.0);
-      _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 99);
+      _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
     } else {
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
     }
 
     // Arriving phase: keep trip route visible as dimmed background.
@@ -1299,11 +1334,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Prefer persisted traffic-aware ETA; fall back to distance-based estimate
       final storedEta = activeRide.etaMinutes;
       if (storedEta != null && storedEta > 0) {
-        _etaMinutes = storedEta.clamp(1, 99);
+        _etaMinutes = storedEta.clamp(1, 999);
       } else if (_routeDurationSec != null && _routeDurationSec! > 0) {
-        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 99);
+        _etaMinutes = (_routeDurationSec! / 60.0).ceil().clamp(1, 999);
       } else {
-        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 99);
+        _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
     }
 

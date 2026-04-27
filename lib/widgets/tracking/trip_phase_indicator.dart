@@ -6,6 +6,22 @@ part of '../../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
+  // ── Format ETA for display: ≤60 → "45 min", >60 → "1h 15min" ──
+  String get _etaDisplayText {
+    if (_etaMinutes <= 0) return '0';
+    if (_etaMinutes < 60) return '$_etaMinutes';
+    final hours = _etaMinutes ~/ 60;
+    final mins = _etaMinutes % 60;
+    if (mins == 0) return '${hours}h';
+    return '${hours}h ${mins}min';
+  }
+
+  String get _etaUnitText {
+    if (_etaMinutes <= 0) return 'min';
+    if (_etaMinutes < 60) return 'min';
+    return ''; // unit is embedded in _etaDisplayText for hour format
+  }
+
   // ── Phase-based status text (top label) ──
   // During 'arriving', the label is refined by ETA and distance to show
   // progressively urgent messages as the driver gets closer.
@@ -222,22 +238,23 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                     );
                   },
                   child: Text(
-                    '$_etaMinutes',
+                    _etaDisplayText,
                     key: ValueKey('eta_$_etaMinutes'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.black,
-                      fontSize: 22,
+                      fontSize: _etaMinutes >= 60 ? 18 : 22,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                const Text(
-                  'min',
-                  style: TextStyle(
-                      color: Colors.black54,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600),
-                ),
+                if (_etaUnitText.isNotEmpty)
+                  Text(
+                    _etaUnitText,
+                    style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
               ],
             ),
           ),
@@ -382,22 +399,23 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                     );
                   },
                   child: Text(
-                    '$_etaMinutes',
+                    _etaDisplayText,
                     key: ValueKey('eta_$_etaMinutes'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.black,
-                      fontSize: 22,
+                      fontSize: _etaMinutes >= 60 ? 18 : 22,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                const Text(
-                  'min',
-                  style: TextStyle(
-                      color: Colors.black54,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600),
-                ),
+                if (_etaUnitText.isNotEmpty)
+                  Text(
+                    _etaUnitText,
+                    style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
               ],
             ),
           ),

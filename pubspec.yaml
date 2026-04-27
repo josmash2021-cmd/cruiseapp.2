@@ -2,7 +2,7 @@ name: cruise_app
 description: "Cruise — Premium ride-sharing app connecting riders with professional drivers."
 publish_to: 'none'
 
-version: 1.0.2+433
+version: 1.0.2+434
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -36,6 +36,10 @@ dependencies:
   video_player: ^2.9.3
   package_info_plus: ^8.3.0
   flutter_stripe: ^11.4.0
+  # Stripe Terminal SDK — Tap to Pay (NFC contactless on iPhone/Android).
+  # Requires Apple's proximity-reader entitlement and Stripe Terminal account
+  # approval. iOS 16.7+, iPhone XS+, Android 11+ with NFC.
+  mek_stripe_terminal: ^4.6.3
   firebase_core: ^3.13.1
   cloud_firestore: ^5.6.8
   firebase_auth: ^5.5.1

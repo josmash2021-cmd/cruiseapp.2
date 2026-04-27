@@ -971,6 +971,38 @@ extension _RideRequestController on _RideRequestScreenState {
               _selectedPaymentMethod == 'google_pay' ||
               _selectedPaymentMethod == 'paypal');
 
+      // Tap to Pay: open the NFC screen FIRST so the rider taps a card,
+      // then proceed to dispatch. Same UX pattern as native pay (sheet
+      // before searching). Without this branch the flow used to fall
+      // through to requestRide() with no charge actually attempted, and
+      // the searching screen's paymentCallback called _confirmNativePayment
+      // which fails for tap_to_pay → rider got bounced back to home.
+      final bool isTapToPay = _selectedPaymentMethod == 'tap_to_pay';
+      if (isTapToPay && !isTestMode) {
+        // Apply 10% promo when active so the charged amount matches the
+        // price the rider saw on the picked vehicle card.
+        final double effectivePrice = widget.applyPromo
+            ? option.priceEstimate * 0.9
+            : option.priceEstimate;
+        final amountCents = (effectivePrice * 100).round();
+        bool ok;
+        try {
+          ok = await _confirmTapToPay(amountCents, option);
+        } catch (e) {
+          debugPrint('Tap to Pay error: $e');
+          ok = false;
+        }
+        if (!mounted) return;
+        if (!ok) {
+          // User cancelled the NFC sheet or the charge failed —
+          // release the lock and stay on the ride request screen.
+          _stuckPaymentFuse?.cancel();
+          _setState(() => _isProcessingPayment = false);
+          _rideFlowLocked = false;
+          return;
+        }
+      }
+
       bool nativePayFailed = false;
       if (isNativePay) {
         _setState(() => _isProcessingPayment = true);
@@ -1038,7 +1070,7 @@ extension _RideRequestController on _RideRequestScreenState {
         cancelled = await nav.push<bool>(
               searchingDriverRoute(
                 onCancel: _cancelSearching,
-                paymentCallback: (isNativePay || isTestMode) 
+                paymentCallback: (isNativePay || isTestMode || isTapToPay)
                     ? null 
                     : () async {
                         // Enhanced payment with smart retry
@@ -1905,8 +1937,11 @@ extension _RideRequestController on _RideRequestScreenState {
       methods.add('google_pay');
     }
     
-    // Tap to Pay is always available (uses Stripe Terminal)
-    methods.add('tap_to_pay');
+    // Tap to Pay (Stripe Terminal NFC). Only available on Android until
+    // Apple approves the proximity-reader entitlement for iOS.
+    if (Platform.isAndroid) {
+      methods.add('tap_to_pay');
+    }
     
     // Check for saved card
     if (await LocalDataService.getStripePaymentMethodId() != null) {

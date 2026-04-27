@@ -182,22 +182,28 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       onTap: () => _pick(PaymentMethodId.card),
                     ),
                     // Tap to Pay - NFC Contactless Payment
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: 0.12,
-                      id: PaymentMethodId.tapToPay,
-                      selected: _selected == PaymentMethodId.tapToPay,
-                      iconBg: const Color(0xFF1A237E), // Deep blue
-                      iconBorder: const Color(0xFF4A90D9).withValues(alpha: 0.5),
-                      label: 'Tap to Pay',
-                      secondary: 'Hold card to phone',
-                      icon: const Icon(
-                        Icons.contactless,
-                        color: Color(0xFF4A90D9),
-                        size: 32,
+                    // Only visible on Android. iOS requires Apple's
+                    // proximity-reader entitlement which is per-app and
+                    // pending approval — the SDK throws at runtime
+                    // without it, so we hide the option entirely.
+                    if (Platform.isAndroid)
+                      _PayCard(
+                        entryCtl: _entryCtl,
+                        staggerDelay: 0.12,
+                        id: PaymentMethodId.tapToPay,
+                        selected: _selected == PaymentMethodId.tapToPay,
+                        iconBg: const Color(0xFF1A237E), // Deep blue
+                        iconBorder:
+                            const Color(0xFF4A90D9).withValues(alpha: 0.5),
+                        label: 'Tap to Pay',
+                        secondary: 'Hold card to phone',
+                        icon: const Icon(
+                          Icons.contactless,
+                          color: Color(0xFF4A90D9),
+                          size: 32,
+                        ),
+                        onTap: () => _pick(PaymentMethodId.tapToPay),
                       ),
-                      onTap: () => _pick(PaymentMethodId.tapToPay),
-                    ),
                     _PayCard(
                       entryCtl: _entryCtl,
                       staggerDelay: 0.16,

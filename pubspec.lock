@@ -193,6 +193,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.4"
+  class_to_string:
+    dependency: transitive
+    description:
+      name: class_to_string
+      sha256: "050e503aca102dec0b295363f607d2c3d96e99f82cf54ebb570aee8f7ee11927"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.0"
   cli_util:
     dependency: transitive
     description:
@@ -1181,6 +1189,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
+  mek_data_class:
+    dependency: transitive
+    description:
+      name: mek_data_class
+      sha256: "7df67f74de717c350b45022fce31f16cac6e668ccad64b2832fc086bd0a5fa57"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
+  mek_stripe_terminal:
+    dependency: "direct main"
+    description:
+      name: mek_stripe_terminal
+      sha256: "0d87b2855bbd642159949ecd4d03a8ebd39465a51ab55fae0cde523e7473c208"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.6.3"
   meta:
     dependency: transitive
     description:
@@ -1229,6 +1253,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  one_for_all:
+    dependency: transitive
+    description:
+      name: one_for_all
+      sha256: "56aca51e152c7bd5974830447872ddd2c35d10d0f47dae1f3846ce80757c1b46"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.1"
   package_info_plus:
     dependency: "direct main"
     description:
@@ -1461,6 +1493,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  recase:
+    dependency: transitive
+    description:
+      name: recase
+      sha256: e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   rxdart:
     dependency: transitive
     description:

@@ -12,6 +12,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- ── Stripe Terminal Tap to Pay (NFC contactless) ────────────── -->
+    <!-- NFC is required to read contactless cards on the rider's phone. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <!-- Bluetooth is used by Stripe Terminal SDK even when only NFC is
+         active (internal SDK requirement). Both legacy + new Android 12+
+         permissions are declared so all supported API levels work. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- Hardware feature flags — declare NFC as recommended (not required)
+         so the Play Store still lists the app on phones without NFC; the
+         rider just won't see the Tap to Pay payment option. -->
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
     <application
         android:label="Cruise"
         android:name="${applicationName}"

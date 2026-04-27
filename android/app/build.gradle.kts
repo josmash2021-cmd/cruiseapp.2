@@ -20,7 +20,21 @@ android {
     packaging {
         resources {
             excludes += "META-INF/DEPENDENCIES"
+            // Stripe Terminal SDK pulls in BouncyCastle indirectly which
+            // collides with another transitive dep. Pick the first copy
+            // of these property files so the build doesn't fail with
+            // "Duplicate file" errors.
+            // https://github.com/stripe/stripe-terminal-android/issues/349
+            pickFirsts += "org/bouncycastle/x509/CertPathReviewerMessages.properties"
+            pickFirsts += "org/bouncycastle/x509/CertPathReviewerMessages_de.properties"
         }
+    }
+
+    // Exclude the bcprov-jdk15to18 module — Stripe Terminal already ships
+    // a different BouncyCastle artifact and keeping both causes duplicate
+    // class errors at compile time.
+    configurations.all {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
     }
 
     compileOptions {

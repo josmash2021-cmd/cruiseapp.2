@@ -57,9 +57,9 @@ class TapToPayExample {
     String currency = 'USD',
   }) async {
     // Verificar si el método de pago seleccionado es Tap to Pay
-    final selectedMethod = await LocalDataService.getLinkedPaymentMethod();
+    final linkedMethods = await LocalDataService.getLinkedPaymentMethods();
     
-    if (selectedMethod == 'tap_to_pay') {
+    if (linkedMethods.contains('tap_to_pay')) {
       // Mostrar pantalla de Tap to Pay
       final paymentResult = await showTapToPayScreen(
         context: context,

@@ -49,6 +49,15 @@ else:
         _engine_kwargs["pool_pre_ping"] = False
         # CRITICAL: Disable SQLAlchemy's internal statement cache for PgBouncer
         _engine_kwargs["query_cache_size"] = 0
+        # CRITICAL: Disable SQLAlchemy asyncpg prepared statement cache
+        # This is SEPARATE from asyncpg's statement_cache_size
+        _engine_kwargs["prepared_statement_cache_size"] = 0
+        # Use unique prepared statement names per connection to avoid
+        # conflicts with PgBouncer transaction mode
+        import uuid as _uuid_mod
+        _engine_kwargs["prepared_statement_name_func"] = (
+            lambda: f'__cruise_{_uuid_mod.uuid4().hex}__'
+        )
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -57,8 +66,7 @@ else:
             "timeout": 5,
             "command_timeout": 15,
             "ssl": _ssl_ctx,
-            "statement_cache_size": 0,           # asyncpg: disable prepared statements
-            "prepared_statement_cache_size": 0,  # asyncpg: disable prepared statement cache
+            "statement_cache_size": 0,  # asyncpg: disable prepared statements
             "server_settings": {
                 "jit": "off",
                 "application_name": "cruise_fastapi",

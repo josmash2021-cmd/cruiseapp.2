@@ -52,9 +52,15 @@ def _get_pg_url() -> str | None:
 def _pg_url_to_env(pg_url: str) -> dict:
     """Convert postgres://user:pass@host:port/db to pg_dump env vars."""
     import re
+    # Strip driver prefix (+asyncpg, +psycopg) before parsing
+    pg_url_clean = pg_url
+    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
+        if pg_url_clean.startswith(prefix):
+            pg_url_clean = "postgresql://" + pg_url_clean[len(prefix):]
+            break
     m = re.match(
         r"postgres(?:ql)?://([^:]+):([^@]+)@([^:/]+):?(\d*)/(.+)",
-        pg_url
+        pg_url_clean
     )
     if not m:
         return {}

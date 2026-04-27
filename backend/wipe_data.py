@@ -23,7 +23,7 @@ async def wipe_postgres():
     import asyncpg
 
     url = DATABASE_URL
-    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql://", "postgres://"):
         if url.startswith(prefix):
             url = "postgresql://" + url[len(prefix):]
             break

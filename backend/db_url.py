@@ -25,18 +25,13 @@ def _normalize_database_url(url: str, *, async_driver: bool, private: bool = Fal
     _is_pgbouncer = ":6543" in url or "pooler.supabase.com" in url
 
     if async_driver:
-        if _is_pgbouncer:
-            # Use psycopg3 (no server-side prepared statements) for PgBouncer
-            if url.startswith("postgresql://"):
-                return url.replace("postgresql://", "postgresql+psycopg://", 1)
-            if url.startswith("postgres://"):
-                return url.replace("postgres://", "postgresql+psycopg://", 1)
-        else:
-            # Use asyncpg for direct PostgreSQL (better performance)
-            if url.startswith("postgresql://"):
-                return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-            if url.startswith("postgres://"):
-                return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        # Use psycopg3 for ALL PostgreSQL connections (not just PgBouncer).
+        # asyncpg has prepared statement issues with PgBouncer, and mixing
+        # drivers causes confusion. psycopg3 is the standard going forward.
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+psycopg://", 1)
         return url
 
     if url.startswith("postgresql+asyncpg://"):

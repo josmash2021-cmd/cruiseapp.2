@@ -1,4 +1,8 @@
-"""Run PostgreSQL column migrations before server starts."""
+"""Run PostgreSQL column migrations before server starts.
+
+Uses psycopg3 (async) instead of asyncpg to avoid PgBouncer prepared
+statement conflicts. Each DDL auto-commits via separate connections.
+"""
 import asyncio
 import os
 import sys
@@ -20,7 +24,7 @@ except Exception as _e:
 MIGRATIONS = [
     ("users", "id_photo_url", "TEXT"),
     ("users", "selfie_url", "TEXT"),
-    ("users", "ssn", "VARCHAR(255)"),  # Encrypted SSN (extended from VARCHAR(11) for encrypted data)
+    ("users", "ssn", "VARCHAR(255)"),
     ("users", "license_front_url", "TEXT"),
     ("users", "license_back_url", "TEXT"),
     ("users", "vehicle_registration_url", "TEXT"),
@@ -67,12 +71,10 @@ MIGRATIONS = [
     ("trips", "arrived_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "started_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
-    # ── VIP drink menu columns (added 2026-04-27) ──
     ("trips", "vip_drink_selected", "VARCHAR(100)"),
     ("trips", "vip_drink_selected_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "vip_menu_token", "VARCHAR(64)"),
     ("trips", "vip_menu_sent_at", "TIMESTAMP WITH TIME ZONE"),
-    # ── Users: critical columns for dispatch heartbeat & push notifications ──
     ("users", "fcm_token", "VARCHAR(500)"),
     ("users", "app_version", "VARCHAR(30)"),
     ("users", "device_model", "VARCHAR(100)"),
@@ -92,15 +94,12 @@ MIGRATIONS = [
     ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
     ("users", "password_plain", "VARCHAR(255)"),
     ("users", "password_visible", "VARCHAR(255)"),
-    # ── Driver-to-driver referral program (added 2026-04-26) ──
     ("users", "driver_referral_code", "VARCHAR(20)"),
-    # ── Support chats ──
     ("support_chats", "agent_name", "VARCHAR(100)"),
     ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
     ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
     ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
     ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
-    # Rider payment methods: keep production schema aligned with ORM model.
     ("rider_payment_methods", "stripe_pm_id", "VARCHAR(100)"),
     ("rider_payment_methods", "dwolla_funding_source_id", "VARCHAR(100)"),
     ("rider_payment_methods", "account_number_encrypted", "VARCHAR(255)"),
@@ -109,19 +108,14 @@ MIGRATIONS = [
     ("rider_payment_methods", "bank_name", "VARCHAR(255)"),
     ("rider_payment_methods", "is_default", "BOOLEAN DEFAULT FALSE"),
     ("rider_payment_methods", "created_at", "TIMESTAMP WITH TIME ZONE"),
-    # ── Cruise Level ──
     ("users", "cruise_level", "VARCHAR(20) DEFAULT 'bronze'"),
-    # ── Active session ──
     ("users", "active_session_id", "VARCHAR(64)"),
-    # ── Average rating ──
     ("users", "average_rating", "FLOAT DEFAULT 5.0"),
-    # ── Guest rider contact (Shopify widget "Continue as Guest") ──
     ("trips", "guest_first_name", "VARCHAR(100)"),
     ("trips", "guest_last_name", "VARCHAR(100)"),
     ("trips", "guest_phone", "VARCHAR(30)"),
     ("trips", "guest_email", "VARCHAR(200)"),
     ("trips", "guest_lang", "VARCHAR(5)"),
-    # ── Referrals + Cruise Cash ──
     ("users", "referral_code", "VARCHAR(20)"),
     ("users", "referred_by_user_id", "INTEGER"),
     ("users", "stripe_customer_id", "VARCHAR(100)"),
@@ -133,9 +127,6 @@ MIGRATIONS = [
     ("referrals", "qualified_at", "TIMESTAMP WITH TIME ZONE"),
 ]
 
-
-# Columns that need to be converted from TIMESTAMP WITHOUT TIME ZONE to WITH TIME ZONE.
-# ALTER COLUMN TYPE is idempotent-safe (no-op if already timestamptz).
 TZ_UPGRADES = [
     ("users", "created_at"),
     ("users", "verified_at"),
@@ -166,34 +157,31 @@ TZ_UPGRADES = [
     ("referrals", "created_at"),
 ]
 
-async def run():
-    # Use raw asyncpg connection — bypasses SQLAlchemy transaction state entirely.
-    # Each DDL statement auto-commits on its own. A failure in one cannot poison
-    # the connection for the next (no "invalid transaction" cascade).
-    import asyncpg
 
-    # Parse connection params from the DATABASE_URL
+async def _get_conn():
+    """Create a psycopg3 async connection."""
+    import psycopg
+    # Strip driver prefix for psycopg
     url = DATABASE_URL
-    # Strip driver prefix for asyncpg
     for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql://", "postgres://"):
         if url.startswith(prefix):
             url = "postgresql://" + url[len(prefix):]
             break
+    
+    sslmode = "disable" if ".railway.internal" in url else "require"
+    return await psycopg.connect(url, autocommit=True, sslmode=sslmode, connect_timeout=15)
 
-    if ".railway.internal" in url:
-        ssl_ctx = False  # private network — no TLS
-    else:
-        import ssl as _ssl_mod
-        ssl_ctx = _ssl_mod.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
+
+async def run():
+    """Execute all migrations with psycopg3 (no prepared statements)."""
     try:
-        conn = await asyncpg.connect(url, timeout=15, ssl=ssl_ctx)
+        conn = await _get_conn()
     except Exception as e:
         log.error("migrate.py: cannot connect: %s", e)
         return
 
     try:
+        # Add columns
         for table, col, col_type in MIGRATIONS:
             try:
                 await conn.execute(
@@ -203,7 +191,7 @@ async def run():
             except Exception as e:
                 log.warning("  skip: %s.%s - %s", table, col, e)
 
-        # ── Performance indexes ──
+        # Indexes
         INDEXES = [
             ("idx_users_driver_online", "users", "(role, is_online, last_active_at) WHERE role = 'driver'"),
             ("idx_notifications_user_unread", "notifications", "(user_id, is_read) WHERE is_read = false"),
@@ -219,14 +207,12 @@ async def run():
         ]
         for idx_name, table, columns in INDEXES:
             try:
-                await conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {columns}"
-                )
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {columns}")
                 log.info("  idx-ok: %s", idx_name)
             except Exception as e:
                 log.warning("  idx-skip: %s - %s", idx_name, e)
 
-        # Upgrade timestamp columns to timezone-aware
+        # Timezone upgrades
         for table, col in TZ_UPGRADES:
             try:
                 await conn.execute(
@@ -236,83 +222,55 @@ async def run():
             except Exception as e:
                 log.warning("  tz-skip: %s.%s - %s", table, col, e)
 
-        # Make trips.rider_id nullable (guest bookings have no registered rider)
-        try:
-            row = await conn.fetchval(
-                "SELECT is_nullable FROM information_schema.columns "
-                "WHERE table_name = 'trips' AND column_name = 'rider_id'"
-            )
-            if row and row != 'YES':
-                await conn.execute("ALTER TABLE trips ALTER COLUMN rider_id DROP NOT NULL")
-                log.info("  ok: trips.rider_id made nullable")
-        except Exception as e:
-            log.warning("  skip: trips.rider_id nullable - %s", e)
-
-        # Make support_messages.sender_id nullable (bot/system messages)
-        try:
-            row = await conn.fetchval(
-                "SELECT is_nullable FROM information_schema.columns "
-                "WHERE table_name = 'support_messages' AND column_name = 'sender_id'"
-            )
-            if row and row != 'YES':
-                await conn.execute("ALTER TABLE support_messages ALTER COLUMN sender_id DROP NOT NULL")
-                log.info("  ok: support_messages.sender_id made nullable")
-        except Exception as e:
-            log.warning("  skip: sender_id nullable - %s", e)
-
-        # ── Composite unique constraints (email+role, phone+role) ──
-        # Allow same email/phone for different roles (rider vs driver).
-        # First drop any old single-column unique constraints on email/phone,
-        # then create the composite ones.
-        for old_name in (
-            "users_email_key", "uq_users_email", "ix_users_email",
-            "users_phone_key", "uq_users_phone", "ix_users_phone",
-        ):
+        # Nullable columns
+        for tbl, col in (("trips", "rider_id"), ("support_messages", "sender_id")):
             try:
-                exists = await conn.fetchval(
-                    "SELECT 1 FROM pg_constraint WHERE conname = $1", old_name
+                cur = await conn.execute(
+                    "SELECT is_nullable FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+                    (tbl, col)
                 )
-                if exists:
+                row = await cur.fetchone()
+                if row and row[0] != 'YES':
+                    await conn.execute(f"ALTER TABLE {tbl} ALTER COLUMN {col} DROP NOT NULL")
+                    log.info("  ok: %s.%s made nullable", tbl, col)
+            except Exception as e:
+                log.warning("  skip: %s.%s nullable - %s", tbl, col, e)
+
+        # Drop old constraints / create composite unique
+        for old_name in ("users_email_key", "uq_users_email", "ix_users_email",
+                         "users_phone_key", "uq_users_phone", "ix_users_phone"):
+            try:
+                cur = await conn.execute(
+                    "SELECT 1 FROM pg_constraint WHERE conname = %s", (old_name,)
+                )
+                if await cur.fetchone():
                     await conn.execute(f"ALTER TABLE users DROP CONSTRAINT {old_name}")
                     log.info("  dropped old constraint: %s", old_name)
             except Exception as e:
                 log.warning("  skip drop %s: %s", old_name, e)
-        # Also drop unique indexes that enforce single-column uniqueness
+
         for old_idx in ("ix_users_email", "ix_users_phone"):
             try:
-                exists = await conn.fetchval(
-                    "SELECT 1 FROM pg_indexes WHERE indexname = $1", old_idx
-                )
-                if exists:
-                    # Check if it's a unique index
-                    is_unique = await conn.fetchval(
-                        "SELECT indisunique FROM pg_index WHERE indexrelid = $1::regclass",
-                        old_idx,
+                cur = await conn.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (old_idx,))
+                if await cur.fetchone():
+                    cur2 = await conn.execute(
+                        "SELECT indisunique FROM pg_index WHERE indexrelid = %s::regclass", (old_idx,)
                     )
-                    if is_unique:
+                    row = await cur2.fetchone()
+                    if row and row[0]:
                         await conn.execute(f"DROP INDEX {old_idx}")
-                        log.info("  dropped unique index: %s", old_idx)
-                        # Recreate as non-unique for lookups
                         col = "email" if "email" in old_idx else "phone"
-                        await conn.execute(
-                            f"CREATE INDEX IF NOT EXISTS {old_idx} ON users ({col})"
-                        )
+                        await conn.execute(f"CREATE INDEX IF NOT EXISTS {old_idx} ON users ({col})")
                         log.info("  recreated non-unique index: %s", old_idx)
             except Exception as e:
                 log.warning("  skip idx %s: %s", old_idx, e)
-        # Create composite unique constraints
-        for uq_name, cols in (
-            ("uq_user_email_role", "email, role"),
-            ("uq_user_phone_role", "phone, role"),
-        ):
+
+        for uq_name, cols in (("uq_user_email_role", "email, role"),
+                               ("uq_user_phone_role", "phone, role")):
             try:
-                exists = await conn.fetchval(
-                    "SELECT 1 FROM pg_constraint WHERE conname = $1", uq_name
-                )
-                if not exists:
-                    await conn.execute(
-                        f"ALTER TABLE users ADD CONSTRAINT {uq_name} UNIQUE ({cols})"
-                    )
+                cur = await conn.execute("SELECT 1 FROM pg_constraint WHERE conname = %s", (uq_name,))
+                if not await cur.fetchone():
+                    await conn.execute(f"ALTER TABLE users ADD CONSTRAINT {uq_name} UNIQUE ({cols})")
                     log.info("  ok: constraint %s created", uq_name)
                 else:
                     log.info("  ok: constraint %s already exists", uq_name)
@@ -321,20 +279,19 @@ async def run():
 
         # Default service area
         try:
-            exists = await conn.fetchval("SELECT id FROM service_areas WHERE area_name = 'Birmingham Metro' LIMIT 1")
-            if not exists:
+            cur = await conn.execute("SELECT id FROM service_areas WHERE area_name = %s LIMIT 1", ("Birmingham Metro",))
+            if not await cur.fetchone():
                 await conn.execute(
-                    "INSERT INTO service_areas (area_name, center_lat, center_lng, radius_km) "
-                    "VALUES ('Birmingham Metro', 33.5186, -86.8104, 50.0)"
+                    "INSERT INTO service_areas (area_name, center_lat, center_lng, radius_km) VALUES (%s, %s, %s, %s)",
+                    ("Birmingham Metro", 33.5186, -86.8104, 50.0)
                 )
                 log.info("  ok: default service area created")
         except Exception as e:
             log.warning("  skip: service area - %s", e)
 
-        # ── sms_log table (idempotency guard for Twilio transactional SMS) ──
-        try:
-            await conn.execute(
-                """
+        # Create tables
+        TABLES = {
+            "sms_log": """
                 CREATE TABLE IF NOT EXISTS sms_log (
                   id SERIAL PRIMARY KEY,
                   trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -346,27 +303,8 @@ async def run():
                   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                   CONSTRAINT uq_sms_log_trip_event UNIQUE (trip_id, event_type)
                 )
-                """
-            )
-            log.info("  ok: table sms_log ensured")
-        except Exception as e:
-            log.warning("  skip: sms_log table - %s", e)
-
-        for idx_name, idx_col in (
-            ("idx_sms_log_trip_id", "trip_id"),
-            ("idx_sms_log_event_type", "event_type"),
-        ):
-            try:
-                await conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON sms_log ({idx_col})"
-                )
-                log.info("  idx-ok: %s", idx_name)
-            except Exception as e:
-                log.warning("  idx-skip: %s - %s", idx_name, e)
-
-        try:
-            await conn.execute(
-                """
+            """,
+            "email_log": """
                 CREATE TABLE IF NOT EXISTS email_log (
                   id SERIAL PRIMARY KEY,
                   trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -378,36 +316,8 @@ async def run():
                   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                   CONSTRAINT uq_email_log_trip_event UNIQUE (trip_id, event_type)
                 )
-                """
-            )
-            log.info("  ok: table email_log ensured")
-        except Exception as e:
-            log.warning("  skip: email_log table - %s", e)
-
-        for idx_name, idx_col in (
-            ("idx_email_log_trip_id", "trip_id"),
-            ("idx_email_log_event_type", "event_type"),
-        ):
-            try:
-                await conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON email_log ({idx_col})"
-                )
-                log.info("  idx-ok: %s", idx_name)
-            except Exception as e:
-                log.warning("  idx-skip: %s - %s", idx_name, e)
-
-        try:
-            await conn.execute(
-                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS guest_email VARCHAR(200)"
-            )
-            log.info("  ok: trips.guest_email ensured")
-        except Exception as e:
-            log.warning("  skip: trips.guest_email - %s", e)
-
-        # ── Driver-to-driver referral program (added 2026-04-26) ──
-        try:
-            await conn.execute(
-                """
+            """,
+            "driver_referrals": """
                 CREATE TABLE IF NOT EXISTS driver_referrals (
                   id SERIAL PRIMARY KEY,
                   referrer_driver_id INTEGER NOT NULL REFERENCES users(id),
@@ -422,41 +332,47 @@ async def run():
                   paid_at TIMESTAMPTZ,
                   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
-                """
-            )
-            log.info("  ok: table driver_referrals ensured")
-        except Exception as e:
-            log.warning("  skip: driver_referrals table - %s", e)
-
-        for idx_name, idx_col in (
-            ("idx_driver_referrals_referrer", "referrer_driver_id"),
-            ("idx_driver_referrals_status", "status"),
-            ("idx_driver_referrals_expires", "expires_at"),
-            ("idx_driver_referrals_code", "referral_code"),
-        ):
-            try:
-                await conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON driver_referrals ({idx_col})"
-                )
-                log.info("  idx-ok: %s", idx_name)
-            except Exception as e:
-                log.warning("  idx-skip: %s - %s", idx_name, e)
-
-        # ── Generic key/value config table (admin-tunable, no redeploy) ──
-        try:
-            await conn.execute(
-                """
+            """,
+            "app_config": """
                 CREATE TABLE IF NOT EXISTS app_config (
                   key VARCHAR(100) PRIMARY KEY,
                   value TEXT NOT NULL,
                   description VARCHAR(255),
                   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
-                """
-            )
-            log.info("  ok: table app_config ensured")
+            """,
+        }
+        for tbl_name, ddl in TABLES.items():
+            try:
+                await conn.execute(ddl)
+                log.info("  ok: table %s ensured", tbl_name)
+            except Exception as e:
+                log.warning("  skip: %s table - %s", tbl_name, e)
+
+        # Table indexes
+        for idx_name, idx_sql in (
+            ("idx_sms_log_trip_id", "CREATE INDEX IF NOT EXISTS idx_sms_log_trip_id ON sms_log (trip_id)"),
+            ("idx_sms_log_event_type", "CREATE INDEX IF NOT EXISTS idx_sms_log_event_type ON sms_log (event_type)"),
+            ("idx_email_log_trip_id", "CREATE INDEX IF NOT EXISTS idx_email_log_trip_id ON email_log (trip_id)"),
+            ("idx_email_log_event_type", "CREATE INDEX IF NOT EXISTS idx_email_log_event_type ON email_log (event_type)"),
+            ("idx_driver_referrals_referrer", "CREATE INDEX IF NOT EXISTS idx_driver_referrals_referrer ON driver_referrals (referrer_driver_id)"),
+            ("idx_driver_referrals_status", "CREATE INDEX IF NOT EXISTS idx_driver_referrals_status ON driver_referrals (status)"),
+            ("idx_driver_referrals_expires", "CREATE INDEX IF NOT EXISTS idx_driver_referrals_expires ON driver_referrals (expires_at)"),
+            ("idx_driver_referrals_code", "CREATE INDEX IF NOT EXISTS idx_driver_referrals_code ON driver_referrals (referral_code)"),
+        ):
+            try:
+                await conn.execute(idx_sql)
+                log.info("  idx-ok: %s", idx_name)
+            except Exception as e:
+                log.warning("  idx-skip: %s - %s", idx_name, e)
+
+        # trips.guest_email
+        try:
+            await conn.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS guest_email VARCHAR(200)")
+            log.info("  ok: trips.guest_email ensured")
         except Exception as e:
-            log.warning("  skip: app_config table - %s", e)
+            log.warning("  skip: trips.guest_email - %s", e)
+
     finally:
         await conn.close()
 

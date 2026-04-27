@@ -20,7 +20,7 @@ async def wipe_postgres():
         log.error("No DATABASE_URL — cannot wipe Postgres")
         return False
 
-    import asyncpg
+    import psycopg
 
     url = DATABASE_URL
     for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql://", "postgres://"):
@@ -28,16 +28,10 @@ async def wipe_postgres():
             url = "postgresql://" + url[len(prefix):]
             break
 
-    if ".railway.internal" in url:
-        ssl_ctx = False
-    else:
-        import ssl as _ssl_mod
-        ssl_ctx = _ssl_mod.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
+    sslmode = "disable" if ".railway.internal" in url else "require"
 
     try:
-        conn = await asyncpg.connect(url, timeout=15, ssl=ssl_ctx)
+        conn = await psycopg.connect(url, autocommit=True, sslmode=sslmode, connect_timeout=15)
     except Exception as e:
         log.error("Cannot connect to Postgres: %s", e)
         return False

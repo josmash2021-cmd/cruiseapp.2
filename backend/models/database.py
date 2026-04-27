@@ -39,11 +39,15 @@ else:
     _is_private = ".railway.internal" in DATABASE_URL
 
     if _is_supabase_pooler:
-        # PgBouncer mode: NO local pool. Each request gets a fresh connection
-        # that PgBouncer handles. This eliminates prepared statement conflicts
-        # because asyncpg starts fresh on every connection.
-        _engine_kwargs["poolclass"] = NullPool
-        _engine_kwargs["pool_pre_ping"] = False
+        # Supabase direct connection (port 5432) with small pool.
+        # PgBouncer (6543) causes prepared statement conflicts with asyncpg.
+        # We use direct connection with pool_size=5 which Supabase can handle.
+        _engine_kwargs["pool_size"] = 5
+        _engine_kwargs["max_overflow"] = 2
+        _engine_kwargs["pool_pre_ping"] = True
+        _engine_kwargs["pool_recycle"] = 300
+        _engine_kwargs["pool_timeout"] = 5
+        _engine_kwargs["pool_use_lifo"] = True
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -52,7 +56,6 @@ else:
             "timeout": 5,
             "command_timeout": 10,
             "ssl": _ssl_ctx,
-            "statement_cache_size": 0,  # REQUIRED for PgBouncer
             "server_settings": {
                 "jit": "off",  # Disable JIT for faster simple queries
             },

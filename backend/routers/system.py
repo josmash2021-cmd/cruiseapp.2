@@ -61,8 +61,10 @@ async def _check_database() -> dict:
         async with SessionLocal() as db:
             from sqlalchemy import text
             result = await db.execute(text("SELECT 1"))
-            await result.fetchone()
-        return {"ok": True, "latency_ms": 0}
+            row = result.fetchone()
+            if row:
+                return {"ok": True}
+            return {"ok": False, "error": "No row returned"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -70,10 +72,11 @@ async def _check_database() -> dict:
 async def _check_redis() -> dict:
     """Check Redis connectivity."""
     try:
-        from services.redis_cache import _redis_client
-        if _redis_client is None:
-            return {"ok": False, "error": "Redis not configured"}
-        await _redis_client.ping()
+        from services.redis_cache import _get_redis
+        redis = await _get_redis()
+        if redis is None:
+            return {"ok": False, "error": "Redis not configured or unavailable"}
+        await redis.ping()
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}

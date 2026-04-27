@@ -729,16 +729,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           await Future.delayed(const Duration(seconds: 3));
         }
 
-        // Pop with 'cancelled' result so DriverOnlineController.
-        // _resetToSearchingOnRemoteCancel() takes over. Wrap in try
-        // so a stale Navigator can't crash the listener.
+        // Navigate back to DriverOnlineScreen — this screen was pushReplacement'd
+        // from TripAcceptedScreen, so pop() would leave us with nowhere to go.
+        // pushAndRemoveUntil ensures we always land back in the driver flow.
         if (!mounted) return;
         try {
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop('cancelled');
-          }
+          Navigator.of(context).pushAndRemoveUntil(
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 400),
+            ),
+            (route) => route.isFirst, // keep only the very first route (usually home)
+          );
         } catch (e) {
-          debugPrint('[Driver] cancel-pop failed: $e');
+          debugPrint('[Driver] cancel-navigate failed: $e');
         }
         return;
       }
@@ -813,11 +819,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
           if (!mounted) return;
           try {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop('cancelled');
-            }
+            Navigator.of(context).pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 400),
+              ),
+              (route) => route.isFirst,
+            );
           } catch (e) {
-            debugPrint('[Driver] poll-cancel-pop failed: $e');
+            debugPrint('[Driver] poll-cancel-navigate failed: $e');
           }
         }
       } catch (_) {

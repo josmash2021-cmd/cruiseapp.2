@@ -967,12 +967,24 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Car update: uses PointAnnotation (same proven approach as pins) ──
   void _updateCarSmooth() {
-    if (_map == null) return;
-    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
-    if (_carPngBytes == null) return;
+    if (_map == null) {
+      debugPrint('[CarIcon] SKIP: _map is null');
+      return;
+    }
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) {
+      debugPrint('[CarIcon] SKIP: _animPos is (0,0)');
+      return;
+    }
+    if (_carPngBytes == null) {
+      debugPrint('[CarIcon] SKIP: _carPngBytes is null');
+      return;
+    }
 
     final mgr = _carAnnotMgr;
-    if (mgr == null) return;
+    if (mgr == null) {
+      debugPrint('[CarIcon] SKIP: _carAnnotMgr is null');
+      return;
+    }
 
     if (_carAnnot != null) {
       try {
@@ -980,6 +992,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
         _carAnnot!.iconRotate = _animBearing;
+        debugPrint('[CarIcon] UPDATE pos=(${_animPos.latitude.toStringAsFixed(5)},${_animPos.longitude.toStringAsFixed(5)}) bearing=${_animBearing.toStringAsFixed(1)}');
         // REMOVED _carUpdateInFlight guard — it was causing frame drops.
         // The Ticker runs at 60fps and advances _animPos smoothly. If Mapbox
         // is still processing the previous update, we fire a new one anyway;

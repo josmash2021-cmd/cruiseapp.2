@@ -49,6 +49,37 @@ Rules:
 5. Be transparent that you are an AI assistant
 6. If you don't know something, admit it and offer to connect with a human
 
+FRAUD DETECTION - CRITICAL:
+Before processing ANY refund or credit, analyze for fraud patterns:
+
+RED FLAGS (escalate to human, do NOT process):
+- User repeatedly requests refunds (3+ in 30 days)
+- Refund amount is disproportionate to trip fare
+- User refuses to provide details about the issue
+- Inconsistent story about what happened
+- New account (< 7 days) requesting large refund
+- User threatens negative review/social media to get refund
+- Trip completed successfully but user claims "driver never came"
+- GPS shows trip completed but user disputes
+
+YELLOW FLAGS (require extra verification):
+- First-time refund request over $20
+- Vague complaint without specifics
+- User asks for refund immediately after trip starts
+
+GREEN FLAGS (can process automatically):
+- Clear specific issue (wrong route, overcharge, cancellation fee)
+- Trip was actually cancelled or not completed
+- Receipt shows clear billing error
+- User provides photo evidence
+- Reasonable amount matching the issue
+
+When fraud is suspected:
+1. DO NOT process refund/credit
+2. Politely explain you need to review the case
+3. Escalate to human supervisor with fraud flag
+4. Log the attempt for pattern analysis
+
 When you need to take action, use the available functions.
 When a user is frustrated (caps, exclamation marks, negative words), acknowledge their feelings first.
 """
@@ -165,6 +196,54 @@ _FUNCTIONS = [
 ]
 
 
+async def _check_fraud_patterns(user_context: dict[str, Any]) -> tuple[bool, str]:
+    """Check for fraud patterns before processing refunds/credits.
+    
+    Returns:
+        (is_fraudulent, reason) — if is_fraudulent is True, block the action
+    """
+    user = user_context.get("user", {})
+    user_id = user.get("id", 0)
+    recent_trips = user_context.get("recent_trips", [])
+    
+    # Count refunds in last 30 days
+    refund_count = user_context.get("refund_count_30d", 0)
+    
+    # Check red flags
+    if refund_count >= 3:
+        return True, f"User has {refund_count} refunds in 30 days — pattern suggests abuse"
+    
+    # Check account age
+    account_created = user.get("created_at")
+    if account_created:
+        from datetime import datetime, timezone
+        try:
+            if isinstance(account_created, str):
+                account_created = datetime.fromisoformat(account_created.replace('Z', '+00:00'))
+            days_old = (datetime.now(timezone.utc) - account_created).days
+            if days_old < 7 and refund_count > 0:
+                return True, "New account (< 7 days) with refund request — high fraud risk"
+        except:
+            pass
+    
+    # Check if trip was actually completed
+    active_trip = user_context.get("active_trip")
+    if active_trip and active_trip.get("status") == "completed":
+        # If trip completed and user wants refund without clear issue
+        last_msg = ""
+        for msg in reversed(user_context.get("messages", [])):
+            if msg.get("role") in ("rider", "driver", "user"):
+                last_msg = msg.get("content", "").lower()
+                break
+        
+        vague_complaints = ["quiero refund", "quiero reembolso", "give me refund", 
+                           "i want refund", "devuelvan mi dinero", "money back"]
+        if any(v in last_msg for v in vague_complaints):
+            return True, "Vague refund request for completed trip without specific issue"
+    
+    return False, ""
+
+
 async def generate_support_response(
     messages: list[dict[str, Any]],
     user_context: dict[str, Any],
@@ -182,6 +261,16 @@ async def generate_support_response(
         _log.error("OpenAI client not initialized — OPENAI_API_KEY missing")
         return {
             "response": "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away.",
+            "escalate": True,
+        }
+
+    # Check for fraud patterns
+    is_fraud, fraud_reason = await _check_fraud_patterns(user_context)
+    if is_fraud:
+        _log.warning("[FRAUD] Blocked action for user %s: %s", 
+                    user_context.get("user", {}).get("id"), fraud_reason)
+        return {
+            "response": "I understand your concern. However, I need to have my supervisor review this case to ensure we handle it properly. Let me connect you with a human agent who can assist you further.",
             "escalate": True,
         }
 

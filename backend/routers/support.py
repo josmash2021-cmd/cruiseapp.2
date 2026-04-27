@@ -143,18 +143,32 @@ def _has_cancel_intent(text: str) -> bool:
 async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[str, Any]:
     """Gather comprehensive context about the user for smarter bot responses."""
     ctx: dict[str, Any] = {"has_active_trip": False, "active_trip": None, "recent_trips": [],
-                 "user": None, "trip_summary": ""}
+                 "user": None, "trip_summary": "", "refund_count_30d": 0}
 
     # User info
     u_r = await db.execute(select(User).where(User.id == user_id))
     user = u_r.scalar_one_or_none()
     if user:
         ctx["user"] = {
+            "id": user.id,
             "name": f"{user.first_name} {user.last_name}".strip(),
             "role": user.role or "rider",
             "email": user.email,
             "phone": user.phone,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
         }
+        
+        # Count refunds in last 30 days for fraud detection
+        from datetime import datetime, timedelta, timezone
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        refund_count_r = await db.execute(
+            select(ActionRequest).where(
+                ActionRequest.user_id == user_id,
+                ActionRequest.action_type.in_(["request-refund", "issue-credit"]),
+                ActionRequest.created_at >= thirty_days_ago,
+            )
+        )
+        ctx["refund_count_30d"] = len(refund_count_r.scalars().all())
 
     # Active trip (not completed, not canceled)
     active_r = await db.execute(

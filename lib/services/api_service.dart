@@ -1037,13 +1037,14 @@ class ApiService {
     if (token == null) return null;
 
     try {
-      // Use cached GET for better performance - cache for 2 seconds
-      final res = await _cachedGet(
-        Uri.parse('$_baseUrl/auth/me'),
-        headers: _jsonHeaders(token),
-        cacheTtl: const Duration(seconds: 2),
-        useCache: true,
-      );
+      // No cache for getMe() — profile data must be fresh.
+      // Previously cached for 2s which caused stale data bugs.
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/auth/me'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
       // Auto-refresh on 401
       if (res.statusCode == 401) {
@@ -1285,7 +1286,7 @@ class ApiService {
   /// Reduces unnecessary API calls while keeping reasonable freshness
   static Future<String> getAccountStatus() async {
     final token = await getToken();
-    if (token == null) return 'active'; // no token yet — assume active, don't trigger logout
+    if (token == null) return 'unknown'; // no token yet — can't determine status
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/auth/account-status'),
       headers: _jsonHeaders(token),
@@ -1305,13 +1306,16 @@ class ApiService {
         );
         if (retry.statusCode == 200) {
           final d = jsonDecode(retry.body);
-          return (d is Map ? d['status'] as String? : null) ?? 'active';
+          return (d is Map ? d['status'] as String? : null) ?? 'unknown';
         }
       }
-      return 'active'; // refresh failed — don't logout from background poll
+      return 'unknown'; // refresh failed — status unknown, caller decides
+    }
+    if (res.statusCode >= 500) {
+      return 'unknown'; // server error — don't assume active
     }
     final data = _parse(res);
-    return data['status'] as String? ?? 'active';
+    return data['status'] as String? ?? 'unknown';
   }
 
   // ═══════════════════════════════════════════════════════

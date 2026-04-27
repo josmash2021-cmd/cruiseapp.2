@@ -60,9 +60,47 @@ _riders_online: Set[str] = set()
 
 @sio.event
 async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
-    """Client connected — auth is optional here; we require it via 'authenticate'."""
+    """Client connected — validate JWT immediately; reject unauthenticated connections.
+
+    The token can be provided either:
+      1. In the handshake query string: ?token=<jwt>
+      2. In the auth payload during the Socket.io handshake
+
+    Unauthenticated connections are rejected to prevent socket exhaustion attacks.
+    """
     logger.info("[Socket.io] Connect: %s", sid)
-    _connection_meta[sid] = {"user_id": None, "role": None, "rooms": set()}
+
+    # Try to extract token from query string or auth payload
+    token = ""
+    if auth and isinstance(auth, dict):
+        token = auth.get("token", "")
+    if not token and environ:
+        query_string = environ.get("QUERY_STRING", "")
+        if query_string:
+            from urllib.parse import parse_qs
+            params = parse_qs(query_string)
+            token = params.get("token", [""])[0]
+
+    if not token:
+        logger.warning("[Socket.io] Rejecting %s — no token provided", sid)
+        return False  # Reject connection
+
+    if not _JWT_SECRET:
+        logger.error("[Socket.io] JWT secret not configured — rejecting auth")
+        return False
+
+    try:
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        user_id = int(payload["sub"])
+    except (JWTError, ValueError, KeyError) as e:
+        logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
+        return False  # Reject connection
+
+    # Store metadata immediately so the connection is usable without
+    # requiring a separate 'authenticate' event.
+    _connection_meta[sid] = {"user_id": user_id, "role": None, "rooms": set()}
+    await sio.enter_room(sid, f"user:{user_id}")
+    logger.info("[Socket.io] Authenticated on connect: %s user=%s", sid, user_id)
     return True
 
 

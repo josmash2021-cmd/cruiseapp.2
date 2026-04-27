@@ -41,23 +41,22 @@ else:
     _is_private = ".railway.internal" in DATABASE_URL
 
     if _is_supabase:
-        # Supabase PgBouncer (pooler.supabase.com): MINIMAL pool.
-        # PgBouncer free tier has ~10-20 connection limit. We use
-        # pool_size=2 + max_overflow=0 = MAX 2 connections total.
-        # This is extremely conservative but prevents MaxClientsInSessionMode.
-        _engine_kwargs["pool_size"] = 2
-        _engine_kwargs["max_overflow"] = 0
-        _engine_kwargs["pool_pre_ping"] = False
-        _engine_kwargs["pool_recycle"] = 120     # 2 min — aggressive recycle
-        _engine_kwargs["pool_timeout"] = 2       # Fail fast
+        # Supabase DIRECT connection (db.XXX.supabase.co:5432).
+        # No PgBouncer limits — we can use a healthy pool size.
+        # Supabase free tier allows ~60 direct connections.
+        _engine_kwargs["pool_size"] = 10
+        _engine_kwargs["max_overflow"] = 5
+        _engine_kwargs["pool_pre_ping"] = True
+        _engine_kwargs["pool_recycle"] = 600     # 10 min
+        _engine_kwargs["pool_timeout"] = 5
         _engine_kwargs["pool_use_lifo"] = True
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
         _connect_args = {
-            "timeout": 3,
-            "command_timeout": 8,
+            "timeout": 5,
+            "command_timeout": 15,
             "ssl": _ssl_ctx,
             "server_settings": {
                 "jit": "off",

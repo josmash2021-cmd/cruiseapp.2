@@ -24,10 +24,10 @@ jobs:
         run: flutter pub get
 
       - name: Analyze Flutter code
-        run: flutter analyze --fatal-infos
+        run: flutter analyze --fatal-infos --verbose
 
       - name: Run Flutter tests
-        run: flutter test
+        run: flutter test --verbose
 
   # ── Backend tests ─────────────────────────────────────────────────
   backend:

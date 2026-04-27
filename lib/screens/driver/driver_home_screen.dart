@@ -375,22 +375,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       return;
     }
 
-    // Subsequent updates: skip-if-busy.
+    // Update geometry + image every frame — no skip guard.
+    // The Ticker runs at 60fps and advances _goldDot smoothly.
+    // Mapbox internally handles rapid updates; skipping frames caused stutter.
     try {
       _myLocAnnot!.geometry = point;
       _myLocAnnot!.image = bytes;
+      mgr.update(_myLocAnnot!).catchError((_) {
+        _myLocAnnot = null;
+      });
     } catch (_) {
       _myLocAnnot = null;
-      return;
-    }
-    if (_updatingLocAnnot) return;
-    _updatingLocAnnot = true;
-    try {
-      await mgr.update(_myLocAnnot!);
-    } catch (_) {
-      _myLocAnnot = null;
-    } finally {
-      _updatingLocAnnot = false;
     }
   }
 

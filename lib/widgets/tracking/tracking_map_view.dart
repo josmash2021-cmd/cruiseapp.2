@@ -507,33 +507,28 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_phase == _TrackPhase.arrived) return;
     // Skip if another camera animation is still running
     if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-    
+
+    // During onTrip: use chase camera (navigation-style) instead of bounds fit.
+    // This keeps the driver at a fixed position on screen and the route
+    // centered in the visible gap between cards — no zoom jitter.
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    if (isOnTrip && _animPos.latitude != 0) {
+      _chaseCamera();
+      return;
+    }
+
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
-    
+
     // Safe-area insets + card offsets from rider_tracking_screen build()
     final mq = MediaQuery.of(context).padding;
     final topPad = mq.top;   // safe area top
     final bottomPad = mq.bottom; // safe area bottom
-    
+
     final pts = <LatLng>[];
-    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-    
-    if (isOnTrip && _animPos.latitude != 0) {
-      // Always show driver + dropoff + remaining route so the rider
-      // always sees the full picture of where they're going.
-      pts.add(_animPos);
-      pts.add(widget.dropoffLatLng);
-      if (_segDist.isNotEmpty) {
-        // Add route points ahead of the driver for smooth line visibility
-        for (int i = 0; i < _routePts.length; i++) {
-          if (_segDist[i] >= _traveledM) {
-            pts.add(_routePts[i]);
-          }
-        }
-      }
-    } else if (_phase == _TrackPhase.arriving) {
+
+    if (_phase == _TrackPhase.arriving) {
       // Arriving: show driver + pickup + dropoff so rider sees full trip plan
       pts.add(widget.pickupLatLng);
       pts.add(widget.dropoffLatLng);
@@ -547,9 +542,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (_animPos.latitude != 0) pts.add(_animPos);
       pts.addAll(_routePts);
     }
-    
+
     if (pts.isEmpty) return;
-    
+
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
     double minLng = pts[0].longitude, maxLng = pts[0].longitude;
     for (final p in pts) {
@@ -558,8 +553,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       minLng = math.min(minLng, p.longitude);
       maxLng = math.max(maxLng, p.longitude);
     }
-    
+
     // Padding = safe area + card offset + card height + generous breathing room
+    // Increased from +48 to +64 so the route is centered in the visible gap
+    // between cards, not squeezed against the edges.
     // Top card: positioned at topPad + 10, height = topHeight
     // Bottom card: positioned at bottomPad + 16, height = bottomHeight
     _map?.cameraForCoordinatesPadding(
@@ -567,22 +564,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(bearing: 0, pitch: 0),
       mapbox.MbxEdgeInsets(
-        top: topPad + 10 + topHeight + 48,
-        bottom: bottomPad + 16 + bottomHeight + 48,
+        top: topPad + 10 + topHeight + 64,
+        bottom: bottomPad + 16 + bottomHeight + 64,
         left: 44,
         right: 44,
       ),
       null, null,
     ).then((cam) {
       if (!mounted || _map == null) return;
-      // Allow wider zoom-out for long-distance trips so the rider can
-      // see pickup + driver + dropoff at once. Was clamped to min 13
-      // which on >10mi trips left half the route off-screen with a sea
-      // of empty map in the middle.
-      // Min 9  ≈ city-wide view (covers ~40mi diagonal).
-      // Max 16 ≈ block-level (avoids zooming in too tight when driver
-      //         is right next to dropoff).
-      final zoom = (cam.zoom ?? 14.0).clamp(9.0, 16.0);
+      final zoom = (cam.zoom ?? 14.0).clamp(11.0, 16.0);
       final clampedCam = mapbox.CameraOptions(
         center: cam.center,
         zoom: zoom,
@@ -593,19 +583,70 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       );
       // Lock camera during animation to prevent overlapping animations
       _cameraAnimating = true;
-      // Short easeTo for fluid tracking — 600ms finishes before next 800ms follow tick
-      const dur = 600;
+      // Longer flyTo (1200ms) for smoother transitions — matches 1500ms follow interval
+      const dur = 1200;
       _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
-      _map!.easeTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
+      _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
       Future.delayed(const Duration(milliseconds: dur), () {
         _cameraAnimating = false;
       });
     });
   }
 
+  /// Navigation-style chase camera for onTrip phase.
+  /// Keeps the driver at ~35% from the bottom of the visible map area
+  /// (between the top and bottom cards) so the route ahead is always visible.
+  /// Uses a fixed zoom to prevent zoom jitter from constant bounds re-calculation.
+  void _chaseCamera() {
+    if (_map == null) return;
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
+
+    final mq = MediaQuery.of(context).padding;
+    final topPad = mq.top;
+    final bottomPad = mq.bottom;
+    final topHeight = _topCardHeight;
+    final bottomHeight = _bottomCardHeight;
+
+    // Visible map area = screen minus cards and safe area
+    final visibleTop = topPad + 10 + topHeight + 32;
+    final visibleBottom = bottomPad + 16 + bottomHeight + 32;
+
+    // Target: center the camera so driver appears at 35% from bottom of visible area
+    // This leaves 65% of visible map ahead of the car for the route
+    final targetLat = _animPos.latitude;
+    final targetLng = _animPos.longitude;
+
+    _cameraAnimating = true;
+    const dur = 1000;
+    _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
+
+    _map!.flyTo(
+      mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(targetLng, targetLat),
+        ),
+        zoom: 15.5,
+        bearing: 0,
+        pitch: 0,
+        padding: mapbox.MbxEdgeInsets(
+          top: visibleTop.toDouble(),
+          bottom: (visibleBottom * 1.35).toDouble(), // driver at ~35% from bottom
+          left: 28,
+          right: 28,
+        ),
+      ),
+      mapbox.MapAnimationOptions(duration: dur),
+    );
+
+    Future.delayed(const Duration(milliseconds: dur), () {
+      _cameraAnimating = false;
+    });
+  }
+
   void _throttleBoundsFit() {
     final now = DateTime.now();
-    if (now.difference(_lastBoundsFit).inMilliseconds < 800) return;
+    if (now.difference(_lastBoundsFit).inMilliseconds < 1500) return;
     _lastBoundsFit = now;
     _fitRouteBounds();
   }
@@ -929,14 +970,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
     if (_carPngBytes == null) return;
-    // Busy guard: if the previous Mapbox IPC call hasn't returned yet,
-    // SKIP this frame entirely. The NEXT frame will pick up the latest
-    // _animPos which is always current because the ticker keeps
-    // advancing the interpolation on every vsync. Without this guard
-    // the platform channel queues up dozens of concurrent updates and
-    // Mapbox applies them all at once → visible "jump forward" instead
-    // of smooth glide.
-    if (_carUpdateInFlight) return;
 
     final mgr = _carAnnotMgr;
     if (mgr == null) return;
@@ -947,11 +980,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         );
         _carAnnot!.iconRotate = _animBearing;
-        _carUpdateInFlight = true;
-        mgr.update(_carAnnot!).then((_) {
-          _carUpdateInFlight = false;
-        }).catchError((_) {
-          _carUpdateInFlight = false;
+        // REMOVED _carUpdateInFlight guard — it was causing frame drops.
+        // The Ticker runs at 60fps and advances _animPos smoothly. If Mapbox
+        // is still processing the previous update, we fire a new one anyway;
+        // Mapbox internally deduplicates rapid updates. The "jump" was caused
+        // by SKIPPING frames when _carUpdateInFlight was true, not by
+        // overloading the platform channel. Now the car glides continuously.
+        mgr.update(_carAnnot!).catchError((e) {
+          debugPrint('[CarIcon] update failed: $e — will recreate next frame');
+          _carAnnot = null;
+          _carAnnotCreating = false;
         });
       } catch (e) {
         debugPrint('[CarIcon] update failed: $e — will recreate');

@@ -334,9 +334,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       unawaited(_fetchApproachRoute(ll));
     }
 
+    // During arriving phase BEFORE approach route loads: the route polyline
+    // is the TRIP route (pickup→dropoff), not the approach route (driver→pickup).
+    // Projecting the driver's GPS onto the trip route gives a completely wrong
+    // position (e.g. driver 2 miles away gets projected onto the trip route).
+    // Use raw GPS directly until the approach route is ready.
+    final isArrivingWithoutApproach = _phase == _TrackPhase.arriving && !_approachRouteFetched;
+
     // Always try to snap GPS onto the route polyline.
     // Only fall back to raw GPS lerp when we truly have no route.
-    if (_segDist.isNotEmpty && _routePts.length >= 2) {
+    if (!isArrivingWithoutApproach && _segDist.isNotEmpty && _routePts.length >= 2) {
       final projectedM = _projectOntoRoute(ll);
       // Accept projection when close enough to route (< 150m lateral)
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
@@ -396,7 +403,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
       }
     } else {
-      // No route available — use raw GPS lerp
+      // No route available OR arriving without approach route yet:
+      // use raw GPS lerp so the car appears at the driver's real position.
       _directTargetPos = ll;
       _directTargetBearing = bearing;
     }
@@ -1449,6 +1457,51 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       return;
     }
 
+    // During arriving without approach route: use raw GPS lerp ONLY.
+    // The trip route (pickup→dropoff) is NOT the right route for tracking
+    // the driver during arriving. Trying to project the driver onto it would
+    // place the car at the pickup or somewhere wrong on the trip route.
+    final arrivingNoApproach = _phase == _TrackPhase.arriving && !_approachRouteFetched;
+    if (arrivingNoApproach) {
+      final tgt = _directTargetPos;
+      if (tgt != null) {
+        if (_animPos.latitude == 0 && _animPos.longitude == 0) {
+          // First GPS: teleport to driver's real position
+          _animPos = tgt;
+          _driverPos = tgt;
+          _animBearing = _directTargetBearing ?? 0;
+          _driverBearing = _animBearing;
+          _updateCarSmooth();
+          return;
+        }
+        // Smooth glide toward GPS target (18% per frame = ~0.3s response)
+        final posFactor = tf(0.18);
+        final dLat = tgt.latitude - _animPos.latitude;
+        final dLng = tgt.longitude - _animPos.longitude;
+        final newLat = _animPos.latitude + dLat * posFactor;
+        final newLng = _animPos.longitude + dLng * posFactor;
+        _animPos = LatLng(newLat, newLng);
+        _driverPos = _animPos;
+        // Bearing from movement direction
+        final movedEnough = (newLat - _animPos.latitude + dLat * posFactor).abs() > 0.000002 ||
+                            (newLng - _animPos.longitude + dLng * posFactor).abs() > 0.000002;
+        double targetBrg;
+        if (movedEnough) {
+          targetBrg = _bearing(LatLng(newLat - dLat * posFactor, newLng - dLng * posFactor), _animPos);
+        } else {
+          targetBrg = _directTargetBearing ?? _animBearing;
+        }
+        double d = targetBrg - _animBearing;
+        if (d > 180) d -= 360;
+        if (d < -180) d += 360;
+        final brgFactor = tf(0.30);
+        _animBearing = (_animBearing + d * brgFactor) % 360;
+        _driverBearing = _animBearing;
+        _updateCarSmooth();
+      }
+      return;
+    }
+
     // ── CONSTANT-VELOCITY advance (glass-smooth, ZERO jumps) ──
     // First GPS with a route: teleport to projected position on route.
     if (_animPos.latitude == 0 && _animPos.longitude == 0 && _tgtTraveledM > 0) {
@@ -1519,7 +1572,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)
-    _throttleBoundsFit();
+    // NOTE: _throttleBoundsFit() removed from interpolation loop — camera is now
+    // driven by _cameraFollowTimer (1500ms) to prevent animation overlap jitter.
     _updateCarSmooth(); // fast path: only car GeoJSON
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
@@ -1590,17 +1644,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every 2.5s.
+  /// Start real-time camera tracking - follows driver every 1500ms.
   /// Skips during arrived phase — driver is stationary, camera should be stable.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
-    // Follow every 800ms — short enough to feel fluid, long enough to avoid
-    // overlapping easeTo animations (600ms animation + 200ms settle).
-    // Debounce: if the previous flyTo/easeTo hasn't settled yet (network
-    // lag, dropped frame), skip this tick entirely instead of stacking
-    // another camera animation. Stacked animations feel nervous and burn
-    // CPU needlessly on the map thread.
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
+    // Follow every 1500ms — long enough for flyTo (1200ms) to complete
+    // before the next tick, preventing overlapping animations that cause
+    // camera jitter. During onTrip we use _chaseCamera() which keeps the
+    // driver at a fixed position on screen (navigation-style) instead of
+    // constantly re-fitting bounds.
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       if (_phase == _TrackPhase.arrived) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;

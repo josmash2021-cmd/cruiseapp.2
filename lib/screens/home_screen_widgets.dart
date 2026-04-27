@@ -1922,235 +1922,133 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // ─── Fleet: Redesigned professional vehicle cards ───
+  // ─── Fleet: Premium dark cards with gold particles ───
   Widget _buildFleetStack(double screenW) {
     final active = _activeRide != null;
-    // Unified dark card background for all tiers
-    const cardBg = [Color(0xFF1A1D24), Color(0xFF252A35)];
 
     final s = S.of(context);
     final vehicles = [
       {
         'tier': 'VIP',
+        'displayName': 'BLACK',
         'desc': s.vipDesc,
         'features': s.vipFeatures,
         'idx': 0,
-        'accent': _gold,
         'image': 'cruise_3.png',
-        'gradient': const [Color(0xFFE8C547), Color(0xFFD4A574)],
       },
       {
         'tier': 'PREMIUM',
+        'displayName': 'PREMIUM',
         'desc': s.premiumDesc,
         'features': s.premiumFeatures,
         'idx': 1,
-        'accent': const Color(0xFFCECECE),
         'image': 'cruise_7.png',
-        'gradient': const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
       },
       {
         'tier': 'COMFORT',
+        'displayName': 'STANDARD',
         'desc': s.comfortDesc,
         'features': s.comfortFeatures,
         'idx': 2,
-        'accent': const Color(0xFF4CAF50),
         'image': 'cruise_6.png',
-        'gradient': const [Color(0xFF66BB6A), Color(0xFF388E3C)],
       },
     ];
 
-    // 1:1 with web — 3 cards in a horizontal row
     return Row(
       children: vehicles.map((v) {
-        final accent = v['accent'] as Color;
         final idx = v['idx'] as int;
         final tier = v['tier'] as String;
-        final gradient = v['gradient'] as List<Color>;
+        final displayName = v['displayName'] as String;
         final isVIP = tier == 'VIP';
-        final isPremium = tier == 'PREMIUM';
-        final isComfort = tier == 'COMFORT';
 
-        // ── Static tier badge (no shimmer / sweep / pulse animations) ──
-        // Fixed 78x22 size on every tier so VIP / PREMIUM / COMFORT
-        // line up identically across the row.
-        final Widget animatedBadge = SizedBox(
-          width: 78,
-          height: 22,
-          child: Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              gradient: isVIP
-                  ? const LinearGradient(
-                      colors: [Color(0xFF1A1A1A), Color(0xFF000000)],
-                    )
-                  : isPremium
-                      ? const LinearGradient(
-                          colors: [
-                            Color(0xFFF5DC7A),
-                            Color(0xFFE8C547),
-                            Color(0xFFB08800),
-                          ],
-                        )
-                      : const LinearGradient(
-                          colors: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-                        ),
-              borderRadius: BorderRadius.circular(6),
-              border: isVIP
-                  ? Border.all(
-                      color:
-                          const Color(0xFFE8C547).withValues(alpha: 0.3),
-                      width: 1,
-                    )
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isVIP)
-                  const Icon(Icons.diamond, size: 9, color: Colors.white)
-                else
-                  Text(
-                    isPremium ? '★' : '✦',
-                    style: TextStyle(
-                      color: isPremium
-                          ? Colors.black
-                          : const Color(0xFF1A1A1A),
-                      fontSize: 8,
-                      height: 1,
-                    ),
-                  ),
-                const SizedBox(width: 3),
-                Text(
-                  tier,
-                  style: TextStyle(
-                    color: isVIP
-                        ? Colors.white
-                        : (isPremium
-                            ? Colors.black
-                            : const Color(0xFF1A1A1A)),
-                    fontSize: 8,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.64,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        final rideId = isVIP ? 'suburban' : tier == 'PREMIUM' ? 'camry' : 'fusion';
 
-        // ── Static card — no AnimatedBuilder wrapper ──
-        // Map tier → ride option ID for pre-selection
-        final rideId = isVIP ? 'suburban' : isPremium ? 'camry' : 'fusion';
         return Expanded(
           child: Padding(
-            padding: EdgeInsets.only(
-              right: idx < 2 ? 8 : 0,
-            ),
-          child: IgnorePointer(
-            ignoring: active,
-            child: Opacity(
-              opacity: active ? 0.45 : 1.0,
-              child: GestureDetector(
-                onTap: () => _openSearchThenRide(rideId: rideId),
-                child: Container(
-              // Fixed equal height across all 3 tiers — VIP / PREMIUM /
-              // COMFORT now line up identically.
-              height: 168,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: cardBg,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: _gold.withValues(alpha: 0.30),
-                  width: 1.5,
-                ),
-                // Only a soft black drop — gold halo behind the card was
-                // dropped per design feedback so the 3 cards sit cleanly
-                // on the black sheet background.
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Car image with ground-shadow ellipse — slightly
-                    // bigger than before (130x90) for more visual weight.
-                    SizedBox(
-                      width: 130,
-                      height: 90,
-                      child: Stack(
-                        alignment: Alignment.bottomCenter,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Container(
-                              width: 96,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(50),
-                                gradient: RadialGradient(
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.55),
-                                    Colors.black.withValues(alpha: 0.0),
-                                  ],
-                                  stops: const [0.0, 1.0],
+            padding: EdgeInsets.only(right: idx < 2 ? 8 : 0),
+            child: IgnorePointer(
+              ignoring: active,
+              child: Opacity(
+                opacity: active ? 0.45 : 1.0,
+                child: GestureDetector(
+                  onTap: () => _openSearchThenRide(rideId: rideId),
+                  child: Container(
+                    height: 168,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: 0.30),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        // Animated gold particle background
+                        GoldParticlesBackground(
+                          particleCount: isVIP ? 30 : 20,
+                          child: const SizedBox.expand(),
+                        ),
+                        // Content
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Car image with 3D shadows
+                              SizedBox(
+                                width: 130,
+                                height: 90,
+                                child: CarImage3D(
+                                  assetPath: 'assets/images/${v['image']}',
+                                  cacheWidth: 360,
+                                  selected: isVIP,
+                                  fallback: Icon(
+                                    Icons.directions_car_rounded,
+                                    color: _gold.withValues(alpha: 0.5),
+                                    size: 40,
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              // Display name
+                              Text(
+                                displayName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              // Tier badge inside card, below name
+                              VehicleTierBadge(
+                                tier: isVIP
+                                    ? VehicleTier.vip
+                                    : tier == 'PREMIUM'
+                                        ? VehicleTier.premium
+                                        : VehicleTier.comfort,
+                              ),
+                            ],
                           ),
-                          Image.asset(
-                            'assets/images/${v['image']}',
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                            isAntiAlias: true,
-                            alignment: Alignment.center,
-                            cacheWidth: 360,
-                            errorBuilder: (ctx, err, st) => Icon(
-                              Icons.directions_car_rounded,
-                              color: accent.withValues(alpha: 0.5),
-                              size: 40,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      isVIP
-                          ? 'BLACK'
-                          : isPremium
-                              ? 'PREMIUM'
-                              : 'STANDARD',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    animatedBadge,
-                  ],
+                  ),
                 ),
-              ),
-            ),
               ),
             ),
           ),
-        ),
         );
       }).toList(),
     );

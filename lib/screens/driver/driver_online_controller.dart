@@ -934,8 +934,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     // Start the ticker lazily on the first real GPS position so it does not
     // burn CPU during the period before any movement data is available.
+    //
+    // 2026-04-27 freeze fix: Don't start the 60fps ticker until the page
+    // transition (400ms fade+scale) has finished. The ticker hammers the
+    // MethodChannel with annotation+camera updates at 60fps, which stacks
+    // on top of the route transition animation and causes a 1-2s freeze on
+    // mid-range Android devices. We defer by 500ms so the transition owns
+    // the UI thread cleanly.
     if (!(_smoothTicker?.isTicking ?? false)) {
-      _smoothTicker?.start();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !(_smoothTicker?.isTicking ?? false)) {
+          _smoothTicker?.start();
+        }
+      });
     }
   }
 
@@ -1008,19 +1019,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         );
       }
     } else if (isNav && _cameraFollowing) {
-      _cameraBearing = _heading;
-      _map?.setCamera(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 17.5,
-          bearing: _heading,
-          pitch: 55,
-        ),
-      );
+      // Throttle setCamera to ~15fps — 60fps MethodChannel calls freeze the UI
+      // on lower-end devices. The map still feels smooth because 15fps updates
+      // with constant-velocity interpolation between frames.
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (nowMs - _lastNavCamMs >= 66) {
+        _lastNavCamMs = nowMs;
+        _cameraBearing = _heading;
+        _map?.setCamera(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+            zoom: 17.5,
+            bearing: _heading,
+            pitch: 55,
+          ),
+        );
+      }
     }
 
-    _updateDriverAnnotation();
+    // Throttle annotation updates to ~15fps — same reason as camera.
+    // _motion.tick() still runs every frame for smooth interpolation, but
+    // the expensive MethodChannel call to Mapbox is throttled.
+    final nowMs2 = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs2 - _lastAnnotationMs >= 66) {
+      _lastAnnotationMs = nowMs2;
+      _updateDriverAnnotation();
+    }
 
     // Stop ticker when parked on the target — saves CPU when idle/stationary.
     // The ticker restarts automatically on the next _smoothMoveTo().

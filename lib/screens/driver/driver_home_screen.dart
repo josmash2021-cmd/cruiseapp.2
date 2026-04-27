@@ -1343,7 +1343,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             width: Responsive.w(48),
             height: Responsive.w(48),
             decoration: BoxDecoration(
-              color: dc.glassBg,
+              color: Colors.black,
               shape: BoxShape.circle,
               border: Border.all(color: dc.divider),
               boxShadow: [

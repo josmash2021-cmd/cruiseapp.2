@@ -153,7 +153,29 @@ class _ReferralScreenState extends State<ReferralScreen>
     final msg = _shareMessage.isNotEmpty
         ? _shareMessage
         : 'Use my Cruise code $_code — we both get \$50 in Cruise Cash!';
-    await Share.share(msg);
+    try {
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box != null
+          ? box.localToGlobal(Offset.zero) & box.size
+          : Rect.zero;
+      await Share.share(
+        msg,
+        subject: 'Get \$50 in Cruise Cash!',
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      debugPrint('[ReferralScreen] Share failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open share sheet. Try copying your code instead.'),
+          backgroundColor: Color(0xFFE8C547),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _openTransfer() async {

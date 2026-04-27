@@ -577,6 +577,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   int _lastUiRebuildMs = 0; // throttle: only rebuild widget tree at ~15fps
   int _lastSearchCamMs = 0; // throttle: one easeTo per ~500ms in searching mode
+  int _lastNavCamMs = 0; // throttle: one setCamera per ~66ms in nav mode
+  int _lastAnnotationMs = 0; // throttle: one annotation update per ~66ms
 
   /// Pre-fetch routes for incoming offers so they are cached before card tap.
   void _preFetchOfferRoutes(List<Map<String, dynamic>> offers) {

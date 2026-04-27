@@ -61,6 +61,8 @@ RED FLAGS (escalate to human, do NOT process):
 - User threatens negative review/social media to get refund
 - Trip completed successfully but user claims "driver never came"
 - GPS shows trip completed but user disputes
+- User already received refund for SAME REASON on a previous trip
+  (e.g., got refund for "driver rude" before, now asking again for "driver rude")
 
 YELLOW FLAGS (require extra verification):
 - First-time refund request over $20
@@ -73,6 +75,14 @@ GREEN FLAGS (can process automatically):
 - Receipt shows clear billing error
 - User provides photo evidence
 - Reasonable amount matching the issue
+- First time requesting refund for THIS SPECIFIC REASON
+
+REFUND REASON POLICY:
+- ONE refund per reason type per user (lifetime)
+- Valid reasons: driver_no_show, wrong_route, overcharge, cancellation_fee, poor_service, safety_issue
+- If user already got refund for "driver rude" → cannot get another "driver rude" refund
+- If user has new issue (e.g., "wrong route") → can process if legitimate
+- Always check refund_reason_history before approving
 
 When fraud is suspected:
 1. DO NOT process refund/credit
@@ -240,6 +250,33 @@ async def _check_fraud_patterns(user_context: dict[str, Any]) -> tuple[bool, str
                            "i want refund", "devuelvan mi dinero", "money back"]
         if any(v in last_msg for v in vague_complaints):
             return True, "Vague refund request for completed trip without specific issue"
+    
+    # Check if user already got refund for same reason
+    refund_reason_history = user_context.get("refund_reason_history", [])
+    if refund_reason_history:
+        # Extract reason from current message
+        last_msg = ""
+        for msg in reversed(user_context.get("messages", [])):
+            if msg.get("role") in ("rider", "driver", "user"):
+                last_msg = msg.get("content", "").lower()
+                break
+        
+        # Map common complaint keywords to reason types
+        reason_keywords = {
+            "driver_no_show": ["no llego", "never came", "no show", "no aparecio", "didnt arrive"],
+            "driver_rude": ["rude", "grosero", "maleducado", "disrespectful", "mal educado"],
+            "wrong_route": ["ruta", "route", "camino", "way", "longer"],
+            "overcharge": ["cobraron", "charged", "cobro", "price", "expensive", "costo"],
+            "poor_service": ["servicio", "service", "mala atencion", "bad service"],
+            "safety_issue": ["seguridad", "safety", "peligro", "dangerous", "unsafe"],
+        }
+        
+        for reason_type, keywords in reason_keywords.items():
+            if any(kw in last_msg for kw in keywords):
+                # Check if user already got refund for this reason
+                for past_refund in refund_reason_history:
+                    if past_refund.get("reason_type") == reason_type:
+                        return True, f"User already received refund for '{reason_type}' on {past_refund.get('date', 'previous trip')}. One refund per reason type only."
     
     return False, ""
 

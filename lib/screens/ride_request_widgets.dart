@@ -1313,45 +1313,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     final bool isVIP = isSuv;
     final bool isPremium = !isSuv && !isFusion;
-    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
-    
-    // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770
-    //   VIP     → BLACK gradient #1a1a1a→#000 + gold border, white text, diamond glyph
-    //   PREMIUM → GOLD gradient  #F5DC7A→#E8C547→#B08800, black text, star glyph
-    //   COMFORT → SILVER gradient#E8E8E8→#B0B0B0, near-black text, sparkle glyph
-    final List<Color> badgeGradientColors = isVIP
-        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
-        : isPremium
-            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
-            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
-    final badgeTextColor = isVIP
-        ? Colors.white
-        : isPremium
-            ? Colors.black
-            : const Color(0xFF1A1A1A);
-    // Badge glyphs 1:1 with web (live-pull line 142):
-    //   VIP=💎  PREMIUM=★  COMFORT=✦
-    final bool useVipIcon = isVIP;
-    final String badgeIconChar = isPremium
-        ? '★'  // PREMIUM star
-        : '✦'; // COMFORT sparkle
+    final String carAsset = _carAssetForOption(opt.name);
 
     return AnimatedBuilder(
       animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
       builder: (_, __) {
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
-        
+
         return Container(
-          // Card height holds the bigger 130x90 car render + ground
-          // shadow + name + 78x22 badge, with no empty band below.
-          height: 156,
+          // Match home-screen card height (168) for visual parity
+          height: 168,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            // Match the Airport / Schedule cards (choose_ride_type_screen):
-            //   solid #1A1A1F, gold border + soft gold glow always on,
-            //   stronger glow + brighter border when the card is picked.
-            color: const Color(0xFF1A1A1F),
-            borderRadius: BorderRadius.circular(16),
+            // Match home screen: solid black card with gold border
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: selected
                   ? const Color(0xFFE8C547).withValues(alpha: 0.65)
@@ -1359,125 +1336,76 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               width: 1.5,
             ),
             boxShadow: [
+              // Gold glow — stronger when selected
               BoxShadow(
                 color: const Color(0xFFE8C547)
                     .withValues(alpha: selected ? 0.20 + 0.10 * t : 0.10),
                 blurRadius: selected ? 24 : 18,
                 spreadRadius: 2,
               ),
+              // Deep bottom shadow (home screen style)
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
             ],
           ),
           child: Stack(
             children: [
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Car image with a real silhouette drop shadow — uses
-                  // ColorFiltered to render a black-tinted copy of the
-                  // PNG behind the original, offset down + blurred.
-                  // The shadow follows the actual outline of the
-                  // vehicle (windows, mirrors, wheels) instead of a
-                  // generic ellipse blob.
-                  _CarWithDropShadow(
-                    asset: _carAssetForOption(opt.name),
-                    width: 130,
-                    height: 90,
-                  ),
-                  const SizedBox(height: 6),
-                  // Vehicle name - web: Poppins, 14px, bold, white, centered
-                  Text(
-                    displayName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.02,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Badge - 1:1 with web (vip-ride-booker.liquid:746-764)
-                  // Fixed width 78 across all 3 tiers (matches the live web
-                  // .vipRide__badge width:78px) so VIP/PREMIUM/COMFORT line
-                  // up visually instead of VIP collapsing to its 3-letter
-                  // intrinsic width.
-                  SizedBox(
-                    width: 78,
-                    height: 22,
-                    child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: badgeGradientColors,
-                      ),
-                      borderRadius: BorderRadius.circular(6),
-                      // VIP: gold border (web: 1px solid rgba(232,197,71,.3))
-                      border: isVIP
-                          ? Border.all(
-                              color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                              width: 1,
-                            )
-                          : null,
-                      boxShadow: isVIP
-                          ? [
-                              BoxShadow(
-                                color: const Color(0xFFE8C547).withValues(alpha: 0.18),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : isPremium
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(0xFFD4A800).withValues(alpha: 0.40),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ]
-                              : [
-                                  BoxShadow(
-                                    color: Colors.grey.withValues(alpha: 0.30),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (useVipIcon)
-                          Icon(Icons.diamond, size: 9, color: badgeTextColor)
-                        else
-                          Text(
-                            badgeIconChar,
-                            style: TextStyle(
-                              color: badgeTextColor,
-                              fontSize: 8,
-                              height: 1,
-                            ),
-                          ),
-                        const SizedBox(width: 3),
-                        Text(
-                          tierLabel,
-                          style: TextStyle(
-                            color: badgeTextColor,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.64,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ),
-                ],
+              // ── Animated gold particle background (home screen parity) ──
+              GoldParticlesBackground(
+                particleCount: isVIP ? 30 : 20,
+                child: const SizedBox.expand(),
               ),
-              // Checkmark for selected card (web CSS: .vipRide__rideCard.is-active::after)
+              // ── Content: 3D car + name + tier badge ──
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Car image with 3D shadows + gold glow when VIP
+                    SizedBox(
+                      width: 130,
+                      height: 90,
+                      child: CarImage3D(
+                        assetPath: carAsset,
+                        cacheWidth: 360,
+                        selected: isVIP,
+                        fallback: Icon(
+                          Icons.directions_car_rounded,
+                          color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                          size: 40,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // Vehicle name — home screen style
+                    Text(
+                      displayName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Tier badge — reusable widget with halo + sparkles
+                    VehicleTierBadge(
+                      tier: isVIP
+                          ? VehicleTier.vip
+                          : isPremium
+                              ? VehicleTier.premium
+                              : VehicleTier.comfort,
+                    ),
+                  ],
+                ),
+              ),
+              // Checkmark for selected card
               if (selected)
                 Positioned(
                   top: 10,

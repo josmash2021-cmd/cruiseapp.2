@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -329,8 +330,21 @@ class NotificationService {
   /// Show a silent ongoing notification when driver goes online.
   /// This acts as a foreground-service anchor on Android, keeping the
   /// app process alive so GPS and SSE keep working in the background.
+  ///
+  /// On iOS this is a NO-OP because:
+  /// 1. iOS does not require a foreground-service notification
+  /// 2. The notification would show in the iOS notification center
+  ///    and annoy the driver while they are actively using the app.
   static Future<void> showDriverOnlineNotification() async {
     if (!_initialized) await init();
+
+    // iOS: skip entirely — no foreground-service requirement and the
+    // notification would appear in the system tray while the driver
+    // is actively looking at the online screen.
+    if (Platform.isIOS) {
+      debugPrint('[NotificationService] driver online notification skipped on iOS');
+      return;
+    }
 
     const androidDetails = AndroidNotificationDetails(
       'cruise_status',
@@ -352,20 +366,11 @@ class NotificationService {
       ),
     );
 
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: false,
-      presentBadge: false,
-      presentSound: false,
-    );
-
     await _plugin.show(
       id: _driverOnlineId,
       title: 'Cruise — You\'re Online',
       body: 'You are online and receiving trip offers.',
-      notificationDetails: const NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      ),
+      notificationDetails: const NotificationDetails(android: androidDetails),
       payload: 'driver_online',
     );
 

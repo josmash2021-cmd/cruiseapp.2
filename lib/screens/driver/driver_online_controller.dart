@@ -69,9 +69,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     };
     NetworkService().onlineNotifier.addListener(_networkListener!);
 
-    // Build vehicle icons well after the transition settles (700ms)
+    // Build vehicle icons well after the transition settles (1200ms)
     // to avoid jank during the 400ms fade+scale entrance animation.
-    Future.delayed(const Duration(milliseconds: 700), () {
+    // Previous 700ms still caused overlap with map mount + ticker start.
+    Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) _buildVehicleIcons();
     });
 

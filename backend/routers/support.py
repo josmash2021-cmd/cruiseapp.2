@@ -169,6 +169,39 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
             )
         )
         ctx["refund_count_30d"] = len(refund_count_r.scalars().all())
+        
+        # Get refund reason history (for "one refund per reason" policy)
+        all_refunds_r = await db.execute(
+            select(ActionRequest).where(
+                ActionRequest.user_id == user_id,
+                ActionRequest.action_type.in_(["request-refund", "issue-credit"]),
+                ActionRequest.status == "approved",
+            ).order_by(ActionRequest.created_at.desc())
+        )
+        all_refunds = all_refunds_r.scalars().all()
+        ctx["refund_reason_history"] = []
+        for ar in all_refunds:
+            # Extract reason_type from details JSON
+            details = ar.details or ""
+            reason_type = "unknown"
+            if "driver_no_show" in details.lower() or "no llego" in details.lower():
+                reason_type = "driver_no_show"
+            elif "rude" in details.lower() or "grosero" in details.lower():
+                reason_type = "driver_rude"
+            elif "route" in details.lower() or "ruta" in details.lower():
+                reason_type = "wrong_route"
+            elif "overcharge" in details.lower() or "cobraron" in details.lower():
+                reason_type = "overcharge"
+            elif "service" in details.lower() or "servicio" in details.lower():
+                reason_type = "poor_service"
+            elif "safety" in details.lower() or "seguridad" in details.lower():
+                reason_type = "safety_issue"
+            
+            ctx["refund_reason_history"].append({
+                "reason_type": reason_type,
+                "date": ar.created_at.strftime("%Y-%m-%d") if ar.created_at else "unknown",
+                "amount": ar.details if ar.details else "unknown",
+            })
 
     # Active trip (not completed, not canceled)
     active_r = await db.execute(

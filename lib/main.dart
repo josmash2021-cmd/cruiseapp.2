@@ -529,6 +529,17 @@ Future<void> heavyInit() async {
 
           final messaging = FirebaseMessaging.instance;
           await messaging.requestPermission(alert: true, badge: true, sound: true);
+
+          // iOS: suppress all FCM banner notifications while the app is in
+          // the foreground. The foreground handler below already updates the
+          // UI silently and plays in-app sounds; showing the system banner
+          // on top of the active screen is redundant and annoying.
+          await messaging.setForegroundNotificationPresentationOptions(
+            alert: false,
+            badge: false,
+            sound: false,
+          );
+
           final fcmToken = await messaging.getToken();
           if (kDebugMode) debugPrint('[FCM] token: $fcmToken');
 

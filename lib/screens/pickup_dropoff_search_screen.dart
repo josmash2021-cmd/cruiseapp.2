@@ -694,6 +694,11 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             final txt = _pickupCtrl.text.trim();
                             if (txt.isEmpty || txt == widget.initialPickupText) {
                               _resolveGpsPickup();
+                            } else if (txt.length >= 2) {
+                              // Auto-search existing text so suggestions
+                              // appear immediately without requiring the
+                              // user to type an extra character.
+                              _onTextChanged(txt);
                             }
                           },
                           onChanged: _editingPickup ? _onTextChanged : null,
@@ -714,11 +719,20 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                           labelColor: Colors.white.withValues(alpha: 0.5),
                           controller: _dropoffCtrl,
                           focusNode: _dropoffFocus,
-                          onTap: () => setState(() {
-                            _editingPickup = false;
-                            _editingDropoff = true;
-                            _suggestions = [];
-                          }),
+                          onTap: () {
+                            setState(() {
+                              _editingPickup = false;
+                              _editingDropoff = true;
+                              _suggestions = [];
+                            });
+                            // Auto-search existing text so suggestions
+                            // appear immediately when tapping into a
+                            // field that already has user input.
+                            final txt = _dropoffCtrl.text.trim();
+                            if (txt.length >= 2) {
+                              _onTextChanged(txt);
+                            }
+                          },
                           onChanged: _editingDropoff ? _onTextChanged : null,
                           onSubmitted:
                               _editingDropoff ? _onFieldSubmitted : null,
@@ -900,12 +914,46 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   }
 
   Widget _buildSuggestionsList() {
-    if (_loading && _suggestions.isEmpty) {
+    // Show spinner while loading even if we have stale suggestions,
+    // so the user knows a new search is in progress.
+    if (_loading) {
       return const Center(
         child: SizedBox(
           width: 26,
           height: 26,
           child: CircularProgressIndicator(color: _gold, strokeWidth: 2.5),
+        ),
+      );
+    }
+
+    // If search completed but returned nothing, show a friendly empty state
+    // instead of falling back to shortcuts (which would hide the fact that
+    // a search was attempted).
+    if (_suggestions.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.search_off_rounded,
+                color: Colors.white.withValues(alpha: 0.25),
+                size: 36,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                S.of(context).noResultsFound,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

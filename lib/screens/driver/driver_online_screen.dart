@@ -410,8 +410,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    // Start repeating immediately — initial phase is searching.
-    _searchPulse.repeat();
+    // 2026-04-27 freeze fix: defer search-pulse start until the 400ms
+    // page transition has finished. Starting it immediately hammers
+    // setState() rebuilds during the fade+scale animation and causes
+    // a 1-2s freeze on mid-range devices.
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _phase == _Phase.searching) {
+        _searchPulse.repeat();
+      }
+    });
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );

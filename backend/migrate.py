@@ -175,7 +175,7 @@ async def run():
     # Parse connection params from the DATABASE_URL
     url = DATABASE_URL
     # Strip driver prefix for asyncpg
-    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql://", "postgres://"):
         if url.startswith(prefix):
             url = "postgresql://" + url[len(prefix):]
             break

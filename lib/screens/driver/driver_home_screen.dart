@@ -526,15 +526,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
         _goldDot.setTarget(ll.latitude, ll.longitude);
+        debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
+            'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
         // Camera follows instantly via setCamera — no conflicting flyTo animations.
         // The GoldLocationDot 60fps ticker handles smooth annotation movement.
-        _mapController?.setCamera(
+        // Smooth camera follow — flyTo with 300ms matches the dot's glide feel.
+        // setCamera was instant and made the dot appear to jump every second.
+        _mapController?.flyTo(
           mapbox.CameraOptions(
             center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
             zoom: 16.0,
             pitch: 0.0,
             bearing: 0.0,
           ),
+          mapbox.MapAnimationOptions(duration: 300),
         );
       });
     } catch (_) {}

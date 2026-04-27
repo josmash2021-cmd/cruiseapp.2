@@ -5,6 +5,7 @@ sqlalchemy[asyncio]==2.0.35
 aiosqlite==0.20.0
 asyncpg==0.29.0
 psycopg==3.2.3
+psycopg2-binary==2.9.10
 uvloop>=0.19.0; sys_platform != 'win32'
 httptools>=0.6.0
 orjson>=3.9.0

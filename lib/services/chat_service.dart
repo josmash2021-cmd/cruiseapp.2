@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import 'api_service.dart';
@@ -33,23 +34,36 @@ class ChatService {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    final chatRef = _db.ref('chats/$rideId');
-    final msgRef = chatRef.child('messages').push();
+    try {
+      // Ensure anonymous auth before writing to RTDB
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
 
-    // Write message + update last-message metadata in one multi-path update
-    // for atomicity.
-    await _db.ref().update({
-      'chats/$rideId/messages/${msgRef.key}/senderId': senderId,
-      'chats/$rideId/messages/${msgRef.key}/senderRole': senderRole,
-      'chats/$rideId/messages/${msgRef.key}/text': trimmed,
-      'chats/$rideId/messages/${msgRef.key}/timestamp': ServerValue.timestamp,
-      'chats/$rideId/messages/${msgRef.key}/read': false,
-      'chats/$rideId/lastMessage': trimmed,
-      'chats/$rideId/lastTimestamp': ServerValue.timestamp,
-    });
+      final chatRef = _db.ref('chats/$rideId');
+      final msgRef = chatRef.child('messages').push();
 
-    // Stop typing indicator after send
-    setTyping(rideId: rideId, role: senderRole, isTyping: false);
+      // Write message + update last-message metadata in one multi-path update
+      // for atomicity.
+      await _db.ref().update({
+        'chats/$rideId/messages/${msgRef.key}/senderId': senderId,
+        'chats/$rideId/messages/${msgRef.key}/senderRole': senderRole,
+        'chats/$rideId/messages/${msgRef.key}/text': trimmed,
+        'chats/$rideId/messages/${msgRef.key}/timestamp': ServerValue.timestamp,
+        'chats/$rideId/messages/${msgRef.key}/read': false,
+        'chats/$rideId/lastMessage': trimmed,
+        'chats/$rideId/lastTimestamp': ServerValue.timestamp,
+      });
+
+      // Stop typing indicator after send
+      setTyping(rideId: rideId, role: senderRole, isTyping: false);
+    } catch (e) {
+      if (e.toString().contains('permission-denied')) {
+        debugPrint('[ChatService] sendMessage permission denied for $rideId');
+      } else {
+        rethrow;
+      }
+    }
   }
 
   // ── Streams ───────────────────────────────────────────────────────────────
@@ -171,7 +185,20 @@ class ChatService {
     required String role,
     required bool isTyping,
   }) async {
-    await _db.ref('chats/$rideId/typing/$role').set(isTyping);
+    try {
+      // Ensure anonymous auth before writing to RTDB
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+      await _db.ref('chats/$rideId/typing/$role').set(isTyping);
+    } catch (e) {
+      // Silently ignore permission-denied errors — chat still works without typing indicator
+      if (e.toString().contains('permission-denied')) {
+        debugPrint('[ChatService] setTyping permission denied for $rideId/$role');
+      } else {
+        rethrow;
+      }
+    }
   }
 
   /// Stream the other person's typing state.
@@ -192,26 +219,39 @@ class ChatService {
     required String rideId,
     required String readerRole,
   }) async {
-    final snapshot = await _db
-        .ref('chats/$rideId/messages')
-        .orderByChild('read')
-        .equalTo(false)
-        .get();
-
-    if (snapshot.value == null) return;
-
-    final data = Map<String, dynamic>.from(snapshot.value as Map);
-    final updates = <String, dynamic>{};
-
-    for (final entry in data.entries) {
-      final msg = Map<String, dynamic>.from(entry.value as Map);
-      if (msg['senderRole'] != readerRole) {
-        updates['chats/$rideId/messages/${entry.key}/read'] = true;
+    try {
+      // Ensure anonymous auth before reading/writing RTDB
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
       }
-    }
 
-    if (updates.isNotEmpty) {
-      await _db.ref().update(updates);
+      final snapshot = await _db
+          .ref('chats/$rideId/messages')
+          .orderByChild('read')
+          .equalTo(false)
+          .get();
+
+      if (snapshot.value == null) return;
+
+      final data = Map<String, dynamic>.from(snapshot.value as Map);
+      final updates = <String, dynamic>{};
+
+      for (final entry in data.entries) {
+        final msg = Map<String, dynamic>.from(entry.value as Map);
+        if (msg['senderRole'] != readerRole) {
+          updates['chats/$rideId/messages/${entry.key}/read'] = true;
+        }
+      }
+
+      if (updates.isNotEmpty) {
+        await _db.ref().update(updates);
+      }
+    } catch (e) {
+      if (e.toString().contains('permission-denied')) {
+        debugPrint('[ChatService] markAsRead permission denied for $rideId');
+      } else {
+        rethrow;
+      }
     }
   }
 

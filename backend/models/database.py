@@ -47,6 +47,8 @@ else:
         # This is the ONLY reliable way to use PgBouncer with asyncpg.
         _engine_kwargs["poolclass"] = NullPool
         _engine_kwargs["pool_pre_ping"] = False
+        # CRITICAL: Disable SQLAlchemy's internal statement cache for PgBouncer
+        _engine_kwargs["query_cache_size"] = 0
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -55,7 +57,8 @@ else:
             "timeout": 5,
             "command_timeout": 15,
             "ssl": _ssl_ctx,
-            "statement_cache_size": 0,  # REQUIRED: disable prepared statements
+            "statement_cache_size": 0,           # asyncpg: disable prepared statements
+            "prepared_statement_cache_size": 0,  # asyncpg: disable prepared statement cache
             "server_settings": {
                 "jit": "off",
                 "application_name": "cruise_fastapi",

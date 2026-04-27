@@ -61,7 +61,7 @@ class SocketService {
     if (_initialized) return;
 
     final serverUrl = ApiService.activeServerUrl;
-    final token = await UserSession.getAuthToken();
+    final token = await ApiService.getToken();
 
     debugPrint('[Socket.io] Connecting to $serverUrl');
 
@@ -82,18 +82,18 @@ class SocketService {
       _connected = true;
       debugPrint('[Socket.io] Connected');
       _authenticate();
-      AnalyticsService.logEvent('socket_connected', {});
+      AnalyticsService.instance.logEvent('socket_connected');
     });
 
     _socket!.onDisconnect((_) {
       _connected = false;
       debugPrint('[Socket.io] Disconnected');
-      AnalyticsService.logEvent('socket_disconnected', {});
+      AnalyticsService.instance.logEvent('socket_disconnected');
     });
 
     _socket!.onConnectError((error) {
       debugPrint('[Socket.io] Connection error: $error');
-      AnalyticsService.logEvent('socket_error', {'error': error.toString()});
+      AnalyticsService.instance.logEvent('socket_error', parameters: {'error': error.toString()});
     });
 
     _socket!.onReconnect((_) {
@@ -143,7 +143,7 @@ class SocketService {
   static void _authenticate() {
     if (_socket == null || !_connected) return;
 
-    UserSession.getAuthToken().then((token) {
+    ApiService.getToken().then((token) {
       return UserSession.getUser().then((user) {
         final userType = user?['role'] ?? 'rider';
         final userId = user?['id'];
@@ -241,7 +241,7 @@ class SocketService {
       final latency = DateTime.now().millisecondsSinceEpoch - timestamp;
       if (latency > 0) {
         debugPrint('[Socket.io] $source latency: ${latency}ms');
-        AnalyticsService.logEvent('socketio_latency', {
+        AnalyticsService.instance.logEvent('socketio_latency', parameters: {
           'latency_ms': latency,
           'source': source,
         });

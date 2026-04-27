@@ -39,15 +39,39 @@ from config import (
 router = APIRouter()
 
 
-async def _create_driver_aware_token(user, db) -> str:
-    """Create JWT token. For drivers, generate + store a session_id for single-device enforcement."""
+async def _create_driver_aware_token(
+    user_id: int,
+    user_role: str,
+    user_status: str,
+    user,
+    db,
+) -> str:
+    """Create JWT token. For drivers, generate + store a session_id for single-device enforcement.
+
+    All ORM attributes must be read into primitives BEFORE calling this function.
+    The `user` parameter is only used for driver session_id assignment (mutating
+    the ORM object inside an active session).
+    """
     session_id = ""
-    if (user.role or "") == "driver":
+    if user_role == "driver":
         import secrets as _s
         session_id = _s.token_hex(16)
         user.active_session_id = session_id
         await db.flush()
-    return _create_token(user.id, role=user.role, status=user.status or "active", session_id=session_id)
+    return _create_token(user_id, role=user_role, status=user_status, session_id=session_id)
+
+
+async def _create_driver_aware_token_from_user(user, db) -> str:
+    """Helper that extracts primitives from an ORM user object and calls
+    _create_driver_aware_token. Use this when the user object is fresh and
+    the session is still active."""
+    return await _create_driver_aware_token(
+        user.id,
+        user.role or "",
+        user.status or "active",
+        user,
+        db,
+    )
 
 
 # -- FCM Token (save device push token) ----------------
@@ -110,7 +134,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                     await link_guest_trips_to_user(db, existing)
                 except Exception as e:
                     logging.warning("guest trip link on register(email-reactivate) failed: %s", e)
-                token = await _create_driver_aware_token(existing, db)
+                token = await _create_driver_aware_token_from_user(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Email already registered")
@@ -131,7 +155,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                     await link_guest_trips_to_user(db, existing)
                 except Exception as e:
                     logging.warning("guest trip link on register(phone-reactivate) failed: %s", e)
-                token = await _create_driver_aware_token(existing, db)
+                token = await _create_driver_aware_token_from_user(existing, db)
                 refresh = _create_refresh_token(existing.id)
                 return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Phone already registered")
@@ -210,7 +234,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logging.warning("guest trip link on register failed: %s", e)
 
-    token = await _create_driver_aware_token(user, db)
+    token = await _create_driver_aware_token_from_user(user, db)
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
@@ -296,7 +320,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
             user.is_verified = True
             await db.commit()
             await db.refresh(user)
-        token = await _create_driver_aware_token(user, db)
+        token = await _create_driver_aware_token_from_user(user, db)
         refresh = _create_refresh_token(user.id)
         logging.info("[DEMO] Direct login for Apple review account: %s (%s)", identifier_clean, role)
         return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
@@ -704,14 +728,35 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
         except Exception as e:
             logging.warning("Firestore photo recovery failed for user %s: %s", user.id, e)
 
+    # Eager-read all ORM attributes into primitives BEFORE any await boundary.
+    # In async tests the session may close and accessing user.role after an
+    # await causes MissingGreenlet (SQLAlchemy async limitation).
+    _user_id = user.id
+    _user_role = user.role or ""
+    _user_status = user.status or "active"
+    # Build user dict eagerly while session is still active
+    _user_payload = {
+        "id": user.id,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "phone": user.phone,
+        "photo_url": user.photo_url,
+        "role": user.role,
+        "is_verified": user.is_verified or False,
+        "status": user.status or "active",
+    }
+
     try:
         await link_guest_trips_to_user(db, user)
     except Exception as e:
         logging.warning("guest trip link on complete_login failed: %s", e)
 
-    token = await _create_driver_aware_token(user, db)
-    refresh = _create_refresh_token(user.id)
-    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+    token = await _create_driver_aware_token(
+        _user_id, _user_role, _user_status, user, db
+    )
+    refresh = _create_refresh_token(_user_id)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_payload}
 
 # -- Social Auth (Google / Apple) -------------------------
 @router.post("/auth/social", dependencies=[Depends(_verify_api_key)])
@@ -846,7 +891,7 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logging.warning("guest trip link on social_auth failed: %s", e)
 
-    token = await _create_driver_aware_token(user, db)
+    token = await _create_driver_aware_token_from_user(user, db)
     refresh = _create_refresh_token(user.id)
     return {
         "access_token": token,
@@ -877,7 +922,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     st = user.status or "active"
     if st in ("deleted", "blocked", "deactivated"):
         raise HTTPException(403, f"Account {st}")
-    new_access = await _create_driver_aware_token(user, db)
+    new_access = await _create_driver_aware_token_from_user(user, db)
     new_refresh = _create_refresh_token(user.id)
     _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}

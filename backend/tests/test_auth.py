@@ -85,6 +85,12 @@ async def test_complete_login(client: AsyncClient, test_rider):
     """POST /auth/complete-login exchanges login_token for access+refresh."""
     from tests.conftest import _make_auth_headers
 
+    # Capture user id BEFORE any async boundary — the SQLAlchemy user object
+    # may expire its lazy-loaded attributes across await boundaries in async
+    # tests, causing MissingGreenlet. Accessing .id here is safe because the
+    # test_rider fixture already loaded the user inside its own session.
+    expected_user_id = test_rider[0].id
+
     # First, get a login token
     login_resp = await client.post(
         "/auth/login",
@@ -107,4 +113,4 @@ async def test_complete_login(client: AsyncClient, test_rider):
     data = resp.json()
     assert "access_token" in data
     assert "refresh_token" in data
-    assert data["user"]["id"] == test_rider[0].id
+    assert data["user"]["id"] == expected_user_id

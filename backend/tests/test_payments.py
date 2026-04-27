@@ -10,16 +10,28 @@ pytestmark = pytest.mark.asyncio
 async def test_create_payment_intent(client: AsyncClient, test_rider):
     """POST /payments/create-intent returns a client_secret (mocked Stripe)."""
     from tests.conftest import _make_auth_headers
+    from unittest.mock import patch, MagicMock
 
     _, token = test_rider
     headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
 
-    # Endpoint returns mock data when Stripe API key is not configured (test env)
-    resp = await client.post(
-        "/payments/create-intent",
-        json={"amount": 2500, "currency": "usd"},
-        headers=headers,
-    )
+    # Mock Stripe customer + payment intent creation so the test passes
+    # without a real Stripe API key.
+    mock_customer = MagicMock()
+    mock_customer.id = "cus_test_123"
+    mock_customer.email = "rider@test.com"
+
+    mock_pi = MagicMock()
+    mock_pi.id = "pi_test_123"
+    mock_pi.client_secret = "pi_test_secret_456"
+
+    with patch("stripe.Customer.create", return_value=mock_customer):
+        with patch("stripe.PaymentIntent.create", return_value=mock_pi):
+            resp = await client.post(
+                "/payments/create-intent",
+                json={"amount": 2500, "currency": "usd"},
+                headers=headers,
+            )
 
     assert resp.status_code == 200
     data = resp.json()

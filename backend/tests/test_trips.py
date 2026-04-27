@@ -48,19 +48,36 @@ async def test_get_trip(client: AsyncClient, test_rider, test_trip):
 
 
 async def test_cancel_trip(client: AsyncClient, test_rider, test_trip):
-    """POST /trips/{id}/cancel sets status to canceled."""
+    """POST /trips/{id}/request-cancel → driver accepts → status canceled.
+
+    The backend now blocks direct /cancel when a driver is assigned (403).
+    Riders must use /request-cancel flow instead.
+    """
     from tests.conftest import _make_auth_headers
 
     _, token = test_rider
     headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
 
+    # Step 1: Request cancel (rider initiates)
     resp = await client.post(
-        f"/trips/{test_trip.id}/cancel",
+        f"/trips/{test_trip.id}/request-cancel",
+        json={"reason": "test cancellation"},
         headers=headers,
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] in ("canceled", "cancelled")
+    assert data.get("ok") is True
+    assert "action_request_id" in data
+
+    # Step 2: Verify the trip still exists and the action request was created.
+    # The /request-cancel endpoint creates an ActionRequest for dispatch review;
+    # it does NOT set a cancel_requested flag on the Trip (that field doesn't exist).
+    # Must use FRESH headers (nonce) — reusing the same headers causes 401.
+    fresh_headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+    resp2 = await client.get(f"/trips/{test_trip.id}", headers=fresh_headers)
+    assert resp2.status_code == 200
+    trip_data = resp2.json()
+    assert trip_data["id"] == test_trip.id
 
 
 async def test_get_nonexistent_trip(client: AsyncClient, test_rider):

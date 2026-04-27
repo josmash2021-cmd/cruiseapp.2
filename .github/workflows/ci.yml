@@ -20,14 +20,19 @@ jobs:
           flutter-version: '3.x'
           channel: 'stable'
 
+      - name: Check Flutter version
+        run: |
+          flutter --version
+          dart --version
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze Flutter code
-        run: flutter analyze --fatal-infos --verbose
+        run: flutter analyze --fatal-infos
 
       - name: Run Flutter tests
-        run: flutter test --verbose
+        run: flutter test
 
   # ── Backend tests ─────────────────────────────────────────────────
   backend:

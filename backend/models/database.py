@@ -52,11 +52,14 @@ else:
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
         # psycopg3 connect_args are different from asyncpg
+        # CRITICAL: prepare_threshold=None disables server-side prepared
+        # statements which conflict with PgBouncer transaction mode.
         _connect_args = {
             "connect_timeout": 5,
             "sslmode": "require",
             "sslrootcert": None,
             "options": "-c jit=off -c application_name=cruise_fastapi",
+            "prepare_threshold": None,  # Disable prepared statements for PgBouncer
         }
     elif _is_private:
         # Private Railway network (direct PostgreSQL)

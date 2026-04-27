@@ -239,37 +239,36 @@ async def lifespan(app: FastAPI):
         await guardian_agent.start()
         await security_guardian.start_heartbeat()
 
-        # Phase 2: Background agents (5s delay)
+        # Phase 2: Critical background agents only (5s delay)
+        # NOTE: With NullPool, each DB call creates a new connection.
+        # We keep only essential agents to avoid overwhelming PgBouncer.
         await asyncio.sleep(5)
+        wait_timeout_agent.set_db_session_maker(SessionLocal)
+        await wait_timeout_agent.start()
+
+        # Phase 3: Low-priority agents (staggered, 15s apart)
+        await asyncio.sleep(10)
         ghost_driver_agent.set_db_session_maker(SessionLocal)
         await ghost_driver_agent.start()
         safety_monitor_agent.set_db_session_maker(SessionLocal)
         await safety_monitor_agent.start()
-        wait_timeout_agent.set_db_session_maker(SessionLocal)
-        await wait_timeout_agent.start()
 
-        # Phase 3: Low-priority agents (15s delay)
-        await asyncio.sleep(10)
-        document_expiry_agent.set_db_session_maker(SessionLocal)
-        await document_expiry_agent.start()
-        document_approval_agent.set_db_session_maker(SessionLocal)
-        await document_approval_agent.start()
-        rating_moderator_agent.set_db_session_maker(SessionLocal)
-        await rating_moderator_agent.start()
-        cruise_level_agent.set_db_session_maker(SessionLocal)
-        await cruise_level_agent.start()
-
-        # Phase 4: Periodic tasks (30s delay)
+        # Phase 4: Periodic tasks (30s delay) — reduced set
         await asyncio.sleep(15)
-        asyncio.create_task(_schedule_weekly_payouts())
         asyncio.create_task(_audit_flush_loop())
-        asyncio.create_task(_backup_scheduler())
-        asyncio.create_task(run_proactive_agent_loop())
         asyncio.create_task(_scheduled_ride_dispatcher())
         asyncio.create_task(_scheduled_ride_reminder_loop())
-        asyncio.create_task(_scheduled_rides_available_notify_loop())
-        asyncio.create_task(_nightly_reconcile_loop())
-        asyncio.create_task(_driver_referral_expiry_loop())
+        # Disabled to save PgBouncer connections:
+        # asyncio.create_task(_schedule_weekly_payouts())
+        # asyncio.create_task(_backup_scheduler())
+        # asyncio.create_task(run_proactive_agent_loop())
+        # asyncio.create_task(_scheduled_rides_available_notify_loop())
+        # asyncio.create_task(_nightly_reconcile_loop())
+        # asyncio.create_task(_driver_referral_expiry_loop())
+        # document_expiry_agent.start()
+        # document_approval_agent.start()
+        # rating_moderator_agent.start()
+        # cruise_level_agent.start()
 
         # Cache sweep every 60s
         async def _cache_sweep():

@@ -41,15 +41,12 @@ else:
     _is_private = ".railway.internal" in DATABASE_URL
 
     if _is_supabase:
-        # Supabase DIRECT connection (db.XXX.supabase.co:5432).
-        # No PgBouncer limits — we can use a healthy pool size.
-        # Supabase free tier allows ~60 direct connections.
-        _engine_kwargs["pool_size"] = 10
-        _engine_kwargs["max_overflow"] = 5
-        _engine_kwargs["pool_pre_ping"] = True
-        _engine_kwargs["pool_recycle"] = 600     # 10 min
-        _engine_kwargs["pool_timeout"] = 5
-        _engine_kwargs["pool_use_lifo"] = True
+        # Supabase PgBouncer (pooler.supabase.com:6543) with NullPool.
+        # PgBouncer transaction mode does NOT support prepared statements.
+        # NullPool = no connection reuse, each request gets fresh connection.
+        # This is the ONLY reliable way to use PgBouncer with asyncpg.
+        _engine_kwargs["poolclass"] = NullPool
+        _engine_kwargs["pool_pre_ping"] = False
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -58,6 +55,7 @@ else:
             "timeout": 5,
             "command_timeout": 15,
             "ssl": _ssl_ctx,
+            "statement_cache_size": 0,  # REQUIRED: disable prepared statements
             "server_settings": {
                 "jit": "off",
                 "application_name": "cruise_fastapi",

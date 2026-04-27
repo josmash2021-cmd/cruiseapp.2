@@ -800,6 +800,44 @@ async def admin_delete_all_users(db: AsyncSession = Depends(get_db)):
     raise HTTPException(403, "Mass user deletion is disabled. Delete users individually.")
 
 
+@router.post("/admin/users/bulk-status", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_bulk_update_user_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk update status for multiple users."""
+    data = await request.json()
+    user_ids = data.get("user_ids", [])
+    status = data.get("status", "")
+
+    if not user_ids or not status:
+        raise HTTPException(400, "user_ids and status are required")
+
+    if status not in ("active", "inactive", "suspended", "blocked"):
+        raise HTTPException(400, f"Invalid status: {status}")
+
+    updated = 0
+    for user_id in user_ids:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.status = status
+            db.add(user)
+            updated += 1
+
+            # Sync to Firestore
+            if _HAS_FIRESTORE:
+                try:
+                    collection = "drivers" if user.role == "driver" else "clients"
+                    firestore_sync.sync_user_status(user_id, status, collection)
+                except Exception as e:
+                    logging.warning("Firestore bulk status sync failed: %s", e)
+
+    await db.commit()
+    _security_audit_log("ADMIN_BULK_STATUS_UPDATE", "admin", f"updated={updated}, status={status}")
+    return {"updated": updated, "status": status}
+
+
 @router.get("/admin/users/{user_id}/chats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user_chats(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get all support chats for a specific user (history)."""

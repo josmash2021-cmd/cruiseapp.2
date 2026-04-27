@@ -307,6 +307,21 @@ def sync_client_online(user_id: int, is_online: bool):
         log.error("❌ Client online sync failed for %d: %s", user_id, e)
 
 
+def sync_user_status(user_id: int, status: str, collection: str = "clients"):
+    """Update a user's status in Firestore (for bulk operations)."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{user_id}"
+    try:
+        _db.collection(collection).document(doc_id).set({
+            "status": status,
+            "updatedAt": _ts(),
+        }, merge=True)
+    except Exception as e:
+        log.error("❌ User status sync failed for %d: %s", user_id, e)
+
+
 # ═══════════════════════════════════════════════════════════
 #  SUPPORT CHAT sync
 # ═══════════════════════════════════════════════════════════

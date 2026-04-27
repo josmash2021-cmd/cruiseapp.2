@@ -213,19 +213,33 @@ async def lifespan(app: FastAPI):
         # ── CRITICAL PATH: DB init (fast, no retries blocking) ──
         for _attempt in range(3):
             try:
-                async with engine.begin() as conn:
-                    if not IS_SQLITE:
-                        # Ensure public schema exists and is selected
-                        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS public"))
-                        await conn.execute(text("SET search_path TO public"))
-                    # Create all tables with explicit schema
-                    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True))
-                    if IS_SQLITE:
+                if IS_SQLITE:
+                    async with engine.begin() as conn:
+                        await conn.run_sync(Base.metadata.create_all)
                         await conn.execute(text("PRAGMA journal_mode=WAL"))
                         await conn.execute(text("PRAGMA synchronous=NORMAL"))
                         await conn.execute(text("PRAGMA busy_timeout=30000"))
                         await conn.execute(text("PRAGMA cache_size=-64000"))
                         await _migrate_add_columns(conn)
+                else:
+                    # PostgreSQL: use raw psycopg3 for DDL to avoid SQLAlchemy + PgBouncer issues
+                    import psycopg
+                    from db_url import resolve_database_url
+                    pg_url = resolve_database_url(async_driver=False)
+                    # Strip driver prefix
+                    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
+                        if pg_url.startswith(prefix):
+                            pg_url = "postgresql://" + pg_url[len(prefix):]
+                            break
+                    conn = await psycopg.AsyncConnection.connect(pg_url, autocommit=True, sslmode="require", connect_timeout=15)
+                    try:
+                        # Use SQLAlchemy to generate DDL but execute via raw connection
+                        from sqlalchemy import create_engine
+                        sync_engine = create_engine(pg_url.replace("postgresql+psycopg://", "postgresql://"), echo=False)
+                        Base.metadata.create_all(sync_engine)
+                        sync_engine.dispose()
+                    finally:
+                        await conn.close()
                 logging.info("Database initialized")
                 break
             except Exception as _e:

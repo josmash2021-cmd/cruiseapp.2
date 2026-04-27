@@ -743,6 +743,7 @@ class _AnimScheduler {
       _ticker?.stop();
       return;
     }
+    if (_vsync is! State) return;
     final host = _vsync as State;
     final done = <_AnimJob>[];
     for (final job in List<_AnimJob>.from(_jobs)) {

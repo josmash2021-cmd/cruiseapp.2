@@ -537,7 +537,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
   Future<void> _loadRouteAndAnimate() async {
     if (_routeLoading || _routeLoaded || !_hasCoords) return;
-    if (!mounted) setState(() => _routeLoading = true);
+    if (!mounted) return;
     setState(() => _routeLoading = true);
     try {
       final pickup = LatLng(_pickupLat!, _pickupLng!);
@@ -704,6 +704,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     final isPast = scheduledAt != null && scheduledAt.isBefore(DateTime.now());
     final cancelableStatus = status == 'scheduled' || status == 'scheduled_accepted' || status == 'driver_assigned' || status == 'requested';
     final canCancel = cancelableStatus && !isPast && (scheduledAt == null || scheduledAt.difference(DateTime.now()).inMinutes > 60);
+    // Note: scheduledAt null check is already handled above (isPast is false when null)
     final showContactSupport = cancelableStatus && !isPast && !canCancel;
 
     return SizeTransition(

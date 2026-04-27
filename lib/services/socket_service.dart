@@ -226,6 +226,16 @@ class SocketService {
     _initialized = false;
     _connected = false;
     _currentTripRoom = null;
+    // Close stream controllers to prevent memory leaks
+    if (!_driverLocationController.isClosed) {
+      _driverLocationController.close();
+    }
+    if (!_tripStatusController.isClosed) {
+      _tripStatusController.close();
+    }
+    if (!_driverAssignedController.isClosed) {
+      _driverAssignedController.close();
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────

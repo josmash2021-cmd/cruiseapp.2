@@ -257,6 +257,7 @@ class GoldenPinPainter {
 // ──────────────────────────────────────────────────────────────────
 
 final Map<String, Uint8List> _goldenPinCache = {};
+const int _kMaxPinCacheSize = 20; // LRU limit to prevent unbounded growth
 
 Future<Uint8List> buildGoldenPinBytes({
   required IconData icon,
@@ -289,6 +290,10 @@ Future<Uint8List> buildGoldenPinBytes({
   if (data == null) return Uint8List(0);
 
   final bytes = data.buffer.asUint8List();
+  // Enforce LRU limit to prevent unbounded memory growth
+  if (_goldenPinCache.length >= _kMaxPinCacheSize) {
+    _goldenPinCache.remove(_goldenPinCache.keys.first);
+  }
   _goldenPinCache[key] = bytes;
   return bytes;
 }

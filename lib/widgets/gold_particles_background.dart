@@ -55,19 +55,21 @@ class _GoldParticlesBackgroundState extends State<GoldParticlesBackground>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return CustomPaint(
-          painter: _ParticlesPainter(
-            particles: _particles,
-            progress: _controller.value,
-            color: widget.particleColor,
-          ),
-          child: child,
-        );
-      },
-      child: widget.child,
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return CustomPaint(
+            painter: _ParticlesPainter(
+              particles: _particles,
+              progress: _controller.value,
+              color: widget.particleColor,
+            ),
+            child: child,
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }

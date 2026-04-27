@@ -553,6 +553,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _pinPopTicker?.dispose();
     _offerTiltCtrl?.dispose();
     _offerBearingCtrl?.dispose();
+    _pauseTimer?.cancel();
     _map?.dispose();
     super.dispose();
   }

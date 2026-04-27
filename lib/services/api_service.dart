@@ -456,6 +456,7 @@ class ApiService {
   static bool _isRefreshing = false;
   static bool _isHandlingUnauthorized = false;
   static bool _loginInProgress = false;
+  static Completer<bool>? _refreshCompleter;
 
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
@@ -522,12 +523,21 @@ class ApiService {
 
   /// Attempt to refresh the access token using the refresh token.
   /// Returns true if successful, false otherwise.
+  /// If another refresh is in progress, awaits and returns its result.
   static Future<bool> refreshAccessToken() async {
+    // If a refresh is already in progress, wait for it and return its result
+    if (_refreshCompleter != null) {
+      return _refreshCompleter!.future;
+    }
     if (_isRefreshing) return false;
     _isRefreshing = true;
+    _refreshCompleter = Completer<bool>();
     try {
       final refreshToken = await _getRefreshToken();
-      if (refreshToken == null) return false;
+      if (refreshToken == null) {
+        _refreshCompleter!.complete(false);
+        return false;
+      }
       final res = await _client
           .post(
             Uri.parse('$_baseUrl/auth/refresh'),
@@ -541,13 +551,17 @@ class ApiService {
           await _saveRefreshToken(data['refresh_token'] as String);
         }
         SecurityService.logSecurityEvent('token_refreshed');
+        _refreshCompleter!.complete(true);
         return true;
       }
+      _refreshCompleter!.complete(false);
       return false;
     } catch (_) {
+      _refreshCompleter!.complete(false);
       return false;
     } finally {
       _isRefreshing = false;
+      _refreshCompleter = null;
     }
   }
 

@@ -7,7 +7,7 @@ class MapboxConfig {
 
   static const String accessToken = String.fromEnvironment(
     'MAPBOX_TOKEN',
-    defaultValue: 'pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w',
+    defaultValue: '',
   );
 
   // ── Style URLs — dark-v11 uses standard layer IDs compatible with our navy/gold theme ──

@@ -1292,13 +1292,14 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     _stopWaitTimer(); // End wait time when ride starts
     _startRideSwitching = true;
-    unawaited(_startPickupPinPopout());
-    _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)
+    try {
+      unawaited(_startPickupPinPopout());
+      _sm.beginTrip(); // triggers _onPhaseChanged(TripPhase.onTrip)
 
-    // Fetch dropoff route
-    final route = await RouteService.fetchNavRoute(
-      origin: _pos, destination: widget.dropoffLatLng);
-    if (!mounted) return;
+      // Fetch dropoff route
+      final route = await RouteService.fetchNavRoute(
+        origin: _pos, destination: widget.dropoffLatLng);
+      if (!mounted) return;
 
     if (route != null) {
       setState(() {
@@ -1354,7 +1355,10 @@ class _DriverNavScreenState extends State<DriverNavScreen>
     // Open native maps (Apple Maps on iOS, Google Maps on Android) with dropoff
     _openNativeMaps(widget.dropoffLatLng, widget.dropoffAddress);
 
-    _startRideSwitching = false;
+    } finally {
+      _startRideSwitching = false;
+    }
+    if (!mounted) return;
     setState(() {
       _cameraFollowing = true;
       _isOverview      = false;

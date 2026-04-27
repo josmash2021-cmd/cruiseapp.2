@@ -29,20 +29,30 @@ class CarImage3D extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final car = Image.asset(
-      assetPath,
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
-      isAntiAlias: true,
-      cacheWidth: cacheWidth,
-      errorBuilder: (_, __, ___) =>
-          fallback ??
-          Icon(
-            Icons.directions_car_rounded,
-            size: 36,
-            color: Colors.white.withValues(alpha: 0.5),
-          ),
+    // Shared image provider so all shadow/glow layers reuse the same decoded image
+    final imageProvider = ResizeImage.resizeIfNeeded(
+      cacheWidth,
+      null,
+      AssetImage(assetPath),
     );
+
+    Widget carImage({ColorFilter? colorFilter}) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        isAntiAlias: true,
+        errorBuilder: (_, __, ___) =>
+            fallback ??
+            Icon(
+              Icons.directions_car_rounded,
+              size: 36,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+        color: colorFilter != null ? Colors.white : null,
+        colorBlendMode: colorFilter != null ? BlendMode.srcIn : null,
+      );
+    }
 
     Widget shadow({required double dy, required double blur, required double alpha}) {
       return Positioned.fill(
@@ -56,7 +66,7 @@ class CarImage3D extends StatelessWidget {
                   Colors.black.withValues(alpha: alpha),
                   BlendMode.srcIn,
                 ),
-                child: car,
+                child: carImage(),
               ),
             ),
           ),
@@ -78,7 +88,7 @@ class CarImage3D extends StatelessWidget {
                   Color(0x40E8C547), // Gold with alpha
                   BlendMode.srcIn,
                 ),
-                child: car,
+                child: carImage(),
               ),
             ),
           ),
@@ -102,7 +112,7 @@ class CarImage3D extends StatelessWidget {
           // Gold glow when selected
           goldGlow(),
           // Actual car image on top
-          car,
+          carImage(),
         ],
       ),
     );

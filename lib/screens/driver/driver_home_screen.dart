@@ -656,10 +656,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _btnColorCtrl.value = 1.0;
     } catch (e) {
       debugPrint('[DriverHome] _checkVehicleDocStatus error: $e');
-      // On error don't block — let driver try to go online
+      // On error, fail-closed: require docs to be explicitly approved
       if (mounted) {
         setState(() {
-          _vehicleDocsApproved = true;
+          _vehicleDocsApproved = false;
           _docStatusLoaded = true;
         });
       }
@@ -1988,7 +1988,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         final trip = data['trip'] as Map<String, dynamic>;
 
         // ── Auto-start: <=15 min → start trip + navigate to trip screen directly ──
-        if (minutesUntil <= 15) {
+        // BUT only if driver doesn't already have an active trip
+        if (minutesUntil <= 15 && _activeTripData == null) {
           try {
             final tripId = trip['id'] as int;
             await ApiService.startScheduledTrip(tripId);

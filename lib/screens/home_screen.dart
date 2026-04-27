@@ -377,14 +377,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       value: 1.0, // fully visible
     );
     // Flash bolt every 2 seconds
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return false;
-      _boltFlashCtrl.forward().then((_) {
-        if (mounted) _boltFlashCtrl.reverse();
-      });
-      return mounted;
-    });
+    _boltFlashLoop();
     _loadSavedData();
     _loadPromoUsed();
     _preloadSounds();
@@ -1031,6 +1024,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         ),
       ),
     );
+  }
+
+  void _boltFlashLoop() async {
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) break;
+      _boltFlashCtrl.forward().then((_) {
+        if (mounted) _boltFlashCtrl.reverse();
+      });
+    }
   }
 
   Future<void> _loadSavedData() async {

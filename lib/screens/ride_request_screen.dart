@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -452,7 +452,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _cancelDialogShown = false;
 
   // ── Payment state ──
-  String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';
+  String _selectedPaymentMethod = defaultTargetPlatform == TargetPlatform.iOS ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;

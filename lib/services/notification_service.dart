@@ -415,11 +415,10 @@ class NotificationService {
           _onlineSoundPlaying = false;
           return;
         }
-        // Single play() call. Source is already pre-loaded in init() and
-        // the onPlayerComplete listener resets state when the clip ends,
-        // so we don't need stop() + seek(0) + resume() — that triple
-        // round-trip was the actual cause of the freeze.
-        await _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
+        // Source is already pre-loaded in init(). Fire-and-forget —
+        // NEVER await the play() call because audioplayers' MethodChannel
+        // round-trip blocks the UI thread for 100-300ms on iOS.
+        unawaited(_onlinePlayer.play(AssetSource('sounds/cruise_online.wav')));
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');
       } finally {

@@ -792,9 +792,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // current build/layout phase is done, which is exactly when the
     // PageRouteBuilder transition kicks in — so the MethodChannel
     // round-trips happen in parallel with the fade/scale, not before.
+    //
+    // 2026-04-27 freeze fix #2: Defer haptic+sound an extra 300ms.
+    // The haptic engine + AVAudioPlayer init on iOS can block the
+    // platform thread for 200-400ms. If that happens during the first
+    // 150ms of the fade+scale transition, the driver still feels a
+    // ~1s freeze. By waiting 300ms the transition is already 75%
+    // done and the user perceives it as smooth.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      HapticFeedback.heavyImpact();
-      NotificationService.playOnlineSound();
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (Navigator.of(context).mounted) {
+          HapticFeedback.heavyImpact();
+          NotificationService.playOnlineSound();
+        }
+      });
     });
     final result = await pushFuture;
     if (!mounted) return;

@@ -21,6 +21,8 @@ import '../services/local_data_service.dart';
 import '../services/analytics_service.dart';
 import '../services/notification_service.dart';
 import '../services/trip_firestore_service.dart';
+import '../services/socket_service.dart';
+import '../config/feature_flags.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -42,8 +44,6 @@ import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../services/user_session.dart';
 import '../services/network_service.dart';
-import '../services/socket_service.dart';
-import '../config/feature_flags.dart';
 
 part '../controllers/rider_tracking_controller.dart';
 part '../widgets/tracking/driver_info_card.dart';

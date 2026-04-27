@@ -671,8 +671,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Save pre-request state for rollback on error
-    final _previousPhase = _state.phase;
-    final _previousOption = _state.selectedOption;
+    final previousPhase = _state.phase;
+    final previousOption = _state.selectedOption;
 
     _state = _state.copyWith(phase: RiderPhase.requesting);
     notifyListeners();
@@ -783,8 +783,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('dispatchRideRequest failed: $e');
       // Rollback to previous state so rider can retry
       _state = _state.copyWith(
-        phase: _previousPhase,
-        selectedOption: _previousOption,
+        phase: previousPhase,
+        selectedOption: previousOption,
         cancelReason: 'Connection error. Check your network and try again.',
         cancelCode: RiderTripCancelCodes.clientConnectionError,
       );

@@ -221,7 +221,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
+                              color: Colors.white.withValues(alpha: 0.3),
                               width: 2,
                             ),
                           ),
@@ -229,7 +229,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                             child: Icon(
                               Icons.contactless,
                               size: 60,
-                              color: Colors.white.withOpacity(0.9),
+                              color: Colors.white.withValues(alpha: 0.9),
                             ),
                           ),
                         ),
@@ -244,7 +244,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                 Text(
                   _statusMessage,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     fontSize: 22,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
@@ -258,12 +258,12 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 32),
                   padding: const EdgeInsets.all(28),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: _paymentSuccess 
-                        ? const Color(0xFF4CAF50).withOpacity(0.5)
-                        : Colors.white.withOpacity(0.15),
+                        ? const Color(0xFF4CAF50).withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.15),
                       width: _paymentSuccess ? 2 : 1,
                     ),
                   ),
@@ -294,7 +294,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                       Text(
                         'Pay ${widget.rideDescription}',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 16,
                         ),
                       ),
@@ -354,7 +354,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                         ElevatedButton(
                           onPressed: _onRetry,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
                             foregroundColor: Colors.white,
                           ),
                           child: const Text('Retry'),
@@ -374,12 +374,12 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         Icons.close,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         size: 28,
                       ),
                     ),
@@ -419,7 +419,7 @@ class _ParticlesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final random = math.Random(42); // Seed fijo para consistencia
     final paint = Paint()
-      ..color = color.withOpacity(0.3)
+      ..color = color.withValues(alpha: 0.3)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
     
@@ -436,7 +436,7 @@ class _ParticlesPainter extends CustomPainter {
       
       if (opacity > 0) {
         final particlePaint = Paint()
-          ..color = color.withOpacity(opacity * 0.4)
+          ..color = color.withValues(alpha: opacity * 0.4)
           ..strokeWidth = 1.5
           ..strokeCap = StrokeCap.round;
         

@@ -120,13 +120,13 @@ class _ParticlesPainter extends CustomPainter {
 
       // Draw glow
       final glowPaint = Paint()
-        ..color = color.withOpacity(alpha * 0.6)
+        ..color = color.withValues(alpha: alpha * 0.6)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
       canvas.drawCircle(Offset(cx, cy), p.size * 1.5, glowPaint);
 
       // Draw core
       final corePaint = Paint()
-        ..color = color.withOpacity(alpha);
+        ..color = color.withValues(alpha: alpha);
       canvas.drawCircle(Offset(cx, cy), p.size * 0.5, corePaint);
     }
   }

@@ -1,8 +1,8 @@
-/// EJEMPLO: Cómo integrar Tap to Pay en el flujo de reserva de viaje
-/// 
-/// Este archivo muestra cómo usar Tap to Pay en tu código existente.
-/// Puedes copiar estas funciones a tu RideRequestScreen o donde manejes
-/// el flujo de pago.
+// EJEMPLO: Cómo integrar Tap to Pay en el flujo de reserva de viaje
+// 
+// Este archivo muestra cómo usar Tap to Pay en tu código existente.
+// Puedes copiar estas funciones a tu RideRequestScreen o donde manejes
+// el flujo de pago.
 
 import 'package:flutter/material.dart';
 import 'tap_to_pay_screen.dart';
@@ -35,13 +35,13 @@ class TapToPayExample {
       },
       onPaymentCancelled: () {
         // Usuario canceló el pago
-        print('Pago cancelado');
+        debugPrint('Pago cancelado');
       },
     );
     
     if (result == true) {
       // Pago exitoso - continuar con el flujo
-      print('Pago completado exitosamente');
+      debugPrint('Pago completado exitosamente');
     }
   }
   
@@ -61,6 +61,7 @@ class TapToPayExample {
     
     if (linkedMethods.contains('tap_to_pay')) {
       // Mostrar pantalla de Tap to Pay
+      if (!context.mounted) return false;
       final paymentResult = await showTapToPayScreen(
         context: context,
         amount: fareEstimate,
@@ -112,6 +113,7 @@ class TapToPayExample {
       if (shouldProceed != true) return;
       
       // Navegar a pantalla de Tap to Pay
+      if (!context.mounted) return;
       final paymentSuccess = await showTapToPayScreen(
         context: context,
         amount: amount,
@@ -133,7 +135,7 @@ class TapToPayExample {
       }
       
     } catch (e) {
-      print('Error en Tap to Pay: $e');
+      debugPrint('Error en Tap to Pay: $e');
       onPaymentFailed();
     }
   }

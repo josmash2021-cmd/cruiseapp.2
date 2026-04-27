@@ -32,7 +32,7 @@ class FeatureFlags {
   }
 
   /// Default value — false until Socket.io is fully validated.
-  static bool _defaultSocketIO = false;
+  static final bool _defaultSocketIO = false;
 
   /// Runtime override for testing (e.g. in dev builds or beta tester groups).
   static void setSocketIOOverride(bool enabled) {

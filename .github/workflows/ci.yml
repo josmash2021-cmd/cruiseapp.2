@@ -25,6 +25,31 @@ jobs:
           flutter --version
           dart --version
 
+      - name: Create env.dart for CI
+        run: |
+          mkdir -p lib/config
+          cat > lib/config/env.dart << 'EOF'
+          /// Environment variables for CI builds.
+          /// Real values are injected at deploy time via Codemagic.
+          class Env {
+            static const String apiKey = '';
+            static const String hmacSecret = '';
+            static const String mapsServicesKey = '';
+            static const String emailjsServiceId = '';
+            static const String emailjsTemplateId = '';
+            static const String emailjsPublicKey = '';
+            static const String emailjsPrivateKey = '';
+            static const String stripePublishableKey = '';
+            static const String stripeMerchantId = 'merchant.com.cruise.app';
+            static const String twilioAccountSid = '';
+            static const String twilioAuthToken = '';
+            static const String twilioServiceSid = '';
+            static const bool paypalSandbox = false;
+            static const String paypalClientId = 'PLACEHOLDER_PAYPAL_CLIENT_ID';
+            static const String paypalSecret = 'PLACEHOLDER_PAYPAL_SECRET';
+          }
+          EOF
+
       - name: Install dependencies
         run: flutter pub get
 

@@ -67,6 +67,11 @@ MIGRATIONS = [
     ("trips", "arrived_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "started_at", "TIMESTAMP WITH TIME ZONE"),
     ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
+    # ── VIP drink menu columns (added 2026-04-27) ──
+    ("trips", "vip_drink_selected", "VARCHAR(100)"),
+    ("trips", "vip_drink_selected_at", "TIMESTAMP WITH TIME ZONE"),
+    ("trips", "vip_menu_token", "VARCHAR(64)"),
+    ("trips", "vip_menu_sent_at", "TIMESTAMP WITH TIME ZONE"),
     # ── Users: critical columns for dispatch heartbeat & push notifications ──
     ("users", "fcm_token", "VARCHAR(500)"),
     ("users", "app_version", "VARCHAR(30)"),

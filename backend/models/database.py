@@ -29,19 +29,49 @@ _engine_kwargs: dict = {"echo": False}
 if IS_SQLITE:
     _engine_kwargs["connect_args"] = {"timeout": 30, "check_same_thread": False}
 else:
-    # Scaled pool for 4x workers (was 15, now 50) + overflow for bursts
-    _engine_kwargs["pool_size"] = 50
-    _engine_kwargs["pool_pre_ping"] = True
-    _engine_kwargs["pool_recycle"] = 1800
-    _engine_kwargs["pool_timeout"] = 10
-    _engine_kwargs["pool_use_lifo"] = True
-    # Supabase PostgreSQL: SSL required, PgBouncer-compatible
+    # ── Supabase PostgreSQL: ultra-fast PgBouncer config ──
+    # Supabase provides PgBouncer (connection pooler) on port 6543.
+    # We keep the LOCAL pool VERY small (1-2) because PgBouncer handles
+    # the heavy lifting. This eliminates "max clients reached" errors
+    # and keeps connection overhead minimal for ultra-fast responses.
+    _is_supabase_pooler = "pooler.supabase.com" in DATABASE_URL or ":6543" in DATABASE_URL
     _is_private = ".railway.internal" in DATABASE_URL
-    if _is_private:
-        _engine_kwargs["max_overflow"] = 30
+
+    if _is_supabase_pooler:
+        # PgBouncer mode: pool_size=1, no overflow. Let Supabase handle pooling.
+        _engine_kwargs["pool_size"] = 1
+        _engine_kwargs["max_overflow"] = 0
+        _engine_kwargs["pool_pre_ping"] = True
+        _engine_kwargs["pool_recycle"] = 300  # 5 min — recycle faster for serverless
+        _engine_kwargs["pool_timeout"] = 5
+        _engine_kwargs["pool_use_lifo"] = True
+        import ssl as _ssl_mod
+        _ssl_ctx = _ssl_mod.create_default_context()
+        _ssl_ctx.check_hostname = False
+        _ssl_ctx.verify_mode = _ssl_mod.CERT_NONE
+        _connect_args = {
+            "timeout": 5,
+            "command_timeout": 10,
+            "ssl": _ssl_ctx,
+            "statement_cache_size": 0,  # REQUIRED for PgBouncer
+        }
+    elif _is_private:
+        # Private Railway network (direct PostgreSQL)
+        _engine_kwargs["pool_size"] = 10
+        _engine_kwargs["max_overflow"] = 5
+        _engine_kwargs["pool_pre_ping"] = True
+        _engine_kwargs["pool_recycle"] = 1800
+        _engine_kwargs["pool_timeout"] = 10
+        _engine_kwargs["pool_use_lifo"] = True
         _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False}
     else:
-        _engine_kwargs["max_overflow"] = 20
+        # Public PostgreSQL (fallback)
+        _engine_kwargs["pool_size"] = 10
+        _engine_kwargs["max_overflow"] = 5
+        _engine_kwargs["pool_pre_ping"] = True
+        _engine_kwargs["pool_recycle"] = 1800
+        _engine_kwargs["pool_timeout"] = 10
+        _engine_kwargs["pool_use_lifo"] = True
         import ssl as _ssl_mod
         _ssl_ctx = _ssl_mod.create_default_context()
         _ssl_ctx.check_hostname = False
@@ -50,7 +80,7 @@ else:
             "timeout": 10,
             "command_timeout": 15,
             "ssl": _ssl_ctx,
-            "statement_cache_size": 0,  # required for PgBouncer/Supabase pooler
+            "statement_cache_size": 0,
         }
     _engine_kwargs["connect_args"] = _connect_args
 

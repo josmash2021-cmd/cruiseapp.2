@@ -206,6 +206,14 @@ class ConsentLog(Base):
 
 class Trip(Base):
     __tablename__ = "trips"
+    __table_args__ = (
+        # Composite index for active driver trips (most frequent query)
+        Index("ix_trip_driver_status", "driver_id", "status"),
+        # Composite index for rider trip history
+        Index("ix_trip_rider_created", "rider_id", "created_at"),
+        # Composite index for dispatch (finding pending trips)
+        Index("ix_trip_status_created", "status", "created_at"),
+    )
     id = Column(Integer, primary_key=True, index=True)
     rider_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)

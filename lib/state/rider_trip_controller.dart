@@ -677,12 +677,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _state = _state.copyWith(phase: RiderPhase.requesting);
     notifyListeners();
 
-    // Transition to searching UI
-    _searchTimer?.cancel();
-    _searchTimer = Timer(const Duration(milliseconds: 800), () {
-      _state = _state.copyWith(phase: RiderPhase.searchingDriver);
-      notifyListeners();
-    });
+    // Transition to searching UI immediately — no artificial delay
+    _state = _state.copyWith(phase: RiderPhase.searchingDriver);
+    notifyListeners();
 
     // Call backend dispatch
     // _pollingStarted = true means _isRequesting stays true while polling runs;
@@ -857,9 +854,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       } else if (status == 'cancelled' || status == 'canceled') {
         // Guard A: ignore stale cancellation if driver was already matched
         if (_driverMatched) return;
-        // Guard B: debounce 400ms to let a real 'driver_en_route' event win the race
+        // Guard B: debounce 100ms to let a real 'driver_en_route' event win the race
         _fsCancelDebounce?.cancel();
-        _fsCancelDebounce = Timer(const Duration(milliseconds: 400), () {
+        _fsCancelDebounce = Timer(const Duration(milliseconds: 100), () {
           // Re-check after debounce — driver may have arrived in the meantime
           if (_driverMatched) return;
           _currentStatus = status;
@@ -962,8 +959,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    // Delay first check to give backend DB write time to propagate.
-    Future.delayed(const Duration(seconds: 2), () => checkStatus(null));
+    // Check immediately — backend is fast enough now (<100ms response)
+    unawaited(checkStatus(null));
 
     _pollTimer = Timer.periodic(_dispatchPollInterval, (timer) async {
       await checkStatus(timer);
@@ -1086,8 +1083,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final tripId = _state.tripId;
     if (tripId != null) {
       // Check one more time before actually cancelling — Firestore might have
-      // just written a driver match in the last 300ms.
-      Future.delayed(const Duration(milliseconds: 300), () async {
+      // just written a driver match in the last 100ms.
+      Future.delayed(const Duration(milliseconds: 100), () async {
         if (_driverMatched) {
           debugPrint(
               '[RiderTrip] cancelRide() driver matched during 300ms grace — routing to request-cancel');

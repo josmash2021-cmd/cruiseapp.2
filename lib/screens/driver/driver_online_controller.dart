@@ -37,23 +37,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Let the page transition animation settle before starting
     // background services (400ms transition + small buffer).
     // Use addPostFrameCallback so we don't block the first build frame.
+    // Start everything immediately — no artificial delays
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      Future.delayed(const Duration(milliseconds: 350), () {
-        if (!mounted) return;
-        _startClock();
-        _startPolling();
-        _startPosStream();
-        _loadAllEarnings();
-        _startEarningsRefresh();
-        _startScheduledPoll();
-        unawaited(_locate());
-
-        // Verification + go-online in background — don't block the UI.
-        // Driver already passed the home-screen gate (_ensureVerified +
-        // _checkVehicleDocStatus) so this is a background safety net.
-        unawaited(_verifyAndGoOnline());
-      });
+      _startClock();
+      _startPolling();
+      _startPosStream();
+      _loadAllEarnings();
+      _startEarningsRefresh();
+      _startScheduledPoll();
+      unawaited(_locate());
+      unawaited(_verifyAndGoOnline());
     });
 
     // Listen for network recovery — proactively reconnect SSE + re-register
@@ -69,10 +63,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     };
     NetworkService().onlineNotifier.addListener(_networkListener!);
 
-    // Build vehicle icons well after the transition settles (1200ms)
-    // to avoid jank during the 400ms fade+scale entrance animation.
-    // Previous 700ms still caused overlap with map mount + ticker start.
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    // Build vehicle icons immediately — if there's jank, fix the animation, don't delay
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _buildVehicleIcons();
     });
 
@@ -1138,10 +1130,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Only the CURRENT generation is allowed to schedule the next reconnect.
       // Events from stale generations are dropped silently.
       if (myGeneration != _currentSseGeneration) return;
-      debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 2s');
+      debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 500ms');
       _sseActive = false;
       if (mounted && _phase == _Phase.searching) {
-        _sseReconnectTimer = Timer(const Duration(seconds: 2), _connectSse);
+        _sseReconnectTimer = Timer(const Duration(milliseconds: 500), _connectSse);
       }
     }
 

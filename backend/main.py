@@ -622,6 +622,15 @@ async def ping():
 
 @app.get("/health")
 async def health(x_api_key: str = Header(default="")):
+    # Fast path: public healthcheck (Railway) — no DB, instant response
+    if x_api_key != API_KEY:
+        return {
+            "status": "ok",
+            "version": "2.0",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Slow path: private healthcheck with full diagnostics — requires API key
     db_status = "ok"
     db_latency_ms = 0.0
     try:
@@ -636,47 +645,43 @@ async def health(x_api_key: str = Header(default="")):
     uptime_s = int((datetime.now(timezone.utc) - _SERVER_START_TIME).total_seconds())
     overall = "ok" if db_status == "ok" else "degraded"
 
-    # Public response — minimal info
     public_response = {
         "status": overall,
         "version": "2.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Private response — full details, requires API key
-    if x_api_key == API_KEY:
-        firebase_usable = False
-        if _HAS_FIRESTORE:
-            try:
-                firebase_usable = firestore_sync._db is not None
-            except Exception:
-                pass
-        uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
-        return {
-            "status": overall,
-            "version": "2.0",
-            "uptime": uptime_str,
-            "uptime_seconds": uptime_s,
-            "database": {"status": db_status, "latency_ms": db_latency_ms},
-            "firebase": {
-                "imported": _HAS_FIRESTORE,
-                "db_initialized": firebase_usable,
-                "status": "ok" if firebase_usable else ("imported_but_no_creds" if _HAS_FIRESTORE else "disabled"),
-            },
-            "watchdog": _watchdog_stats,
-            "security": security_guardian.get_status(),
-            "guardian": guardian_agent.get_status(),
-            "backup": _backup_status(),
-            "ghost_driver_agent": ghost_driver_agent.get_status(),
-            "safety_monitor_agent": safety_monitor_agent.get_status(),
-            "document_expiry_agent": document_expiry_agent.get_status(),
-            "document_approval_agent": document_approval_agent.get_status(),
-            "rating_moderator_agent": rating_moderator_agent.get_status(),
-            "sse": event_bus.get_stats(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    return public_response
+    # Private response — full details (API key already verified above)
+    firebase_usable = False
+    if _HAS_FIRESTORE:
+        try:
+            firebase_usable = firestore_sync._db is not None
+        except Exception:
+            pass
+    uptime_str = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s"
+    return {
+        "status": overall,
+        "version": "2.0",
+        "uptime": uptime_str,
+        "uptime_seconds": uptime_s,
+        "database": {"status": db_status, "latency_ms": db_latency_ms},
+        "firebase": {
+            "imported": _HAS_FIRESTORE,
+            "db_initialized": firebase_usable,
+            "status": "ok" if firebase_usable else ("imported_but_no_creds" if _HAS_FIRESTORE else "disabled"),
+        },
+        "watchdog": _watchdog_stats,
+        "security": security_guardian.get_status(),
+        "guardian": guardian_agent.get_status(),
+        "backup": _backup_status(),
+        "ghost_driver_agent": ghost_driver_agent.get_status(),
+        "safety_monitor_agent": safety_monitor_agent.get_status(),
+        "document_expiry_agent": document_expiry_agent.get_status(),
+        "document_approval_agent": document_approval_agent.get_status(),
+        "rating_moderator_agent": rating_moderator_agent.get_status(),
+        "sse": event_bus.get_stats(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 # -- Security Guardian Health Endpoint ------------------------------------
 @app.get("/health/security")

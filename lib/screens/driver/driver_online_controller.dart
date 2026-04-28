@@ -1003,50 +1003,36 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     final offerActive = _isCardAnimating || _previewingOffer != null;
     if (_phase == _Phase.searching && !offerActive) {
-      // Smooth camera follow — throttled easeTo every 500ms to prevent animation stacking.
-      // Each easeTo glides 800ms, so there's slight overlap = continuous smooth motion.
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      if (nowMs - _lastSearchCamMs >= 500) {
-        _lastSearchCamMs = nowMs;
-        _map?.easeTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-            zoom: 15.5,
-            bearing: 0,
-            pitch: 0,
-          ),
-          mapbox.MapAnimationOptions(duration: 800),
-        );
-      }
+      // Smooth camera follow at 60fps — setCamera (instant) so the camera
+      // glides with the interpolated dot position frame-by-frame.
+      _map?.setCamera(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          zoom: 15.5,
+          bearing: 0,
+          pitch: 0,
+        ),
+      );
     } else if (isNav && _cameraFollowing) {
-      // Throttle setCamera to ~15fps — 60fps MethodChannel calls freeze the UI
-      // on lower-end devices. The map still feels smooth because 15fps updates
-      // with constant-velocity interpolation between frames.
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      if (nowMs - _lastNavCamMs >= 66) {
-        _lastNavCamMs = nowMs;
-        _cameraBearing = _heading;
-        _map?.setCamera(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-            zoom: 17.5,
-            bearing: _heading,
-            pitch: 55,
-          ),
-        );
-      }
+      // Nav camera follow at 60fps — setCamera (instant) so the car stays
+      // glued to center without jumps. The smoothness comes from _motion.tick()
+      // running every frame, not from easing animations.
+      _cameraBearing = _heading;
+      _map?.setCamera(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          zoom: 17.5,
+          bearing: _heading,
+          pitch: 55,
+        ),
+      );
     }
 
-    // Throttle annotation updates to ~15fps — same reason as camera.
-    // _motion.tick() still runs every frame for smooth interpolation, but
-    // the expensive MethodChannel call to Mapbox is throttled.
-    final nowMs2 = DateTime.now().millisecondsSinceEpoch;
-    if (nowMs2 - _lastAnnotationMs >= 66) {
-      _lastAnnotationMs = nowMs2;
-      _updateDriverAnnotation();
-    }
+    // Annotation update every frame — write freshest geometry in-memory
+    // (cheap), then flush to Mapbox. The annotation follows the dot exactly.
+    _updateDriverAnnotation();
 
     // Stop ticker when parked on the target — saves CPU when idle/stationary.
     // The ticker restarts automatically on the next _smoothMoveTo().

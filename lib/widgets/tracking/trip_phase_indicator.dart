@@ -357,31 +357,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: () {
-            // Rider confirms pickup — transition to onTrip smoothly
-            if (mounted) _transitionToOnTrip();
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8C547),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Text(
-                'Confirm Pickup',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ),
+        // Confirm Pickup is handled by the fullscreen RiderConfirmPickupScreen overlay
       ],
     );
   }

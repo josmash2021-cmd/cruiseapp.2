@@ -298,27 +298,27 @@ async def lifespan(app: FastAPI):
 
     # Only start agents if DB is initialized
     if db_initialized:
-        async def _bg_init():
-            await asyncio.sleep(0.5)
+        logging.info("[Lifespan] Starting agent initialization...")
 
-            # ── Load revoked tokens (blocks JWT validation) ──
+        # ── Load revoked tokens (blocks JWT validation) ──
         try:
             await load_revoked_tokens_from_db()
+            logging.info("[Lifespan] Revoked tokens loaded")
         except Exception as _e:
-            logging.warning("Revoked tokens load failed: %s", _e)
+            logging.warning("[Lifespan] Revoked tokens load failed: %s", _e)
 
         # ── Staggered agent startup (avoid thundering herd) ──
         # Phase 1: Critical agents (0s delay)
         guardian_agent.set_db_session_maker(SessionLocal)
         await guardian_agent.start()
         await security_guardian.start_heartbeat()
+        logging.info("[Lifespan] Phase 1 agents started (guardian, security)")
 
         # Phase 2: Critical background agents only (5s delay)
-        # NOTE: With NullPool, each DB call creates a new connection.
-        # We keep only essential agents to avoid overwhelming PgBouncer.
         await asyncio.sleep(5)
         wait_timeout_agent.set_db_session_maker(SessionLocal)
         await wait_timeout_agent.start()
+        logging.info("[Lifespan] Phase 2 agents started (wait_timeout)")
 
         # Phase 3: Low-priority agents (staggered, 15s apart)
         await asyncio.sleep(10)
@@ -326,34 +326,36 @@ async def lifespan(app: FastAPI):
         await ghost_driver_agent.start()
         safety_monitor_agent.set_db_session_maker(SessionLocal)
         await safety_monitor_agent.start()
+        logging.info("[Lifespan] Phase 3 agents started (ghost_driver, safety_monitor)")
 
         # Phase 4: Periodic tasks (30s delay) — full set with DB-smart intervals
         await asyncio.sleep(15)
         asyncio.create_task(_audit_flush_loop())
         asyncio.create_task(_scheduled_ride_dispatcher())
         asyncio.create_task(_scheduled_ride_reminder_loop())
+        logging.info("[Lifespan] Phase 4 periodic tasks started")
 
         # Re-enabled agents with longer intervals to reduce PgBouncer churn
-        # (NullPool creates a new connection per DB call)
-        asyncio.create_task(_schedule_weekly_payouts())          # weekly — very low frequency
-        asyncio.create_task(_backup_scheduler())                  # 12h interval (was 6h)
-        asyncio.create_task(run_proactive_agent_loop())           # 15 min interval (was 10m)
-        asyncio.create_task(_scheduled_rides_available_notify_loop())  # 30 min interval (was 15m)
-        asyncio.create_task(_nightly_reconcile_loop())            # 24h — very low frequency
-        asyncio.create_task(_driver_referral_expiry_loop())       # 12h interval (was 6h)
+        asyncio.create_task(_schedule_weekly_payouts())
+        asyncio.create_task(_backup_scheduler())
+        asyncio.create_task(run_proactive_agent_loop())
+        asyncio.create_task(_scheduled_rides_available_notify_loop())
+        asyncio.create_task(_nightly_reconcile_loop())
+        asyncio.create_task(_driver_referral_expiry_loop())
 
-        # Class-based autonomous agents — set DB session maker then start
+        # Class-based autonomous agents
         document_expiry_agent.set_db_session_maker(SessionLocal)
-        await document_expiry_agent.start()      # 6h interval (unchanged)
+        await document_expiry_agent.start()
 
         document_approval_agent.set_db_session_maker(SessionLocal)
-        await document_approval_agent.start()    # 5 min interval (was 2m)
+        await document_approval_agent.start()
 
         rating_moderator_agent.set_db_session_maker(SessionLocal)
-        await rating_moderator_agent.start()     # 60 min interval (was 30m)
+        await rating_moderator_agent.start()
 
         cruise_level_agent.set_db_session_maker(SessionLocal)
-        await cruise_level_agent.start()         # 30 min interval (was 10m)
+        await cruise_level_agent.start()
+        logging.info("[Lifespan] Class-based agents started")
 
         # Cache sweep every 60s
         async def _cache_sweep():
@@ -366,8 +368,9 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_cache_sweep())
 
         logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")
+    else:
+        logging.error("[Lifespan] Agents NOT started because DB initialization failed")
 
-    asyncio.create_task(_bg_init())
     yield
     # Cleanup
     await security_guardian.stop_heartbeat()

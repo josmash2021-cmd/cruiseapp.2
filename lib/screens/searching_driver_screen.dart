@@ -192,11 +192,12 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       });
     }
 
-    // ── Safety timeout: if no driver found after 4 seconds, pop anyway
-    // This transitions to the waiting screen faster so the user sees the map
-    _searchTimeoutTimer = Timer(const Duration(seconds: 4), () {
+    // ── Safety timeout: if payment/driver-matching takes longer than
+    // 30 s, pop so the user isn't stuck.  The parent screen will show
+    // the map + searching card which is the normal UX anyway.
+    _searchTimeoutTimer = Timer(const Duration(seconds: 30), () {
       if (mounted) {
-        debugPrint('[SearchingDriverScreen] Timeout reached (4s) - popping to continue flow');
+        debugPrint('[SearchingDriverScreen] Timeout reached (30s) - popping to continue flow');
         Navigator.of(context).pop(false); // false = not cancelled, continue to waiting screen
       }
     });

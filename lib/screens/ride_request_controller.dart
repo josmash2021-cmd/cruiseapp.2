@@ -1225,6 +1225,46 @@ extension _RideRequestController on _RideRequestScreenState {
             (rawReason != null &&
                 (rawReason.toLowerCase().contains('no hay driver') ||
                     rawReason.toLowerCase().contains('no driver')));
+        // ── Client-side pre-flight errors (no internet, no session, create failed)
+        // These mean the trip was NEVER created.  Instead of silently dumping
+        // the rider back to home, show an inline SnackBar so they can retry.
+        final isClientError = cancelCode == RiderTripCancelCodes.clientNoInternet ||
+            cancelCode == RiderTripCancelCodes.clientNoSession ||
+            cancelCode == RiderTripCancelCodes.clientCreateFailed ||
+            cancelCode == RiderTripCancelCodes.clientConnectionError;
+        if (isClientError) {
+          _ctrl.reset();
+          final msg = rawReason ?? S.of(context).tripCancelled;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF1a1a1a),
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.orange, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      msg,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              duration: const Duration(seconds: 5),
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Colors.orange, width: 1),
+              ),
+            ),
+          );
+          return;
+        }
         _ctrl.reset();
         // For the smooth auto-cancel flow we show a gold SnackBar on the
         // home screen instead of the intrusive dialog. Fire it BEFORE

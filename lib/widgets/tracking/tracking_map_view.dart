@@ -975,8 +975,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                   } catch (_) {}
                 }
               }
-              // Car annotation survives style reload (managed by annotation manager)
-              // Reset creation guard so car can be re-created if needed
+              // Car annotation is DESTROYED on style reload — Mapbox clears all
+              // annotations when the style changes. We MUST null out _carAnnot
+              // so _updateCarSmooth() recreates it instead of updating a ghost.
+              _carAnnot = null;
               _carAnnotCreating = false;
             },
           ),

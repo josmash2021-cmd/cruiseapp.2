@@ -166,6 +166,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // REMOVED: _carUpdateInFlight guard was causing frame drops. The Ticker now
   // pushes every frame to Mapbox; the platform channel handles deduplication.
   // See _updateCarSmooth() in tracking_map_view.dart for details.
+  DateTime? _carFirstGpsTime; // when we first got driver GPS — used for heartbeat
+  Timer? _carHeartbeatTimer;  // forces car recreation if it never appeared
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
 
@@ -396,6 +398,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     }
     _interpTicker?.dispose();
     _camTimer?.cancel();
+    _carHeartbeatTimer?.cancel();
     // car annotation cleaned up with pointAnnotMgr
     _routeDrawTicker?.dispose();
     _driverLocSub?.cancel();

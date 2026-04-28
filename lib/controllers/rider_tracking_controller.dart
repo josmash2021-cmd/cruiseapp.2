@@ -329,6 +329,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _interpTicker!.start();
     }
 
+    // Start heartbeat timer on first GPS — forces car recreation if it never appeared.
+    // This catches edge cases where the annotation was lost (style reload, map rebuild, etc.)
+    if (_carFirstGpsTime == null) {
+      _carFirstGpsTime = DateTime.now();
+      _carHeartbeatTimer?.cancel();
+      _carHeartbeatTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!mounted) {
+          _carHeartbeatTimer?.cancel();
+          return;
+        }
+        // If car annotation is missing but we have GPS and icon, force recreate
+        if (_carAnnot == null && _carPngBytes != null &&
+            (_animPos.latitude != 0 || _animPos.longitude != 0)) {
+          debugPrint('[CarIcon] HEARTBEAT: car missing, forcing recreation');
+          _carAnnotCreating = false;
+          _updateCarSmooth();
+        }
+      });
+    }
+
     // Uber-style: fetch approach route (driver→pickup) on first GPS during arriving
     if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
       unawaited(_fetchApproachRoute(ll));

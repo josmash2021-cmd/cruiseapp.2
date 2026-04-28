@@ -15,10 +15,10 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-# Stale connection threshold: queues not drained for 2 minutes are removed
-_STALE_TIMEOUT = 120.0
-# Heartbeat interval: 30 seconds
-_HEARTBEAT_INTERVAL = 30.0
+# Stale connection threshold: queues not drained for 1 minute are removed
+_STALE_TIMEOUT = 60.0
+# Heartbeat interval: 15 seconds (keeps connection alive without excessive traffic)
+_HEARTBEAT_INTERVAL = 15.0
 
 
 class EventBus:

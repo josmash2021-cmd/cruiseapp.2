@@ -1226,7 +1226,7 @@ async def trip_status_sse(
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=10.0)
                     evt_type = event.get('type', 'message')
                     evt_data = event.get('data', event)
                     yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"

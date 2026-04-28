@@ -141,27 +141,29 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
-  /// Connect to Socket.io (primary) + backend poll + Firestore for trip status,
-  /// RTDB for driver GPS fallback.
+  /// Connect to SSE (primary) + Socket.io (GPS) + backend poll (fallback).
+  /// Firestore is now tertiary fallback only.
   void _startRealTimeTracking() {
     final tripId = widget.tripId;
     final sqlDocId = tripId != null ? 'sql_$tripId' : null;
     final fallbackDocId = widget.firestoreTripId;
 
-    // ── 0. PRIMARY: Socket.io real-time channel ──
+    // ── 0. PRIMARY: SSE trip status stream (<100ms latency) ──
+    if (tripId != null) {
+      _startSseTripTracking(tripId);
+    }
+
+    // ── 1. PRIMARY GPS: Socket.io real-time channel ──
     if (FeatureFlags.useSocketIO && tripId != null) {
       _startSocketIOTracking(tripId);
     }
 
-    // ── 1. BACKUP: backend poll — adaptive frequency based on Socket.io health ──
-    // When Socket.io is healthy: poll very lightly (every 5s) just as safety net.
-    // When Socket.io is down: poll faster (every 2s) to compensate.
-    // Firestore listener also provides instant updates, so HTTP poll is tertiary.
+    // ── 2. BACKUP: backend poll — only when SSE is down ──
     _statusPollTimer?.cancel();
     _startAdaptivePolling();
 
-    // ── 2. BONUS: Firestore listener (instant when it works) ──
-    // Firebase Auth + listener setup runs in parallel — never blocks the poll.
+    // ── 3. FALLBACK: Firestore listener (only if SSE fails) ──
+    // Delayed start — SSE handles 99% of updates, Firestore is safety net.
     _initFirebaseAndListeners(tripId, sqlDocId, fallbackDocId);
 
     // ── 3. RTDB driver GPS — fallback when Socket.io is down ──
@@ -235,6 +237,45 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
     unawaited(_pollBackendTripStatus()); // first poll fires immediately
     debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 2s, skips when Socket.io+Firestore healthy)');
+  }
+
+  /// Start SSE trip status stream — PRIMARY channel for instant updates (<100ms).
+  /// Replaces Firestore as the main real-time channel.
+  StreamSubscription<Map<String, dynamic>>? _sseTripSub;
+  bool _sseActive = false;
+
+  void _startSseTripTracking(int tripId) {
+    _sseTripSub?.cancel();
+    _sseActive = false;
+
+    _sseTripSub = ApiService.streamTripStatus(tripId).listen(
+      (data) {
+        if (!mounted || _phase == _TrackPhase.completed) return;
+        _sseActive = true;
+        _pollFailCount = 0;
+        if (_connectionLost) _setState(() => _connectionLost = false);
+
+        // Log latency if timestamp present
+        final ts = data['ts'] as num?;
+        if (ts != null) {
+          final latency = (DateTime.now().millisecondsSinceEpoch - (ts * 1000)).round();
+          debugPrint('[SSE] Trip update latency: ${latency}ms');
+        }
+
+        debugPrint('[SSE] Trip status update: ${data['status']}');
+        _onTripStatusUpdate(data);
+      },
+      onError: (e) {
+        debugPrint('[SSE] Trip stream error: $e');
+        _sseActive = false;
+      },
+      onDone: () {
+        debugPrint('[SSE] Trip stream closed — will reconnect');
+        _sseActive = false;
+      },
+    );
+
+    debugPrint('[RiderTracking] 📡 SSE trip tracking started for trip $tripId');
   }
 
   /// Start Socket.io listeners for trip status and driver GPS.

@@ -2351,9 +2351,9 @@ class ApiService {
     }
   }
 
-  // ── SSE real-time stream for rider trip status (unused — rider uses Firestore listener instead) ──
+  // ── SSE real-time stream for rider trip status ──
   /// Returns a stream of trip status events with automatic reconnection + exponential backoff.
-  // ignore: unused_element
+  /// PRIMARY channel for instant updates (<100ms) — replaces Firestore listener.
   static Stream<Map<String, dynamic>> streamTripStatus(int tripId) async* {
     int backoffMs = 1000;
     const maxBackoffMs = 30000;

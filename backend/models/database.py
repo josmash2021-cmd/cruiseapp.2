@@ -62,14 +62,20 @@ else:
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer
         }
     elif _is_private:
-        # Private Railway network (direct PostgreSQL)
+        # ── Railway Private PostgreSQL: direct connection, ultra-fast ──
+        # Same-region network (us-east4) = sub-millisecond latency.
+        # Tuned for hot-cache reuse and minimal checkout overhead.
         _engine_kwargs["pool_size"] = 10
         _engine_kwargs["max_overflow"] = 5
-        _engine_kwargs["pool_pre_ping"] = True
-        _engine_kwargs["pool_recycle"] = 1800
-        _engine_kwargs["pool_timeout"] = 10
-        _engine_kwargs["pool_use_lifo"] = True
-        _connect_args = {"connect_timeout": 10, "sslmode": "disable", "options": "-c search_path=public"}
+        _engine_kwargs["pool_pre_ping"] = False   # skip 1 RTT per checkout (private net is stable)
+        _engine_kwargs["pool_recycle"] = 600      # recycle before Railway idle timeout
+        _engine_kwargs["pool_timeout"] = 5        # fail fast if pool exhausted
+        _engine_kwargs["pool_use_lifo"] = True    # reuse hottest connection
+        _connect_args = {
+            "connect_timeout": 5,
+            "sslmode": "disable",                 # private network, no TLS overhead
+            "options": "-c search_path=public -c jit=off -c application_name=cruise_fastapi",
+        }
     else:
         # Public PostgreSQL (fallback)
         _engine_kwargs["pool_size"] = 10

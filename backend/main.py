@@ -1607,6 +1607,6 @@ if __name__ == "__main__":
         log_level="info",
         access_log=True,
         timeout_keep_alive=75,
-        limit_concurrency=2000,
+        limit_concurrency=8000,
         workers=1,
     )

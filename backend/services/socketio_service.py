@@ -42,7 +42,10 @@ _redis_manager = None
 
 def _get_redis_url() -> Optional[str]:
     """Return Redis URL from environment, or None if not configured."""
-    return os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
+    url = (os.environ.get("REDIS_URL") or "").strip()
+    if url and url.startswith(("redis://", "rediss://", "unix://")):
+        return url
+    return os.environ.get("REDIS_TLS_URL")
 
 
 def _create_manager():
@@ -66,6 +69,9 @@ def _get_cors_origins():
 
     Production defaults to the known app origins. Development defaults to
     wildcard.  Override with SOCKETIO_CORS_ORIGINS (comma-separated).
+
+    Note: Mobile apps (Flutter) send 'null' or no Origin header, so we
+    include None in the allowed origins to support native app WebSockets.
     """
     env_origins = os.environ.get("SOCKETIO_CORS_ORIGINS")
     if env_origins:
@@ -75,6 +81,7 @@ def _get_cors_origins():
         return [
             "https://cruiseapp2-production.up.railway.app",
             "https://cruiseinride.com",
+            None,  # Allow mobile apps with null/empty Origin
         ]
 
     # Development / unknown environment — allow all

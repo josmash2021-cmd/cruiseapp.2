@@ -918,6 +918,8 @@ async def migrate_postgres(conn):
         ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "ai_disabled", "BOOLEAN DEFAULT FALSE"),
+        ("cashouts", "method", "VARCHAR(20) DEFAULT 'standard'"),
+        ("cashouts", "fee", "FLOAT DEFAULT 0.0"),
     ]
     for table, col, col_type in migrations:
         try:

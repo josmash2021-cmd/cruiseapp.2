@@ -282,13 +282,29 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                 width: double.infinity,
                 height: 44,
                 child: TextButton(
-                  onPressed: _advance,
+                  onPressed: () {
+                    // Profile photo is mandatory — block skip with a clear message.
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Please add a profile photo to continue. Drivers need to recognize you.',
+                          style: TextStyle(color: c.textPrimary),
+                        ),
+                        backgroundColor: c.surface,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  },
                   child: Text(
                     S.of(context).skip,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: c.textTertiary,
+                      color: c.textTertiary.withValues(alpha: 0.5),
                     ),
                   ),
                 ),

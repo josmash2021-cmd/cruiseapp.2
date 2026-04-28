@@ -207,81 +207,82 @@ async def lifespan(app: FastAPI):
     from services.event_bus import event_bus as _eb
     _eb.start_heartbeat()
 
-    async def _bg_init():
-        await asyncio.sleep(0.5)  # Let uvicorn bind port
-
-        # ── CRITICAL PATH: DB init with verification ──
-        db_initialized = False
-        for _attempt in range(5):
-            try:
-                if IS_SQLITE:
-                    async with engine.begin() as conn:
-                        await conn.run_sync(Base.metadata.create_all)
-                        await conn.execute(text("PRAGMA journal_mode=WAL"))
-                        await conn.execute(text("PRAGMA synchronous=NORMAL"))
-                        await conn.execute(text("PRAGMA busy_timeout=30000"))
-                        await conn.execute(text("PRAGMA cache_size=-64000"))
-                        await _migrate_add_columns(conn)
-                else:
-                    # PostgreSQL: use sync SQLAlchemy for DDL
-                    from sqlalchemy import create_engine
-                    from db_url import resolve_database_url
-                    sync_url = resolve_database_url(async_driver=False)
-                    # Ensure we use plain postgresql:// for sync engine
-                    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
-                        if sync_url.startswith(prefix):
-                            sync_url = "postgresql://" + sync_url[len(prefix):]
-                            break
-                    logging.info("[DB Init] Using sync URL: %s", sync_url.replace("//", "//***:").rsplit("@", 1)[-1] if "@" in sync_url else sync_url)
-                    sync_engine = create_engine(
-                        sync_url,
-                        echo=False,
-                        connect_args={"sslmode": "require", "connect_timeout": 15},
-                    )
-                    # Set search_path and create tables
-                    with sync_engine.begin() as sync_conn:
-                        sync_conn.execute(text("SET search_path TO public"))
-                        Base.metadata.create_all(sync_conn, checkfirst=True)
-                        logging.info("[DB Init] Tables created/verified")
-                    sync_engine.dispose()
-                    
-                    # Verify tables exist with async connection
-                    async with engine.begin() as conn:
-                        result = await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
-                        tables = [row[0] for row in result.fetchall()]
-                        logging.info("[DB Init] Public tables: %s", tables)
-                        required = ['users', 'trips', 'dispatch_offers', 'vehicles', 'documents']
-                        missing = [t for t in required if t not in tables]
-                        if missing:
-                            logging.error("[DB Init] MISSING tables: %s", missing)
-                            raise RuntimeError(f"Missing tables: {missing}")
-                        logging.info("[DB Init] All required tables present ✓")
+    # ── CRITICAL PATH: DB init (SYNCHRONOUS - blocks startup until done) ──
+    db_initialized = False
+    for _attempt in range(5):
+        try:
+            if IS_SQLITE:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                    await conn.execute(text("PRAGMA journal_mode=WAL"))
+                    await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                    await conn.execute(text("PRAGMA busy_timeout=30000"))
+                    await conn.execute(text("PRAGMA cache_size=-64000"))
+                    await _migrate_add_columns(conn)
+            else:
+                # PostgreSQL: use sync SQLAlchemy for DDL
+                from sqlalchemy import create_engine
+                from db_url import resolve_database_url
+                sync_url = resolve_database_url(async_driver=False)
+                # Ensure we use plain postgresql:// for sync engine
+                for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
+                    if sync_url.startswith(prefix):
+                        sync_url = "postgresql://" + sync_url[len(prefix):]
+                        break
+                logging.info("[DB Init] Using sync URL: %s", sync_url.replace("//", "//***:").rsplit("@", 1)[-1] if "@" in sync_url else sync_url)
+                sync_engine = create_engine(
+                    sync_url,
+                    echo=False,
+                    connect_args={"sslmode": "require", "connect_timeout": 15},
+                )
+                # Set search_path and create tables
+                with sync_engine.begin() as sync_conn:
+                    sync_conn.execute(text("SET search_path TO public"))
+                    Base.metadata.create_all(sync_conn, checkfirst=True)
+                    logging.info("[DB Init] Tables created/verified")
+                sync_engine.dispose()
                 
-                # Run PostgreSQL-specific migrations (indexes, etc.)
-                if not IS_SQLITE:
-                    try:
-                        async with engine.begin() as conn:
-                            await _migrate_postgres(conn)
-                        logging.info("[DB Init] PostgreSQL migrations completed")
-                    except Exception as _mig_err:
-                        logging.warning("[DB Init] Migration warning (non-fatal): %s", _mig_err)
-                
-                db_initialized = True
-                logging.info("Database initialized successfully")
-                break
-            except Exception as _e:
-                logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e, exc_info=_attempt == 4)
-                if _attempt < 4:
-                    await asyncio.sleep(3)
-        
-        if not db_initialized:
-            logging.error("[DB Init] CRITICAL: Database could not be initialized after 5 attempts")
-            logging.error("[DB Init] Agents will fail with 'relation does not exist' errors")
-            # Still continue so the API can respond to health checks
-            # Agents will be skipped
-            return
+                # Verify tables exist with async connection
+                async with engine.begin() as conn:
+                    result = await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
+                    tables = [row[0] for row in result.fetchall()]
+                    logging.info("[DB Init] Public tables: %s", tables)
+                    required = ['users', 'trips', 'dispatch_offers', 'vehicles', 'documents']
+                    missing = [t for t in required if t not in tables]
+                    if missing:
+                        logging.error("[DB Init] MISSING tables: %s", missing)
+                        raise RuntimeError(f"Missing tables: {missing}")
+                    logging.info("[DB Init] All required tables present ✓")
+            
+            # Run PostgreSQL-specific migrations (indexes, etc.)
+            if not IS_SQLITE:
+                try:
+                    async with engine.begin() as conn:
+                        await _migrate_postgres(conn)
+                    logging.info("[DB Init] PostgreSQL migrations completed")
+                except Exception as _mig_err:
+                    logging.warning("[DB Init] Migration warning (non-fatal): %s", _mig_err)
+            
+            db_initialized = True
+            logging.info("Database initialized successfully")
+            break
+        except Exception as _e:
+            logging.warning("DB init attempt %d/5 failed: %s", _attempt + 1, _e, exc_info=_attempt == 4)
+            if _attempt < 4:
+                await asyncio.sleep(3)
+    
+    if not db_initialized:
+        logging.error("[DB Init] CRITICAL: Database could not be initialized after 5 attempts")
+        logging.error("[DB Init] The server will start but agents will fail")
+        # Don't return - let the server start so health checks pass
+        # But skip agent startup
 
-        # ── Load revoked tokens (blocks JWT validation) ──
+    # Only start agents if DB is initialized
+    if db_initialized:
+        async def _bg_init():
+            await asyncio.sleep(0.5)
+
+            # ── Load revoked tokens (blocks JWT validation) ──
         try:
             await load_revoked_tokens_from_db()
         except Exception as _e:

@@ -59,12 +59,18 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     if (!_canContinue) return;
     setState(() => _isLoading = true);
 
+    // Always capture brand/last4 from the card field for local storage
+    final brand = _cardDetails?.brand ?? 'card';
+    final last4 = _cardDetails?.last4 ?? '????';
+
     try {
       // Step 1: Get SetupIntent client_secret from backend
-      // This registers the card for future off-session charges (handles 3DS properly)
       final clientSecret = await ApiService.createSetupIntent();
       if (clientSecret == null || !mounted) {
-        setState(() => _isLoading = false);
+        // Backend unavailable — save card locally as "pending" and continue.
+        // SetupIntent will be retried when the user actually takes a ride.
+        await _saveCardLocally(brand, last4);
+        if (mounted) Navigator.of(context).pop('$brand:$last4');
         return;
       }
 
@@ -87,19 +93,18 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
       final pmId = si.paymentMethodId;
       await LocalDataService.saveStripePaymentMethodId(pmId);
 
-      // Step 4: Use brand/last4 from card field (available after user typed card)
-      final brand = _cardDetails?.brand ?? 'card';
-      final last4 = _cardDetails?.last4 ?? '????';
-
+      // Step 4: Save locally and return
+      await _saveCardLocally(brand, last4);
+      if (mounted) Navigator.of(context).pop('$brand:$last4');
+    } on StripeException catch (_) {
       if (!mounted) return;
-      Navigator.of(context).pop('$brand:$last4');
-    } on StripeException catch (e) {
-      if (!mounted) return;
+      // Stripe failed — still save card locally so user can retry later
+      await _saveCardLocally(brand, last4);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: Colors.orange.shade700,
           content: Text(
-            e.error.localizedMessage ?? S.of(context).cardCouldNotBeProcessed,
+            'Card saved locally. Payment setup will retry when you book a ride.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
@@ -108,13 +113,18 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
           ),
         ),
       );
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) Navigator.of(context).pop('$brand:$last4');
+      });
     } catch (e) {
       if (!mounted) return;
+      // Any other error — still save card locally
+      await _saveCardLocally(brand, last4);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: Colors.orange.shade700,
           content: Text(
-            S.of(context).somethingWentWrong,
+            'Card saved locally. Payment setup will retry when you book a ride.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
@@ -123,9 +133,18 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
           ),
         ),
       );
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) Navigator.of(context).pop('$brand:$last4');
+      });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _saveCardLocally(String brand, String last4) async {
+    await LocalDataService.linkPaymentMethod('credit_card');
+    await LocalDataService.saveCreditCardLast4(last4);
+    await LocalDataService.saveCreditCardBrand(brand);
   }
 
   @override

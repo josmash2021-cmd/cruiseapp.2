@@ -8,11 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends postgresql-clie
 # Set PYTHONPATH so local imports work correctly
 ENV PYTHONPATH=/app
 
+# Copy requirements first for better Docker layer caching
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy all backend files
 COPY backend/ .
+
+# Verify files are in place
+RUN echo "=== Files in /app ===" && ls -la /app && echo "=== Python version ===" && python --version
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python migrate.py; if python -c 'import uvloop' 2>/dev/null; then exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 4 --timeout-keep-alive 75 --loop uvloop --http httptools --limit-concurrency 2000; else exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 4 --timeout-keep-alive 75 --limit-concurrency 2000; fi"]
+# Run migrations then start server
+CMD ["sh", "-c", "echo '=== Starting Cruise Backend ===' && echo 'PWD:' $(pwd) && echo 'PYTHONPATH:' $PYTHONPATH && echo '=== Running migrations ===' && python migrate.py && echo '=== Starting uvicorn ===' && exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 75"]

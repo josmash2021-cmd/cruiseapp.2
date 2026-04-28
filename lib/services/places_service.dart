@@ -382,12 +382,13 @@ class PlacesService {
 
     debugPrint('\ud83d\udd0d Backend places proxy: "$input"');
     final res = await http.get(uri, headers: {
+      ...ApiService.jsonHeaders(),
       'Accept': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     }).timeout(const Duration(seconds: 8));
 
     if (res.statusCode != 200) {
-      debugPrint('\u274c Backend places proxy HTTP ${res.statusCode}');
+      debugPrint('\u274c Backend places proxy HTTP ${res.statusCode}: ${res.body}');
       return [];
     }
 

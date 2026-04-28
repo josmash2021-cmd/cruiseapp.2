@@ -58,7 +58,7 @@ else:
             "connect_timeout": 5,
             "sslmode": "require",
             "sslrootcert": None,
-            "options": "-c jit=off -c application_name=cruise_fastapi",
+            "options": "-c search_path=public -c jit=off -c application_name=cruise_fastapi",
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer
         }
     elif _is_private:
@@ -69,7 +69,7 @@ else:
         _engine_kwargs["pool_recycle"] = 1800
         _engine_kwargs["pool_timeout"] = 10
         _engine_kwargs["pool_use_lifo"] = True
-        _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False}
+        _connect_args = {"timeout": 5, "command_timeout": 10, "ssl": False, "options": "-c search_path=public"}
     else:
         # Public PostgreSQL (fallback)
         _engine_kwargs["pool_size"] = 10
@@ -87,6 +87,7 @@ else:
             "command_timeout": 15,
             "ssl": _ssl_ctx,
             "statement_cache_size": 0,
+            "options": "-c search_path=public",
         }
     _engine_kwargs["connect_args"] = _connect_args
 

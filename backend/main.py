@@ -241,7 +241,7 @@ async def lifespan(app: FastAPI):
                 sync_engine = create_engine(
                     sync_url,
                     echo=False,
-                    connect_args={"sslmode": "require", "connect_timeout": 15},
+                    connect_args={"sslmode": "require", "connect_timeout": 15, "options": "-c search_path=public"},
                 )
                 # Set search_path and create tables
                 with sync_engine.begin() as sync_conn:
@@ -261,6 +261,17 @@ async def lifespan(app: FastAPI):
                         logging.error("[DB Init] MISSING tables: %s", missing)
                         raise RuntimeError(f"Missing tables: {missing}")
                     logging.info("[DB Init] All required tables present ✓")
+                    
+                    # CRITICAL: Verify async engine can actually query the tables
+                    # (catches search_path mismatches where tables exist in public
+                    # but the connection searches a different schema first)
+                    for tbl in required:
+                        try:
+                            await conn.execute(text(f"SELECT 1 FROM {tbl} LIMIT 0"))
+                            logging.info("[DB Init] Table %s accessible from async engine ✓", tbl)
+                        except Exception as _verify_err:
+                            logging.error("[DB Init] Table %s NOT accessible from async engine: %s", tbl, _verify_err)
+                            raise RuntimeError(f"Table {tbl} exists but is not accessible: {_verify_err}")
             
             # Run PostgreSQL-specific migrations (indexes, etc.)
             if not IS_SQLITE:
@@ -745,7 +756,7 @@ async def create_schema(x_api_key: str = Header(default="")):
         sync_engine = create_engine(
             sync_url,
             echo=False,
-            connect_args={"sslmode": "require", "connect_timeout": 15},
+            connect_args={"sslmode": "require", "connect_timeout": 15, "options": "-c search_path=public"},
         )
         
         with sync_engine.begin() as sync_conn:

@@ -595,6 +595,10 @@ class ApiService {
     return hmacSha256.convert(data).toString();
   }
 
+  /// Public accessor so PlacesService and other standalone services can
+  /// include the same auth headers (X-API-Key, HMAC signature, etc.).
+  static Map<String, String> jsonHeaders([String? token]) => _jsonHeaders(token);
+
   static Map<String, String> _jsonHeaders([String? token]) {
     final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
         .toString();

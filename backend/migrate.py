@@ -175,7 +175,9 @@ async def _get_conn():
             break
     
     sslmode = "disable" if ".railway.internal" in url else "require"
-    return await psycopg.AsyncConnection.connect(url, autocommit=True, sslmode=sslmode, connect_timeout=15)
+    conn = await psycopg.AsyncConnection.connect(url, autocommit=True, sslmode=sslmode, connect_timeout=15)
+    await conn.execute("SET search_path = public")
+    return conn
 
 
 async def run():

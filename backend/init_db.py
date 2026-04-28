@@ -48,19 +48,19 @@ async def init_database():
                 """))
                 table_count = result.scalar()
                 logger.info(f"✓ Total tables in database: {table_count}")
+            
+            # Run PostgreSQL-specific migrations for column updates
+            if not IS_SQLITE:
+                try:
+                    from pg_migrate import migrate_postgresql_columns, create_default_service_area, migrate_support_tables
+                    await migrate_postgresql_columns(conn)
+                    await create_default_service_area(conn)
+                    await migrate_support_tables(conn)
+                except Exception as e:
+                    logger.error(f"PostgreSQL migration error: {e}")
+                    # Don't fail initialization if migration has issues
         
         logger.info("=== Database Initialization Complete ===")
-        
-        # Run PostgreSQL-specific migrations for column updates
-        if not IS_SQLITE:
-            try:
-                from pg_migrate import migrate_postgresql_columns, create_default_service_area, migrate_support_tables
-                await migrate_postgresql_columns(conn)
-                await create_default_service_area(conn)
-                await migrate_support_tables(conn)
-            except Exception as e:
-                logger.error(f"PostgreSQL migration error: {e}")
-                # Don't fail initialization if migration has issues
         
         return True
         

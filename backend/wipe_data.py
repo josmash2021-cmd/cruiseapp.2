@@ -32,6 +32,7 @@ async def wipe_postgres():
 
     try:
         conn = await psycopg.connect(url, autocommit=True, sslmode=sslmode, connect_timeout=15)
+        await conn.execute("SET search_path = public")
     except Exception as e:
         log.error("Cannot connect to Postgres: %s", e)
         return False

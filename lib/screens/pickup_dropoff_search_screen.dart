@@ -221,8 +221,15 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e, st) {
+      debugPrint('❌ Address search error: $e');
+      debugPrint('$st');
+      if (mounted) {
+        setState(() {
+          _suggestions = [];
+          _loading = false;
+        });
+      }
     }
   }
 

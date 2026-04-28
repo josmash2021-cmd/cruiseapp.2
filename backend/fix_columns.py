@@ -19,7 +19,7 @@ if not DATABASE_URL:
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
-engine = create_async_engine(DATABASE_URL)
+engine = create_async_engine(DATABASE_URL, connect_args={"options": "-c search_path=public"})
 
 async def fix_missing_columns():
     """Add all missing columns to users and trips tables."""

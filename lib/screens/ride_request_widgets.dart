@@ -989,35 +989,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Left: small car render with ground shadow ──
+          // ── Left: car render with 3D shadow behind the image ──
           SizedBox(
             width: 84,
             height: 60,
-            child: Stack(
-              alignment: Alignment.bottomCenter,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Container(
-                    width: 64,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(50),
-                      gradient: RadialGradient(
-                        colors: [
-                          Colors.black.withValues(alpha: 0.55),
-                          Colors.black.withValues(alpha: 0.0),
-                        ],
-                        stops: const [0.0, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-                Image.asset(
-                  _carAssetForOption(opt.name),
-                  fit: BoxFit.contain,
-                ),
-              ],
+            child: CarImage3D(
+              assetPath: _carAssetForOption(opt.name),
+              cacheWidth: 280,
+              selected: isVIP,
+              fallback: Icon(
+                Icons.directions_car_rounded,
+                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                size: 32,
+              ),
             ),
           ),
           const SizedBox(width: 12),

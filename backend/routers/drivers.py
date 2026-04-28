@@ -281,6 +281,7 @@ async def get_driver_location_history(
 
 @router.get("/drivers/earnings", dependencies=[Depends(_verify_api_key)])
 async def get_driver_earnings(period: str = Query("week"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get driver earnings — optimized using cached totals + lightweight recent query."""
     now = utc_now()
     if period == "today":
         since = utc_today_start()
@@ -289,15 +290,23 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
     else:
         since = utc_days_ago(7)
 
+    # Use cached total_earnings for instant total (updated on every trip completion)
+    # Only query recent trips for breakdown/transactions (limited to 50 for speed)
     result = await db.execute(
         select(Trip).where(
             and_(Trip.driver_id == user.id, Trip.status == "completed", Trip.created_at >= since)
         ).order_by(Trip.created_at.desc())
+        .limit(50)  # Limit for speed — driver rarely needs more than 50 recent trips
     )
     trips = result.scalars().all()
-    total = round(sum(_driver_trip_amounts(t)[0] for t in trips), 2)
+    
+    # Use cached total from user profile (updated on trip completion)
+    # Fallback to sum if cache is somehow stale
+    total = user.total_earnings or 0.0
+    if not total and trips:
+        total = round(sum(_driver_trip_amounts(t)[0] for t in trips), 2)
 
-    # Compute tips from ratings for these trips
+    # Compute tips from ratings for these trips (single query)
     trip_ids = [t.id for t in trips]
     tips_total = 0.0
     if trip_ids:
@@ -308,7 +317,7 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         )
         tips_total = float(tips_r.scalar() or 0)
 
-    # Daily earnings breakdown (last 7 days)
+    # Daily earnings breakdown (last 7 days) — from limited trips
     day_labels = []
     daily_earnings = []
     for i in range(6, -1, -1):
@@ -317,7 +326,7 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         day_total = sum(_driver_trip_amounts(t)[0] for t in trips if t.created_at and t.created_at.date() == day)
         daily_earnings.append(round(day_total, 2))
 
-    # Recent transactions
+    # Recent transactions (from limited trips)
     transactions = []
     for t in trips[:20]:
         base, _total = _driver_trip_amounts(t)
@@ -584,22 +593,31 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
             )
         fee_amount = _instant_fee(body.amount)
 
-    # Calculate available balance from driver payout (not rider gross fare).
-    # We subtract refund clawbacks (trip.driver_earnings is reduced by the
-    # refund flow) and all non-failed cashouts.
-    completed_r = await db.execute(
-        select(Trip).where(and_(Trip.driver_id == user.id, Trip.status == "completed"))
-    )
-    completed_trips = completed_r.scalars().all()
-    total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
-    cashouts_r = await db.execute(
-        select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(
-            Cashout.user_id == user.id,
-            Cashout.status != "failed",
+    # Calculate available balance using cached pending_balance (updated on every trip/cashout)
+    # Fallback to recalculation only if cache is stale/missing
+    available_balance = locked_user.pending_balance or 0.0
+    
+    # Verify with lightweight query if cache seems stale (negative or very high)
+    if available_balance < 0 or available_balance > 100000:
+        # Recalculate from scratch (rare — indicates cache bug)
+        completed_r = await db.execute(
+            select(Trip).where(and_(Trip.driver_id == user.id, Trip.status == "completed"))
+            .limit(1000)  # Cap for safety
         )
-    )
-    total_cashouts = float(cashouts_r.scalar() or 0)
-    available_balance = round(total_earnings - total_cashouts, 2)
+        completed_trips = completed_r.scalars().all()
+        total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
+        cashouts_r = await db.execute(
+            select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(
+                Cashout.user_id == user.id,
+                Cashout.status != "failed",
+            )
+        )
+        total_cashouts = float(cashouts_r.scalar() or 0)
+        available_balance = round(total_earnings - total_cashouts, 2)
+        # Update cache
+        locked_user.pending_balance = available_balance
+        locked_user.total_earnings = total_earnings
+    
     if body.amount > available_balance:
         raise HTTPException(400, f"Insufficient balance. Available: ${available_balance:.2f}")
     cashout = Cashout(

@@ -67,6 +67,7 @@ async def _find_nearest_drivers(
 ) -> list:
     """Find the nearest online drivers using a bounding-box pre-filter and
     SQL-side haversine ORDER BY so the database does the heavy lifting.
+    Optimized: single JOIN query with Vehicle tier filtering in SQL.
 
     Returns a list of User ORM objects sorted by distance (closest first).
     """
@@ -84,18 +85,18 @@ async def _find_nearest_drivers(
     min_lng = pickup_lng - delta_lng
     max_lng = pickup_lng + delta_lng
 
-    # Exclude drivers with active trips
+    # Exclude drivers with active trips — subquery for efficiency
     active_trip_statuses = [
         "accepted", "driver_en_route", "driver_arriving",
         "arrived", "in_trip", "in_progress",
     ]
-    busy_result = await db.execute(
-        select(Trip.driver_id).where(
+    busy_subq = (
+        select(Trip.driver_id)
+        .where(
             and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
         )
+        .scalar_subquery()
     )
-    busy_ids = {r[0] for r in busy_result.all()}
-    all_excluded = exclude_driver_ids | busy_ids
 
     # Build WHERE conditions
     conditions = [
@@ -109,18 +110,17 @@ async def _find_nearest_drivers(
         User.lng <= max_lng,
         User.last_active_at.isnot(None),
         User.last_active_at >= active_cutoff,
+        ~User.id.in_(busy_subq),
     ]
-    if all_excluded:
-        conditions.append(~User.id.in_(all_excluded))
+    if exclude_driver_ids:
+        conditions.append(~User.id.in_(list(exclude_driver_ids)))
 
     # Haversine distance expression computed in SQL
-    # 6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * cos(radians(lng) - radians(:lng))
-    #        + sin(radians(:lat)) * sin(radians(lat)))
     lat_rad = math.radians(pickup_lat)
     lng_rad = math.radians(pickup_lng)
     haversine_expr = (
         6371.0 * func.acos(
-            func.least(1.0, func.greatest(-1.0,  # clamp to [-1,1] to avoid domain errors
+            func.least(1.0, func.greatest(-1.0,
                 math.cos(lat_rad) * func.cos(func.radians(User.lat))
                 * func.cos(func.radians(User.lng) - lng_rad)
                 + math.sin(lat_rad) * func.sin(func.radians(User.lat))
@@ -128,31 +128,67 @@ async def _find_nearest_drivers(
         )
     )
 
+    # Vehicle tier filtering in SQL — single JOIN query
+    requested_type = (vehicle_type or "comfort").lower()
+    
+    # Build vehicle tier condition
+    if requested_type == "vip":
+        # VIP: only VIP vehicles
+        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort") == "vip"
+    elif requested_type == "premium":
+        # Premium: premium or VIP vehicles (comfort with high rating handled separately)
+        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort").in_(["premium", "vip"])
+    else:
+        # Comfort: comfort or premium (NOT VIP)
+        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort").in_(["comfort", "premium"])
+
+    # Single JOIN query: User + Vehicle with haversine sort
     result = await db.execute(
         select(User)
+        .join(Vehicle, User.id == Vehicle.user_id, isouter=True)
         .where(and_(*conditions))
+        .where(vehicle_condition)
         .order_by(haversine_expr.asc())
         .limit(limit)
     )
     drivers = list(result.scalars().all())
 
-    # Filter by vehicle tier — applies to vip, premium, and comfort
-    requested_type = (vehicle_type or "comfort").lower()
-    if requested_type in ("vip", "premium", "comfort") and drivers:
-        all_ids = [d.id for d in drivers]
-        eligible_ids = await _filter_drivers_by_vehicle_tier(db, all_ids, requested_type)
-        tier_matched = [d for d in drivers if d.id in eligible_ids]
-        if tier_matched:
-            drivers = tier_matched
-            logging.info(
-                "[NearbySearch] Filtered to %d %s-tier drivers out of %d",
-                len(tier_matched), requested_type, len(all_ids),
+    # For premium: also include comfort drivers with high rating (Silver+ logic)
+    # This requires ratings/trips data, so we do a second query only if needed
+    if requested_type == "premium" and len(drivers) < limit:
+        remaining = limit - len(drivers)
+        existing_ids = {d.id for d in drivers}
+        excluded_with_existing = exclude_driver_ids | existing_ids
+        
+        comfort_result = await db.execute(
+            select(User)
+            .join(Vehicle, User.id == Vehicle.user_id, isouter=True)
+            .where(and_(*conditions))
+            .where(func.coalesce(func.lower(Vehicle.vehicle_type), "comfort") == "comfort")
+            .order_by(haversine_expr.asc())
+            .limit(remaining * 2)  # Fetch more to filter by rating
+        )
+        comfort_drivers = list(comfort_result.scalars().all())
+        
+        if comfort_drivers:
+            # Check ratings for comfort candidates (single batch query)
+            comfort_ids = [d.id for d in comfort_drivers]
+            rating_result = await db.execute(
+                select(Rating.to_user_id, func.avg(Rating.stars))
+                .where(Rating.to_user_id.in_(comfort_ids))
+                .group_by(Rating.to_user_id)
             )
-        else:
-            logging.warning(
-                "[NearbySearch] No %s-tier drivers available, using closest driver",
-                requested_type,
-            )
+            avg_ratings = {uid: float(avg) for uid, avg in rating_result.all()}
+            
+            # Filter comfort drivers with rating >= 4.7
+            eligible_comfort = [d for d in comfort_drivers if avg_ratings.get(d.id, 0) >= 4.7]
+            drivers.extend(eligible_comfort[:remaining])
+
+    if drivers:
+        logging.info(
+            "[NearbySearch] Found %d %s-tier drivers",
+            len(drivers), requested_type,
+        )
 
     return drivers
 

@@ -63,13 +63,13 @@ else:
         }
     elif _is_private:
         # ── Railway Private PostgreSQL: direct connection, ultra-fast ──
-        # Same-region network (us-east4) = sub-millisecond latency.
+        # Same-region network = sub-millisecond latency.
         # Tuned for hot-cache reuse and minimal checkout overhead.
-        _engine_kwargs["pool_size"] = 10
-        _engine_kwargs["max_overflow"] = 5
-        _engine_kwargs["pool_pre_ping"] = False   # skip 1 RTT per checkout (private net is stable)
-        _engine_kwargs["pool_recycle"] = 600      # recycle before Railway idle timeout
-        _engine_kwargs["pool_timeout"] = 5        # fail fast if pool exhausted
+        _engine_kwargs["pool_size"] = 20          # More connections for concurrent users
+        _engine_kwargs["max_overflow"] = 10       # Burst capacity
+        _engine_kwargs["pool_pre_ping"] = True    # Verify connection before use (prevents stale errors)
+        _engine_kwargs["pool_recycle"] = 300      # Recycle every 5 min (Railway idle timeout ~10min)
+        _engine_kwargs["pool_timeout"] = 10       # Wait up to 10s for available connection
         _engine_kwargs["pool_use_lifo"] = True    # reuse hottest connection
         _connect_args = {
             "connect_timeout": 5,

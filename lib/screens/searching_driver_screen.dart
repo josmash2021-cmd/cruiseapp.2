@@ -70,6 +70,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
 
   // ── driver-found early-pop ──
   VoidCallback? _driverFoundCb;
+  bool _popping = false; // Prevents double-pop when driver matched
 
   // ── particles (20 total) ──
   late final List<_Particle> _particles;
@@ -120,11 +121,13 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       )..repeat(reverse: true);
     });
 
-    // ── 5. Progress bar (repeating — loops while searching) ──
+    // ── 5. Progress bar (one-shot — fills over ~4s then holds at 100%) ──
+    // When driver is matched, the bar completes and transitions smoothly.
     _progressCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4000),
-    )..repeat();
+    );
+    _progressCtrl.forward();
 
     // ── 6. Text shimmer ──
     _shimmerCtrl = AnimationController(
@@ -147,19 +150,33 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     // next screen.
     _textPhase = 0; // always "Confirming your ride…"
 
-    // Legacy: a driverFound notifier may still be passed by old callers
-    // during the refactor. Retain the listener so the screen pops if the
-    // driver matches while it's still showing (edge case on slow payments).
+    // When driver is matched, complete the progress bar to 100% first,
+    // then pop. This ensures the bar never resets mid-animation — it
+    // always finishes smoothly before transitioning to the next screen.
     if (widget.driverFound != null) {
       _driverFoundCb = () {
-        if (widget.driverFound!.value && mounted) {
-          Navigator.of(context).pop();
+        if (widget.driverFound!.value && mounted && !_popping) {
+          _popping = true;
+          final remaining = 1.0 - _progressCtrl.value;
+          if (remaining > 0.01) {
+            // Bar is still filling — animate to completion quickly (300ms)
+            _progressCtrl.animateTo(1.0, duration: const Duration(milliseconds: 300), curve: Curves.easeOutQuart)
+                .then((_) {
+              if (mounted) Navigator.of(context).pop();
+            });
+          } else {
+            // Bar already at 100% — pop immediately
+            Navigator.of(context).pop();
+          }
         }
       };
       widget.driverFound!.addListener(_driverFoundCb!);
       if (widget.driverFound!.value && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) Navigator.of(context).pop();
+          if (mounted && !_popping) {
+            _popping = true;
+            Navigator.of(context).pop();
+          }
         });
       }
     }
@@ -193,12 +210,20 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     }
 
     // ── Safety timeout: if payment/driver-matching takes longer than
-    // 10 s, pop so the user isn't stuck.  The parent screen will show
-    // the map + searching card which is the normal UX anyway.
+    // 10 s, complete the bar and pop so the user isn't stuck.
     _searchTimeoutTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted) {
-        debugPrint('[SearchingDriverScreen] Timeout reached (10s) - popping to continue flow');
-        Navigator.of(context).pop(false); // false = not cancelled, continue to waiting screen
+      if (mounted && !_popping) {
+        _popping = true;
+        debugPrint('[SearchingDriverScreen] Timeout reached (10s) - completing bar and popping');
+        final remaining = 1.0 - _progressCtrl.value;
+        if (remaining > 0.01) {
+          _progressCtrl.animateTo(1.0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutQuart)
+              .then((_) {
+            if (mounted) Navigator.of(context).pop(false);
+          });
+        } else {
+          Navigator.of(context).pop(false);
+        }
       }
     });
   }

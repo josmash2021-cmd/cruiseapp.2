@@ -158,8 +158,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Reduced to 3s interval when Socket.io is active (was 1.5s).
     _statusPollTimer?.cancel();
     final pollInterval = FeatureFlags.useSocketIO
-        ? const Duration(seconds: 3)
-        : const Duration(milliseconds: 1500);
+        ? const Duration(seconds: 1)   // Socket.io primary: light HTTP backup every 1s
+        : const Duration(milliseconds: 800);  // Fallback: faster Firebase RTDB backup
     _statusPollTimer = Timer.periodic(
       pollInterval,
       (_) => _pollBackendTripStatus(),
@@ -982,7 +982,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // trip is already completed (a late RTDB event could otherwise
         // restart polling on a dead trip forever).
         if (mounted && _phase != _TrackPhase.completed) {
-          _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+          _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
             _pollBackendTripStatus();
           });
         }

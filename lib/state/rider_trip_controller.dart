@@ -253,7 +253,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState _state = const RiderTripState();
   RiderTripState get state => _state;
 
-  static const Duration _dispatchPollInterval = Duration(seconds: 2);
+  static const Duration _dispatchPollInterval = Duration(milliseconds: 800);
 
   final DirectionsService _directions = DirectionsService(ApiKeys.webServices);
 

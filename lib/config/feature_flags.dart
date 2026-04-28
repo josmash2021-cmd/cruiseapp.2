@@ -31,8 +31,9 @@ class FeatureFlags {
     return _defaultSocketIO;
   }
 
-  /// Default value — false until Socket.io is fully validated.
-  static final bool _defaultSocketIO = false;
+  /// Default value — true for production (Socket.io is the primary
+  /// real-time channel, much faster than Firebase RTDB + HTTP polling).
+  static final bool _defaultSocketIO = true;
 
   /// Runtime override for testing (e.g. in dev builds or beta tester groups).
   static void setSocketIOOverride(bool enabled) {

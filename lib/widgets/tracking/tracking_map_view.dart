@@ -990,10 +990,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       debugPrint('[CarIcon] SKIP: _map is null');
       return;
     }
-    if (_animPos.latitude == 0 && _animPos.longitude == 0) {
-      debugPrint('[CarIcon] SKIP: _animPos is (0,0)');
-      return;
-    }
+    // Car is initialized at pickup location in initState so it appears
+    // immediately. Real GPS updates will animate it to the correct position.
     if (_carPngBytes == null) {
       debugPrint('[CarIcon] SKIP: _carPngBytes is null');
       return;

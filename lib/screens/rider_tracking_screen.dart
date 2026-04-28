@@ -177,6 +177,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   _TrackPhase _phase = _TrackPhase.arriving;
   bool _greetingSent = false;
   bool _arrivedNotifSent = false;
+  // Initialize to pickup location so the car appears immediately on the map
+  // even before the first GPS packet arrives. Once real driver GPS comes in,
+  // the interpolation ticker animates the car from pickup to real position.
   LatLng _driverPos = const LatLng(0, 0);
   LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
@@ -277,6 +280,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
+    // Initialize car position to pickup so the car icon appears immediately
+    // on the map. Real driver GPS will animate it to the correct position.
+    _driverPos = widget.pickupLatLng;
+    _animPos = widget.pickupLatLng;
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.
     if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty) &&

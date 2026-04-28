@@ -111,14 +111,14 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
 
     // Determine which content to show:
     // 1. arriving → full row with status + ETA badge (pickup ETA)
-    // 2. arrived → single centered text with pulsing dot
+    // 2. arrived → single centered text + Confirm Pickup button inline
     // 3. onTrip + _tripJustStarted → single centered "Your trip has started"
     // 4. onTrip / nearDestination → row with status + ETA badge (dropoff ETA)
     Widget content;
     if (_phase == _TrackPhase.arriving) {
       content = _buildArrivingContent(dotColor);
     } else if (_phase == _TrackPhase.arrived) {
-      content = _buildSingleLineContent(dotColor, true);
+      content = _buildArrivedContent(dotColor);
     } else if (_phase == _TrackPhase.onTrip && _tripJustStarted) {
       content = _buildSingleLineContent(dotColor, false);
     } else if (_phase == _TrackPhase.completed) {
@@ -310,6 +310,74 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Arrived phase: single status text + Confirm Pickup button inline.
+  /// No overlay screen — the rider confirms directly from the bottom card.
+  Widget _buildArrivedContent(Color dotColor) {
+    final text = _singleStatusText;
+
+    return Column(
+      key: const ValueKey('arrived_confirm'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ScaleTransition(
+              scale: Tween<double>(begin: 0.7, end: 1.3)
+                  .animate(_arrivedDotPulse),
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dotColor,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Color(0xFFC8A951),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () {
+            // Rider confirms pickup — transition to onTrip smoothly
+            if (mounted) _transitionToOnTrip();
+          },
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8C547),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: Text(
+                'Confirm Pickup',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
         ),

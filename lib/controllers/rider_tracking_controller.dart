@@ -722,8 +722,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  ARRIVED — show confirm pickup overlay. Fires regardless of phase
-    //  as long as rider hasn't already confirmed pickup.
+    //  ARRIVED — driver has confirmed arrival. Update map phase smoothly;
+    //  the bottom card shows "Confirm Pickup" inline (no overlay screen).
     // ═══════════════════════════════════════════════════════════════════════
     if (isArrivedStatus) {
       // Ignore if rider already confirmed (phase is onTrip or later) or trip done.
@@ -733,7 +733,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         debugPrint('[RiderTracking] ⏭️ arrived ignored — phase=$_phase (already past pickup)');
         return;
       }
-      debugPrint('[RiderTracking] 🎯 DRIVER ARRIVED — showing confirm pickup overlay');
+      debugPrint('[RiderTracking] 🎯 DRIVER ARRIVED — updating map to arrived phase');
       if (_phase != _TrackPhase.arrived) {
         _setState(() {
           _phase = _TrackPhase.arrived;
@@ -744,13 +744,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (!_arrivedDotPulse.isAnimating) _arrivedDotPulse.repeat(reverse: true);
         _handleDriverArrived();
       }
-      // Always fire the overlay — guard inside _showRiderConfirmPickup handles dedup.
-      _showRiderConfirmPickup();
+      // NO overlay — the bottom card shows "Confirm Pickup" inline.
       if (!_arrivedNotifSent) {
         _arrivedNotifSent = true;
-        // Driver arrived notification is sent via FCM push from backend.
-        // No local notification needed — rider is already on tracking screen
-        // and sees the "Driver Arrived" overlay. Save to inbox only.
         LocalDataService.addNotification(
           title: 'Your driver has arrived',
           message: '${widget.driverName.split(' ').first} is waiting at the pickup spot in a ${widget.vehicleColor} ${widget.vehicleModel}.',
@@ -773,18 +769,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
       debugPrint('[RiderTracking] 🚗 TRIP STARTED — transitioning to onTrip');
       if (_phase == _TrackPhase.arriving && !_confirmPickupShown) {
-        // Driver skipped the arrived signal — flash the overlay briefly.
-        _setState(() {
-          _phase = _TrackPhase.arrived;
-          _etaMinutes = 0;
-          _distanceMiles = 0;
-        });
-        _handleDriverArrived();
-        _showRiderConfirmPickup();
-        Future.delayed(const Duration(milliseconds: 2500), () {
-          if (!mounted) return;
-          _transitionToOnTrip();
-        });
+        // Driver skipped the arrived signal — transition directly to onTrip.
+        // No overlay; the map stays fluid.
+        _transitionToOnTrip();
         return;
       }
       _transitionToOnTrip();
@@ -1345,10 +1332,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _arrivedDotPulse.repeat(reverse: true);
       _shouldFollowDriver = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _handleDriverArrived();
-          _showRiderConfirmPickup();
-        }
+        if (mounted) _handleDriverArrived();
       });
     }
 

@@ -14,6 +14,14 @@ Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
  L10  Security Audit Logging � Tamper-evident hash-chain log
 """
 
+# ── CRITICAL: Ensure imports work regardless of working directory ──
+import sys
+from pathlib import Path
+# Add the directory containing this file to sys.path
+_backend_dir = Path(__file__).parent.resolve()
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
+
 import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib, traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart

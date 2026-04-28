@@ -3,9 +3,15 @@
 Uses psycopg3 (async) instead of asyncpg to avoid PgBouncer prepared
 statement conflicts. Each DDL auto-commits via separate connections.
 """
+# ── CRITICAL: Ensure imports work regardless of working directory ──
+import sys
+from pathlib import Path
+_backend_dir = Path(__file__).parent.resolve()
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
+
 import asyncio
 import os
-import sys
 import logging
 from db_url import resolve_database_url
 

@@ -323,10 +323,33 @@ class _SplashScreenState extends State<SplashScreen>
       }
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
-        // Quick Firestore check: driver may have been approved while app was closed
-        if (cachedStatus == 'pending') {
-          final liveStatus = await _quickFirestoreDriverCheck();
+        // ALWAYS hit the backend API — the cache may be stale if dispatch
+        // approved the driver while the app was closed.  Firestore check
+        // is fast but the REST endpoint is the source of truth.
+        await initFuture;
+        try {
+          final approvalResult = await ApiService.getDriverApprovalStatus()
+              .timeout(const Duration(seconds: 5));
+          final liveStatus =
+              approvalResult['approval_status'] as String? ??
+              approvalResult['status'] as String? ??
+              cachedStatus;
           if (liveStatus == 'approved') {
+            await LocalDataService.setDriverApprovalStatus('approved');
+            unawaited(_backgroundProfileSync());
+            return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+          } else if (liveStatus == 'rejected') {
+            await LocalDataService.setDriverApprovalStatus('rejected');
+            return const DriverPendingReviewScreen();
+          }
+        } catch (e) {
+          debugPrint('[SplashScreen] Live approval check failed, using cache: $e');
+        }
+        // Fallback: also try Firestore (covers edge case where API is down
+        // but Firestore has the approval).
+        if (cachedStatus == 'pending') {
+          final fsStatus = await _quickFirestoreDriverCheck();
+          if (fsStatus == 'approved') {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
             return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());

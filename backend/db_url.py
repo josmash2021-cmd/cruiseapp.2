@@ -27,8 +27,8 @@ def _normalize_database_url(url: str, *, async_driver: bool, private: bool = Fal
     # NOTE: Port 6542 is the IPv4 pooler (aws-0-us-east-1.pooler.supabase.com)
     # which uses SESSION mode and works from Railway. Do NOT change it.
     # Port 6543 is the IPv6 pooler which may not work from Railway.
-    # Only switch 6543 to 5432 if 5432 is accessible (IPv4 direct).
-    if ":6543" in url and "pooler.supabase.com" not in url:
+    # NEVER change 6542 to another port — it's the only IPv4 access point.
+    if ":6543" in url:
         url = url.replace(":6543/", ":5432/", 1)
 
     if async_driver:

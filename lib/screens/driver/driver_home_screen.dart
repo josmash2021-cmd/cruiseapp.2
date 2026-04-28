@@ -551,11 +551,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final cachedName = prefs.getString('driver_cached_name');
     final cachedEarnings = prefs.getDouble('driver_cached_earnings');
     final cachedTrips = prefs.getInt('driver_cached_trips');
-    if (cachedName != null && mounted) {
+    final cachedUserId = prefs.getString('driver_cached_user_id');
+    final currentUserId = (await ApiService.getCurrentUserId())?.toString();
+    // Only use cache if it belongs to the current driver (prevents
+    // showing another driver's earnings after logout/login).
+    final cacheValid = currentUserId != null && currentUserId == cachedUserId;
+    if (cachedName != null && mounted && cacheValid) {
       setState(() {
         _driverName = cachedName;
         _todayEarnings = cachedEarnings ?? 0.0;
         _todayTrips = cachedTrips ?? 0;
+      });
+    } else if (!cacheValid && mounted) {
+      // Reset to zero when switching drivers
+      setState(() {
+        _todayEarnings = 0.0;
+        _todayTrips = 0;
       });
     }
 
@@ -599,6 +610,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     prefs.setString('driver_cached_name', _driverName);
     prefs.setDouble('driver_cached_earnings', _todayEarnings);
     prefs.setInt('driver_cached_trips', _todayTrips);
+    if (currentUserId != null) {
+      prefs.setString('driver_cached_user_id', currentUserId);
+    }
   }
 
   /// Lightweight periodic refresh for the 3 stats chips (no name/photo reload).

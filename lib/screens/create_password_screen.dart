@@ -103,11 +103,18 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
     AnalyticsService.instance.logSignUp(widget.registeredWithEmail ? 'email' : 'phone');
 
     if (!mounted) return;
+
+    // Check if there's a pending social auth (Google/Apple onboarding flow)
+    final pendingSocial = await UserSession.getPendingSocialAuth();
+
+    if (!mounted) return;
     Navigator.of(context).push(
       slideFromRightRoute(
         NameScreen(
           registeredWith: widget.email,
           registeredWithEmail: widget.registeredWithEmail,
+          firstName: pendingSocial?['firstName'],
+          lastName: pendingSocial?['lastName'],
         ),
       ),
     );

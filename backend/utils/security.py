@@ -122,11 +122,21 @@ _IP_BAN_THRESHOLD = 20
 
 
 def _is_private_ip(client_ip: str) -> bool:
-    """Return True if IP is private/internal (should not be banned)."""
+    """Return True if IP is private/internal/proxy (should not be banned).
+    
+    Covers:
+    - RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    - RFC 6598: 100.64.0.0/10 (CGNAT - used by Railway, AWS, etc.)
+    - Loopback: 127.0.0.0/8
+    - Link-local: 169.254.0.0/16
+    """
     import ipaddress
     try:
         ip = ipaddress.ip_address(client_ip)
-        return ip.is_private or ip.is_loopback or ip.is_link_local
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return True
+        # CGNAT range used by Railway and other cloud providers
+        return ipaddress.ip_address("100.64.0.0") <= ip <= ipaddress.ip_address("100.127.255.255")
     except ValueError:
         return False
 

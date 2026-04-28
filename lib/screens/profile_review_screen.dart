@@ -50,89 +50,50 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
   ];
 
   void _saveProfile() async {
-    // Grab the password set during registration
+    // Check if this is a social auth flow (Google/Apple)
+    final pendingSocial = await UserSession.getPendingSocialAuth();
+    // Grab the password set during registration (null for social flow)
     final pendingPass = await UserSession.getPendingPassword();
-    debugPrint(
-      '🔐 pendingPass: "${pendingPass ?? "NULL"}" (len=${pendingPass?.length ?? 0})',
-    );
-    debugPrint(
-      '📋 Register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}',
-    );
 
-    if (pendingPass == null || pendingPass.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            S.of(context).passwordNotFound,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          // Uses global snackBarTheme
-        ),
-      );
-      return;
-    }
-
-    // ── Register on the backend ──
     int? userId;
-    try {
-      final result = await ApiService.register(
-        firstName: widget.firstName,
-        lastName: widget.lastName,
-        email: widget.email.isNotEmpty ? widget.email : null,
-        phone: widget.phone.isNotEmpty ? widget.phone : null,
-        password: pendingPass,
+
+    if (pendingSocial != null) {
+      // ── Social auth flow: complete registration via /auth/social ──
+      debugPrint(
+        '📋 Social register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}',
       );
-      final user = result['user'] as Map<String, dynamic>;
-      userId = user['id'] as int?;
-      debugPrint('✅ Registered userId=$userId');
-    } on ApiException catch (e) {
-      // ── Handle duplicate email/phone (409) by logging in instead ──
-      if (e.statusCode == 409) {
-        debugPrint('⚠️ Account exists — attempting auto-login…');
-        try {
-          final identifier = widget.email.isNotEmpty
-              ? widget.email
-              : widget.phone;
-          final loginResult = await ApiService.login(
-            identifier: identifier,
-            password: pendingPass,
-          );
-          // Complete login (get JWT)
-          final loginToken = loginResult['login_token'] as String;
-          final completeResult = await ApiService.completeLogin(
-            loginToken: loginToken,
-          );
-          final user = completeResult['user'] as Map<String, dynamic>;
-          userId = user['id'] as int?;
-          debugPrint('✅ Auto-login successful userId=$userId');
-        } catch (loginErr) {
-          debugPrint('❌ Auto-login also failed: $loginErr');
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.redAccent,
-              content: Text(
-                S.of(context).accountExistsDiffCreds,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              duration: const Duration(seconds: 5),
-            ),
-          );
-          return;
+      try {
+        final result = await ApiService.socialAuth(
+          provider: pendingSocial['provider']!,
+          idToken: pendingSocial['idToken']!,
+          firstName: widget.firstName,
+          lastName: widget.lastName,
+          loginOnly: false,
+          role: 'rider',
+        );
+        final user = result['user'] as Map<String, dynamic>;
+        userId = user['id'] as int?;
+        debugPrint('✅ Social auth userId=$userId');
+
+        // Update additional profile fields (phone, etc.)
+        final updates = <String, dynamic>{};
+        if (widget.phone.isNotEmpty) updates['phone'] = widget.phone;
+        if (widget.firstName.isNotEmpty) updates['first_name'] = widget.firstName;
+        if (widget.lastName.isNotEmpty) updates['last_name'] = widget.lastName;
+        if (updates.isNotEmpty) {
+          await ApiService.updateMe(updates);
         }
-      } else {
-        debugPrint('❌ Registration failed: $e');
+
+        // Clear pending social auth
+        await UserSession.clearPendingSocialAuth();
+      } catch (e) {
+        debugPrint('❌ Social auth failed: $e');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.redAccent,
             content: Text(
-              e.message,
+              'Registration failed: $e',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             behavior: SnackBarBehavior.floating,
@@ -144,24 +105,118 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         );
         return;
       }
-    } catch (e) {
-      debugPrint('❌ Registration failed: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent,
-          content: Text(
-            'Registration failed: $e',
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          duration: const Duration(seconds: 5),
-        ),
+    } else {
+      // ── Normal email/phone registration flow ──
+      debugPrint(
+        '🔐 pendingPass: "${pendingPass ?? "NULL"}" (len=${pendingPass?.length ?? 0})',
       );
-      return;
+      debugPrint(
+        '📋 Register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}',
+      );
+
+      if (pendingPass == null || pendingPass.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              S.of(context).passwordNotFound,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            // Uses global snackBarTheme
+          ),
+        );
+        return;
+      }
+
+      // ── Register on the backend ──
+      try {
+        final result = await ApiService.register(
+          firstName: widget.firstName,
+          lastName: widget.lastName,
+          email: widget.email.isNotEmpty ? widget.email : null,
+          phone: widget.phone.isNotEmpty ? widget.phone : null,
+          password: pendingPass,
+        );
+        final user = result['user'] as Map<String, dynamic>;
+        userId = user['id'] as int?;
+        debugPrint('✅ Registered userId=$userId');
+      } on ApiException catch (e) {
+        // ── Handle duplicate email/phone (409) by logging in instead ──
+        if (e.statusCode == 409) {
+          debugPrint('⚠️ Account exists — attempting auto-login…');
+          try {
+            final identifier = widget.email.isNotEmpty
+                ? widget.email
+                : widget.phone;
+            final loginResult = await ApiService.login(
+              identifier: identifier,
+              password: pendingPass,
+            );
+            // Complete login (get JWT)
+            final loginToken = loginResult['login_token'] as String;
+            final completeResult = await ApiService.completeLogin(
+              loginToken: loginToken,
+            );
+            final user = completeResult['user'] as Map<String, dynamic>;
+            userId = user['id'] as int?;
+            debugPrint('✅ Auto-login successful userId=$userId');
+          } catch (loginErr) {
+            debugPrint('❌ Auto-login also failed: $loginErr');
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.redAccent,
+                content: Text(
+                  S.of(context).accountExistsDiffCreds,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                duration: const Duration(seconds: 5),
+              ),
+            );
+            return;
+          }
+        } else {
+          debugPrint('❌ Registration failed: $e');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.redAccent,
+              content: Text(
+                e.message,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        debugPrint('❌ Registration failed: $e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text(
+              'Registration failed: $e',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
     }
 
     // Copy photo to permanent storage (temp picker path gets deleted)

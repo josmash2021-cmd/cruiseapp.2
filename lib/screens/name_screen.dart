@@ -7,11 +7,15 @@ import 'email_collect_screen.dart';
 class NameScreen extends StatefulWidget {
   final String registeredWith; // email or phone used to register
   final bool registeredWithEmail;
+  final String? firstName; // pre-filled from social auth (Google/Apple)
+  final String? lastName;  // pre-filled from social auth (Google/Apple)
 
   const NameScreen({
     super.key,
     required this.registeredWith,
     required this.registeredWithEmail,
+    this.firstName,
+    this.lastName,
   });
 
   @override
@@ -29,8 +33,17 @@ class _NameScreenState extends State<NameScreen> {
   @override
   void initState() {
     super.initState();
+    // Pre-fill from social auth if available
+    if (widget.firstName != null && widget.firstName!.isNotEmpty) {
+      _firstCtrl.text = widget.firstName!;
+    }
+    if (widget.lastName != null && widget.lastName!.isNotEmpty) {
+      _lastCtrl.text = widget.lastName!;
+    }
     _firstCtrl.addListener(_onChanged);
     _lastCtrl.addListener(_onChanged);
+    // Validate initial state
+    _onChanged();
   }
 
   @override

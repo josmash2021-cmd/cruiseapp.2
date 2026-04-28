@@ -383,6 +383,45 @@ class UserSession {
     return SecurityService.decryptFromPrefs(raw, 'pending_pw') ?? raw;
   }
 
+  // ── Pending social auth (used during onboarding after Google/Apple OTP) ──
+  static Future<void> savePendingSocialAuth({
+    required String provider,
+    required String idToken,
+    String? firstName,
+    String? lastName,
+    String? photoUrl,
+  }) async {
+    final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
+    await prefs.setString('pending_social_provider', provider);
+    await prefs.setString('pending_social_id_token', idToken);
+    if (firstName != null) await prefs.setString('pending_social_first_name', firstName);
+    if (lastName != null) await prefs.setString('pending_social_last_name', lastName);
+    if (photoUrl != null) await prefs.setString('pending_social_photo_url', photoUrl);
+  }
+
+  static Future<Map<String, String?>?> getPendingSocialAuth() async {
+    final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
+    final provider = prefs.getString('pending_social_provider');
+    final idToken = prefs.getString('pending_social_id_token');
+    if (provider == null || idToken == null) return null;
+    return {
+      'provider': provider,
+      'idToken': idToken,
+      'firstName': prefs.getString('pending_social_first_name'),
+      'lastName': prefs.getString('pending_social_last_name'),
+      'photoUrl': prefs.getString('pending_social_photo_url'),
+    };
+  }
+
+  static Future<void> clearPendingSocialAuth() async {
+    final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
+    await prefs.remove('pending_social_provider');
+    await prefs.remove('pending_social_id_token');
+    await prefs.remove('pending_social_first_name');
+    await prefs.remove('pending_social_last_name');
+    await prefs.remove('pending_social_photo_url');
+  }
+
   /// Copy a picked image to the app’s permanent documents directory.
   /// Returns the permanent path. On web, returns the original path as-is.
   static Future<String> saveProfilePhoto(String tempPath) async {

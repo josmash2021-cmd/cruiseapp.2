@@ -130,6 +130,7 @@ class GoogleAuthService {
         'idToken': auth.idToken,
         'firstName': account.displayName?.split(' ').first,
         'lastName': account.displayName?.split(' ').skip(1).join(' '),
+        'photoUrl': account.photoUrl,
       };
     } catch (e) {
       debugPrint('[GoogleAuth] getCredential error: $e');

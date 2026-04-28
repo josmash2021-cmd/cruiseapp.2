@@ -10,9 +10,11 @@ import '../services/api_service.dart';
 import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
+import '../services/user_session.dart';
 import 'login_password_screen.dart';
 import 'verify_code_screen.dart';
 import 'terms_conditions_screen.dart';
+import 'create_password_screen.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -83,6 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: cred['idToken'],
         firstName: cred['firstName'],
         lastName: cred['lastName'],
+        photoUrl: cred['photoUrl'],
       );
     } catch (e) {
       if (!mounted) return;
@@ -134,13 +137,16 @@ class _LoginScreenState extends State<LoginScreen> {
   ///   1. If account already exists → tell user to sign in instead.
   ///   2. Send OTP to email.
   ///   3. Show OTP verify screen.
-  ///   4. After verification → create account via /auth/social.
+  ///   4. After verification → go through the NORMAL onboarding flow
+  ///      (password → name → phone → notifications → payment → photo → review).
+  ///      Social auth data is saved as "pending" and completed at the end.
   Future<void> _socialRegistrationFlow({
     required String email,
     required String provider,
     String? idToken,
     String? firstName,
     String? lastName,
+    String? photoUrl,
   }) async {
     // 1. Check if account already exists
     final exists = await ApiService.checkExists(email, role: 'rider');
@@ -186,37 +192,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (verified != true || !mounted) return;
 
-    // 4. OTP verified — complete social registration via /auth/social
-    setState(() => _socialLoading = true);
-    try {
-      // socialAuth saves the token internally; result contains 'user' map
-      await ApiService.socialAuth(
-        provider: provider,
-        idToken: idToken ?? '',
-        firstName: firstName,
-        lastName: lastName,
-        loginOnly: false,
-        role: 'rider',
-      );
-      if (!mounted) return;
+    // 4. OTP verified — save social data as pending and go through normal onboarding
+    await UserSession.savePendingSocialAuth(
+      provider: provider,
+      idToken: idToken ?? '',
+      firstName: firstName,
+      lastName: lastName,
+      photoUrl: photoUrl,
+    );
 
-      setState(() => _socialLoading = false);
-      if (!mounted) return;
-
-      Navigator.of(context).pushAndRemoveUntil(
-        smoothFadeRoute(const HomeScreen(), durationMs: 600),
-        (_) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _socialLoading = false);
-      final msg = e.toString();
-      if (msg.contains('401') || msg.contains('Invalid')) {
-        _showSnack(S.of(context).providerCredentialsRejected(provider), Colors.red.shade400);
-      } else {
-        _showSnack(S.of(context).registrationFailedWith(e.toString()), Colors.red.shade400);
-      }
-    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        CreatePasswordScreen(
+          email: email,
+          registeredWithEmail: true,
+        ),
+      ),
+    );
   }
 
   /// Shown when Apple doesn't return an email (returning Apple user).

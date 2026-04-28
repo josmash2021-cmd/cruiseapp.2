@@ -92,8 +92,8 @@ sio = socketio.AsyncServer(
     cors_allowed_origins=_get_cors_origins(),
     logger=False,                      # toggle True for debug
     engineio_logger=False,
-    ping_timeout=20,
-    ping_interval=10,
+    ping_timeout=10,                   # Faster stale detection (was 20)
+    ping_interval=5,                   # More frequent pings (was 10)
     max_http_buffer_size=1_000_000,
     client_manager=_create_manager(),
 )

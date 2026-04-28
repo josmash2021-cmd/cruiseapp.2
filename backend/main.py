@@ -478,8 +478,8 @@ async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     _path = request.url.path
     response.headers["X-Content-Type-Options"] = "nosniff"
-    # API paths (mobile app) — minimal headers, skip CSP/HSTS/cache overhead
-    if _path.startswith("/api/") or _path.startswith("/auth/") or _path.startswith("/drivers/") or _path.startswith("/dispatch/") or _path.startswith("/trips/") or _is_hot_path(_path):
+    # API paths (mobile app) + Socket.io — minimal headers, skip CSP/HSTS/cache overhead
+    if _path.startswith("/api/") or _path.startswith("/auth/") or _path.startswith("/drivers/") or _path.startswith("/dispatch/") or _path.startswith("/trips/") or _path.startswith("/socket.io") or _is_hot_path(_path):
         return response
     # Browser-facing paths — full security headers
     response.headers["X-Frame-Options"] = "DENY"
@@ -521,8 +521,8 @@ async def rate_limit_middleware(request: Request, call_next):
     if client_ip in _ip_blacklist:
         return JSONResponse({"detail": "Access denied"}, status_code=403)
     _path = request.url.path
-    # Skip rate limiting for SSE streams, hot paths, and health checks
-    if _path.endswith("/stream") or _is_hot_path(_path):
+    # Skip rate limiting for SSE streams, Socket.io, hot paths, and health checks
+    if _path.endswith("/stream") or _path.startswith("/socket.io") or _is_hot_path(_path):
         return await call_next(request)
     # Skip tiered limits for health/docs/static (they don't need per-endpoint throttling)
     if _path not in ("/ping", "/docs", "/openapi.json"):
@@ -569,8 +569,8 @@ _LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/doc
 
 @app.middleware("http")
 async def request_size_limit_middleware(request: Request, call_next):
-    # GET/HEAD/OPTIONS/hot paths never have meaningful bodies — skip entirely
-    if request.method in ("GET", "HEAD", "OPTIONS") or _is_hot_path(request.url.path):
+    # GET/HEAD/OPTIONS/Socket.io/hot paths never have meaningful bodies — skip entirely
+    if request.method in ("GET", "HEAD", "OPTIONS") or request.url.path.startswith("/socket.io") or _is_hot_path(request.url.path):
         return await call_next(request)
     limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
     content_length = request.headers.get("content-length")

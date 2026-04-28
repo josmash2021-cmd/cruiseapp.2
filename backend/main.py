@@ -713,6 +713,49 @@ async def run_migrations(x_api_key: str = Header(default="")):
     except Exception as e:
         results.append(f"error: {e}")
     return {"ok": True, "results": results}
+
+# -- Emergency schema creation endpoint (protected by API key) -----------
+@app.post("/admin/create-schema")
+async def create_schema(x_api_key: str = Header(default="")):
+    """Create all database tables from scratch. EMERGENCY USE ONLY."""
+    if x_api_key != API_KEY:
+        raise HTTPException(403, "Forbidden")
+    if IS_SQLITE:
+        return {"ok": False, "message": "Only needed for PostgreSQL"}
+    
+    results = []
+    try:
+        from sqlalchemy import create_engine
+        from db_url import resolve_database_url
+        sync_url = resolve_database_url(async_driver=False)
+        for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgres://"):
+            if sync_url.startswith(prefix):
+                sync_url = "postgresql://" + sync_url[len(prefix):]
+                break
+        
+        sync_engine = create_engine(
+            sync_url,
+            echo=False,
+            connect_args={"sslmode": "require", "connect_timeout": 15},
+        )
+        
+        with sync_engine.begin() as sync_conn:
+            sync_conn.execute(text("SET search_path TO public"))
+            Base.metadata.create_all(sync_conn, checkfirst=True)
+            results.append("All tables created successfully")
+        
+        sync_engine.dispose()
+        
+        # Run migrations to add indexes and constraints
+        async with engine.begin() as conn:
+            await _migrate_postgres(conn)
+            results.append("Migrations completed")
+        
+        return {"ok": True, "results": results}
+    except Exception as e:
+        logging.error("Schema creation failed: %s", e, exc_info=True)
+        return {"ok": False, "error": str(e)}
+
 # -------------------------------------------------------
 #  SCHEDULED RIDE AUTO-DISPATCH (background task)
 # -------------------------------------------------------

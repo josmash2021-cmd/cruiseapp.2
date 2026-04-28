@@ -85,7 +85,7 @@ Route<T> slideUpFadeRoute<T>(Widget page, {int durationMs = 350}) {
     transitionDuration: dur,
     reverseTransitionDuration: rev,
     opaque: false,
-    barrierColor: Colors.black.withOpacity(0.4),
+    barrierColor: Colors.black.withValues(alpha: 0.4),
     barrierDismissible: true,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final inSlide = Tween<Offset>(
@@ -124,7 +124,7 @@ Route<T> scaleExpandRoute<T>(Widget page, {int durationMs = 280}) {
     transitionDuration: dur,
     reverseTransitionDuration: dur,
     opaque: false,
-    barrierColor: Colors.black.withOpacity(0.5),
+    barrierColor: Colors.black.withValues(alpha: 0.5),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final scale = Tween<double>(begin: 0.92, end: 1.0).animate(
         CurvedAnimation(

@@ -53,7 +53,8 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     switch (_phase) {
       case _TrackPhase.arriving:
         final distM = _distanceMiles * 1609.34;
-        if (distM <= 50) return s.driverWaitingAtPickup;              // ≤50m: waiting
+        // BUG FIX: Never show "waiting" text during arriving phase.
+        // The driver is still en-route; "waiting" only makes sense at arrived phase.
         if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
         if (_etaMinutes <= 5) return s.driverAlmostHereCard;
         return s.driverOnTheWayCard;                                   // >5min
@@ -73,8 +74,8 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     switch (_phase) {
       case _TrackPhase.arriving:
         final distM = _distanceMiles * 1609.34;
-        // Shift from gold → orange → red as driver gets very close
-        if (distM <= 50) return const Color(0xFFEF4444);  // red: at spot
+        // Shift from gold → orange as driver gets close. Stay orange (not red)
+        // until the backend explicitly transitions to 'arrived' phase.
         if (_etaMinutes <= 2 || distM <= 300) return const Color(0xFFFF9500); // orange: arriving
         return const Color(0xFFFFD700);                   // gold: on the way
       case _TrackPhase.arrived:

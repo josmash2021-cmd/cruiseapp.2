@@ -170,7 +170,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         debugPrint('[CarIcon] Fallback car load failed: $e');
       }
     }
-    if (mounted) _setState(() {});
+    if (mounted) {
+      _setState(() {});
+      // Try to create the car annotation now that we have the icon bytes.
+      // If GPS hasn't arrived yet this is a no-op (guarded by _animPos check).
+      _updateCarSmooth();
+    }
   }
 
   /// Resize a PNG image and return PNG bytes (not RGBA).
@@ -905,6 +910,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             textureView: true,
             onMapCreated: (ctrl) async {
               _map = ctrl;
+              // Reset car annotation — old one was destroyed with previous map instance.
+              _carAnnot = null;
+              _carAnnotCreating = false;
               // Allow rider to pinch-zoom + pan + double-tap zoom so
               // they can inspect the route at their own pace.
               // Keep rotate / tilt disabled so the camera never breaks
@@ -1030,12 +1038,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         );
         _carAnnot!.iconRotate = _animBearing;
         debugPrint('[CarIcon] UPDATE pos=(${_animPos.latitude.toStringAsFixed(5)},${_animPos.longitude.toStringAsFixed(5)}) bearing=${_animBearing.toStringAsFixed(1)}');
-        // REMOVED _carUpdateInFlight guard — it was causing frame drops.
-        // The Ticker runs at 60fps and advances _animPos smoothly. If Mapbox
-        // is still processing the previous update, we fire a new one anyway;
-        // Mapbox internally deduplicates rapid updates. The "jump" was caused
-        // by SKIPPING frames when _carUpdateInFlight was true, not by
-        // overloading the platform channel. Now the car glides continuously.
         mgr.update(_carAnnot!).catchError((e) {
           debugPrint('[CarIcon] update failed: $e — will recreate next frame');
           _carAnnot = null;
@@ -1052,19 +1054,26 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // First-time creation (async, guarded)
     if (_carAnnotCreating) return;
     _carAnnotCreating = true;
-    _createCarAnnotation().then((_) {
+    _createCarAnnotation().then((annot) {
       _carAnnotCreating = false;
-    }).catchError((_) {
+      if (annot == null) {
+        debugPrint('[CarIcon] CREATE returned null — will retry next frame');
+      } else {
+        debugPrint('[CarIcon] CREATE success — car is now visible');
+      }
+    }).catchError((e) {
+      debugPrint('[CarIcon] CREATE failed: $e — will retry next frame');
       _carAnnotCreating = false;
     });
   }
 
   /// Create the car PointAnnotation — called once, then updated in-place.
-  Future<void> _createCarAnnotation() async {
+  /// Returns the created annotation so callers know if it succeeded.
+  Future<mapbox.PointAnnotation?> _createCarAnnotation() async {
     final mgr = _carAnnotMgr;
-    if (mgr == null || _carPngBytes == null) return;
+    if (mgr == null || _carPngBytes == null) return null;
     try {
-      _carAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(
           coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
         ),
@@ -1075,9 +1084,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         iconRotate: _animBearing,
         iconOffset: [0, 0],
       ));
+      _carAnnot = annot;
       debugPrint('[CarIcon] PointAnnotation created at ${_animPos.latitude},${_animPos.longitude}');
+      return annot;
     } catch (e) {
       debugPrint('[CarIcon] PointAnnotation creation FAILED: $e');
+      return null;
     }
   }
   Future<void> _updateStaticAnnotationsOnce() async {

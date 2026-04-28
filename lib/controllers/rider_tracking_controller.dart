@@ -744,7 +744,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (!_arrivedDotPulse.isAnimating) _arrivedDotPulse.repeat(reverse: true);
         _handleDriverArrived();
       }
-      // NO overlay — the bottom card shows "Confirm Pickup" inline.
+      // Show the fullscreen pickup confirmation overlay (RiderConfirmPickupScreen)
+      _showRiderConfirmPickup();
       if (!_arrivedNotifSent) {
         _arrivedNotifSent = true;
         LocalDataService.addNotification(

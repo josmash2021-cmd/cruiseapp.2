@@ -74,18 +74,23 @@ class SocketService {
 
     debugPrint('[Socket.io] Connecting to $serverUrl');
 
+    // Only send token if it's valid — sending 'null' causes 400 errors
+    final queryParams = token != null && token.isNotEmpty && token != 'null'
+        ? {'token': token}
+        : <String, String>{};
+
     _socket = io.io(
       serverUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])  // PRIORITY: WebSocket only (faster than polling fallback)
-          .setQuery({'token': token})    // Token in query string for handshake auth
+          .setQuery(queryParams)         // Token in query string for handshake auth
           .enableForceNew()
           .enableReconnection()
-          .setReconnectionAttempts(999)  // Infinite reconnection attempts
-          .setReconnectionDelay(500)     // Start at 500ms (was 1000ms)
-          .setReconnectionDelayMax(5000) // Cap at 5s (was 10s)
+          .setReconnectionAttempts(10)   // Limit reconnection attempts (was 999)
+          .setReconnectionDelay(1000)    // Start at 1s
+          .setReconnectionDelayMax(10000) // Cap at 10s
           .setRandomizationFactor(0.3)   // Add jitter to prevent thundering herd
-          .setTimeout(8000)              // 8s connection timeout (was 10s)
+          .setTimeout(10000)             // 10s connection timeout
           .build(),
     );
 

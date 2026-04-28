@@ -1365,7 +1365,8 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 )
                 _stats_row = _stats_r.first()
                 _driver_trips = _stats_row.trip_count if _stats_row else 0
-                _driver_rating = round(float(_stats_row.avg_rating or 5.0), 1) if _stats_row else 5.0
+                _driver_trips = _stats_row.trip_count if _stats_row else 0
+                _driver_rating = round(float(_stats_row.avg_rating), 1) if (_stats_row and _stats_row.avg_rating is not None and _stats_row.trip_count > 0) else None
             await event_bus.push_trip_update(trip.id, {
                 "status": "driver_en_route",
                 "trip_id": trip.id,
@@ -1625,7 +1626,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         )
         _drv_stats = _drv_stats_r.first()
         _drv_trips = _drv_stats.trip_count if _drv_stats else 0
-        _drv_rating = round(float(_drv_stats.avg_rating or 5.0), 1) if _drv_stats else 5.0
+        _drv_rating = round(float(_drv_stats.avg_rating), 1) if (_drv_stats and _drv_stats.avg_rating is not None and _drv_stats.trip_count > 0) else None
         flat_driver = {
             "driver_id": driver.id,
             "driver_name": f"{driver.first_name} {driver.last_name}",
@@ -1664,7 +1665,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                 )
                 _fb_stats = _fb_stats_r.first()
                 _fb_trips = _fb_stats.trip_count if _fb_stats else 0
-                _fb_rating = round(float(_fb_stats.avg_rating or 5.0), 1) if _fb_stats else 5.0
+                _fb_rating = round(float(_fb_stats.avg_rating), 1) if (_fb_stats and _fb_stats.avg_rating is not None and _fb_stats.trip_count > 0) else None
                 fallback_driver_info = {
                     "driver_id": _fb_drv.id,
                     "driver_name": f"{_fb_drv.first_name} {_fb_drv.last_name}",

@@ -243,7 +243,8 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["driver_name"] = f"{driver.first_name or ''} {driver.last_name or ''}".strip() if driver else ""
         data["driver_phone"] = (driver.phone or "") if driver else ""
         data["driver_photo_url"] = (_abs_photo_url(driver.photo_url) or "") if driver else ""
-        data["driver_rating"] = float(getattr(driver, "average_rating", None) or 4.9) if driver else 4.9
+        _avg = getattr(driver, "average_rating", None)
+        data["driver_rating"] = round(float(_avg), 1) if (_avg is not None and driver) else None
         # Vehicle info for rider tracking screen
         data["vehicle_make"] = getattr(driver, "vehicle_make", "") or "" if driver else ""
         data["vehicle_model"] = getattr(driver, "vehicle_model", "") or "" if driver else ""

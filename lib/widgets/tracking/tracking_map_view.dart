@@ -98,26 +98,42 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
 
   Future<void> _loadPins() async {
-    _pickupPinBytes = await _renderGoldPin(
-      isPickup: true,
-      label: widget.pickupLabel,
-    );
-    _dropoffPinBytes = await _renderGoldPin(
-      isPickup: false,
-      label: widget.dropoffLabel,
-    );
-    // Build pin+label bitmap variants for animated label reveal
-    if (widget.pickupLabel.trim().isNotEmpty) {
-      _pickupPinWithLabelBytes = await _renderGoldPinWithLabel(
+    try {
+      _pickupPinBytes = await _renderGoldPin(
         isPickup: true,
         label: widget.pickupLabel,
       );
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to render pickup pin: $e');
     }
-    if (widget.dropoffLabel.trim().isNotEmpty) {
-      _dropoffPinWithLabelBytes = await _renderGoldPinWithLabel(
+    try {
+      _dropoffPinBytes = await _renderGoldPin(
         isPickup: false,
         label: widget.dropoffLabel,
       );
+    } catch (e) {
+      debugPrint('[TrackingMap] Failed to render dropoff pin: $e');
+    }
+    // Build pin+label bitmap variants for animated label reveal
+    if (widget.pickupLabel.trim().isNotEmpty) {
+      try {
+        _pickupPinWithLabelBytes = await _renderGoldPinWithLabel(
+          isPickup: true,
+          label: widget.pickupLabel,
+        );
+      } catch (e) {
+        debugPrint('[TrackingMap] Failed to render pickup pin with label: $e');
+      }
+    }
+    if (widget.dropoffLabel.trim().isNotEmpty) {
+      try {
+        _dropoffPinWithLabelBytes = await _renderGoldPinWithLabel(
+          isPickup: false,
+          label: widget.dropoffLabel,
+        );
+      } catch (e) {
+        debugPrint('[TrackingMap] Failed to render dropoff pin with label: $e');
+      }
     }
     if (mounted) {
       _setState(() {});
@@ -990,8 +1006,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       debugPrint('[CarIcon] SKIP: _map is null');
       return;
     }
-    // Car is initialized at pickup location in initState so it appears
-    // immediately. Real GPS updates will animate it to the correct position.
+    // Car only appears when we have a real driver GPS position.
+    // (0,0) is the Atlantic Ocean — don't create the car there.
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) {
+      debugPrint('[CarIcon] SKIP: _animPos is (0,0) — waiting for first driver GPS');
+      return;
+    }
     if (_carPngBytes == null) {
       debugPrint('[CarIcon] SKIP: _carPngBytes is null');
       return;
@@ -1088,16 +1108,20 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
 
     // Pickup pin — always visible
-    try {
-      _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
-        image: _pickupPinBytes!,
-        iconSize: 0.80,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-    } catch (e) {
-      debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+    if (_pickupPinBytes != null) {
+      try {
+        _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
+          image: _pickupPinBytes!,
+          iconSize: 0.80,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      } catch (e) {
+        debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+      }
+    } else {
+      debugPrint('[TrackingMap] Pickup pin bytes not ready — will retry');
     }
 
     // Dropoff pin — always show so rider can see full trip plan

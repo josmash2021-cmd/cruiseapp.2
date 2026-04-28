@@ -280,10 +280,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
-    // Initialize car position to pickup so the car icon appears immediately
-    // on the map. Real driver GPS will animate it to the correct position.
-    _driverPos = widget.pickupLatLng;
-    _animPos = widget.pickupLatLng;
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.
     if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty) &&

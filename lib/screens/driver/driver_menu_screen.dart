@@ -177,7 +177,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               _completedTrips = completed;
               _totalTrips = total;
               _avgRating = avgRating;
-              _rating = avgRating.toStringAsFixed(1);
+              // Show '—' for new drivers instead of '0.0'
+              _rating = avgRating <= 0 ? '—' : avgRating.toStringAsFixed(1);
               // Use backend authoritative cruise_level, fall back to client-side
               final backendLevel = stats['cruise_level'] as String?;
               if (backendLevel != null && backendLevel.isNotEmpty) {

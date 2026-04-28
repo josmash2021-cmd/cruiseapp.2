@@ -275,7 +275,23 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
               const Spacer(),
 
-              // ── Security notice at bottom ──
+              // ── Skip button ──
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: TextButton(
+                  onPressed: _skipPayment,
+                  child: Text(
+                    S.of(context).skip,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.textTertiary,
+                    ),
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 16),
             ],
           ),

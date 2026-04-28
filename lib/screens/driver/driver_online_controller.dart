@@ -598,6 +598,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final bgStatus = me['background_check_status'] as String? ?? 'none';
       final verStatus = me['verification_status'] as String? ?? 'none';
 
+      // Check profile photo — mandatory for drivers
+      final photoUrl = (me['photo_url'] ?? me['profile_photo_url'] ?? '').toString();
+      final hasPhoto = photoUrl.isNotEmpty &&
+          photoUrl != 'null' && photoUrl != 'None' && photoUrl != 'none';
+
       // Check user-level approval
       final userApproved = (bgStatus == 'clear' || bgStatus == 'none') &&
           (verStatus == 'approved' || verStatus == 'none');
@@ -633,7 +638,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
       } catch (_) {}
 
-      if (userApproved && vehicleDocsOk) {
+      if (userApproved && vehicleDocsOk && hasPhoto) {
         _approvalGatePassed = true;
         return;
       }
@@ -643,7 +648,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       String title;
       String message;
 
-      if (!userApproved) {
+      if (!hasPhoto) {
+        title = 'Profile Photo Required';
+        message = 'You must add a profile photo before going online. Riders need to recognize you.\n\nGo to Profile > add your photo.';
+      } else if (!userApproved) {
         if (bgStatus == 'pending' || bgStatus == 'processing') {
           title = 'Background Check In Progress';
           message = 'Your background check is still being processed. You\'ll be notified when it\'s complete.';

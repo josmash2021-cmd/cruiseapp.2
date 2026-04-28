@@ -249,36 +249,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
               const SizedBox(height: 36),
 
               // ── Payment options with Add buttons ──
-
-              // Apple Pay (iOS) / Google Pay (Android)
-              if (Platform.isIOS)
-                _paymentRow(
-                  c,
-                  icon: const _ApplePayIcon(),
-                  label: 'Apple Pay',
-                  onAdd: () => _addMethod('apple_pay'),
-                ),
-              if (Platform.isAndroid)
-                _paymentRow(
-                  c,
-                  icon: const _GooglePayIcon(),
-                  label: 'Google Pay',
-                  onAdd: () => _addMethod('google_pay'),
-                ),
-
-              if (Platform.isIOS || Platform.isAndroid)
-                const SizedBox(height: 16),
-
-              // PayPal
-              _paymentRow(
-                c,
-                icon: const _PayPalIcon(),
-                label: 'PayPal',
-                onAdd: () => _addMethod('paypal'),
-              ),
-              const SizedBox(height: 16),
-
-              // Credit or debit card
+              // Only credit/debit card is supported during onboarding.
               _paymentRow(
                 c,
                 icon: _CardIcon(color: c),
@@ -304,32 +275,8 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
               const Spacer(),
 
-              // ── Skip payment button ──
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _gold,
-                      side: const BorderSide(color: _gold, width: 1.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                    ),
-                    onPressed: _skipPayment,
-                    icon: const Icon(Icons.skip_next_rounded, size: 22),
-                    label: Text(
-                      S.of(context).setUpLater,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              // ── Security notice at bottom ──
+              const SizedBox(height: 16),
             ],
           ),
         ),

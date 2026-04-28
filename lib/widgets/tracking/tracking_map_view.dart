@@ -1016,12 +1016,29 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       debugPrint('[CarIcon] SKIP: _map is null');
       return;
     }
-    // Car only appears when we have a real driver GPS position.
-    // (0,0) is the Atlantic Ocean — don't create the car there.
+    // Determine effective position: use _animPos if valid, fallback to _directTargetPos
+    // during arriving phase before approach route loads. This ensures the car
+    // appears immediately at the driver's real GPS position.
+    LatLng effectivePos = _animPos;
+    double effectiveBearing = _animBearing;
+
     if (_animPos.latitude == 0 && _animPos.longitude == 0) {
-      debugPrint('[CarIcon] SKIP: _animPos is (0,0) — waiting for first driver GPS');
-      return;
+      // animPos not initialized yet — check if we have raw GPS fallback
+      final directPos = _directTargetPos;
+      if (directPos != null && directPos.latitude != 0 && directPos.longitude != 0) {
+        effectivePos = directPos;
+        effectiveBearing = _directTargetBearing ?? 0;
+        // Seed animPos so next frame starts from real position (no teleport from 0,0)
+        _animPos = effectivePos;
+        _animBearing = effectiveBearing;
+        _driverPos = effectivePos;
+        _driverBearing = effectiveBearing;
+      } else {
+        debugPrint('[CarIcon] SKIP: no valid position yet — waiting for first driver GPS');
+        return;
+      }
     }
+
     if (_carPngBytes == null) {
       debugPrint('[CarIcon] SKIP: _carPngBytes is null');
       return;
@@ -1036,10 +1053,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_carAnnot != null) {
       try {
         _carAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+          coordinates: mapbox.Position(effectivePos.longitude, effectivePos.latitude),
         );
-        _carAnnot!.iconRotate = _animBearing;
-        debugPrint('[CarIcon] UPDATE pos=(${_animPos.latitude.toStringAsFixed(5)},${_animPos.longitude.toStringAsFixed(5)}) bearing=${_animBearing.toStringAsFixed(1)}');
+        _carAnnot!.iconRotate = effectiveBearing;
         mgr.update(_carAnnot!).catchError((e) {
           debugPrint('[CarIcon] update failed: $e — will recreate next frame');
           _carAnnot = null;
@@ -1056,12 +1072,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // First-time creation (async, guarded)
     if (_carAnnotCreating) return;
     _carAnnotCreating = true;
-    _createCarAnnotation().then((annot) {
+    _createCarAnnotation(effectivePos, effectiveBearing).then((annot) {
       _carAnnotCreating = false;
       if (annot == null) {
         debugPrint('[CarIcon] CREATE returned null — will retry next frame');
       } else {
-        debugPrint('[CarIcon] CREATE success — car is now visible');
+        debugPrint('[CarIcon] CREATE success — car is now visible at (${effectivePos.latitude.toStringAsFixed(5)},${effectivePos.longitude.toStringAsFixed(5)})');
       }
     }).catchError((e) {
       debugPrint('[CarIcon] CREATE failed: $e — will retry next frame');
@@ -1071,23 +1087,30 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Create the car PointAnnotation — called once, then updated in-place.
   /// Returns the created annotation so callers know if it succeeded.
-  Future<mapbox.PointAnnotation?> _createCarAnnotation() async {
+  Future<mapbox.PointAnnotation?> _createCarAnnotation([LatLng? pos, double? bearing]) async {
     final mgr = _carAnnotMgr;
     if (mgr == null || _carPngBytes == null) return null;
+    final effectivePos = pos ?? _animPos;
+    final effectiveBearing = bearing ?? _animBearing;
+    // Guard: never create at (0,0)
+    if (effectivePos.latitude == 0 && effectivePos.longitude == 0) {
+      debugPrint('[CarIcon] CREATE skipped: position is (0,0)');
+      return null;
+    }
     try {
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(
-          coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+          coordinates: mapbox.Position(effectivePos.longitude, effectivePos.latitude),
         ),
         image: _carPngBytes!,
         iconSize: _kCarAnnotScale,
         iconAnchor: mapbox.IconAnchor.CENTER,
         // car_*.png assets all face UP (north) by default — no bearing offset needed.
-        iconRotate: _animBearing,
+        iconRotate: effectiveBearing,
         iconOffset: [0, 0],
       ));
       _carAnnot = annot;
-      debugPrint('[CarIcon] PointAnnotation created at ${_animPos.latitude},${_animPos.longitude}');
+      debugPrint('[CarIcon] PointAnnotation created at ${effectivePos.latitude},${effectivePos.longitude}');
       return annot;
     } catch (e) {
       debugPrint('[CarIcon] PointAnnotation creation FAILED: $e');

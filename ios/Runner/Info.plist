@@ -98,6 +98,8 @@
 	<string>Cruise needs to save photos to your gallery.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cruise needs the microphone for profile videos.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Cruise uses Bluetooth to connect with nearby devices for an enhanced ride experience.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>

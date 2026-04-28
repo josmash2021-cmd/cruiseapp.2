@@ -7,6 +7,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 import 'user_session.dart';
 import 'analytics_service.dart';
+import 'network_service.dart';
 
 /// Socket.io service for real-time communication.
 ///
@@ -26,7 +27,14 @@ class SocketService {
   static io.Socket? _socket;
   static bool _initialized = false;
   static bool _connected = false;
+  static bool _connecting = false;
   static String? _currentTripRoom;
+
+  // ── Heartbeat ───────────────────────────────────────────────────────
+  static Timer? _heartbeatTimer;
+  static DateTime? _lastPongTime;
+  static final _connectionHealthController = StreamController<bool>.broadcast();
+  static Stream<bool> get connectionHealthStream => _connectionHealthController.stream;
 
   // ── Event streams ───────────────────────────────────────────────────
   static final _driverLocationController =
@@ -54,6 +62,7 @@ class SocketService {
   // ── Public API ──────────────────────────────────────────────────────
 
   static bool get isConnected => _connected;
+  static bool get isConnecting => _connecting;
   static String? get currentTripRoom => _currentTripRoom;
 
   /// Initialize Socket.io connection.
@@ -68,40 +77,76 @@ class SocketService {
     _socket = io.io(
       serverUrl,
       io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(['websocket'])  // PRIORITY: WebSocket only (faster than polling fallback)
           .setAuth({'token': token})
           .enableForceNew()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(1000)
-          .setReconnectionDelayMax(10000)
-          .setTimeout(10000)
+          .enableReconnection()
+          .setReconnectionAttempts(999)  // Infinite reconnection attempts
+          .setReconnectionDelay(500)     // Start at 500ms (was 1000ms)
+          .setReconnectionDelayMax(5000) // Cap at 5s (was 10s)
+          .setRandomizationFactor(0.3)   // Add jitter to prevent thundering herd
+          .setTimeout(8000)              // 8s connection timeout (was 10s)
           .build(),
     );
 
     _socket!.onConnect((_) {
       _connected = true;
-      debugPrint('[Socket.io] Connected');
+      _connecting = false;
+      _lastPongTime = DateTime.now();
+      debugPrint('[Socket.io] ✅ Connected');
       _authenticate();
+      _startHeartbeat();
       AnalyticsService.instance.logEvent('socket_connected');
+      if (!_connectionHealthController.isClosed) {
+        _connectionHealthController.add(true);
+      }
     });
 
     _socket!.onDisconnect((_) {
       _connected = false;
-      debugPrint('[Socket.io] Disconnected');
+      _lastPongTime = null;
+      _stopHeartbeat();
+      debugPrint('[Socket.io] ❌ Disconnected');
       AnalyticsService.instance.logEvent('socket_disconnected');
+      if (!_connectionHealthController.isClosed) {
+        _connectionHealthController.add(false);
+      }
+    });
+
+    _socket!.onConnecting((_) {
+      _connecting = true;
+      debugPrint('[Socket.io] ⏳ Connecting...');
     });
 
     _socket!.onConnectError((error) {
-      debugPrint('[Socket.io] Connection error: $error');
+      _connecting = false;
+      debugPrint('[Socket.io] ❌ Connection error: $error');
       AnalyticsService.instance.logEvent('socket_error', parameters: {'error': error.toString()});
     });
 
     _socket!.onReconnect((_) {
-      debugPrint('[Socket.io] Reconnected — rejoining rooms');
+      debugPrint('[Socket.io] 🔄 Reconnected — rejoining rooms');
       _authenticate();
       if (_currentTripRoom != null) {
         joinTrip(int.parse(_currentTripRoom!));
       }
+    });
+
+    _socket!.onReconnectAttempt((attempt) {
+      debugPrint('[Socket.io] 🔄 Reconnect attempt #$attempt');
+    });
+
+    _socket!.onReconnectError((error) {
+      debugPrint('[Socket.io] ❌ Reconnect error: $error');
+    });
+
+    _socket!.onReconnectFailed((_) {
+      debugPrint('[Socket.io] ❌ Reconnect failed — will retry');
+    });
+
+    // ── Heartbeat / Pong ────────────────────────────────────────────
+    _socket!.on('pong', (_) {
+      _lastPongTime = DateTime.now();
     });
 
     // ── Event listeners ─────────────────────────────────────────────
@@ -136,7 +181,18 @@ class SocketService {
       debugPrint('[Socket.io] Driver assigned: ${map['driver_id']}');
     });
 
+    // Listen to network recovery to proactively reconnect
+    NetworkService().onlineNotifier.addListener(_onNetworkChange);
+
     _initialized = true;
+  }
+
+  /// Proactively reconnect when network comes back online
+  static void _onNetworkChange() {
+    if (NetworkService().isOnline && !_connected && !_connecting && _socket != null) {
+      debugPrint('[Socket.io] 🌐 Network recovered — forcing reconnect');
+      _socket!.connect();
+    }
   }
 
   /// Authenticate with the server using JWT.
@@ -214,8 +270,50 @@ class SocketService {
     });
   }
 
+  /// Start heartbeat to detect stale connections
+  static void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_socket == null || !_connected) return;
+      // Check if we haven't received a pong in 45 seconds
+      if (_lastPongTime != null &&
+          DateTime.now().difference(_lastPongTime!).inSeconds > 45) {
+        debugPrint('[Socket.io] 💔 Heartbeat failed — connection stale, forcing reconnect');
+        _connected = false;
+        _socket!.disconnect();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _socket?.connect();
+        });
+        return;
+      }
+      // Send ping
+      _socket!.emit('ping', {'timestamp': DateTime.now().millisecondsSinceEpoch});
+    });
+  }
+
+  static void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  /// Force a reconnection (useful when app comes to foreground)
+  static void reconnect() {
+    if (_socket == null) {
+      init();
+      return;
+    }
+    if (_connected) {
+      debugPrint('[Socket.io] Already connected');
+      return;
+    }
+    debugPrint('[Socket.io] 🔄 Forcing reconnect');
+    _socket!.connect();
+  }
+
   /// Disconnect and clean up.
   static void dispose() {
+    NetworkService().onlineNotifier.removeListener(_onNetworkChange);
+    _stopHeartbeat();
     if (_currentTripRoom != null) {
       try {
         leaveTrip(int.parse(_currentTripRoom!));
@@ -225,7 +323,9 @@ class SocketService {
     _socket = null;
     _initialized = false;
     _connected = false;
+    _connecting = false;
     _currentTripRoom = null;
+    _lastPongTime = null;
     // Close stream controllers to prevent memory leaks
     if (!_driverLocationController.isClosed) {
       _driverLocationController.close();
@@ -235,6 +335,9 @@ class SocketService {
     }
     if (!_driverAssignedController.isClosed) {
       _driverAssignedController.close();
+    }
+    if (!_connectionHealthController.isClosed) {
+      _connectionHealthController.close();
     }
   }
 

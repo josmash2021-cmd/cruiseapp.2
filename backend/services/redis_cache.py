@@ -25,7 +25,10 @@ except Exception:  # pragma: no cover
     aioredis = None  # type: ignore[assignment]
 
 # ── Connection settings ──
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_redis_url_raw = (os.getenv("REDIS_URL") or "").strip()
+# Skip Redis if not explicitly configured (avoid localhost warning in containerized envs)
+_valid_schemes = ("redis://", "rediss://", "unix://")
+REDIS_URL = _redis_url_raw if _redis_url_raw and _redis_url_raw.startswith(_valid_schemes) else ""
 REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "2"))
 
 # ── Internal in-memory fallback ──
@@ -68,6 +71,9 @@ async def _get_redis() -> Any:
         return None
     if _redis is not None:
         return _redis
+    if not REDIS_URL:
+        _redis_available = False
+        return None
     if aioredis is None:
         _redis_available = False
         _log.warning("redis.asyncio not installed; using in-memory fallback")

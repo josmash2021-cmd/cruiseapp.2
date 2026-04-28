@@ -42,7 +42,10 @@ _redis_manager = None
 
 def _get_redis_url() -> Optional[str]:
     """Return Redis URL from environment, or None if not configured."""
-    return os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
+    url = (os.environ.get("REDIS_URL") or "").strip()
+    if url and url.startswith(("redis://", "rediss://", "unix://")):
+        return url
+    return os.environ.get("REDIS_TLS_URL")
 
 
 def _create_manager():

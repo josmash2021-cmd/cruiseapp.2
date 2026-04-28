@@ -202,9 +202,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
   bool _goingToRating = false;      // guard: prevents double navigation to rating screen
 
-  // ── Pickup overlay slide-up entrance ──
+  // ── Pickup overlay slide-up entrance + fade ──
   late AnimationController _pickupOverlayCtrl;
   late Animation<Offset> _pickupOverlaySlide;
+  late Animation<double> _pickupOverlayFade;
 
   // ── More-menu dropdown & cancel overlay ──
   bool _showMoreMenu = false;
@@ -297,14 +298,18 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    // Pickup overlay slide-up entrance
+    // Pickup overlay slide-up + fade entrance
     _pickupOverlayCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 450),
     );
     _pickupOverlaySlide = Tween<Offset>(
-      begin: const Offset(0, 1.0),
+      begin: const Offset(0, 0.15),
       end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _pickupOverlayCtrl, curve: Curves.easeOutCubic));
+    _pickupOverlayFade = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
     ).animate(CurvedAnimation(parent: _pickupOverlayCtrl, curve: Curves.easeOutCubic));
     // Load car PNG based on ride type
     _loadCarIcon();
@@ -600,41 +605,49 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   /// Full-screen confirm pickup overlay rendered inline in the Stack so it
   /// always appears — no Navigator.push fragility.
-  /// Slides up from the bottom with a 380ms easeOutCubic entrance.
+  /// Slides up from the bottom with a 450ms easeOutCubic entrance + fade.
   Widget _buildInlinePickupOverlay() {
     final vehicleDesc =
         '${widget.vehicleColor} ${widget.vehicleMake} ${widget.vehicleModel}'.trim();
     return Positioned.fill(
-      child: SlideTransition(
-        position: _pickupOverlaySlide,
-        child: RiderConfirmPickupScreen(
-          driverName: widget.driverName,
-          vehicleDesc: vehicleDesc,
-          firestoreTripId: widget.firestoreTripId,
-          tripId: widget.tripId,
-          driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
-          driverId: widget.driverId,
-          driverRating: widget.driverRating,
-          vehiclePlate: widget.vehiclePlate,
-          onConfirmed: () {
-            // NOTE: keep _confirmPickupShown = true so a late status=arrived
-            // poll (driver hasn't tapped Start Ride yet) does NOT re-show the
-            // overlay. The guard is reset inside _transitionToOnTrip() when
-            // the backend flips to in_trip.
-            if (mounted) {
-              setState(() => _showPickupOverlay = false);
-              // Pop out the pickup pin and reveal the illuminated route
-              _popOutPickupPin();
-              _restartRouteAnimation();
-            }
-          },
-          onCancelled: () {
-            // Trip was cancelled (e.g., auto-cancel due to wait timeout).
-            // Navigate back to home screen.
-            if (mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-            }
-          },
+      child: FadeTransition(
+        opacity: _pickupOverlayFade,
+        child: SlideTransition(
+          position: _pickupOverlaySlide,
+          child: RiderConfirmPickupScreen(
+            driverName: widget.driverName,
+            vehicleDesc: vehicleDesc,
+            firestoreTripId: widget.firestoreTripId,
+            tripId: widget.tripId,
+            driverPhotoUrl: _driverPhotoUrl ?? _normalizeRemotePhotoUrl(widget.driverPhotoUrl),
+            driverId: widget.driverId,
+            driverRating: widget.driverRating,
+            vehiclePlate: widget.vehiclePlate,
+            onConfirmed: () async {
+              // NOTE: keep _confirmPickupShown = true so a late status=arrived
+              // poll (driver hasn't tapped Start Ride yet) does NOT re-show the
+              // overlay. The guard is reset inside _transitionToOnTrip() when
+              // the backend flips to in_trip.
+              if (mounted) {
+                // Fade out smoothly before removing from tree
+                await _pickupOverlayCtrl.reverse();
+                if (!mounted) return;
+                setState(() => _showPickupOverlay = false);
+                // Pop out the pickup pin and reveal the illuminated route
+                _popOutPickupPin();
+                _restartRouteAnimation();
+              }
+            },
+            onCancelled: () async {
+              // Trip was cancelled (e.g., auto-cancel due to wait timeout).
+              // Fade out smoothly before navigating.
+              if (mounted) {
+                await _pickupOverlayCtrl.reverse();
+                if (!mounted) return;
+                Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+              }
+            },
+          ),
         ),
       ),
     );

@@ -153,28 +153,36 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startSocketIOTracking(tripId);
     }
 
-    // ── 1. BACKUP: backend poll — always active as fallback ──
-    // Poll runs even when tripId is null — _pollBackendTripStatus uses /trips/active fallback.
-    // Reduced to 3s interval when Socket.io is active (was 1.5s).
+    // ── 1. BACKUP: backend poll — adaptive frequency based on Socket.io health ──
+    // When Socket.io is healthy: poll very lightly (every 5s) just as safety net.
+    // When Socket.io is down: poll faster (every 2s) to compensate.
+    // Firestore listener also provides instant updates, so HTTP poll is tertiary.
     _statusPollTimer?.cancel();
-    final pollInterval = FeatureFlags.useSocketIO
-        ? const Duration(seconds: 1)   // Socket.io primary: light HTTP backup every 1s
-        : const Duration(milliseconds: 800);  // Fallback: faster Firebase RTDB backup
-    _statusPollTimer = Timer.periodic(
-      pollInterval,
-      (_) => _pollBackendTripStatus(),
-    );
-    unawaited(_pollBackendTripStatus()); // first poll fires now
-    debugPrint('[RiderTracking] 🟢 Poll started for trip $tripId (every ${pollInterval.inMilliseconds}ms)');
+    _startAdaptivePolling();
 
     // ── 2. BONUS: Firestore listener (instant when it works) ──
     // Firebase Auth + listener setup runs in parallel — never blocks the poll.
     _initFirebaseAndListeners(tripId, sqlDocId, fallbackDocId);
 
     // ── 3. RTDB driver GPS — fallback when Socket.io is down ──
+    // Only start RTDB if Socket.io is not connected. If Socket.io IS connected,
+    // RTDB is redundant and wastes bandwidth. We'll start it on-demand if Socket.io fails.
     final did = widget.driverId;
     if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
-      _startRtdbDriverListener(did);
+      if (!SocketService.isConnected) {
+        _startRtdbDriverListener(did);
+      } else {
+        debugPrint('[RiderTracking] Socket.io connected — deferring RTDB start');
+        // Start RTDB after a delay only if Socket.io hasn't delivered GPS
+        _gpsFallbackTimer?.cancel();
+        _gpsFallbackTimer = Timer(const Duration(seconds: 8), () {
+          if (!mounted || _phase == _TrackPhase.completed) return;
+          if (!SocketService.isConnected && _rtdbDriverId == null) {
+            debugPrint('[RiderTracking] Socket.io still down after 8s — starting RTDB fallback');
+            _startRtdbDriverListener(did);
+          }
+        });
+      }
     }
 
     // Start chase camera follow timer
@@ -205,10 +213,38 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
+  /// Adaptive polling: slow when Socket.io is healthy, faster when it's down.
+  void _startAdaptivePolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted || _phase == _TrackPhase.completed) {
+        _statusPollTimer?.cancel();
+        return;
+      }
+      // Skip poll ticks when Socket.io delivered data recently (< 3s ago)
+      // and Firestore delivered data recently (< 2s ago).
+      // This eliminates redundant HTTP calls when real-time channels are healthy.
+      final socketHealthy = SocketService.isConnected;
+      final firestoreRecent = _lastFirestoreEventAt != null &&
+          DateTime.now().difference(_lastFirestoreEventAt!).inSeconds < 3;
+      if (socketHealthy && firestoreRecent) {
+        // Both primary channels healthy — skip this poll tick entirely
+        return;
+      }
+      _pollBackendTripStatus();
+    });
+    unawaited(_pollBackendTripStatus()); // first poll fires immediately
+    debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 2s, skips when Socket.io+Firestore healthy)');
+  }
+
   /// Start Socket.io listeners for trip status and driver GPS.
   void _startSocketIOTracking(int tripId) {
-    // Join trip room
-    SocketService.joinTrip(tripId);
+    // Ensure Socket.io is initialized
+    SocketService.init().then((_) {
+      if (!mounted) return;
+      // Join trip room
+      SocketService.joinTrip(tripId);
+    });
 
     // Listen for driver location updates
     _socketLocationSub?.cancel();
@@ -251,6 +287,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
       debugPrint('[Socket.io] Trip status update: $status');
       _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
+    });
+
+    // Monitor Socket.io health — start RTDB fallback if connection drops
+    SocketService.connectionHealthStream.listen((isHealthy) {
+      if (!mounted || _phase == _TrackPhase.completed) return;
+      final did = widget.driverId;
+      if (!isHealthy && did != null && did.isNotEmpty && _rtdbDriverId == null) {
+        debugPrint('[RiderTracking] Socket.io disconnected — starting RTDB fallback');
+        _startRtdbDriverListener(did);
+      }
     });
 
     debugPrint('[RiderTracking] 🔌 Socket.io tracking started for trip $tripId');
@@ -340,14 +386,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           return;
         }
         // If car annotation is missing but we have GPS and icon, force recreate
-        if (_carAnnot == null && _carPngBytes != null &&
-            (_animPos.latitude != 0 || _animPos.longitude != 0)) {
+        // Guard: don't recreate if one is already in progress
+        final hasValidPos = (_animPos.latitude != 0 || _animPos.longitude != 0) ||
+            (_directTargetPos != null && _directTargetPos!.latitude != 0 && _directTargetPos!.longitude != 0);
+        if (_carAnnot == null && !_carAnnotCreating && _carPngBytes != null && hasValidPos) {
           debugPrint('[CarIcon] HEARTBEAT: car missing, forcing recreation');
-          _carAnnotCreating = false;
           _updateCarSmooth();
         }
       });
     }
+
+    // FORCE immediate car update on first GPS — don't wait for next ticker frame.
+    // This ensures the car appears instantly when the first driver location arrives.
+    _updateCarSmooth();
 
     // Uber-style: fetch approach route (driver→pickup) on first GPS during arriving
     if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
@@ -359,11 +410,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Projecting the driver's GPS onto the trip route gives a completely wrong
     // position (e.g. driver 2 miles away gets projected onto the trip route).
     // Use raw GPS directly until the approach route is ready.
+    // NOTE: Even AFTER approach route loads, if the driver is still far from
+    // the route, keep using raw GPS so the car doesn't snap to a wrong position.
     final isArrivingWithoutApproach = _phase == _TrackPhase.arriving && !_approachRouteFetched;
 
     // Always try to snap GPS onto the route polyline.
-    // Only fall back to raw GPS lerp when we truly have no route.
-    if (!isArrivingWithoutApproach && _segDist.isNotEmpty && _routePts.length >= 2) {
+    // Only fall back to raw GPS lerp when we truly have no route OR when
+    // the driver is too far from the route (arriving phase, driver still far away).
+    final driverFarFromRoute = _phase == _TrackPhase.arriving && _approachRouteFetched &&
+        _segDist.isNotEmpty && _routePts.length >= 2;
+    bool shouldProjectOntoRoute = !isArrivingWithoutApproach && _segDist.isNotEmpty && _routePts.length >= 2;
+    if (shouldProjectOntoRoute) {
       final projectedM = _projectOntoRoute(ll);
       // Accept projection when close enough to route (< 150m lateral)
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
@@ -423,10 +480,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
       }
     } else {
-      // No route available OR arriving without approach route yet:
+      // No route available OR arriving without approach route yet OR driver far from route:
       // use raw GPS lerp so the car appears at the driver's real position.
       _directTargetPos = ll;
       _directTargetBearing = bearing;
+    }
+
+    // Ensure car is visible immediately — force update even before ticker runs
+    if (_carAnnot == null && _carPngBytes != null && _carAnnotMgr != null && !_carAnnotCreating) {
+      _updateCarSmooth();
     }
 
     // Update phase and distances
@@ -890,7 +952,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _popOutPickupPin();
     if (_showPickupOverlay) {
       _confirmPickupShown = false;
-      _setState(() => _showPickupOverlay = false);
+      // Fade out the overlay smoothly before removing it from the tree
+      // Guard: only reverse if the controller is completed (overlay fully shown).
+      // If it's already animating or dismissed, skip to avoid conflicts.
+      if (_pickupOverlayCtrl.status == AnimationStatus.completed ||
+          _pickupOverlayCtrl.status == AnimationStatus.forward) {
+        _pickupOverlayCtrl.reverse().then((_) {
+          if (mounted) _setState(() => _showPickupOverlay = false);
+        });
+      } else {
+        // Already dismissed or reversing — just hide immediately
+        _setState(() => _showPickupOverlay = false);
+      }
     }
     _startRideAnimationDone = false;
     _startStartRideAnimation();
@@ -934,11 +1007,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Show the rider confirmation pickup overlay when driver has arrived.
   /// Uses inline Stack overlay (not Navigator.push) so it always appears,
   /// even during route transitions or when the Navigator is busy.
+  /// Fades in smoothly with slide-up animation.
   void _showRiderConfirmPickup() {
     if (!mounted || _confirmPickupShown) return;
     _confirmPickupShown = true;
     _setState(() => _showPickupOverlay = true);
-    // Slide overlay up from the bottom
+    // Fade + slide overlay in from the bottom
     _pickupOverlayCtrl.forward(from: 0);
   }
 
@@ -1500,10 +1574,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // The trip route (pickup→dropoff) is NOT the right route for tracking
     // the driver during arriving. Trying to project the driver onto it would
     // place the car at the pickup or somewhere wrong on the trip route.
+    // Also use raw GPS when driver is far from the approach route.
     final arrivingNoApproach = _phase == _TrackPhase.arriving && !_approachRouteFetched;
-    if (arrivingNoApproach) {
+    final arrivingFarFromRoute = _phase == _TrackPhase.arriving && _approachRouteFetched &&
+        _directTargetPos != null;
+    if (arrivingNoApproach || arrivingFarFromRoute) {
       final tgt = _directTargetPos;
       if (tgt != null) {
+        final prevPos = _animPos;
         if (_animPos.latitude == 0 && _animPos.longitude == 0) {
           // First GPS: teleport to driver's real position
           _animPos = tgt;
@@ -1521,12 +1599,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         final newLng = _animPos.longitude + dLng * posFactor;
         _animPos = LatLng(newLat, newLng);
         _driverPos = _animPos;
-        // Bearing from movement direction
-        final movedEnough = (newLat - _animPos.latitude + dLat * posFactor).abs() > 0.000002 ||
-                            (newLng - _animPos.longitude + dLng * posFactor).abs() > 0.000002;
+        // Bearing from movement direction (compare prevPos → newPos)
+        final movedEnough = (newLat - prevPos.latitude).abs() > 0.000002 ||
+                            (newLng - prevPos.longitude).abs() > 0.000002;
         double targetBrg;
         if (movedEnough) {
-          targetBrg = _bearing(LatLng(newLat - dLat * posFactor, newLng - dLng * posFactor), _animPos);
+          targetBrg = _bearing(prevPos, _animPos);
         } else {
           targetBrg = _directTargetBearing ?? _animBearing;
         }
@@ -1618,14 +1696,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
     _updateApproachLine(); // dashed approach line driver→pickup
 
-    // ── Idle detection: pause ticker only when car is truly stationary ──
-    // With constant-velocity interpolation the ticker must stay running
-    // as long as there is ANY predicted velocity remaining.
-    // NEVER idle during active phases — the ticker must be awake to process
-    // the next RTDB GPS update instantly (no 1-frame delay on restart).
-    final isActivePhase = _phase != _TrackPhase.completed;
+    // ── Idle detection: pause ticker only when trip is completed ──
+    // NEVER stop the ticker during active phases (arriving, arrived, onTrip,
+    // nearDestination). The ticker must be awake to process the next RTDB GPS
+    // update instantly (no 1-frame delay on restart). Stopping during active
+    // phases causes the car to freeze until the next GPS packet wakes it up.
+    final isCompleted = _phase == _TrackPhase.completed;
     final diff2 = (_tgtTraveledM - _traveledM).abs();
-    if (!isActivePhase && diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
+    if (isCompleted && diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
       _interpIdle = true;
       _interpTicker?.stop();
     }

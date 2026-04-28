@@ -296,6 +296,21 @@ class _SplashScreenState extends State<SplashScreen>
       return const WelcomeScreen();
     }
 
+    // ── Validate token against backend — if DB was wiped, token is dead ──
+    await initFuture;
+    try {
+      final me = await ApiService.getMe().timeout(const Duration(seconds: 5));
+      if (me == null) {
+        // Token invalid or user deleted — force logout
+        await ApiService.clearToken();
+        await UserSession.logout();
+        return const WelcomeScreen();
+      }
+    } catch (e) {
+      debugPrint('[SplashScreen] Token validation failed: $e');
+      // Network error — be lenient, let user in with cached session
+    }
+
     // ── User has local session — route by cached role immediately ──
     final mode = await UserSession.getMode();
 

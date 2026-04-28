@@ -227,30 +227,15 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       );
     }
 
-    // Upload photo to server + Firebase Storage for cross-device sync
+    // SINGLE upload: ApiService.uploadPhoto handles Firebase Storage + Firestore + Backend + Cache
     if (permanentPhotoPath != null && permanentPhotoPath.isNotEmpty) {
       try {
         final photoUrl = await ApiService.uploadPhoto(permanentPhotoPath);
         if (photoUrl.isNotEmpty) {
-          await ApiService.updateMe({'photo_url': photoUrl});
+          UserSession.photoUrlNotifier.value = photoUrl;
         }
       } catch (e) {
         debugPrint('⚠️ Photo upload failed: $e');
-      }
-      // Sync to Firebase Storage + Firestore for all devices
-      final uid = await ApiService.getCurrentUserId();
-      if (uid != null) {
-        try {
-          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
-            permanentPhotoPath, uid, 'rider',
-          );
-          await FirebaseStorageService.updateFirestorePhotoUrl(uid, firebaseUrl, 'rider');
-          await PhotoRecoveryService.savePhotoEveryWhere(uid.toString(), 'rider', firebaseUrl);
-          UserSession.photoUrlNotifier.value = firebaseUrl;
-          await UserSession.updateField('photoUrl', firebaseUrl);
-        } catch (e) {
-          debugPrint('Firebase photo sync failed: $e');
-        }
       }
     }
 

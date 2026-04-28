@@ -97,26 +97,10 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     if (_photoPath == null) return;
     setState(() => _uploading = true);
     try {
+      // SINGLE upload: ApiService.uploadPhoto handles Firebase Storage + Firestore + Backend + Cache
       final photoUrl = await ApiService.uploadPhoto(_photoPath!);
-      await ApiService.updateMe({'photo_url': photoUrl});
-
-      // Sync to Firebase Storage + Firestore for cross-device availability
-      final userId = await ApiService.getCurrentUserId();
-      if (userId != null) {
-        try {
-          final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(
-            _photoPath!, userId, 'driver',
-          );
-          await FirebaseStorageService.updateFirestorePhotoUrl(userId, firebaseUrl, 'driver');
-          await PhotoRecoveryService.savePhotoEveryWhere(userId.toString(), 'driver', firebaseUrl);
-          UserSession.photoUrlNotifier.value = firebaseUrl;
-          UserSession.photoNotifier.value = _photoPath!;
-          await UserSession.updateField('photoUrl', firebaseUrl);
-          await UserSession.updateField('photoPath', _photoPath!);
-        } catch (_) {
-          // Firebase sync failed — backend photo still works
-        }
-      }
+      UserSession.photoUrlNotifier.value = photoUrl;
+      UserSession.photoNotifier.value = _photoPath!;
 
       if (!mounted) return;
       if (widget.returnOnly) {

@@ -112,8 +112,19 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
 
     try {
       final recovered = await PhotoRecoveryService.resolvePhotoUrl(widget.uid!, widget.role!);
+      // SECURITY: Validate that recovered photo belongs to the requested user.
+      // If the URL doesn't contain the user's UID, it's likely cross-contaminated.
       if (mounted && recovered != null && recovered.isNotEmpty) {
-        setState(() => _recoveredPhotoUrl = recovered);
+        final uid = widget.uid!;
+        // Firebase Storage URLs contain the user ID in the path
+        final isValid = recovered.contains('user_$uid') || 
+                        recovered.contains('/$uid/') ||
+                        recovered.contains('sql_$uid');
+        if (isValid) {
+          setState(() => _recoveredPhotoUrl = recovered);
+        } else {
+          debugPrint('[UserProfilePhoto] ⚠️ Recovered photo URL does not match uid=$uid — rejecting');
+        }
       }
     } catch (e) {
       debugPrint('[UserProfilePhoto] Recovery failed: $e');

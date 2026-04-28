@@ -3,9 +3,33 @@
 import math
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 
 _PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")
+
+# ═══════════════════════════════════════════════════════
+#  Ultra-fast user photo cache (prevents DB hits for photos)
+# ═══════════════════════════════════════════════════════
+
+_user_photo_cache: dict = {}  # user_id -> (photo_url, timestamp)
+_PHOTO_CACHE_TTL = 30  # seconds — photos change rarely
+
+def _get_cached_photo_url(user_id: int, photo_url: str | None) -> str | None:
+    """Return cached photo URL if fresh, otherwise update cache."""
+    if not photo_url:
+        return photo_url
+    now = time.monotonic()
+    cached = _user_photo_cache.get(user_id)
+    if cached and (now - cached[1]) < _PHOTO_CACHE_TTL:
+        return cached[0]
+    _user_photo_cache[user_id] = (photo_url, now)
+    return photo_url
+
+def _invalidate_photo_cache(user_id: int):
+    """Invalidate photo cache when user updates their photo."""
+    _user_photo_cache.pop(user_id, None)
 
 
 def _abs_photo_url(url: str | None) -> str | None:

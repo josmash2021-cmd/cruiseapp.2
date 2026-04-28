@@ -49,14 +49,15 @@ class PhotoRecoveryService {
     }
 
     // ─── SOURCE 2: Firebase Auth photoURL (fast — in memory) ─────────────────
+    // SECURITY FIX: Only use Firebase Auth photoURL for the CURRENT logged-in user.
+    // NEVER use it for other users (e.g., driver viewing rider's photo or vice versa)
+    // because Firebase Auth only stores the CURRENT user's photo.
     try {
-      // Try to get from current user if UIDs match
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser != null && currentUser.uid == uid) {
         final authUrl = currentUser.photoURL;
         if (authUrl != null && authUrl.isNotEmpty && authUrl.startsWith('https')) {
-          debugPrint('[PhotoRecovery] ✅ Found in Firebase Auth: $authUrl');
-          // Backfill to SharedPreferences for next time
+          debugPrint('[PhotoRecovery] ✅ Found in Firebase Auth (self): $authUrl');
           await _cachePhotoUrl(uid, role, authUrl);
           return authUrl;
         }

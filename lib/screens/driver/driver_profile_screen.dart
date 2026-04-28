@@ -154,7 +154,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         // Determine cruise level tier — use backend authoritative value,
         // fall back to client-side computation matching cruise_level_screen.dart
         final backendLevel = stats['cruise_level'] as String?;
-        final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
+        // New drivers have no trips → no rating. Don't show fake 5.0 stars.
+        final rawRating = stats['avg_rating'];
+        final avgRating = rawRating == null ? 0.0 : (rawRating as num).toDouble();
         String tierName;
         if (backendLevel != null && backendLevel.isNotEmpty) {
           tierName = backendLevel.toLowerCase();

@@ -784,11 +784,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     //   the route transition has begun.
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
-        opaque: false,
+        opaque: true,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
-        transitionDuration: const Duration(milliseconds: 400),
-        reverseTransitionDuration: const Duration(milliseconds: 350),
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
@@ -813,14 +813,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // 150ms of the fade+scale transition, the driver still feels a
     // ~1s freeze. By waiting 300ms the transition is already 75%
     // done and the user perceives it as smooth.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (Navigator.of(context).mounted) {
-          HapticFeedback.heavyImpact();
-          NotificationService.playOnlineSound();
-        }
-      });
-    });
+    // REMOVED: sound + heavy haptic caused 1-2s freeze on go-online.
+    // Light haptic only — instant, no audio engine blocking.
+    HapticFeedback.lightImpact();
     final result = await pushFuture;
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
@@ -914,7 +909,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
-        opaque: false,
+        opaque: true,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng),
         transitionDuration: const Duration(milliseconds: 400),

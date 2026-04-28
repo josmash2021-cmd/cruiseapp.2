@@ -163,7 +163,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
         final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
-        final avgRating = (stats['avg_rating'] as num?)?.toDouble() ?? 5.0;
+        // New drivers have no trips → no rating. Don't show fake 5.0 stars.
+        final rawRating = stats['avg_rating'];
+        final avgRating = rawRating == null ? 0.0 : (rawRating as num).toDouble();
 
         _completedTrips = completed;
         _totalTrips = total;

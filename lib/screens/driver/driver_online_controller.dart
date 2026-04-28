@@ -607,7 +607,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final userApproved = (bgStatus == 'clear' || bgStatus == 'none') &&
           (verStatus == 'approved' || verStatus == 'none');
 
-      // Check vehicle-level docs (insurance, registration) and expiry
+      // If driver is already approved, only check photo — don't re-verify
+      // vehicle docs (those were checked during approval process).
+      if (userApproved && hasPhoto) {
+        _approvalGatePassed = true;
+        return;
+      }
+
+      // Not yet approved — check vehicle docs for pending applicants
       bool vehicleDocsOk = true;
       String? vehicleBlockReason;
       try {

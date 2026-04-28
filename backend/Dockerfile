@@ -29,7 +29,7 @@ echo "=== Cruise Backend Startup ==="\n\
 echo "PWD: $(pwd)"\n\
 echo "PYTHONPATH: $PYTHONPATH"\n\
 echo "=== Starting uvicorn ==="\n\
-exec uvicorn main:socket_app --host 0.0.0.0 --port ${PORT:-8000} --workers 4 --timeout-keep-alive 75\n\
+exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 75\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]

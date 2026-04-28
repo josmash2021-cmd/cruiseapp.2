@@ -121,29 +121,7 @@ _ip_violations: dict[str, int] = {}
 _IP_BAN_THRESHOLD = 20
 
 
-def _is_private_ip(client_ip: str) -> bool:
-    """Return True if IP is private/internal/proxy (should not be banned).
-    
-    Covers:
-    - RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-    - RFC 6598: 100.64.0.0/10 (CGNAT - used by Railway, AWS, etc.)
-    - Loopback: 127.0.0.0/8
-    - Link-local: 169.254.0.0/16
-    """
-    import ipaddress
-    try:
-        ip = ipaddress.ip_address(client_ip)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            return True
-        # CGNAT range used by Railway and other cloud providers
-        return ipaddress.ip_address("100.64.0.0") <= ip <= ipaddress.ip_address("100.127.255.255")
-    except ValueError:
-        return False
-
-
 def _record_violation(client_ip: str):
-    if _is_private_ip(client_ip):
-        return  # Never ban internal/proxy IPs
     _ip_violations[client_ip] = _ip_violations.get(client_ip, 0) + 1
     if _ip_violations[client_ip] >= _IP_BAN_THRESHOLD:
         _ip_blacklist.add(client_ip)
@@ -574,12 +552,9 @@ def _verify_api_key(
     if DISPATCH_API_KEY:
         valid_keys.add(DISPATCH_API_KEY)
     if x_api_key not in valid_keys:
-        _key_len = len(x_api_key)
-        _expected_len = len(API_KEY) if API_KEY else 0
-        logging.warning("[AUTH-DBG] invalid_api_key from %s key_prefix=%s key_len=%d expected_len=%d",
-                        client_ip, x_api_key[:12], _key_len, _expected_len)
+        logging.warning("[AUTH-DBG] invalid_api_key from %s key=%s", client_ip, x_api_key[:12])
         _record_violation(client_ip)
-        _security_audit_log("invalid_api_key", client_ip, f"key_len={_key_len}")
+        _security_audit_log("invalid_api_key", client_ip)
         raise HTTPException(401, "Invalid API key")
 
     try:

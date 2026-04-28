@@ -101,7 +101,7 @@ from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
     _require_dispatch_auth, _verify_dispatch_key,
     _check_login_throttle, _record_login_failure, _clear_login_failures,
-    _ip_blacklist, _ip_violations, _record_violation, _is_private_ip,
+    _ip_blacklist, _ip_violations, _record_violation,
     _used_nonces, _check_nonce_replay,
     _audit_chain, _security_audit_log,
     _sanitize_string, _SQL_INJECTION_PATTERN, _XSS_PATTERN,
@@ -518,10 +518,8 @@ async def rate_limit_middleware(request: Request, call_next):
     global _rate_cleanup_ts
     client_ip = request.client.host if request.client else "unknown"
     # IP blacklist check (merged — avoid extra middleware hop)
-    # Skip private/internal IPs (Railway proxies, load balancers)
-    if client_ip not in ("unknown", "") and not _is_private_ip(client_ip):
-        if client_ip in _ip_blacklist:
-            return JSONResponse({"detail": "Access denied"}, status_code=403)
+    if client_ip in _ip_blacklist:
+        return JSONResponse({"detail": "Access denied"}, status_code=403)
     _path = request.url.path
     # Skip rate limiting for SSE streams, hot paths, and health checks
     if _path.endswith("/stream") or _is_hot_path(_path):
@@ -1607,6 +1605,6 @@ if __name__ == "__main__":
         log_level="info",
         access_log=True,
         timeout_keep_alive=75,
-        limit_concurrency=8000,
+        limit_concurrency=2000,
         workers=1,
     )

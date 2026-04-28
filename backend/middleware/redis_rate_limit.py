@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _get_redis_url() -> Optional[str]:
     """Return Redis URL from environment, or None if not configured."""
-    url = (os.environ.get("REDIS_URL") or "").strip()
-    if url and url.startswith(("redis://", "rediss://", "unix://")):
-        return url
-    return os.environ.get("REDIS_TLS_URL")
+    return os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
 
 
 class RedisRateLimiter:

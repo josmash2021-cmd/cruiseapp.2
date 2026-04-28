@@ -65,8 +65,8 @@ else:
         # ── Railway Private PostgreSQL: direct connection, ultra-fast ──
         # Same-region network (us-east4) = sub-millisecond latency.
         # Tuned for hot-cache reuse and minimal checkout overhead.
-        _engine_kwargs["pool_size"] = 30
-        _engine_kwargs["max_overflow"] = 20
+        _engine_kwargs["pool_size"] = 10
+        _engine_kwargs["max_overflow"] = 5
         _engine_kwargs["pool_pre_ping"] = False   # skip 1 RTT per checkout (private net is stable)
         _engine_kwargs["pool_recycle"] = 600      # recycle before Railway idle timeout
         _engine_kwargs["pool_timeout"] = 5        # fail fast if pool exhausted
@@ -78,8 +78,8 @@ else:
         }
     else:
         # Public PostgreSQL (fallback)
-        _engine_kwargs["pool_size"] = 30
-        _engine_kwargs["max_overflow"] = 20
+        _engine_kwargs["pool_size"] = 10
+        _engine_kwargs["max_overflow"] = 5
         _engine_kwargs["pool_pre_ping"] = True
         _engine_kwargs["pool_recycle"] = 1800
         _engine_kwargs["pool_timeout"] = 10
@@ -918,8 +918,6 @@ async def migrate_postgres(conn):
         ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "ai_disabled", "BOOLEAN DEFAULT FALSE"),
-        ("cashouts", "method", "VARCHAR(20) DEFAULT 'standard'"),
-        ("cashouts", "fee", "FLOAT DEFAULT 0.0"),
     ]
     for table, col, col_type in migrations:
         try:

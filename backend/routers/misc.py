@@ -887,11 +887,8 @@ async def places_autocomplete(
         data = await loop.run_in_executor(None, _fetch)
         
         if data.get("status") not in ("OK", "ZERO_RESULTS"):
-            _status = data.get("status")
-            _error_msg = data.get("error_message", "")
-            logging.warning("[Places] Autocomplete error: %s | error_message=%s | key_prefix=%s",
-                          _status, _error_msg, GOOGLE_MAPS_API_KEY[:8] if GOOGLE_MAPS_API_KEY else "EMPTY")
-            raise HTTPException(502, f"Places API error: {_status}")
+            logging.warning("[Places] Autocomplete error: %s", data.get("status"))
+            raise HTTPException(502, f"Places API error: {data.get('status')}")
         
         # Return simplified predictions
         predictions = []
@@ -947,11 +944,8 @@ async def places_details(
         data = await loop.run_in_executor(None, _fetch)
         
         if data.get("status") != "OK":
-            _status = data.get("status")
-            _error_msg = data.get("error_message", "")
-            logging.warning("[Places] Details error: %s | error_message=%s | key_prefix=%s",
-                          _status, _error_msg, GOOGLE_MAPS_API_KEY[:8] if GOOGLE_MAPS_API_KEY else "EMPTY")
-            raise HTTPException(502, f"Places API error: {_status}")
+            logging.warning("[Places] Details error: %s", data.get("status"))
+            raise HTTPException(502, f"Places API error: {data.get('status')}")
         
         result = data.get("result", {})
         geo = result.get("geometry", {}).get("location", {})
@@ -1006,11 +1000,8 @@ async def places_geocode(
         data = await loop.run_in_executor(None, _fetch)
         
         if data.get("status") not in ("OK", "ZERO_RESULTS"):
-            _status = data.get("status")
-            _error_msg = data.get("error_message", "")
-            logging.warning("[Places] Geocode error: %s | error_message=%s | key_prefix=%s",
-                          _status, _error_msg, GOOGLE_MAPS_API_KEY[:8] if GOOGLE_MAPS_API_KEY else "EMPTY")
-            raise HTTPException(502, f"Geocoding API error: {_status}")
+            logging.warning("[Places] Geocode error: %s", data.get("status"))
+            raise HTTPException(502, f"Geocoding API error: {data.get('status')}")
         
         results = data.get("results", [])
         if not results:

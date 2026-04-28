@@ -9,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
     SupportChat, RiderPaymentMethod, SurgeZone, DispatchOffer, DriverIncentive,
-    AuditLog,
+    AuditLog, Cashout,
 )
+
+# Process uptime anchor — set once at module import
+_SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import AdminStatsResponse
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
@@ -18,7 +21,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
-    _user_dict, _trip_dict, _haversine,
+    _user_dict, _trip_dict, _haversine, _resolve_rider_display,
 )
 from services.fcm_service import _send_fcm_push
 from config import (
@@ -39,6 +42,8 @@ _pricing_config: dict = {
     "cancellation_fee": 5.0,
     "airport_fee": 10.0,
     "booking_fee": 2.0,
+    "scheduled_surcharge_pct": 0.12,
+    "airport_meet_greet_fee": 5.00,
     "vehicle_multipliers": {"sedan": 1.0, "suv": 1.5, "luxury": 2.0},
     "surge": {"night": 1.25, "holiday": 1.35},
     "driver_commission": 0.80,
@@ -99,13 +104,36 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
 async def admin_list_trips(
     status: Optional[str] = None,
     limit: int = 100, offset: int = 0,
+    include_auto_cancelled: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all trips with optional status filter. For dispatch admin panel."""
+    """List all trips with optional status filter. For dispatch admin panel.
+
+    By default, trips that were auto-cancelled by the system because no
+    driver was ever assigned (10 min on-demand timeout, 30 min scheduled
+    timeout) are HIDDEN — from the dispatch panel's perspective they
+    never actually happened and would just be noise. Pass
+    `include_auto_cancelled=true` to see them (for audit / analytics).
+    """
     limit = min(limit, 500)  # Cap max results
     query = select(Trip)
     if status:
         query = query.where(Trip.status == status)
+    if not include_auto_cancelled:
+        # Hide no-driver auto-cancels from the default list. Trips that
+        # did have a driver assigned (ghost cleanup, scheduler reminder,
+        # explicit cancels) stay visible regardless.
+        query = query.where(
+            ~(
+                (Trip.driver_id.is_(None))
+                & (
+                    Trip.cancel_reason.in_([
+                        "auto:no_driver_found_10min",
+                        "auto:scheduled_no_driver_30min",
+                    ])
+                )
+            )
+        )
     query = query.order_by(Trip.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     trips = result.scalars().all()
@@ -116,20 +144,28 @@ async def admin_list_trips(
     all_user_ids = rider_ids | driver_ids
 
     users_map = {}
+    users_obj_map = {}
     if all_user_ids:
         users_r = await db.execute(
-            select(User.id, User.first_name, User.last_name, User.phone)
-            .where(User.id.in_(all_user_ids))
+            select(User).where(User.id.in_(all_user_ids))
         )
-        for uid, fn, ln, phone in users_r.all():
-            users_map[uid] = (f"{fn} {ln}", phone or "")
+        for u in users_r.scalars().all():
+            users_obj_map[u.id] = u
+            users_map[u.id] = (f"{u.first_name or ''} {u.last_name or ''}".strip(), u.phone or "")
 
     out = []
     for t in trips:
         td = _trip_dict(t)
-        if t.rider_id and t.rider_id in users_map:
-            td["rider_name"] = users_map[t.rider_id][0]
-            td["rider_phone"] = users_map[t.rider_id][1]
+        # Rider: prefer guest_* fields (web bookings) so dispatch sees the real
+        # booker's name instead of the shared "Web Booking" system user.
+        rider_obj = users_obj_map.get(t.rider_id) if t.rider_id else None
+        _rn, _rp = _resolve_rider_display(t, rider_obj)
+        td["rider_name"] = _rn
+        td["rider_phone"] = _rp
+        # Flag so dispatch UI can tag web bookings visually if it wants to.
+        td["is_web_booking"] = bool(
+            (getattr(t, "guest_first_name", None) or getattr(t, "guest_last_name", None) or getattr(t, "guest_phone", None))
+        )
         if t.driver_id and t.driver_id in users_map:
             td["driver_name"] = users_map[t.driver_id][0]
             td["driver_phone"] = users_map[t.driver_id][1]
@@ -202,6 +238,81 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     return _trip_dict(trip)
 
 
+@router.get("/admin/stripe/instant-payouts-status", dependencies=[Depends(_verify_api_key)])
+async def admin_check_instant_payouts():
+    """Verify whether Instant Payouts is enabled at the platform level.
+
+    Lists the Connect platform's capabilities and surfaces whether
+    ``instant_payouts`` is granted. Use this before promising drivers
+    instant cashout in production — a platform without the capability
+    will get every Stripe.Payout(method="instant") rejected.
+    """
+    from config import STRIPE_SECRET
+    if not STRIPE_SECRET:
+        return {"ok": False, "error": "STRIPE_SECRET not configured"}
+    try:
+        import stripe as _s
+        _s.api_key = STRIPE_SECRET
+        # Retrieve the platform's own account (no id arg = the calling
+        # account, i.e. your platform).
+        acct = _s.Account.retrieve()
+        caps = acct.get("capabilities", {}) or {}
+        country = acct.get("country")
+        # On Express, Stripe also exposes a top-level `payouts_enabled`
+        # and a per-capability dict. We surface both for clarity.
+        return {
+            "ok": True,
+            "platform_country": country,
+            "platform_charges_enabled": acct.get("charges_enabled"),
+            "platform_payouts_enabled": acct.get("payouts_enabled"),
+            "instant_payouts_capability": caps.get("instant_payouts"),
+            "all_capabilities": caps,
+            "guidance": (
+                "If 'instant_payouts_capability' is null or 'inactive', request it "
+                "via Stripe support: https://support.stripe.com/contact "
+                "(category: Connect → request capability instant_payouts). "
+                "Without it, Stripe.Payout(method='instant') will fail at "
+                "request time with a clear error."
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@router.post("/admin/cancel-all-active", dependencies=[Depends(_verify_api_key)])
+async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
+    """Emergency: cancel ALL active trips. Requires API key auth.
+
+    Per-trip Firestore sync is fired after commit so every driver app
+    listening on trips/sql_<id> is notified and can tear its trip screen
+    down. Without this sync the drivers stay visually stuck on a dead
+    trip until the next manual refresh.
+    """
+    active = ["requested", "accepted", "driver_en_route", "arrived", "in_trip"]
+    result = await db.execute(select(Trip).where(Trip.status.in_(active)))
+    trips = result.scalars().all()
+    canceled = []
+    for t in trips:
+        t.status = "cancelled"
+        t.cancel_reason = "admin_bulk_cleanup"
+        canceled.append(t.id)
+    await db.commit()
+    if _HAS_FIRESTORE:
+        for trip_id in canceled:
+            try:
+                firestore_sync.sync_trip_status(
+                    trip_id=trip_id,
+                    status="cancelled",
+                    cancel_reason="admin_bulk_cleanup",
+                    cancelled_by="admin",
+                )
+            except Exception as e:
+                logging.warning(
+                    "Firestore bulk-cancel sync failed for trip %d: %s", trip_id, e
+                )
+    _security_audit_log("ADMIN_BULK_CANCEL", "api", f"canceled={canceled}")
+    return {"canceled_count": len(canceled), "trip_ids": canceled}
+
 @router.post("/admin/trips/{trip_id}/cancel", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Dedicated cancel endpoint for the dispatch admin app."""
@@ -211,8 +322,10 @@ async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = D
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    if trip.status in ("completed", "cancelled", "canceled"):
+        raise HTTPException(400, f"Trip already in terminal state '{trip.status}'")
     trip.status = "cancelled"
-    trip.cancel_reason = reason
+    trip.cancel_reason = reason or "admin_cancel"
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:
@@ -220,6 +333,7 @@ async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = D
             firestore_sync.sync_trip_status(
                 trip_id=trip.id, status=trip.status,
                 cancel_reason=trip.cancel_reason,
+                cancelled_by="admin",
             )
         except Exception as e:
             logging.warning("Firestore cancel sync failed: %s", e)
@@ -266,6 +380,19 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore accept sync failed: %s", e)
+    # Send push notification to rider: "Driver assigned!"
+    try:
+        rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider2 = rider_r2.scalar_one_or_none()
+        if rider2 and rider2.fcm_token:
+            asyncio.create_task(_send_fcm_push(
+                rider2.fcm_token,
+                "Driver Assigned",
+                f"{driver.first_name} has been assigned to your ride!",
+                data={"type": "driver_assigned", "trip_id": str(trip.id)},
+            ))
+    except Exception as e:
+        logging.warning("FCM push on accept failed: %s", e)
     _security_audit_log("ADMIN_TRIP_ACCEPTED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
     return _trip_dict(trip)
 
@@ -463,6 +590,7 @@ async def admin_list_verifications(
         "license_back_url": u.license_back_url,
         "vehicle_registration_url": u.vehicle_registration_url,
         "insurance_url": u.insurance_url,
+        "registration_photo_url": getattr(u, 'registration_photo_url', None),
         "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
@@ -506,6 +634,37 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
             )
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
+
+    # Fire-and-forget FCM push so the user's device sees the decision
+    # instantly, even when the app is backgrounded or the Firestore
+    # listener is not attached (e.g. home screen after reinstall).
+    # Matches the /auth/dispatch-approve flow for drivers.
+    try:
+        if user.fcm_token:
+            is_driver = (user.role or "") == "driver"
+            if action == "approve":
+                title = "You're Approved! 🎉" if is_driver else "Account Verified ✓"
+                body = (
+                    "Welcome to the Cruise family! Open the app to start driving."
+                    if is_driver
+                    else "Your identity has been verified. You can now request rides."
+                )
+                payload_type = "driver_approved" if is_driver else "rider_approved"
+            else:
+                title = "Verification Update"
+                body = reason or "Your verification was not approved. Please try again."
+                payload_type = "driver_rejected" if is_driver else "rider_rejected"
+            asyncio.create_task(
+                _send_fcm_push(
+                    user.fcm_token,
+                    title,
+                    body,
+                    {"type": payload_type, "user_id": str(user_id)},
+                )
+            )
+            logging.info("[ADMIN-VERIFY] FCM push queued for user %d (%s)", user_id, action)
+    except Exception as e:
+        logging.warning("[ADMIN-VERIFY] FCM push failed: %s", e)
 
     _security_audit_log("ADMIN_VERIFICATION", "admin", f"user_id={user_id} action={action} reason={reason}")
     return {
@@ -639,6 +798,44 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 async def admin_delete_all_users(db: AsyncSession = Depends(get_db)):
     """DISABLED â€” Mass deletion is too dangerous for a single API call."""
     raise HTTPException(403, "Mass user deletion is disabled. Delete users individually.")
+
+
+@router.post("/admin/users/bulk-status", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_bulk_update_user_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk update status for multiple users."""
+    data = await request.json()
+    user_ids = data.get("user_ids", [])
+    status = data.get("status", "")
+
+    if not user_ids or not status:
+        raise HTTPException(400, "user_ids and status are required")
+
+    if status not in ("active", "inactive", "suspended", "blocked"):
+        raise HTTPException(400, f"Invalid status: {status}")
+
+    updated = 0
+    for user_id in user_ids:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.status = status
+            db.add(user)
+            updated += 1
+
+            # Sync to Firestore
+            if _HAS_FIRESTORE:
+                try:
+                    collection = "drivers" if user.role == "driver" else "clients"
+                    firestore_sync.sync_user_status(user_id, status, collection)
+                except Exception as e:
+                    logging.warning("Firestore bulk status sync failed: %s", e)
+
+    await db.commit()
+    _security_audit_log("ADMIN_BULK_STATUS_UPDATE", "admin", f"updated={updated}, status={status}")
+    return {"updated": updated, "status": status}
 
 
 @router.get("/admin/users/{user_id}/chats", dependencies=[Depends(_require_dispatch_auth)])
@@ -840,11 +1037,13 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
     """Get all active trips with driver and rider info. Requires dispatch auth."""
     try:
-        # Single query with LEFT JOIN for driver — eliminates N+1
+        # LEFT JOIN rider too — guest web bookings have rider_id pointing to
+        # a shared system user which may be missing/null. We need those trips
+        # to show up in the dispatch panel regardless.
         RiderAlias = aliased(User)
         DriverAlias = aliased(User)
         result = await db.execute(
-            select(Trip, RiderAlias, DriverAlias).join(
+            select(Trip, RiderAlias, DriverAlias).outerjoin(
                 RiderAlias, RiderAlias.id == Trip.rider_id
             ).outerjoin(
                 DriverAlias, DriverAlias.id == Trip.driver_id
@@ -859,11 +1058,18 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
             if driver:
                 driver_info = {
                     "id": driver.id,
-                    "name": f"{driver.first_name} {driver.last_name}",
+                    "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
                     "phone": driver.phone,
                     "lat": driver.lat,
                     "lng": driver.lng,
                 }
+
+            # Prefer guest_* fields for web bookings so dispatch shows the real
+            # booker's name instead of "Web Booking" (the system user).
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            is_web = bool(
+                (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_last_name", None) or getattr(trip, "guest_phone", None))
+            )
 
             trips.append({
                 "id": trip.id,
@@ -879,14 +1085,17 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
                     "lng": trip.dropoff_lng,
                 },
                 "rider": {
-                    "id": rider.id,
-                    "name": f"{rider.first_name} {rider.last_name}",
-                    "phone": rider.phone,
+                    "id": rider.id if rider else None,
+                    "name": rider_name or "Rider",
+                    "phone": rider_phone or "",
+                    "is_guest": is_web,
                 },
                 "driver": driver_info,
                 "fare": trip.fare,
                 "created_at": trip.created_at.isoformat() if trip.created_at else None,
                 "vehicle_type": trip.vehicle_type,
+                "is_web_booking": is_web,
+                "source": "web" if is_web else ("app" if rider else "system"),
             })
 
         return {"trips": trips}
@@ -1268,4 +1477,325 @@ async def admin_commission_report(
         "total_driver_earnings": round(float(row.total_driver_earnings or 0), 2),
         "trips_count": row.trips_count or 0,
     }
+
+
+# ══════════════════════════════════════════════════════════
+#  ADMIN — Wipe Firestore Collections (fresh start)
+# ══════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════
+#  SYSTEM HEALTH ENDPOINT
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/health", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_system_health(db: AsyncSession = Depends(get_db)):
+    """Detailed system health for the dispatch dashboard."""
+    from config import _SERVER_START_TIME, _watchdog_stats
+    from services.event_bus import event_bus
+
+    # DB latency
+    db_ok = True
+    db_latency_ms = 0
+    try:
+        t0 = time.time()
+        await db.execute(text("SELECT 1"))
+        db_latency_ms = round((time.time() - t0) * 1000)
+    except Exception:
+        db_ok = False
+
+    # Uptime
+    uptime = datetime.now(timezone.utc) - _SERVER_START_TIME
+    hours = int(uptime.total_seconds() // 3600)
+    mins = int((uptime.total_seconds() % 3600) // 60)
+
+    # SSE stats
+    sse = event_bus.get_stats()
+
+    # Request stats
+    try:
+        from guardian_agent import guardian_agent
+        rg = guardian_agent.request_guardian
+        total_req = rg.successful_requests + rg.failed_requests
+        error_rate = (rg.failed_requests / max(total_req, 1)) * 100
+        req_stats = {
+            "total": total_req,
+            "successful": rg.successful_requests,
+            "failed": rg.failed_requests,
+            "timeouts": rg.timeout_requests,
+            "slow": rg.slow_requests,
+            "error_rate": round(error_rate, 1),
+        }
+    except Exception:
+        req_stats = {"total": 0, "error_rate": 0}
+
+    # Active counts
+    drivers_online = (await db.execute(
+        select(func.count(User.id)).where(User.role == "driver", User.is_online == True)
+    )).scalar() or 0
+
+    active_trips = (await db.execute(
+        select(func.count(Trip.id)).where(Trip.status.notin_(["completed", "cancelled"]))
+    )).scalar() or 0
+
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "uptime": f"{hours}h {mins}m",
+        "uptime_seconds": int(uptime.total_seconds()),
+        "database": {
+            "status": "ok" if db_ok else "down",
+            "latency_ms": db_latency_ms,
+            "failures": _watchdog_stats.get("db_failures", 0),
+            "reconnects": _watchdog_stats.get("db_reconnects", 0),
+        },
+        "requests": req_stats,
+        "sse": {
+            "driver_streams": sse.get("active_driver_streams", 0),
+            "trip_streams": sse.get("active_trip_streams", 0),
+            "total_events": sse.get("total_events_pushed", 0),
+        },
+        "drivers_online": drivers_online,
+        "active_trips": active_trips,
+        "firebase_failures": _watchdog_stats.get("firebase_failures", 0),
+    }
+
+
+# ══════════════════════════════════════════════════════════
+#  OPERATIONAL HEALTH DASHBOARD (dispatch panel)
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/health/dashboard", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_health_dashboard(db: AsyncSession = Depends(get_db)):
+    """Single-shot operational snapshot for the dispatch panel.
+
+    Returns JSON with server uptime, driver/trip counts, money totals for
+    today (UTC), and a handful of critical alerts (stuck trips, ghost
+    trips, drivers with stale FCM tokens). All DB work is done in a
+    handful of aggregate queries — no full-table scans into memory.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        uptime = now - _SERVER_START_TIME
+        today_start = func.cast(func.now(), Date)
+
+        # ---- Drivers ----------------------------------------------------
+        active_statuses = [
+            "requested", "accepted", "driver_en_route",
+            "arrived", "in_trip",
+            "scheduled_accepted", "scheduled_active",
+        ]
+
+        drivers_online = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver", User.is_online == True,
+            )
+        )).scalar() or 0
+
+        drivers_online_with_trip = (await db.execute(
+            select(func.count(func.distinct(User.id))).select_from(User).join(
+                Trip, Trip.driver_id == User.id,
+            ).where(
+                User.role == "driver",
+                User.is_online == True,
+                Trip.status.in_(active_statuses),
+            )
+        )).scalar() or 0
+
+        drivers_offline = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver",
+                or_(User.is_online == False, User.is_online.is_(None)),
+            )
+        )).scalar() or 0
+
+        # ---- Trips ------------------------------------------------------
+        trips_active = (await db.execute(
+            select(func.count(Trip.id)).where(Trip.status.in_(active_statuses))
+        )).scalar() or 0
+
+        # Today aggregates in one query using conditional SUMs
+        today_row = (await db.execute(
+            select(
+                func.count(case((Trip.status == "completed", 1))).label("completed"),
+                func.count(case((Trip.status == "cancelled", 1))).label("cancelled"),
+                func.count(case((
+                    and_(
+                        Trip.status == "cancelled",
+                        Trip.cancel_reason.like("auto:%"),
+                    ), 1,
+                ))).label("auto_cancelled"),
+                func.avg(case((Trip.status == "completed", Trip.fare))).label("avg_fare"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.fare))), 0.0).label("gross"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.driver_earnings))), 0.0).label("driver_earn"),
+                func.coalesce(func.sum(case((Trip.status == "completed", Trip.platform_fee))), 0.0).label("platform_earn"),
+            ).where(Trip.created_at >= today_start)
+        )).one()
+
+        completed_today = int(today_row.completed or 0)
+        cancelled_today = int(today_row.cancelled or 0)
+        auto_cancelled_today = int(today_row.auto_cancelled or 0)
+        avg_fare_today = round(float(today_row.avg_fare or 0.0), 2)
+        gross_today = round(float(today_row.gross or 0.0), 2)
+        driver_earn_today = round(float(today_row.driver_earn or 0.0), 2)
+        platform_earn_today = round(float(today_row.platform_earn or 0.0), 2)
+
+        # ---- Money: pending cashouts -----------------------------------
+        pending_cashouts = (await db.execute(
+            select(func.count(Cashout.id)).where(Cashout.status == "pending")
+        )).scalar() or 0
+
+        # ---- Alerts -----------------------------------------------------
+        stuck_cutoff = now - timedelta(minutes=10)
+        trips_stuck = (await db.execute(
+            select(func.count(Trip.id)).where(
+                Trip.status == "requested",
+                Trip.driver_id.is_(None),
+                Trip.scheduled_at.is_(None),
+                Trip.created_at < stuck_cutoff,
+            )
+        )).scalar() or 0
+
+        ghost_cutoff = now - timedelta(hours=3)
+        ghost_trips = (await db.execute(
+            select(func.count(Trip.id)).where(
+                Trip.status.in_(["driver_en_route", "arrived", "in_trip"]),
+                Trip.updated_at < ghost_cutoff,
+            )
+        )).scalar() or 0
+
+        stale_fcm = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == "driver",
+                User.is_online == True,
+                or_(User.fcm_token.is_(None), User.fcm_token == ""),
+            )
+        )).scalar() or 0
+
+        return {
+            "timestamp": now.isoformat(),
+            "server": {
+                "status": "healthy",
+                "uptime_seconds": int(uptime.total_seconds()),
+            },
+            "drivers": {
+                "online": int(drivers_online),
+                "online_with_active_trip": int(drivers_online_with_trip),
+                "offline": int(drivers_offline),
+            },
+            "trips": {
+                "active_now": int(trips_active),
+                "completed_today": completed_today,
+                "cancelled_today": cancelled_today,
+                "auto_cancelled_today": auto_cancelled_today,
+                "avg_fare_today": avg_fare_today,
+            },
+            "money": {
+                "gross_fares_today": gross_today,
+                "driver_earnings_today": driver_earn_today,
+                "platform_earnings_today": platform_earn_today,
+                "pending_cashouts": int(pending_cashouts),
+            },
+            "alerts": {
+                "trips_stuck_requested": int(trips_stuck),
+                "ghost_trips": int(ghost_trips),
+                "drivers_with_stale_fcm": int(stale_fcm),
+            },
+        }
+    except Exception as e:
+        logging.error("[admin_health_dashboard] failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ══════════════════════════════════════════════════════════
+#  PROMO CODES ENDPOINTS
+# ══════════════════════════════════════════════════════════
+
+@router.get("/admin/promos", dependencies=[Depends(_require_dispatch_auth)])
+async def list_promos(db: AsyncSession = Depends(get_db)):
+    """List all promo codes (Firestore-based for now)."""
+    if not _HAS_FIRESTORE:
+        return []
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    docs = fdb.collection("promo_codes").order_by("createdAt", direction=_fs.Query.DESCENDING).get()
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+
+@router.post("/admin/promos", dependencies=[Depends(_require_dispatch_auth)])
+async def create_promo(body: dict = Body(...)):
+    """Create a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    doc_data = {
+        "code": body.get("code", "").upper().strip(),
+        "discountType": body.get("discountType", "percentage"),
+        "discountValue": float(body.get("discountValue", 0)),
+        "maxUses": int(body.get("maxUses", 0)),
+        "currentUses": 0,
+        "minFare": float(body.get("minFare", 0)),
+        "expiresAt": body.get("expiresAt"),
+        "isActive": True,
+        "description": body.get("description", ""),
+        "createdAt": _fs.SERVER_TIMESTAMP,
+    }
+    ref = fdb.collection("promo_codes").add(doc_data)
+    _security_audit_log("PROMO_CREATED", "admin", json.dumps({"code": doc_data["code"]}))
+    return {"status": "ok", "id": ref[1].id}
+
+
+@router.patch("/admin/promos/{promo_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def update_promo(promo_id: str, body: dict = Body(...)):
+    """Update a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    fdb.collection("promo_codes").document(promo_id).update(body)
+    return {"status": "ok"}
+
+
+@router.delete("/admin/promos/{promo_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def delete_promo(promo_id: str):
+    """Delete a promo code."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fdb = _fs.client()
+    fdb.collection("promo_codes").document(promo_id).delete()
+    _security_audit_log("PROMO_DELETED", "admin", promo_id)
+    return {"status": "ok"}
+
+
+@router.post("/admin/wipe-firestore", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_wipe_firestore():
+    """Delete all documents from Firestore collections (fresh start)."""
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    db = _fs.client()
+    COLLECTIONS = [
+        "verifications", "drivers", "clients", "users",
+        "trips", "notifications", "support_chats",
+        "admin_alerts", "driver_locations",
+    ]
+    results = {}
+    for coll_name in COLLECTIONS:
+        try:
+            count = 0
+            while True:
+                docs = db.collection(coll_name).limit(400).get()
+                batch_docs = list(docs)
+                if not batch_docs:
+                    break
+                batch = db.batch()
+                for doc in batch_docs:
+                    batch.delete(doc.reference)
+                    count += 1
+                batch.commit()
+            results[coll_name] = count
+        except Exception as e:
+            results[coll_name] = f"error: {e}"
+    _security_audit_log("ADMIN_WIPE_FIRESTORE", "admin", json.dumps(results))
+    return {"status": "ok", "deleted": results}
 

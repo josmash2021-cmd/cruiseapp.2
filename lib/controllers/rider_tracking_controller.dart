@@ -747,7 +747,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _startAnimatedRouteDraw();
 
       // Fit camera to show driver + pickup + dropoff
-      Future.delayed(const Duration(milliseconds: 200), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _fitRouteBounds();
       });
 
@@ -1779,7 +1779,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _startAnimatedRouteDraw();
 
     // Fit camera to remaining route with adaptive zoom
-    Future.delayed(const Duration(milliseconds: 200), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _fitRouteBounds();
     });
   }
@@ -1802,16 +1802,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every 1500ms.
-  /// Skips during arrived phase — driver is stationary, camera should be stable.
+  /// Start real-time camera tracking - follows driver every 800ms.
+  /// Smoother than 1500ms while still preventing animation overlap.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
-    // Follow every 1500ms — long enough for flyTo (1200ms) to complete
-    // before the next tick, preventing overlapping animations that cause
-    // camera jitter. During onTrip we use _chaseCamera() which keeps the
-    // driver at a fixed position on screen (navigation-style) instead of
-    // constantly re-fitting bounds.
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+    // Follow every 800ms — smooth but prevents overlapping flyTo animations
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       if (_phase == _TrackPhase.arrived) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;

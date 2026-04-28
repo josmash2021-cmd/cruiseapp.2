@@ -353,8 +353,19 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   Future<void> _enterApp() async {
     if (!mounted) return;
+    // Go through the full approved flow: cinematic screen → instructions → photo
     Navigator.of(context).pushAndRemoveUntil(
-      slideFromRightRoute(const DriverProfilePhotoScreen()),
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, __, ___) => const DriverApprovedScreen(),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
+          );
+        },
+      ),
       (_) => false,
     );
   }

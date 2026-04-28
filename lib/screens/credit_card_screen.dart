@@ -100,6 +100,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
       if (!mounted) return;
       // Stripe failed — still save card locally so user can retry later
       await _saveCardLocally(brand, last4);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.orange.shade700,
@@ -120,6 +121,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
       if (!mounted) return;
       // Any other error — still save card locally
       await _saveCardLocally(brand, last4);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.orange.shade700,

@@ -24,6 +24,16 @@ def _normalize_database_url(url: str, *, async_driver: bool, private: bool = Fal
     # with PgBouncer transaction mode.
     _is_pgbouncer = ":6543" in url or "pooler.supabase.com" in url
 
+    # CRITICAL: Supabase PgBouncer port 6543 uses TRANSACTION mode.
+    # In transaction mode, SET search_path only lasts for one transaction,
+    # so SQLAlchemy queries fail with "relation does not exist" because
+    # each query may run on a different backend connection.
+    # Fix: switch to port 5432 which uses SESSION mode, where search_path
+    # persists for the entire client session (and NullPool creates a fresh
+    # session per checkout anyway).
+    if ":6543" in url:
+        url = url.replace(":6543/", ":5432/", 1)
+
     if async_driver:
         # Use psycopg3 for ALL PostgreSQL connections (not just PgBouncer).
         # asyncpg has prepared statement issues with PgBouncer, and mixing

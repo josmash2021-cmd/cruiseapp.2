@@ -113,6 +113,24 @@ const double _carHeight = 28.0;
 
 class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
+
+  /// Handles ride cancellation after the user confirms in the dialog.
+  /// Extracted into a separate method so the analyzer recognises the
+  /// mounted guard as a proper async-gap guard clause.
+  void _handleRideCancellation() {
+    if (!mounted) return;
+    _rideLifecycleTimer?.cancel();
+    _tripPollTimer?.cancel();
+    setState(() {
+      _showDriverArrivedScreen = false;
+      _rideProgress = 0;
+      _clearRouteAnnotation();
+      _activeRoutePoints = [];
+      _driverRoutePoints = [];
+    });
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+  }
   // Theme-aware colors – _c is set at the top of build()
   late AppColors _c;
   bool? _lastIsDark; // tracks theme so we can re-style the map
@@ -1794,7 +1812,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 onCancel: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
+                    builder: (dialogCtx) => AlertDialog(
                       backgroundColor: _c.mapSurface,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
@@ -1812,14 +1830,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ),
                       actions: [
                         TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
+                          onPressed: () => Navigator.pop(dialogCtx, false),
                           child: Text(
                             S.of(context).keepRide,
                             style: TextStyle(color: _gold),
                           ),
                         ),
                         TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
+                          onPressed: () => Navigator.pop(dialogCtx, true),
                           child: Text(
                             S.of(context).cancelButton,
                             style: const TextStyle(color: Colors.redAccent),
@@ -1828,18 +1846,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ],
                     ),
                   );
-                  if (confirm == true && mounted) {
-                    _rideLifecycleTimer?.cancel();
-                    _tripPollTimer?.cancel();
-                    setState(() {
-                      _showDriverArrivedScreen = false;
-                      _rideProgress = 0;
-                      _clearRouteAnnotation();
-                      _activeRoutePoints = [];
-                      _driverRoutePoints = [];
-                    });
-                    Navigator.of(context).maybePop();
-                  }
+                  if (confirm == true) _handleRideCancellation();
                 },
               ),
             ),

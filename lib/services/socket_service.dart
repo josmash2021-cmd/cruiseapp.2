@@ -78,7 +78,7 @@ class SocketService {
       serverUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])  // PRIORITY: WebSocket only (faster than polling fallback)
-          .setAuth({'token': token})
+          .setQuery({'token': token})    // Token in query string for handshake auth
           .enableForceNew()
           .enableReconnection()
           .setReconnectionAttempts(999)  // Infinite reconnection attempts

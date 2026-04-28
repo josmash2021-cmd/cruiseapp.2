@@ -94,7 +94,7 @@ android {
                 ?: localProperties.getProperty("MAPBOX_ACCESS_TOKEN", "")
 
         applicationId = "com.cruiseinride.app"
-        minSdk = flutter.minSdkVersion
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -618,7 +618,7 @@ async def crash_protection_middleware(request: Request, call_next):
 @app.get("/ping")
 async def ping():
     """Ultra-fast connectivity check — no DB, no auth, no overhead."""
-    return {"status": "ok", "version": "2.1-fix-applied"}
+    return {"status": "ok"}
 
 @app.get("/health")
 async def health(x_api_key: str = Header(default="")):

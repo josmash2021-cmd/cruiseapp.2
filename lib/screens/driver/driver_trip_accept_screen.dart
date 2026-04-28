@@ -431,17 +431,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Continuous GPS → GpsService (rider can track driver in real-time) ────
   void _startLiveGpsForRider() async {
-    // Ensure GpsService knows our identity
-    try {
-      final driverId = await ApiService.getCurrentUserId();
-      if (!mounted) return;
-      if (driverId != null) {
-        _gpsService.startTracking(driverId.toString());
-        _gpsService.setActiveTrip(widget.tripId.toString());
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
     // H5 fix: cancel any pre-existing live GPS subscription before creating
     // a new one. Without this, calling _startLiveGpsForRider more than once
     // (e.g. on lifecycle resume) leaks a native geolocation stream.
@@ -459,6 +448,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         pos.speed,
       );
     });
+
+    // Start GpsService upload ASAP — don't block on async user ID lookup.
+    // The position stream is already running; once GpsService starts, it
+    // will upload the latest position immediately.
+    try {
+      final driverId = await ApiService.getCurrentUserId();
+      if (!mounted) return;
+      if (driverId != null) {
+        _gpsService.startTracking(driverId.toString());
+        _gpsService.setActiveTrip(widget.tripId.toString());
+        // Eager-upload the latest known position so the rider sees the car
+        // immediately instead of waiting for the next Geolocator tick.
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null) {
+          _gpsService.updatePosition(
+            LatLng(lastPos.latitude, lastPos.longitude),
+            lastPos.heading,
+            lastPos.speed,
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   // ── Resolve generic / placeholder addresses via reverse geocoding ────────

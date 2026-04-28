@@ -2639,72 +2639,313 @@ extension _MapScreenWidgets on _MapScreenState {
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  //  RIDER NAVIGATION HEADER (Uber-style turn card)
+  //  RIDER NAVIGATION HEADER — Full driver info card (Uber-style)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _buildRiderNavHeader() {
     final isInTrip = _tripStatus == 'in_trip';
     final isArrived = _tripStatus == 'arrived';
+    final isDriverEnRoute = !isInTrip && !isArrived;
 
-    // Compute arrival time chip
-    String chipLabel;
-    IconData chipIcon;
-    Color chipColor;
-    Color iconColor;
+    // Status dot color
+    final statusColor = isInTrip
+        ? const Color(0xFF4CAF50)
+        : isArrived
+            ? const Color(0xFF4FC3F7)
+            : _gold;
 
-    if (isInTrip) {
-      // Show estimated arrival time
-      final now = DateTime.now();
-      // Parse ETA string (e.g. "8 min") to get minutes
-      final etaNum =
-          int.tryParse(_driverEta.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      final arrival = now.add(Duration(minutes: etaNum));
-      final h = arrival.hour % 12 == 0 ? 12 : arrival.hour % 12;
-      final m = arrival.minute.toString().padLeft(2, '0');
-      final period = arrival.hour < 12 ? 'am' : 'pm';
-      chipLabel = S.of(context).arrivalTime('$h:$m$period');
-      chipIcon = Icons.access_time_rounded;
-      chipColor = Colors.white;
-      iconColor = Colors.black87;
-    } else if (isArrived) {
-      chipLabel = S.of(context).driverArrived;
-      chipIcon = Icons.place_rounded;
-      chipColor = const Color(0xFF4FC3F7);
-      iconColor = Colors.black87;
-    } else {
-      chipLabel = _driverEta.isNotEmpty
-          ? S.of(context).etaLabel(_driverEta)
-          : S.of(context).driverEnRoute;
-      chipIcon = Icons.directions_car_rounded;
-      chipColor = Colors.white;
-      iconColor = Colors.black87;
-    }
+    // Status text
+    final statusText = isInTrip
+        ? S.of(context).onTripToDestination
+        : isArrived
+            ? S.of(context).meetDriverAtPickup
+            : S.of(context).driverEnRouteHeader;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: chipColor,
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Status row with dot ──
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                statusText,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // ── Driver info row ──
+          Row(
+            children: [
+              VerifiedAvatar(
+                photoUrl: _driverPhotoUrl.isNotEmpty ? _driverPhotoUrl : null,
+                radius: Responsive.w(22),
+                fallbackName: _driverName,
+                uid: _currentDriverId?.toString(),
+                role: 'driver',
+                isVerified: true,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _driverName,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: Responsive.sp(16),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, color: _gold, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          _driverRating.toStringAsFixed(1),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Message button
+              _headerActionButton(
+                icon: Icons.chat_bubble_outline,
+                onTap: () {
+                  // TODO: Open chat with driver
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // ── Action buttons row ──
+          Row(
+            children: [
+              // Message input (decorative)
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: _gold.withValues(alpha: 0.25),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        color: Colors.white.withValues(alpha: 0.4),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        S.of(context).typeAMessage,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Phone button
+              _headerActionButton(
+                icon: Icons.phone_rounded,
+                onTap: () async {
+                  if (_driverPhone.isNotEmpty) {
+                    final uri = Uri(scheme: 'tel', path: _driverPhone);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri);
+                    }
+                  }
+                },
+              ),
+              const SizedBox(width: 8),
+              // Share button
+              _headerActionButton(
+                icon: Icons.share_outlined,
+                onTap: () {
+                  // TODO: Share trip status
+                },
+              ),
+              const SizedBox(width: 8),
+              // More options
+              _headerActionButton(
+                icon: Icons.more_horiz,
+                onTap: () {
+                  // TODO: Show more options
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.12),
+            width: 1,
+          ),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white.withValues(alpha: 0.8),
+          size: 18,
+        ),
+      ),
+    );
+  }
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  BOTTOM STATUS BAR — ETA and trip status
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  Widget _buildBottomStatusBar() {
+    final isInTrip = _tripStatus == 'in_trip';
+    final isArrived = _tripStatus == 'arrived';
+
+    final statusColor = isInTrip
+        ? const Color(0xFF4CAF50)
+        : isArrived
+            ? const Color(0xFFFF5252)
+            : _gold;
+
+    final statusText = isInTrip
+        ? S.of(context).onTheWayToDestination
+        : isArrived
+            ? S.of(context).driverIsWaitingForYou
+            : S.of(context).driverOnTheWay(_driverName);
+
+    final etaText = isArrived
+        ? ''
+        : (_driverEta.isNotEmpty && _driverEta != 'Arrived'
+            ? _driverEta.replaceAll(RegExp(r'[^0-9]'), '')
+            : '');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
           ),
         ],
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(chipIcon, size: 15, color: iconColor),
-          const SizedBox(width: 5),
-          Text(
-            chipLabel,
-            style: TextStyle(
-              color: iconColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
             ),
           ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              statusText,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (etaText.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    etaText,
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    'min',
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

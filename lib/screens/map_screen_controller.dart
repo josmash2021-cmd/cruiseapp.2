@@ -746,6 +746,7 @@ extension _MapScreenController on _MapScreenState {
               _setState(() {
                 _driverEta = 'Arrived';
                 _tripStatus = 'arrived';
+                _showDriverArrivedScreen = true;
               });
             }
             await _updateDriverRoute(status);

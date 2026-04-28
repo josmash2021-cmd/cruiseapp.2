@@ -911,6 +911,14 @@ class S {
       _es ? 'En viaje al destino' : 'On trip to destination';
   String get driverEnRoute =>
       _es ? 'Tu conductor está en camino' : 'Your driver is on the way';
+  String get driverEnRouteHeader =>
+      _es ? 'Conductor en camino' : 'Driver on the way';
+  String get typeAMessage =>
+      _es ? 'Escribe un mensaje...' : 'Type a message...';
+  String get onTheWayToDestination =>
+      _es ? 'En camino a tu destino' : 'On the way to your destination';
+  String get driverIsWaitingForYou =>
+      _es ? '¡El conductor te está esperando!' : 'Driver is waiting for you!';
   String get driverHasArrived =>
       _es ? 'Tu conductor ha llegado' : 'Your driver has arrived';
   String get onWayToDestination =>
@@ -3618,6 +3626,11 @@ class S {
       _es ? '$name está esperando' : '$name is waiting';
   String get pressWhenWithDriver =>
       _es ? 'Presiona cuando\nestés con el driver' : 'Press when you\nare with the driver';
+  String get isWaiting => _es ? 'está esperando' : 'is waiting';
+  String get freeWaitTime => _es ? 'Tiempo de espera gratis' : 'Free wait time';
+  String get rideStartsAutomatically => _es
+      ? 'El viaje comenzará automáticamente si no confirmas'
+      : 'The ride will start automatically if you do not confirm';
   String get yourTripConfirmed =>
       _es ? 'Tu viaje\nconfirmado' : 'Your trip\nconfirmed';
 

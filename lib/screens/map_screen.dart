@@ -36,6 +36,7 @@ import 'ride_rating_screen.dart';
 import 'schedule_booking_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
+import 'driver_arrived_screen.dart';
 import '../navigation/smooth_motion.dart';
 import '../navigation/route_snapper.dart';
 import '../services/api_service.dart';
@@ -43,6 +44,7 @@ import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../widgets/bouncing_button.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../widgets/smart_map_pin.dart';
 import '../widgets/verified_avatar.dart';
 import 'pickup_dropoff_search_screen.dart';
 import '../utils/responsive.dart';
@@ -151,6 +153,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
+  mapbox.PointAnnotation? _driverCarAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
 
   // ── Cinematic animation ──
@@ -251,6 +254,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   String _driverPhone = '';
   String _tripStatus =
       'driver_en_route'; // tracks current trip phase for rider UI
+  bool _showDriverArrivedScreen = false; // true when driver arrived overlay is showing
 
   String _driverNote = '';
 
@@ -1544,6 +1548,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (mgr != null) {
       if (_routeAnnot != null) { try { await mgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     }
+    // Also clear the driver car marker
+    _clearDriverCarMarker();
     // Reset cinematic state so next route gets a fresh animation
     _cinematicDone = false;
     _cinematicPitch = 0;
@@ -1752,9 +1758,90 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           if (_stage == RideStage.riding)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
-              left: 16,
-              right: 60,
+              left: 0,
+              right: 0,
               child: _buildRiderNavHeader(),
+            ),
+
+          // â”€â”€ Bottom Status Bar (shown during riding stage) â”€â”€
+          if (_stage == RideStage.riding)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+              child: _buildBottomStatusBar(),
+            ),
+
+          // â”€â”€ Driver Arrived overlay (semi-transparent over map) â”€â”€
+          if (_stage == RideStage.riding && _tripStatus == 'arrived' && _showDriverArrivedScreen)
+            Positioned.fill(
+              child: DriverArrivedOverlay(
+                driverName: _driverName,
+                driverPhotoUrl: _driverPhotoUrl.isNotEmpty ? _driverPhotoUrl : null,
+                driverCar: _driverCar,
+                driverPlate: _driverPlate,
+                driverRating: _driverRating,
+                driverPhone: _driverPhone.isNotEmpty ? _driverPhone : null,
+                freeWaitMinutes: 2,
+                onDismiss: () {
+                  setState(() => _showDriverArrivedScreen = false);
+                  // Fit the FULL route (pickup â†’ dropoff) into view
+                  WidgetsBinding.instance.addPostFrameCallback((_) async {
+                    if (!mounted) return;
+                    await _fitFullRouteVisible();
+                  });
+                },
+                onCancel: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: _c.mapSurface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      title: Text(
+                        S.of(context).cancelRide,
+                        style: TextStyle(
+                          color: _c.textPrimary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      content: Text(
+                        S.of(context).cancelRideConfirmation,
+                        style: TextStyle(color: _c.textSecondary),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text(
+                            S.of(context).keepRide,
+                            style: TextStyle(color: _gold),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: Text(
+                            S.of(context).cancelButton,
+                            style: const TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true && mounted) {
+                    _rideLifecycleTimer?.cancel();
+                    _tripPollTimer?.cancel();
+                    setState(() {
+                      _showDriverArrivedScreen = false;
+                      _rideProgress = 0;
+                      _clearRouteAnnotation();
+                      _activeRoutePoints = [];
+                      _driverRoutePoints = [];
+                    });
+                    Navigator.of(context).maybePop();
+                  }
+                },
+              ),
             ),
 
           // Floating pin label chips at the exact route endpoint positions.

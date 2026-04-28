@@ -201,6 +201,39 @@ extension _MapScreenMap on _MapScreenState {
     if (mounted) _mapController?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
   }
 
+  /// Fit the FULL route (pickup â†’ dropoff) so both endpoints are visible
+  /// with comfortable padding. Used when rider dismisses the arrived overlay.
+  Future<void> _fitFullRouteVisible() async {
+    if (_mapController == null) return;
+    final points = <LatLng>[];
+    if (_currentPosition != null) points.add(_currentPosition!);
+    if (_dropoffPosition != null) points.add(_dropoffPosition!);
+    if (points.length < 2) return;
+
+    final coords = points
+        .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
+        .toList();
+
+    final media = MediaQuery.of(context);
+    final topInset = media.padding.top + 100; // space for driver info card
+    final bottomInset = media.padding.bottom + 80; // space for bottom bar
+
+    final cam = await _mapController!.cameraForCoordinatesPadding(
+      coords,
+      mapbox.CameraOptions(bearing: 0, pitch: 0),
+      mapbox.MbxEdgeInsets(
+        top: topInset,
+        left: 40,
+        bottom: bottomInset,
+        right: 40,
+      ),
+      null, null,
+    );
+    if (mounted) {
+      _mapController?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
+    }
+  }
+
   /// Returns the bottom pixel inset to account for the bottom panel height.
   double _panelBottomInset() {
     switch (_stage) {
@@ -362,7 +395,9 @@ extension _MapScreenMap on _MapScreenState {
     if (!mounted) return;
     _driverPosition = pos;
     _driverBearing = bearing;
-    // Car marker removed - no car icons on rider map
+
+    // Update driver car marker position and rotation on the map
+    _updateDriverCarMarker(pos, bearing);
 
     if (_stage == RideStage.riding && _driverPosition != null) {
       _panTo(_driverPosition!, zoom: 18.5, bearing: bearing, tilt: 0);
@@ -370,6 +405,53 @@ extension _MapScreenMap on _MapScreenState {
 
     if (_driverRoutePoints.length > 2) {
       _trimRiderRoute(_driverPosition!);
+    }
+  }
+
+  /// Creates or updates the driver car marker on the map.
+  Future<void> _updateDriverCarMarker(LatLng pos, double bearing) async {
+    final mgr = _pointAnnotMgr;
+    if (mgr == null) return;
+
+    if (_driverCarAnnot == null) {
+      // First time — create the marker with a car icon
+      try {
+        final carBytes = await buildGoldenPinBytes(
+          icon: Icons.local_taxi,
+          size: 64,
+          scale: 2.0,
+          isPickup: true,
+        );
+        _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          image: carBytes,
+          iconSize: 0.7,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconRotate: bearing,
+        ));
+      } catch (_) {
+        // Silently fail — marker will retry next frame
+      }
+    } else {
+      // Update existing marker position and rotation
+      try {
+        _driverCarAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude));
+        _driverCarAnnot!.iconRotate = bearing;
+        await mgr.update(_driverCarAnnot!);
+      } catch (_) {
+        // Marker may have been invalidated — reset and retry
+        _driverCarAnnot = null;
+      }
+    }
+  }
+
+  /// Removes the driver car marker from the map.
+  void _clearDriverCarMarker() {
+    if (_driverCarAnnot != null && _pointAnnotMgr != null) {
+      try {
+        _pointAnnotMgr!.delete(_driverCarAnnot!);
+      } catch (_) {}
+      _driverCarAnnot = null;
     }
   }
 

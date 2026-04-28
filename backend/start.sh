@@ -1,4 +1,11 @@
 #!/bin/bash
+# Change to backend directory so imports work correctly
+cd "$(dirname "$0")" || exit 1
+
+export PYTHONPATH="$(pwd)"
+echo "=== Working directory: $(pwd) ==="
+echo "=== PYTHONPATH: $PYTHONPATH ==="
+
 echo "=== Running DB migrations ==="
 python migrate.py && echo "Migrations OK" || echo "Migrations skipped/failed - continuing"
 

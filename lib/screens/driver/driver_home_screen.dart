@@ -1117,6 +1117,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
           } catch (_) {}
+          // Disable Mapbox native blue puck — GoldLocationDot annotation handles location display
+          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
           setState(() => _mapReady = true);
         },
         onStyleLoadedListener: (_) async {

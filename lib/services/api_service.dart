@@ -2620,14 +2620,14 @@ class ApiService {
   }) async {
     try {
       final h = await _authHeaders();
-      final res = await _client
-          .get(
-            Uri.parse(
-              '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm',
-            ),
-            headers: h,
-          )
-          .timeout(const Duration(seconds: 5));
+      // Cache for 15s — driver counts don't change rapidly
+      final res = await _cachedGet(
+        Uri.parse(
+          '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm',
+        ),
+        headers: h,
+        cacheTtl: const Duration(seconds: 15),
+      );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final body = jsonDecode(res.body);
         if (body is List) return body.length;

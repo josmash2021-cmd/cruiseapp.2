@@ -382,32 +382,40 @@ void main() async {
       }
 
       // ── Parallel startup: independent inits run concurrently ──
+      // FIX: Each init has its own try/catch so one failure doesn't crash the app
       // Group 1: no dependencies between these
-      await Future.wait([
-        PrefsCache.init(),           // cache SharedPreferences singleton early
-        SecurityService.init(),
-        CacheService.initialize(),
-        LocalDataService.init(),
-        LocalCache.init(),
-        _initFirebase(),
-        ApiService.preResolveDns(), // warm DNS cache early — eliminates first-request latency
+      final group1Results = await Future.wait([
+        _safeInit('PrefsCache', PrefsCache.init()),
+        _safeInit('SecurityService', SecurityService.init()),
+        _safeInit('CacheService', CacheService.initialize()),
+        _safeInit('LocalDataService', LocalDataService.init()),
+        _safeInit('LocalCache', LocalCache.init()),
+        _safeInit('Firebase', _initFirebase()),
+        _safeInit('DNS', ApiService.preResolveDns()),
       ]);
-      debugPrint('[Perf] Group 1 init: ${perfStopwatch.elapsedMilliseconds}ms');
+      debugPrint('[Perf] Group 1 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group1Results)');
 
       // Group 2: depend on Firebase being ready
-      await Future.wait([
-        ApiService.init(),
-        AnalyticsService.instance.init(),
-        SocketService.init(),
-        FeatureFlags.initRemoteConfig(),
+      // If Firebase failed, skip Group 2 but still launch the app
+      final group2Results = await Future.wait([
+        _safeInit('ApiService', ApiService.init()),
+        _safeInit('Analytics', AnalyticsService.instance.init()),
+        _safeInit('Socket', SocketService.init()),
+        _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig()),
       ]);
-      debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms');
+      debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group2Results)');
 
       // Limit in-memory image cache to prevent OOM on long sessions
       PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50 MB — prevents OOM on low-end devices
       PaintingBinding.instance.imageCache.maximumSize = 500;
 
-      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      // Mapbox init with error handling — prevents crash on invalid token
+      try {
+        MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      } catch (e) {
+        debugPrint('[MapboxInit] Failed to set token: $e');
+      }
+      
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(
         const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
@@ -422,6 +430,18 @@ void main() async {
       }
     },
   );
+}
+
+/// Wraps an async init with try/catch so one failure doesn't crash the app.
+/// Returns true if init succeeded, false if it failed (but app continues).
+Future<bool> _safeInit(String name, Future<void> future) async {
+  try {
+    await future;
+    return true;
+  } catch (e) {
+    debugPrint('[InitError] $name failed: $e');
+    return false;
+  }
 }
 
 /// Firebase init extracted so it can run in Future.wait with other services.

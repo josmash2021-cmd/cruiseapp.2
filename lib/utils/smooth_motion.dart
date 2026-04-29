@@ -32,18 +32,16 @@ class SmoothMotion {
   DateTime? _lastTargetAt;
 
   /// How much of the remaining angular gap to close per second when applying
-  /// the low-pass filter on bearing. Lower = smoother nose turns.
-  static const double _bearingLerpPerSec = 0.65;
+  /// the low-pass filter on bearing. Higher = more responsive turns.
+  static const double _bearingLerpPerSec = 2.5;
 
   /// How much of the residual lat/lng gap to close per second via
-  /// proportional correction (on top of the constant-velocity advance).
-  /// Lower = more constant-velocity feel, less "catch-up" snapping.
-  static const double _correctionPerSec = 0.55;
+  /// proportional correction. Higher = more responsive, follows GPS closer.
+  static const double _correctionPerSec = 1.8;
 
   /// Freeze velocity after this many seconds without a fresh GPS fix.
-  /// 6 s gives the car enough runway to glide through intersection
-  /// GPS shadows without stopping.
-  static const double _maxExtrapolationSec = 6.0;
+  /// 2 s is enough for urban GPS shadows while keeping responsiveness.
+  static const double _maxExtrapolationSec = 2.0;
 
   double? get lat => _lat;
   double? get lng => _lng;

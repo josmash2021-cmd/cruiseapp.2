@@ -231,8 +231,8 @@ extension _HomeScreenController on _HomeScreenState {
     _locationSub?.cancel();
     _locationSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0, // Every GPS fix for fluid movement
       ),
     ).listen((Position p) {
       if (!mounted) return;

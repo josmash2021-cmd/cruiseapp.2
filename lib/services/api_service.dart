@@ -1280,11 +1280,10 @@ class ApiService {
   static Future<Map<String, dynamic>> getVerificationStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _cachedGet(
-      Uri.parse('$_baseUrl/auth/verification-status'),
-      headers: _jsonHeaders(token),
-      cacheTtl: const Duration(seconds: 60),
-    );
+    // NEVER cache verification status — it determines if user can use the app
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/verification-status'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 5));
     return _parse(res);
   }
 
@@ -1292,11 +1291,10 @@ class ApiService {
   static Future<Map<String, dynamic>> getDriverApprovalStatus() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
-    final res = await _cachedGet(
-      Uri.parse('$_baseUrl/auth/driver-approval-status'),
-      headers: _jsonHeaders(token),
-      cacheTtl: const Duration(seconds: 60),
-    );
+    // NEVER cache approval status — it determines if driver can go online
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/driver-approval-status'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 5));
     return _parse(res);
   }
 

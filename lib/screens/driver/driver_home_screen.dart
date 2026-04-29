@@ -513,14 +513,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
 
       // ── Real-time GPS stream ──
-      // distanceFilter: 5 -> accept fixes every 5 meters.
-      // SmoothMotion still interpolates smoothly between fixes.
-      // Reduces CPU/battery drain vs raw 0-meter stream.
+      // distanceFilter: 2 -> accept fixes every 2 meters.
+      // SmoothMotion interpolates smoothly between fixes.
+      // Balance between accuracy and battery life.
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
+          distanceFilter: 2,
         ),
       ).listen((p) {
         if (!mounted) return;
@@ -1111,18 +1111,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
         onMapCreated: (ctrl) async {
           _mapController = ctrl;
+          // Disable Mapbox native puck IMMEDIATELY before any annotation creation
+          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
           _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try {
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
             await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
           } catch (_) {}
-          // Disable Mapbox native blue puck — GoldLocationDot annotation handles location display
-          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
           setState(() => _mapReady = true);
         },
         onStyleLoadedListener: (_) async {
           if (_mapController != null) {
+            // Re-disable puck after style reload (Mapbox may re-enable it)
+            await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
             await _applyNavyGoldTheme(_mapController!);
             if (_pointAnnotMgr != null) {
               try {

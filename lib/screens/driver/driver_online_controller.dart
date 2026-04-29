@@ -767,9 +767,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            // distanceFilter: 5 -> fixes every 5 meters.
-            // SmoothMotion still glides smoothly. Reduces CPU/battery.
-            distanceFilter: 5,
+            // distanceFilter: 2 -> fixes every 2 meters.
+            // SmoothMotion still glides smoothly. Balance accuracy/battery.
+            distanceFilter: 2,
           ),
         ).listen((pos) {
           if (!mounted) return;

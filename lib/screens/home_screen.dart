@@ -398,7 +398,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _miniDot.build(this, () {
       if (mounted) _updateMiniMapAnnotation();
     });
-    _checkDriversOnline();
+    // Defer driver check until after first frame to avoid blocking startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkDriversOnline();
+    });
     _listenServiceZones();
     _listenVerificationStatus();
     _driverCheckTimer = Timer.periodic(

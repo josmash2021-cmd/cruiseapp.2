@@ -44,7 +44,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
           await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
           await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
         } catch (_) {}
-        // LocationPuck disabled — GoldLocationDot annotation handles location display
+        // Explicitly disable Mapbox native location puck — GoldLocationDot
+        // annotation handles location display with smooth interpolation.
+        await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+        // Create gold dot annotation immediately if position is already known
+        if (_currentLatLng != null) _updateMiniMapAnnotation();
         // Draw route if there's an active ride
         if (_activeRide != null) {
           _drawRouteOnMap();

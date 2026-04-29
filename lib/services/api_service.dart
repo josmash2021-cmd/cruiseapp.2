@@ -152,9 +152,7 @@ class ApiService {
   // ── Known endpoints ────────────────────────────────────────────────────────
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
-  /// Primary: Vercel Edge (caches responses, lower latency)
-  /// Fallback: Railway (direct backend)
-  static const String _edgeUrl = 'https://cruiseapp-2.vercel.app';
+  /// Production backend URL — Railway direct (fastest path)
   static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
@@ -193,12 +191,12 @@ class ApiService {
       err is _CircuitOpenException;
 
   /// Cache GET responses to reduce server load and improve perceived speed.
-  /// Default TTL is 30s — most data (driver counts, earnings, etc.) doesn't
-  /// change rapidly enough to warrant constant re-fetching.
+  /// Default TTL is 60s — aggressive caching for snappy UI.
+  /// Callers with rapidly-changing data should pass a shorter TTL.
   static Future<http.Response> _cachedGet(
     Uri url, {
     Map<String, String>? headers,
-    Duration cacheTtl = const Duration(seconds: 30),
+    Duration cacheTtl = const Duration(seconds: 60),
     bool useCache = true,
   }) async {
     final cacheKey = url.toString();
@@ -269,8 +267,8 @@ class ApiService {
     return IOClient(inner);
   }();
 
-  /// In-memory active URL. Vercel Edge first, Railway fallback.
-  static String _activeUrl = _edgeUrl;
+  /// In-memory active URL. Always Railway direct.
+  static String _activeUrl = _productionUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
@@ -320,7 +318,7 @@ class ApiService {
     if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
       _activeUrl = saved;
     } else {
-      _activeUrl = _edgeUrl;
+      _activeUrl = _productionUrl;
     }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
@@ -393,10 +391,9 @@ class ApiService {
     };
 
     // Build the full list of URLs to try — all at once, in parallel.
-    // Priority: Vercel Edge → Railway direct
     final allCandidates = candidates ?? (_dynamicTunnelUrl != null
         ? [_dynamicTunnelUrl!]
-        : [_edgeUrl, _productionUrl]);
+        : [_productionUrl, _activeUrl]);
     final urls = allCandidates
         .where((u) => u.isNotEmpty)
         .toSet()
@@ -841,7 +838,7 @@ class ApiService {
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/favorites'),
       headers: h,
-      cacheTtl: const Duration(seconds: 30),
+      cacheTtl: const Duration(seconds: 300), // 5 min — addresses rarely change
       useCache: true,
     );
     final parsed = _parse(res);
@@ -1750,7 +1747,7 @@ class ApiService {
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/drivers/$driverId/stats'),
       headers: h,
-      cacheTtl: const Duration(seconds: 30),
+      cacheTtl: const Duration(seconds: 300), // 5 min — stats don't change rapidly
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -1803,7 +1800,7 @@ class ApiService {
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
       headers: _jsonHeaders(token),
-      cacheTtl: const Duration(seconds: 30),
+      cacheTtl: const Duration(seconds: 300), // 5 min — earnings update periodically
     );
 
     if (res.statusCode >= 200 && res.statusCode < 300) {

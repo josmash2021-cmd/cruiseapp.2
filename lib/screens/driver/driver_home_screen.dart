@@ -113,6 +113,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
+  // Throttle camera flyTo to prevent jitter when GPS fires rapidly
+  DateTime _lastCameraFlyTo = DateTime(2000);
   // Prevents _resumeActiveTrip() from pushing DriverTripAcceptScreen twice.
   // Six different code paths call _resumeActiveTrip (initState, app resume,
   // polling, notification tap, refresh-complete, Firestore listener). Without
@@ -528,19 +530,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _goldDot.setTarget(ll.latitude, ll.longitude);
         debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
-        // Camera follows instantly via setCamera — no conflicting flyTo animations.
+        // Camera follows with throttled flyTo — prevents jitter from rapid GPS.
         // The GoldLocationDot 60fps ticker handles smooth annotation movement.
-        // Smooth camera follow — flyTo with 300ms matches the dot's glide feel.
-        // setCamera was instant and made the dot appear to jump every second.
-        _mapController?.flyTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
-            zoom: 16.0,
-            pitch: 0.0,
-            bearing: 0.0,
-          ),
-          mapbox.MapAnimationOptions(duration: 300),
-        );
+        final now = DateTime.now();
+        if (now.difference(_lastCameraFlyTo).inMilliseconds >= 800) {
+          _lastCameraFlyTo = now;
+          _mapController?.flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
+              zoom: 16.0,
+              pitch: 0.0,
+              bearing: 0.0,
+            ),
+            mapbox.MapAnimationOptions(duration: 400),
+          );
+        }
       });
     } catch (_) {}
   }

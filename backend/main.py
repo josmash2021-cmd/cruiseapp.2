@@ -549,18 +549,24 @@ async def rate_limit_middleware(request: Request, call_next):
     if len(bucket) >= _RATE_LIMIT:
         return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
     bucket.append(now)
-    # Periodic cleanup of stale buckets (every 2 min) + cap total size
+    # Periodic cleanup of stale buckets (every 2 min) — fire-and-forget to avoid blocking request
     if now - _rate_cleanup_ts > 120:
         _rate_cleanup_ts = now
-        stale = [ip for ip, dq in _rate_buckets.items() if not dq or dq[-1] < now - _RATE_WINDOW]
-        for ip in stale:
-            del _rate_buckets[ip]
-        # Cap total buckets to prevent memory leak from many unique IPs
-        if len(_rate_buckets) > _MAX_RATE_BUCKETS:
-            _sorted = sorted(_rate_buckets, key=lambda k: _rate_buckets[k][-1] if _rate_buckets[k] else 0)
-            for ip in _sorted[:len(_rate_buckets) - _MAX_RATE_BUCKETS]:
-                del _rate_buckets[ip]
+        asyncio.create_task(_cleanup_rate_buckets())
     return await call_next(request)
+
+
+async def _cleanup_rate_buckets():
+    """Background cleanup of stale rate limiter buckets."""
+    now = time.monotonic()
+    stale = [ip for ip, dq in _rate_buckets.items() if not dq or dq[-1] < now - _RATE_WINDOW]
+    for ip in stale:
+        del _rate_buckets[ip]
+    # Cap total buckets to prevent memory leak
+    if len(_rate_buckets) > _MAX_RATE_BUCKETS:
+        _sorted = sorted(_rate_buckets, key=lambda k: _rate_buckets[k][-1] if _rate_buckets[k] else 0)
+        for ip in _sorted[:len(_rate_buckets) - _MAX_RATE_BUCKETS]:
+            del _rate_buckets[ip]
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
 _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
@@ -587,6 +593,7 @@ async def request_size_limit_middleware(request: Request, call_next):
 _HOT_PATHS = {
     "/dispatch/driver/pending", "/drivers/nearby", "/health", "/ping",
     "/dispatch/trip/status", "/auth/me", "/auth/account-status",
+    "/dispatch/driver/pending/stream",  # SSE stream for drivers
     "/drivers/vehicle", "/drivers/earnings",
     "/dispatch/driver/accept", "/dispatch/driver/reject",
 }

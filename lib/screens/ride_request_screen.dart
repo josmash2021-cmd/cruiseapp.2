@@ -38,6 +38,7 @@ import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/car_image_3d.dart';
+import '../utils/responsive.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_particles_background.dart';
 import '../widgets/gold_pin_renderer.dart';

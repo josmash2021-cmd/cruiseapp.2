@@ -1306,8 +1306,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final t = selected ? _activeCardGlowCtrl.value : 0.0;
 
         return Container(
-          // Match home-screen card height (168) for visual parity
-          height: 168,
+          // Responsive card height based on screen size
+          height: Responsive.vehicleCardHeight,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             // Match home screen: solid black card with gold border
@@ -1351,8 +1351,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   children: [
                     // Car image with 3D shadows + gold glow when VIP
                     SizedBox(
-                      width: 130,
-                      height: 90,
+                      width: Responsive.vehicleCarWidth,
+                      height: Responsive.vehicleCarHeight,
                       child: CarImage3D(
                         assetPath: carAsset,
                         cacheWidth: 360,
@@ -1369,10 +1369,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     Text(
                       displayName,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Poppins',
                         color: Colors.white,
-                        fontSize: 14,
+                        fontSize: Responsive.vehicleNameSize,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
                       ),

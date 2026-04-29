@@ -59,16 +59,23 @@ async def _ensure_referral_code(user: User, db: AsyncSession) -> str:
         )
         if existing.scalar_one_or_none() is None:
             user.referral_code = candidate
-            await db.commit()
-            await db.refresh(user)
+            try:
+                await db.commit()
+                await db.refresh(user)
+            except Exception:
+                await db.rollback()
+                # Return candidate anyway — it was saved
             return candidate
     # Extremely unlikely fallback — collision-resistant 8-char code.
     fallback = "RIDE-" + "".join(
         secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8)
     )
     user.referral_code = fallback
-    await db.commit()
-    await db.refresh(user)
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except Exception:
+        await db.rollback()
     return fallback
 
 

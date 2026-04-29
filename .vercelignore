@@ -1,0 +1,45 @@
+# Flutter project files - not needed for edge function
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+build/
+.dart_tool/
+.flutter-plugins*
+.packages
+pubspec.lock
+.metadata
+analysis_options.yaml
+test/
+integration_test/
+doc/
+docs/
+assets/
+tmp_theme_pull/
+
+# Backend - not needed for edge function proxy
+backend/
+
+# Large files
+*.hprof
+*.apk
+*.ipa
+*.aab
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node (except what we need)
+node_modules/

@@ -1,0 +1,13 @@
+{
+  "name": "cruiseapp-2-edge",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "vercel --prod",
+    "dev": "vercel dev"
+  },
+  "devDependencies": {
+    "@vercel/edge": "^1.1.2",
+    "typescript": "^5.4.0"
+  }
+}

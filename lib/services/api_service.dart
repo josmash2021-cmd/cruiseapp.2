@@ -152,6 +152,9 @@ class ApiService {
   // ── Known endpoints ────────────────────────────────────────────────────────
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
+  /// Primary: Vercel Edge (caches responses, lower latency)
+  /// Fallback: Railway (direct backend)
+  static const String _edgeUrl = 'https://cruiseapp-2.vercel.app';
   static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
@@ -189,11 +192,13 @@ class ApiService {
   static bool isCircuitOpenError(Object err) =>
       err is _CircuitOpenException;
 
-  /// Cache GET responses for a short time to reduce server load
+  /// Cache GET responses to reduce server load and improve perceived speed.
+  /// Default TTL is 30s — most data (driver counts, earnings, etc.) doesn't
+  /// change rapidly enough to warrant constant re-fetching.
   static Future<http.Response> _cachedGet(
     Uri url, {
     Map<String, String>? headers,
-    Duration cacheTtl = const Duration(seconds: 3),
+    Duration cacheTtl = const Duration(seconds: 30),
     bool useCache = true,
   }) async {
     final cacheKey = url.toString();
@@ -264,8 +269,8 @@ class ApiService {
     return IOClient(inner);
   }();
 
-  /// In-memory active URL. Always Railway.
-  static String _activeUrl = _productionUrl;
+  /// In-memory active URL. Vercel Edge first, Railway fallback.
+  static String _activeUrl = _edgeUrl;
 
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
@@ -315,7 +320,7 @@ class ApiService {
     if (saved != null && saved.isNotEmpty && !_isLocalUrl(saved)) {
       _activeUrl = saved;
     } else {
-      _activeUrl = _productionUrl;
+      _activeUrl = _edgeUrl;
     }
 
     // Try to read the latest tunnel URL from Firestore (written by startup
@@ -388,11 +393,10 @@ class ApiService {
     };
 
     // Build the full list of URLs to try — all at once, in parallel.
-    // When Firestore has a dynamic URL, skip Railway so the configured
-    // backend always wins (Railway health returns 200 even when broken).
+    // Priority: Vercel Edge → Railway direct
     final allCandidates = candidates ?? (_dynamicTunnelUrl != null
         ? [_dynamicTunnelUrl!]
-        : [_productionUrl, _activeUrl]);
+        : [_edgeUrl, _productionUrl]);
     final urls = allCandidates
         .where((u) => u.isNotEmpty)
         .toSet()
@@ -430,7 +434,7 @@ class ApiService {
       }
     }
 
-    // Last resort: use production URL
+    // Last resort: use Railway direct
     await setServerUrl(_productionUrl);
     debugPrint('[ApiService] probe → fallback to $_productionUrl');
     return _productionUrl;

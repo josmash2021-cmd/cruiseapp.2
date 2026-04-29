@@ -1162,7 +1162,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
           image: _pickupPinBytes!,
-          iconSize: 0.80,
+          iconSize: 0.55,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: [0, 0],
         ));
@@ -1231,11 +1231,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       onTick: (t) {
         double scale;
         if (t < 0.4) {
-          scale = 0.01 + (0.90 - 0.01) * (t / 0.4);
+          scale = 0.01 + (0.62 - 0.01) * (t / 0.4);
         } else if (t < 0.7) {
-          scale = 0.90 + (0.72 - 0.90) * ((t - 0.4) / 0.3);
+          scale = 0.62 + (0.50 - 0.62) * ((t - 0.4) / 0.3);
         } else {
-          scale = 0.72 + (0.80 - 0.72) * ((t - 0.7) / 0.3);
+          scale = 0.50 + (0.55 - 0.50) * ((t - 0.7) / 0.3);
         }
         try {
           _pointAnnotMgr!.update(_dropoffAnnot!..iconSize = scale);

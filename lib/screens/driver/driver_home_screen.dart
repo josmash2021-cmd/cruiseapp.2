@@ -217,8 +217,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _loadDriverData();
     _checkVerification().then((_) => _checkVehicleDocStatus());
     _startDocApprovalListener();
-    // Start account status polling immediately
-    _checkAccountStatus();
+    // Defer account status check to post-frame — don't block UI startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAccountStatus();
+    });
     _accountStatusTimer = Timer.periodic(
       const Duration(seconds: 300),
       (_) => _checkAccountStatus(),

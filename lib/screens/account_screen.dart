@@ -70,25 +70,34 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _loadUser() async {
+    // Show cached data INSTANTLY (no waiting for backend)
     final user = await UserSession.getUser();
     final favs = await LocalDataService.getFavorites();
     final verified = await LocalDataService.isIdentityVerified();
-    // Fetch email verification status from backend
-    bool emailVer = false;
-    try {
-      final me = await ApiService.getMe();
-      if (me != null) {
-        emailVer = me['email_verified'] == true;
-      }
-    } catch (_) {}
+    
     if (!mounted) return;
     setState(() {
       _user = user;
       _favorites = favs;
       _isVerified = verified;
-      _emailVerified = emailVer;
       _loading = false;
     });
+    
+    // Refresh from backend in background (non-blocking)
+    unawaited(_refreshFromBackend());
+  }
+  
+  Future<void> _refreshFromBackend() async {
+    try {
+      final me = await ApiService.getMe().timeout(const Duration(seconds: 4));
+      if (me != null && mounted) {
+        setState(() {
+          _emailVerified = me['email_verified'] == true;
+        });
+      }
+    } catch (_) {
+      // Silently ignore — cached data is still showing
+    }
   }
 
   String? _savedAddress(String label) {

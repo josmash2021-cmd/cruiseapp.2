@@ -296,20 +296,11 @@ class _SplashScreenState extends State<SplashScreen>
       return const WelcomeScreen();
     }
 
-    // ── Validate token against backend — if DB was wiped, token is dead ──
+    // ── Validate token against backend — BUT DON'T BLOCK navigation ──
+    // If backend is slow, user still gets in with cached session
+    // Home screens will re-check in background
     await initFuture;
-    try {
-      final me = await ApiService.getMe().timeout(const Duration(seconds: 5));
-      if (me == null) {
-        // Token invalid or user deleted — force logout
-        await ApiService.clearToken();
-        await UserSession.logout();
-        return const WelcomeScreen();
-      }
-    } catch (e) {
-      debugPrint('[SplashScreen] Token validation failed: $e');
-      // Network error — be lenient, let user in with cached session
-    }
+    unawaited(_validateTokenInBackground());
 
     // ── User has local session — route by cached role immediately ──
     final mode = await UserSession.getMode();
@@ -482,6 +473,23 @@ class _SplashScreenState extends State<SplashScreen>
       d['driver_status'] == 'rejected' ||
       d['status'] == 'rejected' ||
       d['approvalStatus'] == 'rejected';
+
+  /// Validates token in background — if invalid, logs out user.
+  /// Does NOT block navigation — user gets in with cached session.
+  Future<void> _validateTokenInBackground() async {
+    try {
+      final me = await ApiService.getMe().timeout(const Duration(seconds: 5));
+      if (me == null) {
+        debugPrint('[Splash] Token invalid — logging out in background');
+        await ApiService.clearToken();
+        await UserSession.logout();
+        // Note: user is already on home screen, they'll be redirected on next app open
+      }
+    } catch (e) {
+      debugPrint('[Splash] Token validation failed (network?): $e');
+      // Network error — be lenient, let user in with cached session
+    }
+  }
 
   /// Syncs profile and preloads dashboard data in background.
   /// This makes the home screen load instantly because data is already cached.

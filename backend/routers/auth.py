@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
-    ChatMessage,
+    ChatMessage, DispatchOffer,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
@@ -986,6 +986,234 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
         data["average_rating"] = None
         data["ratings_count"] = 0
     return data
+
+
+@router.get("/auth/dashboard", dependencies=[Depends(_verify_api_key)])
+async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return everything the home screen needs in ONE call.
+
+    Combines: user profile, verification status, account status,
+    active trip, driver earnings/stats (if driver), ratings.
+    This eliminates 5-10 separate HTTP requests per screen open.
+    """
+    # ── 1. User profile (same as /auth/me) ────────────────────────────
+    if not user.is_online:
+        try:
+            await db.execute(
+                User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
+            )
+            await db.commit()
+            user.is_online = True
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_client_online(user.id, True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Recover photo_url from Firestore if missing
+    _needs_photo = (
+        not user.photo_url
+        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
+    )
+    if _needs_photo and _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if user.role == "driver" else "clients"
+            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
+            if doc.exists:
+                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
+                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
+                    user.photo_url = fs_photo
+                    await db.execute(
+                        User.__table__.update().where(User.__table__.c.id == user.id).values(photo_url=fs_photo)
+                    )
+                    await db.commit()
+        except Exception:
+            pass
+
+    profile = _user_dict(user)
+
+    # Ratings
+    try:
+        cnt_q = await db.execute(select(func.count(Rating.id)).where(Rating.to_user_id == user.id))
+        cnt = cnt_q.scalar() or 0
+        if cnt:
+            avg_q = await db.execute(select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id))
+            avg = avg_q.scalar()
+            profile["average_rating"] = round(float(avg), 2) if avg is not None else None
+        else:
+            profile["average_rating"] = None
+        profile["ratings_count"] = int(cnt)
+    except Exception:
+        profile["average_rating"] = None
+        profile["ratings_count"] = 0
+
+    # ── 2. Verification status (always fresh — critical) ───────────────
+    ver_status = user.verification_status or "none"
+    ver_reason = user.verification_reason
+    if _HAS_FIRESTORE and ver_status not in ("approved",):
+        try:
+            fs_status = firestore_sync.get_verification_status(user.id)
+            if fs_status and fs_status.get("status") in ("approved", "rejected"):
+                ver_status = fs_status["status"]
+                ver_reason = fs_status.get("reason")
+                user.verification_status = ver_status
+                user.verification_reason = ver_reason
+                if ver_status == "approved":
+                    user.is_verified = True
+                    if not user.verified_at:
+                        user.verified_at = datetime.now(timezone.utc)
+                await db.commit()
+                await db.refresh(user)
+        except Exception as e:
+            logging.warning("[/auth/dashboard] Firestore verification sync failed: %s", e)
+
+    # ── 3. Account status (always fresh — critical) ────────────────────
+    account_status = user.status or "active"
+    if _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if user.role == "driver" else "clients"
+            fs_status = firestore_sync.get_account_status(user.id, collection)
+            if fs_status and fs_status != account_status:
+                await db.execute(
+                    User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
+                )
+                await db.commit()
+                account_status = fs_status
+                invalidate_user_cache(user.id)
+        except Exception as e:
+            logging.error("[/auth/dashboard] Firestore account status check failed: %s", e)
+
+    # ── 4. Active trip (if any) ────────────────────────────────────────
+    active_trip = None
+    try:
+        from sqlalchemy import or_
+        trip_result = await db.execute(
+            select(Trip).where(
+                and_(
+                    or_(Trip.rider_id == user.id, Trip.driver_id == user.id),
+                    Trip.status.in_(("requested", "accepted", "driver_arrived", "in_progress", "picked_up"))
+                )
+            ).order_by(Trip.created_at.desc()).limit(1)
+        )
+        trip = trip_result.scalar_one_or_none()
+        if trip:
+            active_trip = _trip_dict(trip)
+            # Add counterparty info
+            if user.role == "rider" and trip.driver_id:
+                drv_r = await db.execute(select(User).where(User.id == trip.driver_id))
+                drv = drv_r.scalar_one_or_none()
+                if drv:
+                    active_trip["driver"] = {
+                        "id": drv.id,
+                        "first_name": drv.first_name,
+                        "last_name": drv.last_name,
+                        "photo_url": drv.photo_url,
+                        "phone": drv.phone,
+                        "average_rating": profile.get("average_rating"),
+                    }
+            elif user.role == "driver" and trip.rider_id:
+                rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_r.scalar_one_or_none()
+                if rider:
+                    active_trip["rider"] = {
+                        "id": rider.id,
+                        "first_name": rider.first_name,
+                        "last_name": rider.last_name,
+                        "photo_url": rider.photo_url,
+                        "phone": rider.phone,
+                    }
+    except Exception as e:
+        logging.warning("[/auth/dashboard] active trip query failed: %s", e)
+
+    # ── 5. Driver earnings + stats (if driver) ─────────────────────────
+    driver_data = None
+    if user.role == "driver":
+        # Quick earnings (last 7 days, limited to 20 trips)
+        from datetime import timedelta
+        since = datetime.now(timezone.utc) - timedelta(days=7)
+        try:
+            result = await db.execute(
+                select(Trip).where(
+                    and_(Trip.driver_id == user.id, Trip.status == "completed", Trip.created_at >= since)
+                ).order_by(Trip.created_at.desc()).limit(20)
+            )
+            trips = result.scalars().all()
+            total = user.total_earnings or 0.0
+            if not total and trips:
+                total = round(sum((t.driver_earnings or (t.fare or 0) * 0.72) for t in trips), 2)
+
+            # Daily breakdown (last 7 days)
+            now = datetime.now(timezone.utc)
+            day_labels = []
+            daily_earnings = []
+            for i in range(6, -1, -1):
+                day = (now - timedelta(days=i)).date()
+                day_labels.append(day.strftime("%a"))
+                day_total = sum(
+                    (t.driver_earnings or (t.fare or 0) * 0.72)
+                    for t in trips if t.created_at and t.created_at.date() == day
+                )
+                daily_earnings.append(round(day_total, 2))
+
+            # Stats (lightweight counts)
+            from sqlalchemy import case as sql_case
+            from models.database import DispatchOffer
+            offer_r = await db.execute(
+                select(
+                    func.count(DispatchOffer.id).label("total"),
+                    func.sum(sql_case((DispatchOffer.status == "accepted", 1), else_=0)).label("accepted"),
+                ).where(DispatchOffer.driver_id == user.id)
+            )
+            offer_row = offer_r.one()
+            total_offers = offer_row.total or 0
+            accepted = int(offer_row.accepted or 0)
+            acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
+
+            trip_r = await db.execute(
+                select(
+                    func.count(Trip.id).label("total"),
+                    func.sum(sql_case((Trip.status == "completed", 1), else_=0)).label("completed"),
+                ).where(Trip.driver_id == user.id)
+            )
+            trip_row = trip_r.one()
+            completed_trips = int(trip_row.completed or 0)
+            total_trips = trip_row.total or 0
+            on_time_rate = round(((completed_trips / total_trips) * 100), 1) if total_trips > 0 else 100.0
+
+            driver_data = {
+                "earnings": {
+                    "total": total,
+                    "trips_count": len(trips),
+                    "daily_earnings": daily_earnings,
+                    "day_labels": day_labels,
+                },
+                "stats": {
+                    "acceptance_rate": round(acceptance_rate, 1),
+                    "completed_trips": completed_trips,
+                    "total_trips": total_trips,
+                    "on_time_rate": on_time_rate,
+                    "cruise_level": user.cruise_level or "bronze",
+                },
+            }
+        except Exception as e:
+            logging.warning("[/auth/dashboard] driver data query failed: %s", e)
+
+    return {
+        "profile": profile,
+        "verification": {
+            "status": ver_status,
+            "reason": ver_reason,
+            "is_verified": user.is_verified or False,
+        },
+        "account": {
+            "status": account_status,
+        },
+        "active_trip": active_trip,
+        "driver_data": driver_data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 @router.post("/auth/offline", dependencies=[Depends(_verify_api_key)])
 async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2125,6 +2353,44 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
         except Exception as e:
             logging.warning("Firestore reject sync failed: %s", e)
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
+
+
+@router.get("/auth/dashboard", dependencies=[Depends(_verify_api_key)])
+async def dashboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Return everything the home screen needs in a single request.
+    
+    Combines: profile, verification status, account status, active ride,
+    scheduled rides, favorites, notifications, promo status.
+    This eliminates 5-8 separate API calls on app startup.
+    """
+    from services.local_data_service import LocalDataService
+    
+    # Build response
+    result = {
+        "user": _user_dict(user),
+        "verification_status": user.verification_status or "none",
+        "is_verified": user.is_verified or False,
+        "account_status": user.status or "active",
+        "role": user.role or "rider",
+    }
+    
+    # Active ride (if any)
+    try:
+        active_trip = await db.execute(
+            select(Trip).where(
+                and_(
+                    Trip.rider_id == user.id,
+                    Trip.status.in_(["requested", "accepted", "driver_en_route", "arrived", "in_progress"])
+                )
+            ).order_by(Trip.created_at.desc()).limit(1)
+        )
+        trip = active_trip.scalar_one_or_none()
+        if trip:
+            result["active_ride"] = _trip_dict(trip)
+    except Exception:
+        result["active_ride"] = None
+    
+    return result
 
 
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])

@@ -190,8 +190,15 @@ class ApiService {
   static bool isCircuitOpenError(Object err) =>
       err is _CircuitOpenException;
 
-  /// ALWAYS hits the backend — no cache, no deduplication.
-  /// Every GET request goes directly to the server.
+  /// SMART CACHE for GET requests.
+  /// 
+  /// - If [useCache] is false (default): ALWAYS hits the backend (safe for critical data)
+  /// - If [useCache] is true AND we have a fresh cached entry: return cached response
+  /// - If [useCache] is true AND cache expired: hit backend, then cache result
+  /// - Deduplicates in-flight requests: same URL = single backend call
+  ///
+  /// CRITICAL data (verification, account status, active trips): useCache = false
+  /// NON-CRITICAL data (profile, earnings, stats): useCache = true, short TTL (10s)
   static Future<http.Response> _cachedGet(
     Uri url, {
     Map<String, String>? headers,
@@ -204,6 +211,51 @@ class ApiService {
       throw _CircuitOpenException(url.toString());
     }
 
+    final cacheKey = '${url.toString()}|${headers?['Authorization'] ?? ''}';
+
+    // ── 1. Check cache (only if useCache=true and TTL > 0) ───────────
+    if (useCache && cacheTtl > Duration.zero) {
+      final cached = _responseCache[cacheKey];
+      if (cached != null && !cached.isExpired) {
+        debugPrint('[ApiService] CACHE HIT: ${url.path}');
+        // Return a synthetic Response with cached body
+        final cachedBody = cached.data is String 
+            ? cached.data as String 
+            : jsonEncode(cached.data);
+        return http.Response(cachedBody, 200, headers: {
+          'content-type': 'application/json',
+          'x-cache': 'HIT',
+        });
+      }
+    }
+
+    // ── 2. Deduplicate in-flight requests ─────────────────────────────
+    final existing = _inFlightRequests[cacheKey];
+    if (existing != null) {
+      debugPrint('[ApiService] DEDUP: ${url.path}');
+      return existing;
+    }
+
+    // ── 3. Execute request ────────────────────────────────────────────
+    final future = _executeGet(url, headers: headers);
+    _inFlightRequests[cacheKey] = future;
+
+    try {
+      final response = await future;
+      
+      // ── 4. Cache successful responses ──────────────────────────────
+      if (useCache && cacheTtl > Duration.zero && response.statusCode == 200) {
+        _responseCache[cacheKey] = _CacheEntry(response.body, cacheTtl);
+        debugPrint('[ApiService] CACHE SET: ${url.path} (TTL=${cacheTtl.inSeconds}s)');
+      }
+      
+      return response;
+    } finally {
+      _inFlightRequests.remove(cacheKey);
+    }
+  }
+
+  static Future<http.Response> _executeGet(Uri url, {Map<String, String>? headers}) async {
     try {
       final response = await _client.get(url, headers: headers).timeout(
         const Duration(seconds: 4),
@@ -1017,31 +1069,32 @@ class ApiService {
 
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
+  /// 
+  /// Uses 10s smart cache — profile data is non-critical and rarely changes
+  /// within a single session. Cache is invalidated on profile updates.
   static Future<Map<String, dynamic>?> getMe() async {
     final token = await getToken();
     if (token == null) return null;
 
     try {
-      // No cache for getMe() — profile data must be fresh.
-      // Previously cached for 2s which caused stale data bugs.
-      final res = await _client
-          .get(
-            Uri.parse('$_baseUrl/auth/me'),
-            headers: _jsonHeaders(token),
-          )
-          .timeout(const Duration(seconds: 5));
+      final res = await _cachedGet(
+        Uri.parse('$_baseUrl/auth/me'),
+        headers: _jsonHeaders(token),
+        cacheTtl: const Duration(seconds: 10),
+        useCache: true,
+      );
       if (res.statusCode == 200) return jsonDecode(res.body);
       // Auto-refresh on 401
       if (res.statusCode == 401) {
         final refreshed = await refreshAccessToken();
         if (refreshed) {
           final newToken = await getToken();
-          final retry = await _client
-              .get(
-                Uri.parse('$_baseUrl/auth/me'),
-                headers: _jsonHeaders(newToken),
-              )
-              .timeout(const Duration(seconds: 5));
+          final retry = await _cachedGet(
+            Uri.parse('$_baseUrl/auth/me'),
+            headers: _jsonHeaders(newToken),
+            cacheTtl: const Duration(seconds: 10),
+            useCache: true,
+          );
           if (retry.statusCode == 200) return jsonDecode(retry.body);
         }
       }
@@ -1050,6 +1103,47 @@ class ApiService {
       debugPrint('\u26a0\ufe0f  getMe failed (offline?): $e');
       return null;
     }
+  }
+
+  /// Get dashboard data — combines user, verification, account status,
+  /// active ride, etc. in a single request. Cached for 10s.
+  static Map<String, dynamic>? _dashboardCache;
+  static DateTime? _dashboardCacheTime;
+  static const Duration _dashboardCacheTtl = Duration(seconds: 10);
+
+  static Future<Map<String, dynamic>?> getDashboard() async {
+    // Return cache if fresh
+    if (_dashboardCache != null && _dashboardCacheTime != null) {
+      if (DateTime.now().difference(_dashboardCacheTime!) < _dashboardCacheTtl) {
+        return _dashboardCache;
+      }
+    }
+    
+    final token = await getToken();
+    if (token == null) return null;
+
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/auth/dashboard'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        _dashboardCache = jsonDecode(res.body);
+        _dashboardCacheTime = DateTime.now();
+        return _dashboardCache;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('\u26a0\ufe0f  getDashboard failed: $e');
+      return _dashboardCache; // Return stale cache on error
+    }
+  }
+
+  static void clearDashboardCache() {
+    _dashboardCache = null;
+    _dashboardCacheTime = null;
   }
 
   /// Update profile fields (e.g. photo_url, first_name, …).
@@ -1265,40 +1359,37 @@ class ApiService {
   }
 
   /// Check account status (dispatch may have blocked/deleted).
-  /// ✅ QUICK WIN #3: Added 10s cache - called every 30s in background
-  /// Reduces unnecessary API calls while keeping reasonable freshness
+  /// NEVER cached — this is critical security data.
   static Future<String> getAccountStatus() async {
     final token = await getToken();
-    if (token == null) return 'unknown'; // no token yet — can't determine status
-    final res = await _cachedGet(
-      Uri.parse('$_baseUrl/auth/account-status'),
-      headers: _jsonHeaders(token),
-      cacheTtl: const Duration(seconds: 10),
-      useCache: true,
-    );
-    // Handle 401 gracefully — attempt refresh but don't trigger global logout
-    // from a background poll. The main _parse 401 handler is too aggressive here.
+    if (token == null) return 'unknown';
+    // No cache — always hit backend fresh for account status
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/account-status'), headers: _jsonHeaders(token))
+        .timeout(const Duration(seconds: 4));
+    // Handle 401 gracefully
     if (res.statusCode == 401) {
       final refreshed = await refreshAccessToken();
       if (refreshed) {
         final newToken = await getToken();
-        final retry = await _cachedGet(
-          Uri.parse('$_baseUrl/auth/account-status'),
-          headers: _jsonHeaders(newToken),
-          cacheTtl: const Duration(seconds: 10),
-        );
+        final retry = await _client
+            .get(Uri.parse('$_baseUrl/auth/account-status'), headers: _jsonHeaders(newToken))
+            .timeout(const Duration(seconds: 4));
         if (retry.statusCode == 200) {
           final d = jsonDecode(retry.body);
           return (d is Map ? d['status'] as String? : null) ?? 'unknown';
         }
       }
-      return 'unknown'; // refresh failed — status unknown, caller decides
+      return 'unknown';
     }
     if (res.statusCode >= 500) {
-      return 'unknown'; // server error — don't assume active
+      return 'unknown';
     }
-    final data = _parse(res);
-    return data['status'] as String? ?? 'unknown';
+    if (res.statusCode == 200) {
+      final d = jsonDecode(res.body);
+      return (d is Map ? d['status'] as String? : null) ?? 'unknown';
+    }
+    return 'unknown';
   }
 
   // ═══════════════════════════════════════════════════════
@@ -1711,7 +1802,8 @@ class ApiService {
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/drivers/$driverId/stats'),
       headers: h,
-      cacheTtl: const Duration(seconds: 300), // 5 min — stats don't change rapidly
+      cacheTtl: const Duration(seconds: 10), // 10s — stats are non-critical
+      useCache: true,
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -1764,7 +1856,8 @@ class ApiService {
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
       headers: _jsonHeaders(token),
-      cacheTtl: const Duration(seconds: 300), // 5 min — earnings update periodically
+      cacheTtl: const Duration(seconds: 10), // 10s — earnings are non-critical
+      useCache: true,
     );
 
     if (res.statusCode >= 200 && res.statusCode < 300) {

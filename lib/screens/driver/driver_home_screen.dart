@@ -573,29 +573,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       });
     }
 
-    // Background refresh from API
-    final results = await Future.wait([
-      ApiService.getMe().catchError((_) => null),
-      ApiService.getDriverEarnings(period: 'today').catchError((_) => <String, dynamic>{}),
-      ApiService.getNotifications().catchError((_) => <Map<String, dynamic>>[]),
-    ]);
+    // Background refresh from API — use dashboard (single call)
+    final dashboard = await ApiService.getDashboard().catchError((_) => null);
+    final notifs = await ApiService.getNotifications().catchError((_) => <Map<String, dynamic>>[]);
 
     if (!mounted) return;
-    final me = results[0] as Map<String, dynamic>?;
-    final earnings = results[1] as Map<String, dynamic>? ?? {};
-    final notifs = results[2] as List<dynamic>? ?? [];
+    final profile = dashboard?['profile'] as Map<String, dynamic>?;
+    final driverData = dashboard?['driver_data'] as Map<String, dynamic>?;
+    final earnings = driverData?['earnings'] as Map<String, dynamic>? ?? {};
 
     setState(() {
-      if (me != null) {
-        final firstName = me['first_name'] ?? 'Driver';
-        final lastName = me['last_name'] ?? '';
+      if (profile != null) {
+        final firstName = profile['first_name'] ?? 'Driver';
+        final lastName = profile['last_name'] ?? '';
         _driverName = lastName.isNotEmpty
             ? '$firstName ${lastName[0].toUpperCase()}.'
             : firstName;
         if (UserSession.photoNotifier.value.isNotEmpty) {
           _photoUrl = UserSession.photoNotifier.value;
         } else {
-          final serverPhoto = me['photo_url']?.toString() ?? '';
+          final serverPhoto = profile['photo_url']?.toString() ?? '';
           if (serverPhoto.isNotEmpty) {
             _photoUrl = serverPhoto.startsWith('http')
                 ? serverPhoto

@@ -1,0 +1,69 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test outputs
+test_all_out*.txt
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local development
+.env
+.env.local
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Backups
+backups/
+*.backup
+*.dump
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Scripts not needed in production
+*.bat
+START_*.bat
+DETENER_*.bat
+INICIAR_*.bat
+ACTIVAR_*.md
+
+# Photos uploaded by users (should be in cloud storage)
+photos/
+static/photos/
+
+# Local data
+*.hprof

@@ -119,15 +119,18 @@ extension _HomeScreenController on _HomeScreenState {
     }, onError: (_) {});
   }
 
-  /// Check backend /auth/me for verification status.
+  /// Check backend for verification status using dashboard (single call).
   /// Handles reinstall/new device where SharedPreferences is empty but the
   /// user was already approved via dispatch.
   Future<void> _checkBackendVerification() async {
     try {
-      final me = await ApiService.getMe();
-      if (me == null || !mounted) return;
-      final backendVerified = me['is_verified'] == true;
-      final backendStatus = (me['verification_status'] ?? '').toString();
+      final dashboard = await ApiService.getDashboard();
+      if (dashboard == null || !mounted) return;
+      
+      // Check verification status
+      final verification = dashboard['verification'] as Map<String, dynamic>?;
+      final backendVerified = verification?['is_verified'] == true;
+      final backendStatus = (verification?['status'] ?? '').toString();
       if (backendVerified || backendStatus == 'approved') {
         await LocalDataService.setIdentityVerified('license');
         await UserSession.updateField('isVerified', 'true');
@@ -139,7 +142,36 @@ extension _HomeScreenController on _HomeScreenState {
           });
         }
       }
+      
+      // Check account status in same call
+      final account = dashboard['account'] as Map<String, dynamic>?;
+      final accountStatus = (account?['status'] ?? 'active').toString();
+      if (accountStatus == 'blocked' || accountStatus == 'deleted') {
+        await UserSession.logout();
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          smoothFadeRoute(const WelcomeScreen()),
+          (_) => false,
+        );
+      } else if (accountStatus == 'deactivated') {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          smoothFadeRoute(const AccountDeactivatedScreen()),
+          (_) => false,
+        );
+      }
+      
+      // Check active trip in same call
+      final activeTrip = dashboard['active_trip'] as Map<String, dynamic>?;
+      if (activeTrip != null && mounted) {
+        _handleActiveTripFromDashboard(activeTrip);
+      }
     } catch (_) {}
+  }
+  
+  void _handleActiveTripFromDashboard(Map<String, dynamic> trip) {
+    // If there's an active trip, the SSE stream will handle real-time updates
+    // But we can pre-populate UI state here if needed
   }
 
   void _showApprovalDialog() {

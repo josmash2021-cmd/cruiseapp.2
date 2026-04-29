@@ -241,9 +241,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Start SSE trip status stream — PRIMARY channel for instant updates (<100ms).
   /// Replaces Firestore as the main real-time channel.
-  StreamSubscription<Map<String, dynamic>>? _sseTripSub;
-  bool _sseActive = false;
-
   void _startSseTripTracking(int tripId) {
     _sseTripSub?.cancel();
     _sseActive = false;

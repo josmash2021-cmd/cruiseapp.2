@@ -3048,7 +3048,7 @@ extension _MapScreenWidgets on _MapScreenState {
                           .push<Map<String, dynamic>>(
                             sharedAxisZRoute(PickupDropoffSearchScreen(
                               initialPickupText: _pickupAddress,
-                            ), opaque: false),
+                            )),
                           );
                       if (result != null &&
                           result['dropoffLabel'] != null &&

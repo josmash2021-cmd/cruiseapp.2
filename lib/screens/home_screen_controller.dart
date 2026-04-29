@@ -822,7 +822,6 @@ extension _HomeScreenController on _HomeScreenState {
             initialPickupLat: _currentLatLng?.latitude,
             initialPickupLng: _currentLatLng?.longitude,
           ),
-          opaque: false,
         ),
       );
 

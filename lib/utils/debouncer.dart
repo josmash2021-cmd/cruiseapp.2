@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 /// Ultra-fast debouncer for batching UI updates.
 /// Eliminates redundant rebuilds by batching rapid-fire notifications.
 class FastDebouncer {

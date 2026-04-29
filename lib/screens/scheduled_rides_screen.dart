@@ -186,7 +186,6 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
       sharedAxisZRoute(
         PickupDropoffSearchScreen(scheduledAt: scheduledAt),
-        opaque: false,
       ),
     );
 

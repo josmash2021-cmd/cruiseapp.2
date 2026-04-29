@@ -1409,7 +1409,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             scheduledAt: scheduledAt,
             isAirportTrip: false,
           ),
-          opaque: false,
         ),
       );
 

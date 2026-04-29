@@ -767,10 +767,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            // distanceFilter: 0 -> raw stream so SmoothMotion can glide
-            // every fix instead of waiting for 2 m of movement. Matches
-            // the rider home dot fix in 1.0.2+376.
-            distanceFilter: 0,
+            // distanceFilter: 5 -> fixes every 5 meters.
+            // SmoothMotion still glides smoothly. Reduces CPU/battery.
+            distanceFilter: 5,
           ),
         ).listen((pos) {
           if (!mounted) return;

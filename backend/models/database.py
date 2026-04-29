@@ -966,6 +966,7 @@ async def migrate_postgres(conn):
     _indexes = [
         "CREATE INDEX IF NOT EXISTS idx_users_role_online ON users (role, is_online) WHERE is_online = true",
         "CREATE INDEX IF NOT EXISTS idx_users_online_location ON users (is_online, lat, lng) WHERE is_online = true AND lat IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_users_last_active ON users (last_active_at) WHERE last_active_at IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS idx_dispatch_driver_status ON dispatch_offers (driver_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_dispatch_trip_status ON dispatch_offers (trip_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_trips_driver_status ON trips (driver_id, status)",

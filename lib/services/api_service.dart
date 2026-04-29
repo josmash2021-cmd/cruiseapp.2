@@ -2342,9 +2342,8 @@ class ApiService {
         debugPrint('[SSE] Driver stream error (retry ${retries + 1}): $e');
       }
 
-      // Exponential backoff before reconnect
+      // Exponential backoff before reconnect — NEVER give up, cap at 30s
       retries++;
-      if (retries > 10) break; // Give up after 10 retries
       debugPrint('[SSE] Reconnecting driver stream in ${backoffMs}ms...');
       await Future.delayed(Duration(milliseconds: backoffMs));
       backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);

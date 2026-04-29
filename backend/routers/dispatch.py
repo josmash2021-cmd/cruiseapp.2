@@ -1060,61 +1060,10 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                 )
         if stale_rows:
             await db.commit()
-            # Cascade reassignment for each expired offer whose trip is still unassigned
-            for stale_offer, stale_trip in stale_rows:
-                if stale_trip.status != "requested":
-                    continue
-                try:
-                    # Collect all drivers already tried for this trip
-                    prev_result = await db.execute(
-                        select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == stale_trip.id)
-                    )
-                    tried_ids = {r[0] for r in prev_result.all()}
-
-                    next_drivers = await _find_nearest_drivers(
-                        db,
-                        pickup_lat=stale_trip.pickup_lat or 0,
-                        pickup_lng=stale_trip.pickup_lng or 0,
-                        exclude_driver_ids=tried_ids,
-                        vehicle_type=stale_trip.vehicle_type or "comfort",
-                        limit=5,
-                    )
-                    if next_drivers:
-                        next_driver = next_drivers[0]
-                        rider = None
-                        if stale_trip.rider_id:
-                            rider_result = await db.execute(select(User).where(User.id == stale_trip.rider_id))
-                            rider = rider_result.scalar_one_or_none()
-                        rider_name, rider_phone = _resolve_rider_display(stale_trip, rider)
-                        rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-
-                        new_offer = await _send_offer_to_driver(
-                            db, stale_trip, next_driver, rider_name, rider_phone, rider_photo,
-                        )
-
-                        # Start cascade for the new offer
-                        old_task = _cascade_tasks.pop(stale_trip.id, None)
-                        if old_task and not old_task.done():
-                            old_task.cancel()
-                        task = asyncio.create_task(
-                            _auto_cascade(stale_trip.id, new_offer.id, next_driver.id)
-                        )
-                        _cascade_tasks[stale_trip.id] = task
-
-                        logging.info(
-                            "[Dispatch] Expired offer %d (trip %d) reassigned to driver %d",
-                            stale_offer.id, stale_trip.id, next_driver.id,
-                        )
-                    else:
-                        logging.warning(
-                            "[Dispatch] Expired offer %d (trip %d): no next driver available for reassignment",
-                            stale_offer.id, stale_trip.id,
-                        )
-                except Exception as e:
-                    logging.error(
-                        "[Dispatch] Cascade reassignment after offer %d expiry failed: %s",
-                        stale_offer.id, e,
-                    )
+            // NOTE: Cascade reassignment disabled here to prevent race condition
+            // with _auto_cascade. The _auto_cascade task is the single source of
+            // truth for offer expiry and reassignment. Stale cleanup only marks
+            // offers as expired; _auto_cascade handles the next driver.
     except Exception as e:
         logging.error("[get_driver_pending] Stale offer cleanup failed for driver %d: %s", driver_id, e)
 

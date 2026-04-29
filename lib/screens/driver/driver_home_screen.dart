@@ -512,16 +512,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         mapbox.MapAnimationOptions(duration: 800),
       );
 
-      // ── Real-time GPS stream (raw fixes for SmoothMotion) ──
-      // distanceFilter: 0 -> accept every fix (~1 Hz iOS / 1-2 Hz Android)
-      // so the GoldLocationDot ticker has dense data to glide between.
-      // The previous 5 m threshold made the OS suppress fixes during
-      // slow drives, leaving the dot still then jumping.
+      // ── Real-time GPS stream ──
+      // distanceFilter: 5 -> accept fixes every 5 meters.
+      // SmoothMotion still interpolates smoothly between fixes.
+      // Reduces CPU/battery drain vs raw 0-meter stream.
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 0,
+          distanceFilter: 5,
         ),
       ).listen((p) {
         if (!mounted) return;
@@ -861,7 +860,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   void _startTripPolling() {
     _tripPollTimer?.cancel();
-    _tripPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _tripPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || !_isStillOnline) {
         _tripPollTimer?.cancel();
         return;

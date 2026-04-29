@@ -416,7 +416,7 @@ def _create_login_token(user_id: int) -> str:
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _user_cache: dict = {}  # user_id -> (User, timestamp)
-_USER_CACHE_TTL = 30.0  # seconds â€” refresh from DB every 30s
+_USER_CACHE_TTL = 300.0  # seconds â€” refresh from DB every 30s
 _MAX_USER_CACHE = 2000  # cap entries to prevent memory leak
 
 def invalidate_user_cache(user_id: int):

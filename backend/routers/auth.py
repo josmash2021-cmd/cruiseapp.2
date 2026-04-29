@@ -2127,18 +2127,9 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
-_account_status_cache: dict = {}  # user_id -> (status_str, monotonic_ts)
-_ACCOUNT_STATUS_CACHE_TTL = 15.0  # seconds - Firestore check at most every 15s
-
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""
-    import time as _time
-    _now = _time.monotonic()
-    _cached = _account_status_cache.get(user.id)
-    if _cached and (_now - _cached[1]) < _ACCOUNT_STATUS_CACHE_TTL:
-        return {"status": _cached[0]}
-
     current_status = user.status or "active"
     # Sync status from Firestore (dispatch may have blocked/deleted)
     if _HAS_FIRESTORE:
@@ -2155,7 +2146,6 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
         except Exception as e:
             logging.error("Firestore account status check failed: %s", e)
 
-    _account_status_cache[user.id] = (current_status, _now)
     return {"status": current_status}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

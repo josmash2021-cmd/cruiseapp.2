@@ -452,16 +452,7 @@ async def _get_current_user(
         _record_violation(client_ip)
         raise HTTPException(403, "Access denied")
 
-    # Fast path: serve from in-memory cache
-    now = time.monotonic()
-    cached = _user_cache.get(user_id)
-    if cached and (now - cached[1]) < _USER_CACHE_TTL:
-        user = cached[0]
-        if (user.status or "active") in ("deleted", "blocked"):
-            raise HTTPException(403, f"Account {user.status}")
-        return user
-
-    # Slow path: DB lookup + cache
+    # Always query DB — no cache. User status/role can change anytime.
     # Use raw SQL to avoid ORM failing on missing columns (e.g. new migrations
     # not yet applied). Only the columns that were present at launch are safe.
     try:
@@ -497,10 +488,6 @@ async def _get_current_user(
         if db_sid and db_sid != jwt_sid:
             raise HTTPException(401, "session_expired_new_device")
 
-    _user_cache[user_id] = (user, now)
-    if len(_user_cache) > _MAX_USER_CACHE:
-        _oldest = min(_user_cache, key=lambda k: _user_cache[k][1])
-        _user_cache.pop(_oldest, None)
     return user
 
 

@@ -190,66 +190,32 @@ class ApiService {
   static bool isCircuitOpenError(Object err) =>
       err is _CircuitOpenException;
 
-  /// Cache GET responses to reduce server load and improve perceived speed.
-  /// Default TTL is 60s — aggressive caching for snappy UI.
-  /// Callers with rapidly-changing data should pass a shorter TTL.
+  /// ALWAYS hits the backend — no cache, no deduplication.
+  /// Every GET request goes directly to the server.
   static Future<http.Response> _cachedGet(
     Uri url, {
     Map<String, String>? headers,
-    Duration cacheTtl = const Duration(seconds: 60),
-    bool useCache = true,
+    Duration cacheTtl = Duration.zero,
+    bool useCache = false,
   }) async {
-    final cacheKey = url.toString();
-
-    // Check cache first
-    if (useCache && _responseCache.containsKey(cacheKey)) {
-      final entry = _responseCache[cacheKey]!;
-      if (!entry.isExpired) {
-        return entry.data as http.Response;
-      }
-      _responseCache.remove(cacheKey);
-    }
-
-    // Deduplicate concurrent requests for the same URL
-    if (_inFlightRequests.containsKey(cacheKey)) {
-      return await _inFlightRequests[cacheKey]!;
-    }
-
     // Circuit breaker: if the backend is currently considered dead,
-    // fail fast WITHOUT touching the network. Callers already handle
-    // "returns null / falls back" semantics for transient errors.
+    // fail fast WITHOUT touching the network.
     if (!_breaker.allowRequest()) {
       throw _CircuitOpenException(url.toString());
     }
 
-    // Make the request and track it
-    final requestFuture = _client.get(url, headers: headers).timeout(
-      const Duration(seconds: 4),
-      onTimeout: () {
-        _inFlightRequests.remove(cacheKey);
-        throw TimeoutException('Request to \${url.path} timed out');
-      },
-    );
-
-    _inFlightRequests[cacheKey] = requestFuture;
-
     try {
-      final response = await requestFuture;
-
-      // Report the outcome to the breaker.
+      final response = await _client.get(url, headers: headers).timeout(
+        const Duration(seconds: 4),
+        onTimeout: () {
+          throw TimeoutException('Request to \${url.path} timed out');
+        },
+      );
       _breaker.recordResult(statusCode: response.statusCode);
-
-      // Cache successful GET responses
-      if (useCache && response.statusCode == 200) {
-        _responseCache[cacheKey] = _CacheEntry(response, cacheTtl);
-      }
-
       return response;
     } catch (e) {
       _breaker.recordResult(error: e);
       rethrow;
-    } finally {
-      _inFlightRequests.remove(cacheKey);
     }
   }
 

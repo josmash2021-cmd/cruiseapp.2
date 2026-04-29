@@ -1010,46 +1010,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
 
-  // ── Car update: uses PointAnnotation (same proven approach as pins) ──
+  // ── Car update: single PointAnnotation, never duplicates ──
+  // CRITICAL: This method is called from many places (GPS callback, ticker,
+  // heartbeat, style reload). The _carAnnotCreating guard + _carAnnot null
+  // check prevent duplicate annotations. NEVER remove these guards.
   void _updateCarSmooth() {
-    if (_map == null) {
-      debugPrint('[CarIcon] SKIP: _map is null');
-      return;
-    }
+    if (_map == null) return;
+
     // Determine effective position: use _animPos if valid, fallback to _directTargetPos
-    // during arriving phase before approach route loads. This ensures the car
-    // appears immediately at the driver's real GPS position.
     LatLng effectivePos = _animPos;
     double effectiveBearing = _animBearing;
 
     if (_animPos.latitude == 0 && _animPos.longitude == 0) {
-      // animPos not initialized yet — check if we have raw GPS fallback
       final directPos = _directTargetPos;
       if (directPos != null && directPos.latitude != 0 && directPos.longitude != 0) {
         effectivePos = directPos;
         effectiveBearing = _directTargetBearing ?? 0;
-        // Seed animPos so next frame starts from real position (no teleport from 0,0)
         _animPos = effectivePos;
         _animBearing = effectiveBearing;
         _driverPos = effectivePos;
         _driverBearing = effectiveBearing;
       } else {
-        debugPrint('[CarIcon] SKIP: no valid position yet — waiting for first driver GPS');
-        return;
+        return; // No valid position yet
       }
     }
 
-    if (_carPngBytes == null) {
-      debugPrint('[CarIcon] SKIP: _carPngBytes is null');
-      return;
-    }
-
+    if (_carPngBytes == null) return;
     final mgr = _carAnnotMgr;
-    if (mgr == null) {
-      debugPrint('[CarIcon] SKIP: _carAnnotMgr is null');
-      return;
-    }
+    if (mgr == null) return;
 
+    // UPDATE existing annotation
     if (_carAnnot != null) {
       try {
         _carAnnot!.geometry = mapbox.Point(
@@ -1057,46 +1047,68 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         );
         _carAnnot!.iconRotate = effectiveBearing;
         mgr.update(_carAnnot!).catchError((e) {
-          debugPrint('[CarIcon] update failed: $e — will recreate next frame');
           _carAnnot = null;
           _carAnnotCreating = false;
         });
       } catch (e) {
-        debugPrint('[CarIcon] update failed: $e — will recreate');
         _carAnnot = null;
         _carAnnotCreating = false;
       }
       return;
     }
 
-    // First-time creation (async, guarded)
+    // CREATE new annotation — guarded against race conditions
     if (_carAnnotCreating) return;
     _carAnnotCreating = true;
     _createCarAnnotation(effectivePos, effectiveBearing).then((annot) {
       _carAnnotCreating = false;
-      if (annot == null) {
-        debugPrint('[CarIcon] CREATE returned null — will retry next frame');
-      } else {
-        debugPrint('[CarIcon] CREATE success — car is now visible at (${effectivePos.latitude.toStringAsFixed(5)},${effectivePos.longitude.toStringAsFixed(5)})');
-      }
     }).catchError((e) {
-      debugPrint('[CarIcon] CREATE failed: $e — will retry next frame');
       _carAnnotCreating = false;
     });
   }
 
-  /// Create the car PointAnnotation — called once, then updated in-place.
-  /// Returns the created annotation so callers know if it succeeded.
+  /// Create the car PointAnnotation — SINGLETON, never creates duplicates.
+  /// Uses a Future lock to prevent race conditions when called concurrently.
   Future<mapbox.PointAnnotation?> _createCarAnnotation([LatLng? pos, double? bearing]) async {
+    // If already have an annotation, don't create another
+    if (_carAnnot != null) return _carAnnot;
+    
+    // If creation is in progress, wait for it instead of starting a second one
+    if (_carAnnotCreating) {
+      // Wait for the in-flight creation to complete (max 2 seconds)
+      for (int i = 0; i < 20; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_carAnnot != null) return _carAnnot;
+        if (!_carAnnotCreating) break;
+      }
+      // After waiting, if we still don't have an annotation and no one is creating, proceed
+      if (_carAnnot != null) return _carAnnot;
+      if (_carAnnotCreating) return null; // Still creating, someone else won
+    }
+    
+    _carAnnotCreating = true;
+    
     final mgr = _carAnnotMgr;
-    if (mgr == null || _carPngBytes == null) return null;
-    final effectivePos = pos ?? _animPos;
-    final effectiveBearing = bearing ?? _animBearing;
-    // Guard: never create at (0,0)
-    if (effectivePos.latitude == 0 && effectivePos.longitude == 0) {
-      debugPrint('[CarIcon] CREATE skipped: position is (0,0)');
+    if (mgr == null || _carPngBytes == null) {
+      _carAnnotCreating = false;
       return null;
     }
+    
+    final effectivePos = pos ?? _animPos;
+    final effectiveBearing = bearing ?? _animBearing;
+    
+    // Guard: never create at (0,0)
+    if (effectivePos.latitude == 0 && effectivePos.longitude == 0) {
+      _carAnnotCreating = false;
+      return null;
+    }
+    
+    // Double-check after acquiring lock
+    if (_carAnnot != null) {
+      _carAnnotCreating = false;
+      return _carAnnot;
+    }
+    
     try {
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(
@@ -1105,16 +1117,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         image: _carPngBytes!,
         iconSize: _kCarAnnotScale,
         iconAnchor: mapbox.IconAnchor.CENTER,
-        // car_*.png assets all face UP (north) by default — no bearing offset needed.
         iconRotate: effectiveBearing,
         iconOffset: [0, 0],
       ));
       _carAnnot = annot;
-      debugPrint('[CarIcon] PointAnnotation created at ${effectivePos.latitude},${effectivePos.longitude}');
       return annot;
     } catch (e) {
       debugPrint('[CarIcon] PointAnnotation creation FAILED: $e');
       return null;
+    } finally {
+      _carAnnotCreating = false;
     }
   }
   Future<void> _updateStaticAnnotationsOnce() async {

@@ -421,7 +421,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_carFirstGpsTime == null) {
       _carFirstGpsTime = DateTime.now();
       _carHeartbeatTimer?.cancel();
-      _carHeartbeatTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _carHeartbeatTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         if (!mounted) {
           _carHeartbeatTimer?.cancel();
           return;

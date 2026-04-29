@@ -483,10 +483,17 @@ class _SplashScreenState extends State<SplashScreen>
       d['status'] == 'rejected' ||
       d['approvalStatus'] == 'rejected';
 
-  /// Syncs profile and checks account status in background after navigation.
-  /// If account is blocked/deactivated, the home screens' own periodic
-  /// status checks (every 30s) will handle the redirect.
+  /// Syncs profile and preloads dashboard data in background.
+  /// This makes the home screen load instantly because data is already cached.
   Future<void> _backgroundProfileSync() async {
+    try {
+      // Preload dashboard data while splash is still showing
+      // This caches profile, earnings, stats, and active trip
+      await ApiService.getDashboard().timeout(const Duration(seconds: 5));
+      debugPrint('[Splash] Dashboard preloaded ✓');
+    } catch (e) {
+      debugPrint('[Splash] Dashboard preload failed (will load on home): $e');
+    }
     try {
       await UserSession.isLoggedIn(); // full sync with backend
     } catch (_) {}

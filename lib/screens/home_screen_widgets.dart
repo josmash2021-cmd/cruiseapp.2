@@ -10,7 +10,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
   //  M A P - F I R S T   H E L P E R S
   // ════════════════════════════════════════════════════
 
-  // Full-screen Mapbox background
+  // Full-screen Mapbox background — uses cached controller for instant load
   Widget _buildFullMap() {
     if (_currentLatLng == null) {
       return Container(
@@ -32,6 +32,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
       ),
       onMapCreated: (ctrl) async {
         _miniMapController = ctrl;
+        // Cache controller for reuse across screens
+        MapControllerCache.instance.cache(ctrl);
         ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
         ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
         ctrl.attribution

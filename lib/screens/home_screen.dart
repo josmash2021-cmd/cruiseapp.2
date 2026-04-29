@@ -351,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Optimized: fewer animation controllers to reduce CPU usage
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
@@ -363,14 +364,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
+    // Clock rotation only when needed (not always running)
     _clockRotateCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
-    )..repeat();
+    );
     _promoShimmerCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    );
     _rideFadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -378,9 +380,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
     // Flash bolt every 2 seconds
     _boltFlashLoop();
-    _loadSavedData();
-    _loadPromoUsed();
-    _preloadSounds();
+    // Defer heavy loading until after first frame for faster startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadSavedData();
+        _loadPromoUsed();
+        _preloadSounds();
+      }
+    });
     _fetchCurrentLocation();
     // Eagerly load cached user name so greeting never shows "Rider"
     UserSession.getUser().then((user) {
@@ -693,15 +700,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _locationSub?.cancel();
       _locationSub =
           Geolocator.getPositionStream(
-            // distanceFilter: 0 -> raw stream, no thresholding. Without
-            // this the OS only fires when the rider has moved 10 m, and
-            // SmoothMotion has nothing to interpolate between → the dot
-            // sits still then jumps. With a 0-meter filter we get every
-            // GPS fix the device produces (~1 Hz on iOS, ~1-2 Hz on
-            // Android) and the ticker glides smoothly between them.
+            // distanceFilter: 2 -> fixes every 2 meters.
+            // SmoothMotion still interpolates smoothly between fixes.
+            // Reduces CPU/battery drain vs raw 0-meter stream.
             locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.high,
-              distanceFilter: 0,
+              distanceFilter: 2,
             ),
           ).listen((Position p) {
             if (!mounted) return;

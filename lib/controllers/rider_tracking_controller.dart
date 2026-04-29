@@ -1417,10 +1417,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _animBearing = brg;
       _driverBearing = brg;
     } else {
-      // No persisted position — hide car until first real RTDB GPS.
+      // No persisted position — fetch from backend for instant car display.
       // The car IS the driver; it must appear at the driver's actual location.
       _driverPos = const LatLng(0, 0);
       _animPos = _driverPos;
+      // Try to get driver's last known position from backend immediately
+      if (widget.tripId != null) {
+        unawaited(_fetchInitialDriverLocation(widget.tripId!));
+      }
     }
 
     // Calculate remaining distance — use route duration when available
@@ -1862,6 +1866,44 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     } catch (e) {
       debugPrint('[RiderTracking] Firestore driver photo fetch failed: $e');
+    }
+  }
+
+  /// Fetch driver's last known location from backend for instant car display.
+  /// Called on screen open when no persisted position exists.
+  Future<void> _fetchInitialDriverLocation(int tripId) async {
+    try {
+      final loc = await ApiService.getDriverLocation(tripId);
+      if (loc == null || !mounted) return;
+      
+      final lat = (loc['lat'] as num?)?.toDouble();
+      final lng = (loc['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null || lat == 0 || lng == 0) return;
+      
+      final pos = LatLng(lat, lng);
+      final heading = (loc['heading'] as num?)?.toDouble() ?? 0.0;
+      
+      debugPrint('[RiderTracking] Initial driver location from backend: $lat, $lng');
+      
+      // Set position immediately — car will appear on next _updateCarSmooth tick
+      _driverPos = pos;
+      _animPos = pos;
+      _animBearing = heading;
+      _driverBearing = heading;
+      _directTargetPos = pos;
+      _directTargetBearing = heading;
+      
+      // Trigger car creation immediately
+      if (_carPngBytes != null && _carAnnotMgr != null) {
+        _updateCarSmooth();
+      }
+      
+      // Fetch approach route from this position to pickup
+      if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
+        unawaited(_fetchApproachRoute(pos));
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] Failed to fetch initial driver location: $e');
     }
   }
 }

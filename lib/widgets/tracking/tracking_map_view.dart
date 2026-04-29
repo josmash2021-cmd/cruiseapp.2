@@ -1110,17 +1110,25 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     
     try {
+      // Create car with size 0 for pop-in animation
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(
           coordinates: mapbox.Position(effectivePos.longitude, effectivePos.latitude),
         ),
         image: _carPngBytes!,
-        iconSize: _kCarAnnotScale,
+        iconSize: _carPopDone ? _kCarAnnotScale : 0.01,
         iconAnchor: mapbox.IconAnchor.CENTER,
         iconRotate: effectiveBearing,
         iconOffset: [0, 0],
       ));
       _carAnnot = annot;
+      
+      // Pop-in animation on first creation
+      if (!_carPopDone) {
+        _carPopDone = true;
+        _animateCarPopIn();
+      }
+      
       return annot;
     } catch (e) {
       debugPrint('[CarIcon] PointAnnotation creation FAILED: $e');
@@ -1129,6 +1137,29 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _carAnnotCreating = false;
     }
   }
+
+  /// Pop-in animation for the car marker: 0.01 → 0.70 → 0.55 → 0.60 over 400ms.
+  /// Makes the car appear with a satisfying bounce when first GPS arrives.
+  void _animateCarPopIn() {
+    if (_carAnnot == null || _carAnnotMgr == null) return;
+    _animScheduler.schedule(
+      durationMs: 400,
+      onTick: (t) {
+        double scale;
+        if (t < 0.35) {
+          scale = 0.01 + (_kCarAnnotScale * 1.4 - 0.01) * (t / 0.35);
+        } else if (t < 0.65) {
+          scale = _kCarAnnotScale * 1.4 + (_kCarAnnotScale * 0.9 - _kCarAnnotScale * 1.4) * ((t - 0.35) / 0.3);
+        } else {
+          scale = _kCarAnnotScale * 0.9 + (_kCarAnnotScale - _kCarAnnotScale * 0.9) * ((t - 0.65) / 0.35);
+        }
+        try {
+          _carAnnotMgr!.update(_carAnnot!..iconSize = scale);
+        } catch (_) {}
+      },
+    );
+  }
+
   Future<void> _updateStaticAnnotationsOnce() async {
     if (_staticAnnotsDone) return;
     final pointMgr = _pointAnnotMgr;

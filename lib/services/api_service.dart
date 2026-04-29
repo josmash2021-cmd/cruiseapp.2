@@ -2845,6 +2845,24 @@ class ApiService {
     return null;
   }
 
+  /// Get driver's last known location for a trip.
+  /// Used by rider tracking screen to show car immediately on open.
+  static Future<Map<String, dynamic>?> getDriverLocation(int tripId) async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/trips/$tripId/driver-location'), headers: h)
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) return body;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getDriverLocation($tripId) error: $e');
+    }
+    return null;
+  }
+
   // ═══════════════════════════════════════════════════════
   //  CHAT  ENDPOINTS
   // ═══════════════════════════════════════════════════════

@@ -163,9 +163,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Uint8List? _carPngBytes;       // PNG bytes for PointAnnotation image
   mapbox.PointAnnotation? _carAnnot;  // The car annotation on the map
   bool _carAnnotCreating = false; // guard: prevents async race
-  // REMOVED: _carUpdateInFlight guard was causing frame drops. The Ticker now
-  // pushes every frame to Mapbox; the platform channel handles deduplication.
-  // See _updateCarSmooth() in tracking_map_view.dart for details.
+  bool _carPopDone = false;      // true after first pop-in animation completes
   DateTime? _carFirstGpsTime; // when we first got driver GPS — used for heartbeat
   Timer? _carHeartbeatTimer;  // forces car recreation if it never appeared
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route

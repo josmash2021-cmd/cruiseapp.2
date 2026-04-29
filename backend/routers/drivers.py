@@ -207,6 +207,58 @@ async def get_nearby_drivers(
     _nearby_cache[_cache_key] = (_now, response)
     return response
 
+
+@router.get("/trips/{trip_id}/driver-location", dependencies=[Depends(_verify_api_key)])
+async def get_trip_driver_location(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the driver's last known location for a trip.
+    
+    Used by the rider tracking screen to show the car immediately
+    on open, without waiting for the first real-time GPS push.
+    """
+    # Get trip to verify rider owns it
+    trip = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip_row = trip.scalar_one_or_none()
+    if not trip_row:
+        raise HTTPException(404, "Trip not found")
+    if user.id != trip_row.rider_id and user.role != "admin":
+        raise HTTPException(403, "Not authorized to view this trip")
+    if not trip_row.driver_id:
+        raise HTTPException(404, "No driver assigned to this trip")
+    
+    driver_id = trip_row.driver_id
+    
+    # 1. Try in-memory location (freshest, updated every ~800ms)
+    mem = _driver_locations.get(driver_id)
+    if mem and mem.get("is_online"):
+        return {
+            "lat": mem["lat"],
+            "lng": mem["lng"],
+            "heading": 0.0,
+            "speed": 0.0,
+            "source": "realtime",
+            "timestamp": mem["ts"],
+        }
+    
+    # 2. Fallback: DB location
+    driver = await db.execute(select(User).where(User.id == driver_id))
+    d = driver.scalar_one_or_none()
+    if d and d.lat is not None and d.lng is not None:
+        return {
+            "lat": d.lat,
+            "lng": d.lng,
+            "heading": 0.0,
+            "speed": 0.0,
+            "source": "db",
+            "timestamp": d.last_active_at.isoformat() if d.last_active_at else None,
+        }
+    
+    raise HTTPException(404, "Driver location not available")
+
+
 @router.get("/riders/{rider_id}/trips", dependencies=[Depends(_verify_api_key)])
 async def get_rider_trips(rider_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Ownership check: riders can only see their own trips

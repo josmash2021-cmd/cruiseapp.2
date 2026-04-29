@@ -23,7 +23,7 @@ class GpsService {
   // ── Intervals ───────────────────────────────────────────────────────
   static const Duration _socketIOInterval = Duration(milliseconds: 200);
   static const Duration _rtdbInterval = Duration(seconds: 2);
-  static const double _minDistanceMeters = 1.0; // delta compression (was 5.0)
+  static const double _minDistanceMeters = 0.5; // delta compression: 50cm for max accuracy
 
   // ── Timers ──────────────────────────────────────────────────────────
   Timer? _socketIOTimer;

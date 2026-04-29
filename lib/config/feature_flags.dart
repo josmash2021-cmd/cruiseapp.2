@@ -56,8 +56,8 @@ class FeatureFlags {
         minimumFetchInterval: const Duration(hours: 1),
       ));
       await remoteConfig.setDefaults(const {
-        'use_socket_io': false,
-        'socket_io_rollout_percentage': 0,
+        'use_socket_io': true,
+        'socket_io_rollout_percentage': 100,
       });
       await remoteConfig.fetchAndActivate();
 

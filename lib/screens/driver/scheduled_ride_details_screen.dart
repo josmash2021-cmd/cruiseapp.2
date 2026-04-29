@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -534,7 +535,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                                 backgroundColor: _gold.withValues(alpha: 0.2),
                                 radius: 18,
                                 backgroundImage: riderPhoto.isNotEmpty
-                                    ? NetworkImage(riderPhoto)
+                                    ? CachedNetworkImageProvider(riderPhoto)
                                     : null,
                                 child: riderPhoto.isEmpty
                                     ? Text(

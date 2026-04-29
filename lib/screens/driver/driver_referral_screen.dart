@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
@@ -463,7 +464,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                 radius: 18,
                 backgroundColor: _surfaceLight,
                 backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                    ? NetworkImage(photoUrl)
+                    ? CachedNetworkImageProvider(photoUrl)
                     : null,
                 child: (photoUrl == null || photoUrl.isEmpty)
                     ? Text(

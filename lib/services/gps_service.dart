@@ -53,7 +53,7 @@ class GpsService {
 
     _activeDriverId = driverId;
 
-    // Primary: Socket.io every 500ms (when enabled)
+    // Primary: Socket.io every 200ms (when enabled)
     _socketIOTimer = Timer.periodic(
       _socketIOInterval,
       (_) => unawaited(_uploadViaSocketIO()),
@@ -152,8 +152,9 @@ class GpsService {
     if (!FeatureFlags.useSocketIO) return;
     if (!SocketService.isConnected) return;
 
-    // Delta compression: skip if moved < 5m
-    if (_lastSocketIOPos != null) {
+    // Delta compression: skip if moved < 0.5m AND speed is very low
+    // Always send if driver is moving (speed > 1 m/s) to ensure fluid tracking
+    if (_lastSocketIOPos != null && _currentSpeed < 1.0) {
       final dist = _haversineMeters(
         _currentPos!.latitude,
         _currentPos!.longitude,

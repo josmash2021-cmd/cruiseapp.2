@@ -1600,7 +1600,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         double d = targetBrg - _animBearing;
         if (d > 180) d -= 360;
         if (d < -180) d += 360;
-        final brgFactor = tf(0.30);
+        final brgFactor = tf(0.35);
         _animBearing = (_animBearing + d * brgFactor) % 360;
         _driverBearing = _animBearing;
         // Only idle when trip is completed — never stop during active phases
@@ -1636,8 +1636,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _updateCarSmooth();
           return;
         }
-        // Smooth glide toward GPS target (18% per frame = ~0.3s response)
-        final posFactor = tf(0.18);
+        // Smooth glide toward GPS target (25% per frame = ~0.15s response)
+        // Higher factor = more responsive, still smooth
+        final posFactor = tf(0.25);
         final dLat = tgt.latitude - _animPos.latitude;
         final dLng = tgt.longitude - _animPos.longitude;
         final newLat = _animPos.latitude + dLat * posFactor;

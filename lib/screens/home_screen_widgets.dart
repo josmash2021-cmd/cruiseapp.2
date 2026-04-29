@@ -11,16 +11,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
   // ════════════════════════════════════════════════════
 
   // Full-screen Mapbox background — uses cached controller for instant load
+  // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
+  // (NYC) and move camera when GPS arrives. Prevents blank screen on slow GPS.
   Widget _buildFullMap() {
-    if (_currentLatLng == null) {
-      return Container(
-        color: const Color(0xFF07080D),
-        child: const Center(
-          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
-        ),
-      );
-    }
-    final pos = _currentLatLng!;
+    // Default to NYC if no GPS yet — map shows immediately, camera moves later
+    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
     return mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleDark,

@@ -1088,20 +1088,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildMap() {
     // Use Google Maps on both iOS and Android
     final dc = DriverColors.of(context);
-    if (_currentLatLng == null) {
-      return Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
-        ),
-      );
-    }
+    // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
+    // and move camera when GPS arrives. Prevents blank screen on slow GPS.
+    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
 
     return RepaintBoundary(
       child: mapbox.MapWidget(
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+          center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
           zoom: 16.0,
           pitch: 0.0,
           bearing: 0.0,

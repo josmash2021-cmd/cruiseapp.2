@@ -1060,10 +1060,10 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                 )
         if stale_rows:
             await db.commit()
-            // NOTE: Cascade reassignment disabled here to prevent race condition
-            // with _auto_cascade. The _auto_cascade task is the single source of
-            // truth for offer expiry and reassignment. Stale cleanup only marks
-            // offers as expired; _auto_cascade handles the next driver.
+            # NOTE: Cascade reassignment disabled here to prevent race condition
+            # with _auto_cascade. The _auto_cascade task is the single source of
+            # truth for offer expiry and reassignment. Stale cleanup only marks
+            # offers as expired; _auto_cascade handles the next driver.
     except Exception as e:
         logging.error("[get_driver_pending] Stale offer cleanup failed for driver %d: %s", driver_id, e)
 

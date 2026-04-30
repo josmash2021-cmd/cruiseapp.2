@@ -362,6 +362,23 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       isVerified: false,
                     ),
                     const Spacer(),
+                    // Connection status dot: green = SSE real-time, amber = polling fallback
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _sseActive ? const Color(0xFF4CAF50) : const Color(0xFFFFA000),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_sseActive ? const Color(0xFF4CAF50) : const Color(0xFFFFA000)).withValues(alpha: 0.4),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
                       S.of(context).findingTrips,
                       style: TextStyle(

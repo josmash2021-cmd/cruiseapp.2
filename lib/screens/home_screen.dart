@@ -491,11 +491,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         (_) => _updateImminentRide(),
       );
       // Refresh scheduled ride status so card reflects real-time state
-      _loadNextScheduledRide().then((ride) {
-        if (!mounted) return;
-        setState(() => _nextScheduledRide = ride);
-        _updateImminentRide();
-      });
+      // Guard: only reload data if home screen is the current route to avoid
+      // duplicate tracking screen pushes when resuming from another screen.
+      final isCurrent = ModalRoute.of(context)?.isCurrent ?? false;
+      if (isCurrent) {
+        _loadNextScheduledRide().then((ride) {
+          if (!mounted) return;
+          setState(() => _nextScheduledRide = ride);
+          _updateImminentRide();
+        });
+      }
     }
   }
 

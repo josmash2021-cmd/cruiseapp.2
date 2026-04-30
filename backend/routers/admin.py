@@ -1165,8 +1165,10 @@ async def admin_assign_driver(
 ):
     """Manually assign a driver to a trip (admin override)."""
     try:
-        # Get trip
-        trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
+        # Get trip with row-level lock to prevent race with auto-dispatch
+        trip_result = await db.execute(
+            select(Trip).where(Trip.id == trip_id).with_for_update()
+        )
         trip = trip_result.scalar_one_or_none()
         if not trip:
             raise HTTPException(404, "Trip not found")
@@ -1183,11 +1185,11 @@ async def admin_assign_driver(
         if not driver.is_online:
             raise HTTPException(400, "Driver is offline")
         
-        # Create or update dispatch offer
+        # Create or update dispatch offer (also lock pending offers)
         existing = await db.execute(
             select(DispatchOffer).where(
                 and_(DispatchOffer.trip_id == trip_id, DispatchOffer.status == "pending")
-            )
+            ).with_for_update()
         )
         for offer in existing.scalars().all():
             offer.status = "expired"

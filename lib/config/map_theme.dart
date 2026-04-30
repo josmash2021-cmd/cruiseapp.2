@@ -17,6 +17,15 @@ class MapTheme {
   static const String _greyMinor  = '#1E2128';
   static const String _greyCase   = '#161820';
 
+  // NEW: Visible colors for buildings, water, parks, POIs
+  static const String _building   = '#1A2B4D';   // lighter navy — visible against _navy
+  static const String _building3D = '#223A66';   // even lighter for 3D extrusion tops
+  static const String _water      = '#0D1F3F';   // lighter than _navy, visible
+  static const String _park       = '#0F2E1F';   // dark green — distinct from navy
+  static const String _poiText    = '#A8B0C4';   // light grey-blue, readable on dark
+  static const String _poiIcon    = '#8A94A8';   // slightly darker for icons
+  static const String _placeLabel = '#C4CCE0';   // white-ish for city/neighborhood names
+
   // ── Internal helpers ───────────────────────────────────────────────────
 
   static Future<void> _sp(
@@ -52,15 +61,19 @@ class MapTheme {
 
     final futures = <Future<void>>[];
 
-    // Background / land / water → dark navy
+    // Background / land → dark navy
     for (final layer in ['background', 'land']) {
       futures.add(_sp(ctrl, layer, 'background-color', _navy));
     }
+
+    // Landuse (parks, commercial, residential) → distinct dark green
     for (final layer in ['landcover', 'landuse']) {
-      futures.add(_sp(ctrl, layer, 'fill-color', _navyLight));
+      futures.add(_sp(ctrl, layer, 'fill-color', _park));
     }
+
+    // Water (rivers, lakes) → lighter navy so it's VISIBLE
     for (final layer in ['water', 'water-shadow']) {
-      futures.add(_sp(ctrl, layer, 'fill-color', _navyWater));
+      futures.add(_sp(ctrl, layer, 'fill-color', _water));
     }
 
     // FREEWAYS / HIGHWAYS → gold
@@ -154,9 +167,36 @@ class MapTheme {
     futures.add(_sp(ctrl, 'road-label-navigation', 'text-color', '#5A6070'));
     futures.add(_sp(ctrl, 'road-label-simple', 'text-color', '#5A6070'));
 
-    // Buildings → dark navy tint
+    // Buildings → visible lighter navy with 3D extrusion
     for (final layer in ['building', 'building-outline']) {
-      futures.add(_sp(ctrl, layer, 'fill-color', '#111D3A'));
+      futures.add(_sp(ctrl, layer, 'fill-color', _building));
+    }
+    // 3D building extrusion height + color
+    futures.add(_sp(ctrl, 'building', 'fill-extrusion-color', _building));
+    futures.add(_sp(ctrl, 'building', 'fill-extrusion-opacity', '0.85'));
+    // NOTE: fill-extrusion-height requires data-driven styling; we enable the layer
+    // and let Mapbox use the building heights from the vector tile source.
+    // To make buildings pop, we set the base slightly darker.
+    futures.add(_sp(ctrl, 'building', 'fill-extrusion-base', '0'));
+
+    // POI labels → visible light text + icons
+    const poiLayers = [
+      'poi-label', 'poi', 'poi-scalerank1', 'poi-scalerank2',
+      'poi-scalerank3', 'poi-scalerank4',
+    ];
+    for (final layer in poiLayers) {
+      futures.add(_sp(ctrl, layer, 'visibility', 'visible'));
+      futures.add(_sp(ctrl, layer, 'text-color', _poiText));
+      futures.add(_sp(ctrl, layer, 'icon-color', _poiIcon));
+    }
+
+    // Place labels (city, neighborhood names) → bright white-ish
+    const placeLayers = [
+      'place-label', 'place', 'country-label', 'state-label',
+      'settlement-label', 'settlement-subdivision-label',
+    ];
+    for (final layer in placeLayers) {
+      futures.add(_sp(ctrl, layer, 'text-color', _placeLabel));
     }
 
     // Traffic layers → COMPLETELY HIDDEN

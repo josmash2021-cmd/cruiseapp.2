@@ -17,6 +17,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _card = Color(0xFF1C1C1E);
   static const _surface = Color(0xFF141414);
+  static const _red = Color(0xFFFF453A);
 
   int _selectedFilter = 0; // 0=All, 1=Completed, 2=Cancelled
 
@@ -28,6 +29,14 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final status = _selectedFilter == 1 ? 'completed' : 'cancelled';
     return _trips.where((t) => t['status'] == status).toList();
   }
+
+  int get _completedCount =>
+      _trips.where((t) => t['status'] == 'completed').length;
+  int get _cancelledCount =>
+      _trips.where((t) => t['status'] == 'cancelled').length;
+  double get _totalEarnings => _trips
+      .where((t) => t['status'] == 'completed')
+      .fold<double>(0, (a, t) => a + ((t['fare'] as num?)?.toDouble() ?? 0));
 
   @override
   void initState() {
@@ -60,15 +69,20 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
+          // ── AppBar with back chevron ──
           SliverAppBar(
             backgroundColor: _surface,
             pinned: true,
             expandedHeight: 110,
             automaticallyImplyLeading: false,
+            leading: IconButton(
+              icon: const Icon(Icons.chevron_left_rounded, color: _gold, size: 28),
+              onPressed: () => Navigator.pop(context),
+            ),
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+              titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
               title: Text(
-                S.of(context).tripHistoryTitle,
+                s.tripHistoryTitle,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -78,34 +92,50 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
             ),
           ),
 
-          // ── Summary ──
+          // ── Stats header with gradient and icons ──
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: _card,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      _card,
+                      const Color(0xFF252528),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.06),
+                  ),
                 ),
                 child: Row(
                   children: [
                     _summStat(
-                      '${_trips.where((t) => t['status'] == 'completed').length}',
-                      S.of(context).completedFilter,
-                      const Color(0xFFE8C547),
+                      value: '$_completedCount',
+                      label: s.completedFilter,
+                      icon: Icons.check_circle_rounded,
+                      iconColor: _gold,
+                      valueColor: Colors.white,
                     ),
                     _dividerVert(),
                     _summStat(
-                      '${_trips.where((t) => t['status'] == 'cancelled').length}',
-                      S.of(context).cancelledFilter,
-                      Colors.white.withValues(alpha: 0.5),
+                      value: '$_cancelledCount',
+                      label: s.cancelledFilter,
+                      icon: Icons.cancel_rounded,
+                      iconColor: _red.withValues(alpha: 0.7),
+                      valueColor: Colors.white.withValues(alpha: 0.7),
                     ),
                     _dividerVert(),
                     _summStat(
-                      '\$${_trips.where((t) => t['status'] == 'completed').fold<double>(0, (a, t) => a + ((t['fare'] as num?)?.toDouble() ?? 0)).toStringAsFixed(0)}',
-                      S.of(context).total,
-                      _gold,
+                      value: '\$${_totalEarnings.toStringAsFixed(0)}',
+                      label: s.total,
+                      icon: Icons.attach_money_rounded,
+                      iconColor: _gold,
+                      valueColor: _gold,
                     ),
                   ],
                 ),
@@ -113,53 +143,49 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
             ),
           ),
 
-          // ── Filter ──
+          // ── Filter tabs ──
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: List.generate(3, (i) {
-                    final sel = i == _selectedFilter;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _selectedFilter = i);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: sel
-                                ? _gold.withValues(alpha: 0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(11),
-                            border: sel
-                                ? Border.all(
-                                    color: _gold.withValues(alpha: 0.3),
-                                  )
-                                : null,
-                          ),
-                          child: Text(
-                            filters[i],
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: sel ? _gold : Colors.white38,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
+              child: Row(
+                children: List.generate(3, (i) {
+                  final sel = i == _selectedFilter;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _selectedFilter = i);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                        margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: sel
+                              ? _gold.withValues(alpha: 0.12)
+                              : Colors.white.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(24),
+                          border: sel
+                              ? Border.all(
+                                  color: _gold.withValues(alpha: 0.35),
+                                  width: 1.2,
+                                )
+                              : null,
+                        ),
+                        child: Text(
+                          filters[i],
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: sel ? _gold : Colors.white38,
+                            fontSize: 13,
+                            fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
                           ),
                         ),
                       ),
-                    );
-                  }),
-                ),
+                    ),
+                  );
+                }),
               ),
             ),
           ),
@@ -181,28 +207,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                   )
                 : _filtered.isEmpty
                 ? SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 60),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.history_rounded,
-                              color: Colors.white.withValues(alpha: 0.1),
-                              size: 60,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              S.of(context).noTripsFound,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.3),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    child: _emptyState(),
                   )
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
@@ -213,6 +218,46 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
+      ),
+    );
+  }
+
+  // ── Empty state ──
+  Widget _emptyState() {
+    final s = S.of(context);
+    String message;
+    IconData icon;
+    if (_selectedFilter == 1) {
+      message = s.noCompletedTrips;
+      icon = Icons.check_circle_outline_rounded;
+    } else if (_selectedFilter == 2) {
+      message = s.noCancelledTrips;
+      icon = Icons.cancel_outlined;
+    } else {
+      message = s.noTripsFound;
+      icon = Icons.history_rounded;
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 60),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: Colors.white.withValues(alpha: 0.1),
+              size: 60,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.3),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -233,18 +278,8 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
       return '${s.yesterdayDatePrefix}, $h:${dt.minute.toString().padLeft(2, '0')} $ampm';
     }
     const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.day}';
   }
@@ -259,6 +294,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final riderName =
         (trip['rider'] ?? trip['rider_name'] ?? dropoff) as String;
     final date = (trip['date'] ?? trip['created_at'] ?? '') as String;
+    final distance = (trip['distance'] as num?)?.toDouble() ?? 0.0;
+    final duration = (trip['duration'] as num?)?.toInt() ?? 0;
+
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 350 + (index * 60)),
@@ -273,11 +311,11 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: _card,
+          color: completed ? _card : const Color(0xFF18181A),
           borderRadius: BorderRadius.circular(20),
           border: completed
-              ? null
-              : Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ? Border.all(color: Colors.white.withValues(alpha: 0.05))
+              : Border.all(color: _red.withValues(alpha: 0.2)),
         ),
         child: Material(
           color: Colors.transparent,
@@ -285,35 +323,52 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
             onTap: () => _showTripDetails(trip),
+            splashColor: _gold.withValues(alpha: 0.08),
+            highlightColor: _gold.withValues(alpha: 0.04),
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ── Circular badge ──
                       Container(
                         width: 46,
                         height: 46,
                         decoration: BoxDecoration(
-                          color: (completed ? _gold : Colors.white).withValues(
-                            alpha: 0.12,
-                          ),
+                          gradient: completed
+                              ? LinearGradient(
+                                  colors: [
+                                    _gold.withValues(alpha: 0.2),
+                                    _gold.withValues(alpha: 0.08),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
+                          color: completed
+                              ? null
+                              : _red.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
                         child: Center(
-                          child: Text(
-                            riderName.isNotEmpty ? riderName[0] : '?',
-                            style: TextStyle(
-                              color: completed
-                                  ? _gold
-                                  : Colors.white.withValues(alpha: 0.5),
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                          child: completed
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  color: _gold,
+                                  size: 22,
+                                )
+                              : Icon(
+                                  Icons.close_rounded,
+                                  color: _red.withValues(alpha: 0.7),
+                                  size: 22,
+                                ),
                         ),
                       ),
                       const SizedBox(width: 14),
+
+                      // ── Address + date ──
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,23 +379,52 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                                   : S.of(context).tripFallback,
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on_outlined,
+                                  size: 12,
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    pickup.isNotEmpty
+                                        ? pickup
+                                        : S.of(context).pickupFallback,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.35),
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
                             Text(
                               _formatDate(date, context),
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.35),
-                                fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.3),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
                       ),
+
+                      const SizedBox(width: 10),
+
+                      // ── Price / Cancelled badge ──
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -349,7 +433,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                               '\$${fare.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 color: _gold,
-                                fontSize: 20,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w900,
                               ),
                             )
@@ -357,28 +441,28 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
-                                vertical: 4,
+                                vertical: 5,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
+                                color: _red.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 S.of(context).cancelledBadge,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
+                                style: TextStyle(
+                                  color: _red.withValues(alpha: 0.9),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),
                           if (completed && tip > 0) ...[
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 4),
                             Text(
                               '+\$${tip.toStringAsFixed(2)} ${S.of(context).tipSuffix}',
                               style: const TextStyle(
-                                color: Color(0xFFE8C547),
-                                fontSize: 12,
+                                color: _gold,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -387,25 +471,42 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                       ),
                     ],
                   ),
+
+                  // ── Distance / Duration / Rating row ──
                   if (completed) ...[
                     const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.03),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
-                          _miniInfo(
-                            Icons.route_rounded,
-                            '${((trip['distance'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)} mi',
-                          ),
-                          const SizedBox(width: 20),
-                          _miniInfo(
-                            Icons.schedule_rounded,
-                            '${(trip['duration'] as num?)?.toInt() ?? 0} min',
-                          ),
+                          if (distance > 0)
+                            _miniInfo(
+                              Icons.route_rounded,
+                              '${distance.toStringAsFixed(1)} mi',
+                            )
+                          else
+                            _miniInfo(
+                              Icons.route_rounded,
+                              '-',
+                            ),
+                          const SizedBox(width: 16),
+                          if (duration > 0)
+                            _miniInfo(
+                              Icons.schedule_rounded,
+                              '$duration min',
+                            )
+                          else
+                            _miniInfo(
+                              Icons.schedule_rounded,
+                              '-',
+                            ),
                           const Spacer(),
                           Row(
                             children: List.generate(
@@ -436,7 +537,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   Widget _miniInfo(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.3)),
+        Icon(icon, size: 13, color: Colors.white.withValues(alpha: 0.3)),
         const SizedBox(width: 5),
         Text(
           text,
@@ -450,14 +551,22 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     );
   }
 
-  Widget _summStat(String value, String label, Color color) {
+  Widget _summStat({
+    required String value,
+    required String label,
+    required IconData icon,
+    required Color iconColor,
+    required Color valueColor,
+  }) {
     return Expanded(
       child: Column(
         children: [
+          Icon(icon, size: 20, color: iconColor),
+          const SizedBox(height: 8),
           Text(
             value,
             style: TextStyle(
-              color: color,
+              color: valueColor,
               fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
@@ -467,7 +576,8 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
             label,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.35),
-              fontSize: 12,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -478,8 +588,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   Widget _dividerVert() {
     return Container(
       width: 1,
-      height: 36,
-      color: Colors.white.withValues(alpha: 0.06),
+      height: 50,
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      color: Colors.white.withValues(alpha: 0.08),
     );
   }
 
@@ -573,9 +684,12 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                     ),
                     _detailStat(
                       S.of(context).distanceLabel,
-                      '${distance.toStringAsFixed(1)} mi',
+                      distance > 0 ? '${distance.toStringAsFixed(1)} mi' : '-',
                     ),
-                    _detailStat(S.of(context).durationLabel, '$duration min'),
+                    _detailStat(
+                      S.of(context).durationLabel,
+                      duration > 0 ? '$duration min' : '-',
+                    ),
                     if (tip > 0)
                       _detailStat(
                         S.of(context).tipLabel,

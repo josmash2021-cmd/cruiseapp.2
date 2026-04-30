@@ -1134,6 +1134,10 @@ class S {
   String get cancelledFilter => _es ? 'Cancelados' : 'Cancelled';
   String get noTripsFound =>
       _es ? 'No se encontraron viajes' : 'No trips found';
+  String get noCompletedTrips =>
+      _es ? 'No hay viajes completados' : 'No completed trips yet';
+  String get noCancelledTrips =>
+      _es ? 'No hay viajes cancelados' : 'No cancelled trips';
 
   // ── Driver Pending Review ──────────────────────────────────────────────────
   String get applicationUnderReview =>

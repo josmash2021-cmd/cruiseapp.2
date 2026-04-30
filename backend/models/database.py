@@ -65,14 +65,14 @@ else:
         # ── Railway Private PostgreSQL: direct connection, ultra-fast ──
         # Same-region network = sub-millisecond latency.
         # Tuned for hot-cache reuse and minimal checkout overhead.
-        _engine_kwargs["pool_size"] = 20          # More connections for concurrent users
-        _engine_kwargs["max_overflow"] = 10       # Burst capacity
-        _engine_kwargs["pool_pre_ping"] = True    # Verify connection before use (prevents stale errors)
+        _engine_kwargs["pool_size"] = 10          # Conservative — Railway Hobby plan limit
+        _engine_kwargs["max_overflow"] = 20       # Burst capacity for spikes
+        _engine_kwargs["pool_pre_ping"] = True    # CRITICAL: verify connection before use (prevents stale errors)
         _engine_kwargs["pool_recycle"] = 300      # Recycle every 5 min (Railway idle timeout ~10min)
-        _engine_kwargs["pool_timeout"] = 10       # Wait up to 10s for available connection
+        _engine_kwargs["pool_timeout"] = 30       # Wait up to 30s for available connection (survives latency spikes)
         _engine_kwargs["pool_use_lifo"] = True    # reuse hottest connection
         _connect_args = {
-            "connect_timeout": 5,
+            "connect_timeout": 15,                # Increased for cross-region / high-latency scenarios
             "sslmode": "disable",                 # private network, no TLS overhead
             "options": "-c search_path=public -c jit=off -c application_name=cruise_fastapi",
         }

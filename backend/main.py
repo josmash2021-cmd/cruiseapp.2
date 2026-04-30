@@ -273,14 +273,12 @@ async def lifespan(app: FastAPI):
                             logging.error("[DB Init] Table %s NOT accessible from async engine: %s", tbl, _verify_err)
                             raise RuntimeError(f"Table {tbl} exists but is not accessible: {_verify_err}")
             
-            # Run PostgreSQL-specific migrations (indexes, etc.)
-            if not IS_SQLITE:
-                try:
-                    async with engine.begin() as conn:
-                        await _migrate_postgres(conn)
-                    logging.info("[DB Init] PostgreSQL migrations completed")
-                except Exception as _mig_err:
-                    logging.warning("[DB Init] Migration warning (non-fatal): %s", _mig_err)
+            # NOTE: PostgreSQL index migrations moved to standalone script
+            # (backend/run_migrations.py) to avoid running DDL on every boot.
+            # Indexes are created with IF NOT EXISTS, but checking pg_indexes
+            # on every startup adds latency and locks. Run migrations manually
+            # after schema changes instead.
+            logging.info("[DB Init] Skipping on-boot index migration — use run_migrations.py for DDL changes")
             
             db_initialized = True
             logging.info("Database initialized successfully")
@@ -381,6 +379,13 @@ async def lifespan(app: FastAPI):
     await document_approval_agent.stop()
     await rating_moderator_agent.stop()
     await wait_timeout_agent.stop()
+    # Dispose SQLAlchemy engine to close all pooled connections gracefully
+    try:
+        from models.database import engine as _engine
+        await _engine.dispose()
+        logging.info("[Shutdown] Database engine disposed — all connections closed")
+    except Exception as _e:
+        logging.warning("[Shutdown] Engine dispose warning: %s", _e)
 
 
 async def _audit_flush_loop():

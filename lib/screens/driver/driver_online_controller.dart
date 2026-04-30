@@ -705,19 +705,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _goOnlineBackend() {
-    if (_isGoingOnline) {
-      debugPrint('[DriverOnline] _goOnlineBackend already in progress, skipping');
-      return;
-    }
+    // _isGoingOnline is already set to true by _verifyAndGoOnline() before
+    // calling this method. The guard below would incorrectly skip if it were
+    // still true — remove it since the caller already handles deduplication.
     if (_driverId == null) {
-      debugPrint('âš ï¸ _goOnlineBackend: _driverId is null, skipping');
+      debugPrint('⚠️ _goOnlineBackend: _driverId is null, skipping');
+      _setState(() => _isGoingOnline = false);
       return;
     }
     debugPrint(
-      'ðŸŸ¢ Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
+      '🟢 Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
     );
     if (!_approvalGatePassed) {
       debugPrint('_goOnlineBackend: approval gate not passed, skipping');
+      _setState(() => _isGoingOnline = false);
       return;
     }
     if (_driverId == null || _pos == null) {
@@ -727,7 +728,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       });
       return;
     }
-    _isGoingOnline = true;
+    // _isGoingOnline is already true from _verifyAndGoOnline; keep it true
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);

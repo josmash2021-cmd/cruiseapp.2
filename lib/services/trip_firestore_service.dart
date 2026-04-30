@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/lat_lng.dart';
 
@@ -8,6 +9,28 @@ import '../models/lat_lng.dart';
 class TripFirestoreService {
   static final _db = FirebaseFirestore.instance;
   static CollectionReference get _trips => _db.collection('trips');
+
+  /// Retry a Firestore operation with auth recovery on permission-denied.
+  /// This handles the race condition where auth hasn't propagated to Firestore yet.
+  static Future<T> _withAuthRetry<T>(Future<T> Function() operation, {String? label}) async {
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await operation();
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied' && attempt < 3) {
+          debugPrint('[Firestore] $label permission-denied (attempt $attempt) — re-authenticating...');
+          // Force re-auth and retry
+          try {
+            await FirebaseAuth.instance.signInAnonymously();
+            await Future.delayed(const Duration(milliseconds: 300));
+          } catch (_) {}
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw Exception('$label failed after 3 attempts');
+  }
 
   /// Submit a new ride request. Returns the Firestore document ID.
   static Future<String> submitRideRequest({
@@ -28,40 +51,49 @@ class TripFirestoreService {
     bool isAirportTrip = false,
   }) async {
     final now = DateTime.now();
-    final docRef = await _trips.add({
-      'tripId': '',
-      'passengerId': '',
-      'passengerName': passengerName,
-      'passengerPhone': passengerPhone,
-      'driverId': null,
-      'driverName': null,
-      'driverPhone': null,
-      'pickupAddress': pickupAddress,
-      'pickupLat': pickupLat,
-      'pickupLng': pickupLng,
-      'dropoffAddress': dropoffAddress,
-      'dropoffLat': dropoffLat,
-      'dropoffLng': dropoffLng,
-      'status': scheduledAt != null ? 'scheduled' : 'requested',
-      'fare': fare,
-      'distance': distanceKm,
-      'duration': durationMin,
-      'paymentMethod': paymentMethod,
-      'vehicleType': vehicleType,
-      'isAirportTrip': isAirportTrip,
-      'scheduledAt': scheduledAt != null ? Timestamp.fromDate(scheduledAt) : null,
-      'rating': null,
-      'cancelReason': null,
-      'createdAt': Timestamp.fromDate(now),
-      'acceptedAt': null,
-      'driverArrivedAt': null,
-      'startedAt': null,
-      'completedAt': null,
-      'cancelledAt': null,
-    });
+    final docRef = await _withAuthRetry(
+      () => _trips.add({
+        'tripId': '',
+        'passengerId': '',
+        'passengerName': passengerName,
+        'passengerPhone': passengerPhone,
+        'driverId': null,
+        'driverName': null,
+        'driverPhone': null,
+        'pickupAddress': pickupAddress,
+        'pickupLat': pickupLat,
+        'pickupLng': pickupLng,
+        'dropoffAddress': dropoffAddress,
+        'dropoffLat': dropoffLat,
+        'dropoffLng': dropoffLng,
+        'status': scheduledAt != null ? 'scheduled' : 'requested',
+        'fare': fare,
+        'distance': distanceKm,
+        'duration': durationMin,
+        'paymentMethod': paymentMethod,
+        'vehicleType': vehicleType,
+        'isAirportTrip': isAirportTrip,
+        'scheduledAt': scheduledAt != null ? Timestamp.fromDate(scheduledAt) : null,
+        'rating': null,
+        'cancelReason': null,
+        'createdAt': Timestamp.fromDate(now),
+        'acceptedAt': null,
+        'driverArrivedAt': null,
+        'startedAt': null,
+        'completedAt': null,
+        'cancelledAt': null,
+      }),
+      label: 'submitRideRequest',
+    );
 
     // Back-fill the tripId field with the real Firestore ID (fire-and-forget)
-    unawaited(docRef.update({'tripId': docRef.id}));
+    unawaited(
+      _withAuthRetry(() => docRef.update({'tripId': docRef.id}), label: 'backfillTripId')
+        .catchError((e) {
+          debugPrint('⚠️ Firestore backfill failed: $e');
+          return null;
+        }),
+    );
     debugPrint('✅ Trip submitted to Firestore: ${docRef.id}');
     return docRef.id;
   }

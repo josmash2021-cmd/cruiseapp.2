@@ -320,12 +320,14 @@ extension _HomeScreenController on _HomeScreenState {
 
   void _listenToDriverLocation() {
     if (_activeRide == null || _miniMapController == null) return;
-    
-    // Cancel existing subscription
+
+    // Cancel existing subscriptions and bump generation to discard stale callbacks
     _driverLocationSub?.cancel();
     _tripDocSub?.cancel();
+    _tripStatusSub?.cancel();
     _trackedDriverId = null;
-    
+    final gen = ++_driverLocationGeneration;
+
     // Listen to driver location from Firestore (ride document has driver_id)
     final tripId = _activeRide!.firestoreTripId;
     if (tripId == null) return;
@@ -336,8 +338,8 @@ extension _HomeScreenController on _HomeScreenState {
         .doc(tripId)
         .snapshots()
         .listen((tripSnap) async {
-      if (!mounted) return;
-      
+      if (!mounted || gen != _driverLocationGeneration) return;
+
       final driverId = tripSnap.data()?['driver_id']?.toString();
       if (driverId == null) return;
       if (_trackedDriverId == driverId && _driverLocationSub != null) return;
@@ -349,8 +351,8 @@ extension _HomeScreenController on _HomeScreenState {
           .ref('driver_locations/$driverId')
           .onValue
           .listen((event) {
-        if (!mounted) return;
-        
+        if (!mounted || gen != _driverLocationGeneration) return;
+
         final data = event.snapshot.value as Map<dynamic, dynamic>?;
         if (data == null) return;
 
@@ -365,22 +367,27 @@ extension _HomeScreenController on _HomeScreenState {
 
         // Animate driver car to new position
         _animateDriverCar(LatLng(newLat, newLng), bearing);
-      }, onError: (_) {});
+      }, onError: (e) {
+        debugPrint('[DriverLoc] RTDB error: $e');
+      });
+    }, onError: (e) {
+      debugPrint('[DriverLoc] Firestore trip error: $e');
     });
 
     // Also listen for trip completion
-    _tripStatusSub?.cancel();
     _tripStatusSub = FirebaseFirestore.instance
         .collection('trips')
         .doc(tripId)
         .snapshots()
         .listen((tripSnap) {
-      if (!mounted) return;
-      
+      if (!mounted || gen != _driverLocationGeneration) return;
+
       final status = tripSnap.data()?['status']?.toString() ?? '';
       if (status == 'completed' || status == 'cancelled' || status == 'canceled') {
         _onTripCompleted();
       }
+    }, onError: (e) {
+      debugPrint('[DriverLoc] Firestore status error: $e');
     });
   }
 

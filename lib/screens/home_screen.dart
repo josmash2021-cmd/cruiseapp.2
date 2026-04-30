@@ -230,6 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _driverAnimNeedsRestart = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripStatusSub;
   String? _trackedDriverId;
+  int _driverLocationGeneration = 0;
 
   DateTime? _tripStartTime;
 

@@ -1058,18 +1058,26 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       tripEta = (cached.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
       tripDistMi = tripDistKm * 0.621371;
     } else {
-      distToPickupKm = _hav(_pos!, pickupLL);
-      etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      distToPickupMi = distToPickupKm * 0.621371;
+      if (_pos != null) {
+        distToPickupKm = _hav(_pos!, pickupLL);
+        etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        distToPickupMi = distToPickupKm * 0.621371;
+      } else {
+        distToPickupKm = 0;
+        etaToPickup = 1;
+        distToPickupMi = 0;
+      }
       tripDistKm = _hav(pickupLL, dropoffLL);
       tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       tripDistMi = tripDistKm * 0.621371;
     }
 
-    _offerMapUrlCache.putIfAbsent(
-      offerId,
-      () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
-    );
+    if (_pos != null) {
+      _offerMapUrlCache.putIfAbsent(
+        offerId,
+        () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
+      );
+    }
 
     final isExpanded = _expandedOfferIds.contains(offerId);
 
@@ -1776,9 +1784,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       tripEta = (cachedPreview.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
       tripDistMi = cachedPreview.pickupToDropoffKm! * 0.621371;
     } else {
-      final distToPickupKm = _hav(_pos!, pickupLL);
-      etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      distToPickupMi = distToPickupKm * 0.621371;
+      if (_pos != null) {
+        final distToPickupKm = _hav(_pos!, pickupLL);
+        etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        distToPickupMi = distToPickupKm * 0.621371;
+      } else {
+        etaToPickup = 1;
+        distToPickupMi = 0;
+      }
       final tripDistKm = _hav(pickupLL, dropoffLL);
       tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       tripDistMi = tripDistKm * 0.621371;

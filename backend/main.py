@@ -1635,13 +1635,13 @@ except ImportError as _wh_err:
 
 if __name__ == "__main__":
     import uvicorn
-    print("=" * 60)
-    print("CRUISE BACKEND SERVER")
-    print("=" * 60)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("Server URL: http://0.0.0.0:8000")
-    print("Socket.io:  ws://0.0.0.0:8000/socket.io")
-    print("=" * 60)
+    logging.info("=" * 60)
+    logging.info("CRUISE BACKEND SERVER")
+    logging.info("=" * 60)
+    logging.info("Started at: %s", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    logging.info("Server URL: http://0.0.0.0:8000")
+    logging.info("Socket.io:  ws://0.0.0.0:8000/socket.io")
+    logging.info("=" * 60)
 
     uvicorn.run(
         socket_app,

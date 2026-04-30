@@ -302,12 +302,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _clearAllAnnotations() async {
     _isClearingAnnotations = true;
     try {
+      // Clear route polylines first
       await _clearRouteAnnotation();
+      // Clear pickup/dropoff/preview pins
       await _clearPickupDropoffAnnotations();
+      // Clear driver car / gold dot annotations on the main point manager
       final pointMgr = _pointAnnotMgr;
-      if (pointMgr == null) return;
-      for (final annot in [_carAnnot, _goldDotAnnot]) {
-        if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+      if (pointMgr != null) {
+        for (final annot in [_carAnnot, _goldDotAnnot]) {
+          if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+        }
       }
       _carAnnot = null;
       _goldDotAnnot = null;

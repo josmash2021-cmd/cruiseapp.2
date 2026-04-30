@@ -450,6 +450,7 @@ from routers.vip import router as vip_router
 from routers.system import router as system_router
 from routers.uploads import router as uploads_router
 from routers.webhooks import router as webhooks_router
+from routers.worker import router as worker_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -468,6 +469,7 @@ app.include_router(vip_router)
 app.include_router(system_router)
 app.include_router(uploads_router)
 app.include_router(webhooks_router)
+app.include_router(worker_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION

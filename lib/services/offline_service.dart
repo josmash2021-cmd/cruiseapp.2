@@ -3,6 +3,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'api_service.dart';
 
 /// Handles offline trip continuation for drivers.
 /// If driver loses connection during a trip, queues updates and re-syncs when online.
@@ -16,10 +17,13 @@ class OfflineService extends ChangeNotifier {
   OfflineService._internal();
 
   final Connectivity _connectivity = Connectivity();
-  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   bool _isOnline = true;
   bool get isOnline => _isOnline;
+
+  bool _isSyncing = false;
+  bool get isSyncing => _isSyncing;
 
   List<Map<String, dynamic>> _queuedUpdates = [];
   List<Map<String, dynamic>> get queuedUpdates => _queuedUpdates;
@@ -43,6 +47,13 @@ class OfflineService extends ChangeNotifier {
 
     // Load queued updates from storage
     _loadQueuedUpdates();
+  }
+
+  /// Retry a single failed update later (re-queues it)
+  void _requeueUpdate(Map<String, dynamic> update) {
+    // Prepend so it gets retried first on next sync
+    _queuedUpdates.insert(0, update);
+    _saveQueuedUpdates();
   }
 
   /// Queue an update to be sent when online (e.g., location updates, trip status)
@@ -92,19 +103,80 @@ class OfflineService extends ChangeNotifier {
     }
   }
 
-  /// Sync all queued updates back to server
+  /// Sync all queued updates back to server.
+  /// Processes each update individually so one failure doesn't drop the rest.
   Future<void> _syncQueuedUpdates() async {
-    if (_queuedUpdates.isEmpty) return;
+    if (_queuedUpdates.isEmpty || _isSyncing) return;
+    _isSyncing = true;
+    notifyListeners();
 
-    debugPrint('[Offline] Syncing ${_queuedUpdates.length} queued updates...');
-    _queuedUpdates.clear();
+    final toSync = List<Map<String, dynamic>>.from(_queuedUpdates);
+    final failed = <Map<String, dynamic>>[];
+
+    debugPrint('[Offline] Syncing ${toSync.length} queued updates...');
+
+    for (final update in toSync) {
+      final type = update['type'] as String?;
+      final data = update['data'] as Map<String, dynamic>?;
+      if (type == null || data == null) continue;
+
+      try {
+        switch (type) {
+          case 'driver_location':
+            final driverId = data['driver_id'] as int?;
+            final lat = data['lat'] as double?;
+            final lng = data['lng'] as double?;
+            final isOnline = data['is_online'] as bool? ?? true;
+            if (driverId != null && lat != null && lng != null) {
+              await ApiService.updateDriverLocation(
+                driverId: driverId,
+                lat: lat,
+                lng: lng,
+                isOnline: isOnline,
+              );
+            }
+            break;
+
+          case 'trip_status':
+            final tripId = data['trip_id'] as int?;
+            final status = data['status'] as String?;
+            if (tripId != null && status != null) {
+              await ApiService.updateTripStatus(
+                tripId: tripId,
+                status: status,
+              );
+            }
+            break;
+
+          default:
+            debugPrint('[Offline] Unknown update type: $type');
+            break;
+        }
+      } catch (e) {
+        debugPrint('[Offline] Failed to sync update ($type): $e');
+        // Re-queue for next sync attempt (max 3 retries)
+        final attempts = (update['attempts'] as int? ?? 0) + 1;
+        if (attempts < 3) {
+          failed.add({...update, 'attempts': attempts});
+        } else {
+          debugPrint('[Offline] Dropping update after 3 failed attempts: $type');
+        }
+      }
+    }
+
+    _queuedUpdates = failed;
     await _saveQueuedUpdates();
+    _isSyncing = false;
+    notifyListeners();
+
+    debugPrint('[Offline] Sync complete. ${failed.length} updates re-queued.');
   }
 
   /// Dispose resources
   @override
   void dispose() {
-    _connectivitySubscription.cancel();
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
     super.dispose();
   }
 }

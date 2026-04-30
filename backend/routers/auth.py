@@ -660,7 +660,7 @@ async def resend_email_verification(
             server.quit()
             email_sent = True
     except Exception as e:
-        logging.warning(f"Email send failed: {e}")
+        logging.warning("Email send failed: %s", e)
 
     return {
         "message": "Verification code sent" if email_sent else "Verification code generated",

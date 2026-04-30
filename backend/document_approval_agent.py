@@ -1,3 +1,5 @@
+from utils.ssn_encryption import decrypt_ssn, format_ssn_for_display
+
 """
 Document Auto-Approval Agent — THE FAST-TRACK VERIFIER
 
@@ -394,13 +396,14 @@ class DocumentApprovalAgent:
         if broken_urls:
             reject_reasons.append(f"Fotos inaccesibles: {', '.join(broken_urls)}")
 
-        # CHECK 4: SSN
-        ssn = driver.ssn
-        if not ssn or not isinstance(ssn, str):
+        # CHECK 4: SSN (decrypt from database for validation)
+        ssn_plain = decrypt_ssn(driver.ssn) if driver.ssn else ""
+        if not ssn_plain:
             reject_reasons.append("SSN no proporcionado")
         else:
             import re
-            if not re.match(r'^\d{3}-\d{2}-\d{4}$', ssn):
+            ssn_formatted = format_ssn_for_display(ssn_plain)
+            if not re.match(r'^\d{3}-\d{2}-\d{4}$', ssn_formatted):
                 reject_reasons.append("Formato de SSN inválido")
 
         # CHECK 5: Vehicle registered

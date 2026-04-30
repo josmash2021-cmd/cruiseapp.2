@@ -23,6 +23,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _haversine, _resolve_rider_display,
 )
+from utils.ssn_encryption import is_ssn_provided
 from services.fcm_service import _send_fcm_push
 from services.socketio_service import notify_user
 from config import (
@@ -720,7 +721,7 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     # Password reset available but never expose plaintext (security best practice)
     ud["password_reset_available"] = True  # Admin can send password reset link
     # SSN is encrypted on backend, never exposed to admin (compliance)
-    ud["ssn_provided"] = bool(user.ssn)  # Just indicate if SSN was collected
+    ud["ssn_provided"] = is_ssn_provided(user.ssn)  # Just indicate if SSN was collected
     return ud
 
 

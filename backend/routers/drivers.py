@@ -29,6 +29,7 @@ from config import (
     firestore_sync, _HAS_FIRESTORE,
     _nearby_cache, _NEARBY_CACHE_TTL,
 )
+from utils.ssn_encryption import decrypt_ssn
 from services.event_bus import event_bus
 from services.socketio_service import emit_driver_location
 from services.redis_cache import _get_redis
@@ -2090,7 +2091,7 @@ async def initiate_background_check(
                     "last_name": user.last_name,
                     "email": user.email,
                     "phone": user.phone,
-                    "ssn": user.ssn or "",
+                    "ssn": decrypt_ssn(user.ssn) if user.ssn else "",
                 },
                 timeout=15,
             )

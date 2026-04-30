@@ -36,6 +36,10 @@ from config import (
     EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY,
     firestore_sync, _HAS_FIRESTORE,
 )
+from utils.ssn_encryption import (
+    encrypt_ssn, decrypt_ssn, get_ssn_last4, get_ssn_masked,
+    is_ssn_provided, format_ssn_for_display,
+)
 
 router = APIRouter()
 
@@ -1970,13 +1974,13 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         db_user.verification_status = "pending"
         db_user.verification_reason = None
         db_user.is_verified = False
-        # Store SSN if provided (validate format, store as XXX-XX-XXXX)
+        # Store SSN if provided — encrypt at application layer before saving to DB
         raw_ssn = body.get("ssn", "")
         if raw_ssn:
             import re as _re
             ssn_digits = _re.sub(r'\D', '', str(raw_ssn))
             if len(ssn_digits) == 9:
-                db_user.ssn = f"{ssn_digits[:3]}-{ssn_digits[3:5]}-{ssn_digits[5:]}"
+                db_user.ssn = encrypt_ssn(ssn_digits)
         await db.commit()
         await db.refresh(db_user)
     except HTTPException:
@@ -2156,7 +2160,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                 registration_photo_url=saved_urls.get("registration"),
                 video_url=video_url,
                 profile_photo_url=profile_photo_url,
-                ssn=db_user.ssn,
+                ssn=decrypt_ssn(db_user.ssn) if db_user.ssn else None,
                 vehicle=vehicle_data,
             )
         except Exception as e:

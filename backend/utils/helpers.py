@@ -109,14 +109,17 @@ def _haversine(lat1, lng1, lat2, lng2):
 #  Dict converters (ORM → API response)
 # ═══════════════════════════════════════════════════════
 
+from utils.ssn_encryption import get_ssn_last4, get_ssn_masked, is_ssn_provided
+
 def _user_dict(u) -> dict:
     ssn_masked = None
     ssn_last4 = None
     if u.ssn:
-        _d = re.sub(r'\D', '', u.ssn)
-        if len(_d) == 9:
-            ssn_last4 = _d[-4:]
-            ssn_masked = f"***-**-{_d[-4:]}"
+        # SSN is encrypted in the database — safely extract last-4 and masked form
+        _last4 = get_ssn_last4(u.ssn)
+        if _last4:
+            ssn_last4 = _last4
+            ssn_masked = f"***-**-{_last4}"
     return {
         "id": u.id,
         "first_name": u.first_name,
@@ -138,9 +141,9 @@ def _user_dict(u) -> dict:
         "video_url": u.video_url,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
         "status": u.status or "active",
-        "ssn_provided": bool(u.ssn),
-        "ssn_masked": "***-**-****",  # SSN is encrypted, never expose
-        "ssn_last4": None,
+        "ssn_provided": is_ssn_provided(u.ssn),
+        "ssn_masked": ssn_masked or "***-**-****",  # Never expose full SSN
+        "ssn_last4": ssn_last4,
         "vehicle_type": getattr(u, 'vehicle_type', None),
         "username": getattr(u, 'username', None),
         "email_changes_count": u.email_changes_count or 0,

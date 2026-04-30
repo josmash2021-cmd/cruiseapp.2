@@ -472,7 +472,10 @@ class ApiService {
   static const String _refreshTokenKey = 'cruise_refresh_token';
   static String? _cachedToken;
   static String? _cachedRefreshToken;
-  static bool _isRefreshing = false;
+  // Removed _isRefreshing flag — the _refreshCompleter alone is sufficient
+  // for atomic coordination. The old two-flag pattern had a race condition
+  // where two concurrent callers could both pass the null check before
+  // either set _refreshCompleter.
   static bool _isHandlingUnauthorized = false;
   static bool _loginInProgress = false;
   static Completer<bool>? _refreshCompleter;
@@ -541,12 +544,12 @@ class ApiService {
   /// Returns true if successful, false otherwise.
   /// If another refresh is in progress, awaits and returns its result.
   static Future<bool> refreshAccessToken() async {
-    // If a refresh is already in progress, wait for it and return its result
+    // SINGLE ATOMIC CHECK: If a refresh is already in progress, wait for it
+    // and return its result. This prevents duplicate refresh requests when
+    // multiple concurrent 401s arrive.
     if (_refreshCompleter != null) {
       return _refreshCompleter!.future;
     }
-    if (_isRefreshing) return false;
-    _isRefreshing = true;
     _refreshCompleter = Completer<bool>();
     try {
       final refreshToken = await _getRefreshToken();
@@ -576,8 +579,10 @@ class ApiService {
       _refreshCompleter!.complete(false);
       return false;
     } finally {
-      _isRefreshing = false;
-      _refreshCompleter = null;
+      // Clear the completer so the next refresh attempt can proceed.
+      // Use a microtask to ensure any awaiters on .future receive the result
+      // before the completer is nulled.
+      Future.microtask(() => _refreshCompleter = null);
     }
   }
 

@@ -244,8 +244,24 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     refresh = _create_refresh_token(user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
+# Rate-limit tracker for check-exists to prevent user enumeration
+_check_exists_tracker: dict = {}
+_MAX_CHECK_EXISTS_PER_WINDOW = 10
+_CHECK_EXISTS_WINDOW = 60  # 1 minute
+
+
 @router.post("/auth/check-exists", dependencies=[Depends(_verify_api_key)])
-async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
+async def check_exists(body: CheckExistsIn, request: Request, db: AsyncSession = Depends(get_db)):
+    # Rate limit by IP to slow down enumeration attacks
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    attempts = _check_exists_tracker.get(client_ip, [])
+    attempts = [t for t in attempts if now - t < _CHECK_EXISTS_WINDOW]
+    if len(attempts) >= _MAX_CHECK_EXISTS_PER_WINDOW:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    attempts.append(now)
+    _check_exists_tracker[client_ip] = attempts
+
     identifier = body.identifier.strip()
     id_lower = identifier.lower()
     query = select(User).where(

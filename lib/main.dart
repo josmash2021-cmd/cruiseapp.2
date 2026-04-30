@@ -353,16 +353,35 @@ void main() async {
         }
       };
 
-      // M1: Friendly error widget in release mode — no red/grey screen of death
+      // M1: Graceful error widget in release mode — no blocking modal.
+      // Shows a small inline error instead of a full-screen "restart app" message.
+      // Widget build errors are non-fatal; the app can often recover by rebuilding
+      // the widget tree (e.g., after a network hiccup or brief memory pressure).
       if (kReleaseMode) {
-        ErrorWidget.builder = (FlutterErrorDetails _) {
-          return const Material(
-            color: Colors.black,
+        ErrorWidget.builder = (FlutterErrorDetails details) {
+          return Material(
+            color: Colors.black.withValues(alpha: 0.85),
             child: Center(
-              child: Text(
-                'Algo salió mal.\nCierra y reinicia la app.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: 15),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white38, size: 32),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Temporary glitch',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'The app will recover automatically.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

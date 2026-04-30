@@ -650,15 +650,34 @@ class LocalDataService {
   }
 
   static const _driverApprovalKey = 'driver_approval_status_v1';
+  static const _driverApprovalTimeKey = 'driver_approval_status_time_v1';
 
   static Future<void> setDriverApprovalStatus(String status) async {
     final prefs = _p;
     await prefs.setString(_driverApprovalKey, status);
+    // Save timestamp so we know how fresh this is
+    await prefs.setInt(_driverApprovalTimeKey, DateTime.now().millisecondsSinceEpoch);
   }
 
   static Future<String> getDriverApprovalStatus() async {
     final prefs = _p;
     return prefs.getString(_driverApprovalKey) ?? 'none';
+  }
+  
+  /// Returns true if driver was EVER approved (even if cache is old).
+  /// This prevents approved drivers from being stuck in pending review.
+  static Future<bool> wasDriverEverApproved() async {
+    final prefs = _p;
+    final status = prefs.getString(_driverApprovalKey);
+    // If we have ANY record of approval, trust it
+    return status == 'approved';
+  }
+  
+  /// Clear approval status (called on logout)
+  static Future<void> clearDriverApprovalStatus() async {
+    final prefs = _p;
+    await prefs.remove(_driverApprovalKey);
+    await prefs.remove(_driverApprovalTimeKey);
   }
 
   static Future<String?> getIdDocumentType() async {
@@ -694,6 +713,7 @@ class LocalDataService {
     await prefs.remove(_docTypeKey);
     await prefs.remove(_biometricKey);
     await prefs.remove(_driverApprovalKey);
+    await prefs.remove(_driverApprovalTimeKey);
     await prefs.remove('first_ride_promo_used');
     await prefs.remove('promo_trips_left');
     await prefs.remove('notif_ride');

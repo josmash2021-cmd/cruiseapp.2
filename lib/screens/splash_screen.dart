@@ -319,6 +319,16 @@ class _SplashScreenState extends State<SplashScreen>
     if (mode == 'driver') {
       await UserSession.initPhotoNotifier();
 
+      // ── CRITICAL FIX: Check if driver was EVER approved ──
+      // If driver was approved before, NEVER send them back to pending review
+      // even if backend is down or cache is stale.
+      final wasEverApproved = await LocalDataService.wasDriverEverApproved();
+      if (wasEverApproved) {
+        debugPrint('[SplashScreen] Driver was previously approved — going to home');
+        unawaited(_refreshApprovalStatusInBackground());
+        return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+      }
+
       // ── Read approval status from local cache first (instant) ──
       final cachedStatus = await LocalDataService.getDriverApprovalStatus();
 
@@ -330,8 +340,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
         // ALWAYS hit the backend API — the cache may be stale if dispatch
-        // approved the driver while the app was closed.  Firestore check
-        // is fast but the REST endpoint is the source of truth.
+        // approved the driver while the app was closed.
         await initFuture;
         try {
           final approvalResult = await ApiService.getDriverApprovalStatus()
@@ -473,6 +482,23 @@ class _SplashScreenState extends State<SplashScreen>
       d['driver_status'] == 'rejected' ||
       d['status'] == 'rejected' ||
       d['approvalStatus'] == 'rejected';
+
+  /// Refresh approval status in background for already-approved drivers.
+  /// Keeps the local cache fresh without blocking navigation.
+  Future<void> _refreshApprovalStatusInBackground() async {
+    try {
+      final approvalResult = await ApiService.getDriverApprovalStatus()
+          .timeout(const Duration(seconds: 5));
+      final liveStatus =
+          approvalResult['approval_status'] as String? ??
+          approvalResult['status'] as String? ??
+          'approved'; // default to approved if we can't tell
+      await LocalDataService.setDriverApprovalStatus(liveStatus);
+      debugPrint('[SplashScreen] Approval status refreshed: $liveStatus');
+    } catch (e) {
+      debugPrint('[SplashScreen] Approval refresh failed (keeping approved): $e');
+    }
+  }
 
   /// Validates token in background — if invalid, logs out user.
   /// Does NOT block navigation — user gets in with cached session.

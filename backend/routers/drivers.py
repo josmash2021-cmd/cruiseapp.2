@@ -2133,8 +2133,26 @@ async def initiate_background_check(
 
 @router.post("/drivers/background-check/webhook")
 async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Handle Checkr webhook events for background check completion."""
-    payload = await request.json()
+    """Handle Checkr webhook events for background check completion.
+    Requires CHECKR_WEBHOOK_SECRET for signature verification."""
+    body_bytes = await request.body()
+    signature = request.headers.get("x-checkr-signature", "")
+    webhook_secret = os.environ.get("CHECKR_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        expected = hmac.new(
+            webhook_secret.encode(), body_bytes, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            _security_audit_log("CHECKR_WEBHOOK_INVALID_SIG", "checkr", "signature mismatch")
+            raise HTTPException(401, "Invalid signature")
+    else:
+        logging.warning("[BGCheck] CHECKR_WEBHOOK_SECRET not set — accepting webhook without verification")
+
+    try:
+        payload = json.loads(body_bytes)
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+
     event_type = payload.get("type", "")
     data = payload.get("data", {}).get("object", {})
 

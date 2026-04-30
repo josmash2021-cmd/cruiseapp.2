@@ -2706,7 +2706,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _goldDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
       geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       image: bytes,
-      iconSize: 0.4,
+      iconSize: 1.0,  // Match driver screen gold dot size
       iconAnchor: mapbox.IconAnchor.CENTER,
       iconOffset: [0, 0],
     ));

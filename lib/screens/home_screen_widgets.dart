@@ -98,14 +98,54 @@ extension _HomeScreenWidgets on _HomeScreenState {
   }
 
   Future<Uint8List> _buildGoldPuckImage() async {
-    const size = 24.0;
+    // Match GoldLocationDot style: 160px canvas, 18px dot radius, glow + halo + ring + core
+    const double canvasSize = 160.0;
+    const double dotR = 18.0;
+    const gold = Color(0xFFE8C547);
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    final center = Offset(size / 2, size / 2);
-    canvas.drawCircle(center, size / 2, Paint()..color = Colors.white);
-    canvas.drawCircle(center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
+    final canvas = Canvas(
+      recorder,
+      const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
+    );
+    const center = Offset(canvasSize / 2, canvasSize / 2);
+
+    // Outer glow (static, no pulse)
+    canvas.drawCircle(
+      center,
+      dotR * 1.8,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+
+    // Middle halo
+    canvas.drawCircle(
+      center,
+      dotR * 1.3,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+
+    // White ring
+    canvas.drawCircle(
+      center,
+      dotR,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+
+    // Gold core
+    canvas.drawCircle(
+      center,
+      dotR - 1.5,
+      Paint()..color = gold.withValues(alpha: 0.9),
+    );
+
     final picture = recorder.endRecording();
-    final img = await picture.toImage(size.toInt(), size.toInt());
+    final img = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes!.buffer.asUint8List();
   }

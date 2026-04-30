@@ -526,14 +526,24 @@ class _SplashScreenState extends State<SplashScreen>
     return 'pending';
   }
 
-  bool _isApprovedData(Map<String, dynamic> d) =>
-      d['driver_status'] == 'approved' ||
-      d['status'] == 'approved' ||
-      d['status'] == 'active' ||
-      d['isVerified'] == true ||
-      d['isApproved'] == true ||
-      d['verificationStatus'] == 'approved' ||
-      d['approvalStatus'] == 'approved';
+  bool _isApprovedData(Map<String, dynamic> d) {
+    final status = (d['status'] as String? ?? '').toLowerCase().trim();
+    final driverStatus = (d['driver_status'] as String? ?? '').toLowerCase().trim();
+    final verificationStatus = (d['verificationStatus'] as String? ?? '').toLowerCase().trim();
+    final approvalStatus = (d['approvalStatus'] as String? ?? '').toLowerCase().trim();
+    return driverStatus == 'approved' ||
+        status == 'approved' ||
+        status == 'active' ||
+        status == 'online' ||
+        status == 'clear' ||
+        status == 'verified' ||
+        d['isVerified'] == true ||
+        d['isApproved'] == true ||
+        verificationStatus == 'approved' ||
+        verificationStatus == 'active' ||
+        verificationStatus == 'clear' ||
+        approvalStatus == 'approved';
+  }
 
   bool _isRejectedData(Map<String, dynamic> d) =>
       d['driver_status'] == 'rejected' ||

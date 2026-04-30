@@ -134,6 +134,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
   bool _docStatusLoaded = false;
+  bool _isNavigatingToOnline = false; // true while navigating to online screen
   late AnimationController _btnColorCtrl;
   StreamSubscription<DocumentSnapshot>? _docApprovalSub;
   late Animation<double> _btnColorAnim;
@@ -732,6 +733,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  GO ONLINE — navigate to DriverOnlineScreen
   // ═══════════════════════════════════════════════════
   void _goOnline() async {
+    // Show immediate feedback — button will display loading state
+    setState(() => _isNavigatingToOnline = true);
+
     // _ensureVerified is always synchronous — inline the check
     if (!_isVerified) setState(() => _isVerified = true);
 
@@ -820,6 +824,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     HapticFeedback.lightImpact();
     final result = await pushFuture;
     if (!mounted) return;
+    setState(() => _isNavigatingToOnline = false);
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
     PrefsCache.instance.then((p) => p.setBool('driver_was_online', stillOnline));
@@ -1527,25 +1532,36 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       color: Colors.black.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      !docsOk
-                          ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
-                          : (_activeTripData != null || _isStillOnline)
-                              ? Icons.play_arrow_rounded
-                              : Icons.power_settings_new_rounded,
-                      color: Colors.black87,
-                      size: 16,
-                    ),
+                    child: _isNavigatingToOnline
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: Colors.black87,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Icon(
+                            !docsOk
+                                ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
+                                : (_activeTripData != null || _isStillOnline)
+                                    ? Icons.play_arrow_rounded
+                                    : Icons.power_settings_new_rounded,
+                            color: Colors.black87,
+                            size: 16,
+                          ),
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    _isVerified
-                        ? (!docsOk
-                            ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
-                            : (_activeTripData != null || _isStillOnline)
-                                ? S.of(context).resumeOnline
-                                : S.of(context).goOnline)
-                        : S.of(context).verifyFirst,
+                    _isNavigatingToOnline
+                        ? 'GOING ONLINE...'
+                        : _isVerified
+                            ? (!docsOk
+                                ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
+                                : (_activeTripData != null || _isStillOnline)
+                                    ? S.of(context).resumeOnline
+                                    : S.of(context).goOnline)
+                            : S.of(context).verifyFirst,
                     style: const TextStyle(
                       color: Colors.black87,
                       fontSize: 14,

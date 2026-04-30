@@ -410,18 +410,22 @@ void main() async {
         _safeInit('CacheService', CacheService.initialize()),
         _safeInit('LocalDataService', LocalDataService.init()),
         _safeInit('LocalCache', LocalCache.init()),
-        _safeInit('Firebase', _initFirebase()),
+        _safeInitBool('Firebase', _initFirebase()),
         _safeInit('DNS', ApiService.preResolveDns()),
       ]);
       debugPrint('[Perf] Group 1 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group1Results)');
 
       // Group 2: depend on Firebase being ready
-      // If Firebase failed, skip Group 2 but still launch the app
+      // If Firebase auth failed, skip Firebase-dependent services but still launch the app
+      final firebaseOk = group1Results.length > 5 && (group1Results[5] == true);
+      if (!firebaseOk) {
+        debugPrint('[Firebase] WARNING: Firebase auth failed — Firestore/FCM/Analytics will be unavailable');
+      }
       final group2Results = await Future.wait([
         _safeInit('ApiService', ApiService.init()),
-        _safeInit('Analytics', AnalyticsService.instance.init()),
+        if (firebaseOk) _safeInit('Analytics', AnalyticsService.instance.init()) else Future.value(true),
         _safeInit('Socket', SocketService.init()),
-        _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig()),
+        if (firebaseOk) _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig()) else Future.value(true),
         _safeInit('BackgroundService', DriverBackgroundService().initialize()),
       ]);
       debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group2Results)');
@@ -465,8 +469,19 @@ Future<bool> _safeInit(String name, Future<void> future) async {
   }
 }
 
+/// Same as _safeInit but for bool-returning futures (e.g. _initFirebase).
+Future<bool> _safeInitBool(String name, Future<bool> future) async {
+  try {
+    return await future;
+  } catch (e) {
+    debugPrint('[InitError] $name failed: $e');
+    return false;
+  }
+}
+
 /// Firebase init extracted so it can run in Future.wait with other services.
-Future<void> _initFirebase() async {
+/// CRITICAL: This must complete with auth established before ANY Firestore call.
+Future<bool> _initFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -477,21 +492,32 @@ Future<void> _initFirebase() async {
     );
     // Enable RTDB disk persistence so messages survive restarts & work offline
     FirebaseDatabase.instance.setPersistenceEnabled(true);
-    // Ensure Firebase Auth so RTDB/Firestore rules (auth != null) pass
-    if (FirebaseAuth.instance.currentUser == null) {
+
+    // ── Ensure Firebase Auth so RTDB/Firestore rules (auth != null) pass ──
+    // Retry with exponential backoff — don't let the app continue without auth.
+    UserCredential? cred;
+    for (int attempt = 1; attempt <= 3; attempt++) {
       try {
-        await FirebaseAuth.instance.signInAnonymously();
+        if (FirebaseAuth.instance.currentUser != null) {
+          debugPrint('[Firebase] already authenticated (uid=${FirebaseAuth.instance.currentUser!.uid})');
+          break;
+        }
+        cred = await FirebaseAuth.instance.signInAnonymously();
+        debugPrint('[Firebase] anonymous auth succeeded (uid=${cred.user?.uid})');
+        break;
       } catch (authErr) {
-        debugPrint('[Firebase] anonymous auth failed: $authErr — retrying...');
-        // Retry once after a short delay
-        await Future.delayed(const Duration(milliseconds: 500));
-        try {
-          await FirebaseAuth.instance.signInAnonymously();
-        } catch (retryErr) {
-          debugPrint('[Firebase] anonymous auth retry failed: $retryErr');
+        debugPrint('[Firebase] anonymous auth attempt $attempt failed: $authErr');
+        if (attempt < 3) {
+          await Future.delayed(Duration(milliseconds: 500 * attempt));
         }
       }
     }
+
+    if (FirebaseAuth.instance.currentUser == null) {
+      debugPrint('[Firebase] CRITICAL: Could not authenticate after 3 attempts. Firestore will fail.');
+      return false;
+    }
+
     // Auto-reauthenticate if anonymous session expires mid-use
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user == null) {
@@ -503,8 +529,10 @@ Future<void> _initFirebase() async {
         }
       }
     });
+    return true;
   } catch (e) {
     debugPrint('[Firebase] early init error: $e');
+    return false;
   }
 }
 
@@ -555,13 +583,10 @@ Future<void> heavyInit() async {
     }(),
 
     // ── Firebase + Messaging ──
+    // NOTE: Firebase.initializeApp() and anonymous auth are already done
+    // in main() Group 1. We only set up FCM handlers here.
     () async {
       try {
-        if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform,
-          );
-        }
         try {
           await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
 

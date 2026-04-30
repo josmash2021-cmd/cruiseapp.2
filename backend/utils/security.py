@@ -29,14 +29,24 @@ JWT_SECRET = os.getenv("JWT_SECRET") or ""
 DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY") or ""
 
 # Validate secrets at import time — refuse to start with empty/default keys
+# Always require explicit secrets. Auto-generation is disabled to prevent
+# token invalidation on restart and weak secrets in misidentified environments.
 if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
     _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
-    if _is_railway:
+    _is_production = os.getenv("ENV", "").lower() in ("production", "prod", "staging")
+    if _is_railway or _is_production:
         raise RuntimeError(
             "FATAL: API_KEY, HMAC_SECRET, and JWT_SECRET must be set in production. "
             "Configure them in Railway Variables."
         )
     else:
+        # Local development only: require explicit secrets or DEBUG=1
+        _is_debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+        if not _is_debug:
+            raise RuntimeError(
+                "FATAL: API_KEY, HMAC_SECRET, and JWT_SECRET must be set. "
+                "For local development, set DEBUG=1 to use auto-generated secrets."
+            )
         import secrets as _sec
         API_KEY = API_KEY or _sec.token_hex(32)
         HMAC_SECRET = HMAC_SECRET or _sec.token_hex(32)

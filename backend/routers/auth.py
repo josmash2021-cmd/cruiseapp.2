@@ -24,7 +24,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import utc_now, _user_dict, _haversine, _trip_dict
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
@@ -215,7 +215,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         verification_link = f"{PUBLIC_URL}/verify-email/{user.id}"  # Adjust to your actual verification flow
         if role == "driver":
             # Trigger driver onboarding workflow
-            asyncio.create_task(
+            _safe_create_task(
                 trigger_driver_onboarding(
                     name=f"{user.first_name} {user.last_name}",
                     email=user.email or "",
@@ -224,7 +224,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             )
         else:
             # Trigger welcome email workflow for riders
-            asyncio.create_task(
+            _safe_create_task(
                 trigger_welcome_email(
                     name=user.first_name,
                     email=user.email or "",
@@ -403,7 +403,7 @@ async def send_otp(body: SendOtpIn, request: Request):
                 logging.warning("[OTP-BG] Email send error for %s: %s", email, e)
 
         # Fire-and-forget email sending - respond immediately to avoid client timeout
-        asyncio.create_task(_try_send_email_bg())
+        _safe_create_task(_try_send_email_bg())
 
         # Always return the code so user can verify even if email is delayed/fails
         return {

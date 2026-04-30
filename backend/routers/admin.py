@@ -21,7 +21,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
-    _user_dict, _trip_dict, _haversine, _resolve_rider_display,
+    _user_dict, _trip_dict, _haversine, _resolve_rider_display, _safe_create_task,
 )
 from utils.ssn_encryption import is_ssn_provided
 from services.fcm_service import _send_fcm_push
@@ -387,7 +387,7 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
         rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
         rider2 = rider_r2.scalar_one_or_none()
         if rider2 and rider2.fcm_token:
-            asyncio.create_task(_send_fcm_push(
+            _safe_create_task(_send_fcm_push(
                 rider2.fcm_token,
                 "Driver Assigned",
                 f"{driver.first_name} has been assigned to your ride!",
@@ -676,7 +676,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                 title = "Verification Update"
                 body = reason or "Your verification was not approved. Please try again."
                 payload_type = "driver_rejected" if is_driver else "rider_rejected"
-            asyncio.create_task(
+            _safe_create_task(
                 _send_fcm_push(
                     user.fcm_token,
                     title,

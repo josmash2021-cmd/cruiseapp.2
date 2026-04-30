@@ -20,7 +20,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
-    _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict,
+    _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
 )
 from services.fcm_service import _send_fcm_push
 from config import (
@@ -152,9 +152,9 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Only push real location to trip watchers when driver is online.
     # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
     if trip_row and body.is_online:
-        asyncio.create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
+        _safe_create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
         # Socket.io primary channel (sub-200ms latency)
-        asyncio.create_task(emit_driver_location(
+        _safe_create_task(emit_driver_location(
             trip_id=trip_row,
             lat=body.lat,
             lng=body.lng,

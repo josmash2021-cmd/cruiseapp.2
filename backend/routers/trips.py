@@ -14,7 +14,7 @@ from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task
 from services.fcm_service import _send_fcm_push, send_to_topic_async
 from services.sms_service import (
     notify_guest_driver_assigned,
@@ -325,7 +325,7 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 )
             except Exception as e:
                 logging.error("Firestore sync on create_trip failed: %s", e)
-        asyncio.create_task(_bg_firestore_sync())
+        _safe_create_task(_bg_firestore_sync())
 
     # Notify online drivers when a new scheduled ride enters the marketplace
     if trip.status == "scheduled" and trip.scheduled_at:
@@ -335,7 +335,7 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
             _dropoff = (trip.dropoff_address or "")[:40]
             _sched_time = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
             _body = f"{_fare_str} \u00b7 {_pickup} \u2192 {_dropoff} \u00b7 {_sched_time}".strip(" \u00b7")
-            asyncio.create_task(send_to_topic_async(
+            _safe_create_task(send_to_topic_async(
                 topic="drivers_available",
                 title="New Scheduled Ride Available",
                 body=_body,
@@ -598,7 +598,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
         # Send admin alert on charge failure
         try:
             from services.admin_alerts import send_alert, CRITICAL
-            asyncio.create_task(send_alert(
+            _safe_create_task(send_alert(
                 "stripe_charge_failed",
                 "Stripe Charge Failed",
                 f"Trip #{trip.id}: {e}",
@@ -1056,7 +1056,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         )
 
     # --- Socket.io instant push (primary real-time channel) ===
-    asyncio.create_task(emit_trip_status(
+    _safe_create_task(emit_trip_status(
         trip_id=trip.id,
         status=canonical_new,
         extra={
@@ -1135,7 +1135,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # --- n8n webhook triggers ===
     if canonical_new == "completed":
-        asyncio.create_task(_n8n_fire("trip-completed", {
+        _safe_create_task(_n8n_fire("trip-completed", {
             "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
             "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
             "rider_email": rider.email if rider else "",
@@ -1149,7 +1149,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             "vehicle_type": trip.vehicle_type or "sedan",
         }))
         if trip.payment_status == "failed":
-            asyncio.create_task(_n8n_fire("payment-failed", {
+            _safe_create_task(_n8n_fire("payment-failed", {
                 "trip_id": trip.id, "rider_id": trip.rider_id,
                 "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
                 "fare": float(trip.fare or 0),
@@ -1315,7 +1315,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         try:
             from services.event_bus import event_bus as _ev_bus
             for _drv_id in _affected_driver_ids:
-                asyncio.create_task(_ev_bus.push_driver_offer(_drv_id, []))
+                _safe_create_task(_ev_bus.push_driver_offer(_drv_id, []))
         except Exception as _ev_err:
             logging.warning("[Dispatch] SSE offer-cleared push failed for trip %d: %s", trip.id, _ev_err)
 
@@ -1334,7 +1334,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
     # --- n8n webhook trigger ===
     _cancelled_by = "driver" if user.id == trip.driver_id else "rider"
-    asyncio.create_task(_n8n_fire("trip-cancelled", {
+    _safe_create_task(_n8n_fire("trip-cancelled", {
         "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
         "cancel_reason": reason or "", "cancelled_by": _cancelled_by,
         "cancellation_fee": cancellation_fee,

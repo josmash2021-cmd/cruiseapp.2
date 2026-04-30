@@ -23,7 +23,7 @@ from utils.security import (  # type: ignore[attr-defined]
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     _security_audit_log,
 )
-from utils.helpers import utc_now, _support_msg_dict  # type: ignore[attr-defined]
+from utils.helpers import _safe_create_task, utc_now, _support_msg_dict  # type: ignore[attr-defined]
 from services.fcm_service import _send_fcm_push  # type: ignore[attr-defined]
 from config import (
     firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
@@ -1038,7 +1038,7 @@ async def _create_action_request(
             logging.warning(f"Firestore sync for action request failed: {e}")
 
     # Start reminder task and persist to Firestore
-    task = asyncio.create_task(_action_request_reminder(ar.id, chat.id, user_name))
+    task = _safe_create_task(_action_request_reminder(ar.id, chat.id, user_name))
     _action_reminder_tasks[ar.id] = task
     # Persist reminder to Firestore so it survives restarts
     if _HAS_FIRESTORE:
@@ -1138,7 +1138,7 @@ async def _rehydrate_pending_reminders():
             cid = data.get("chat_id")
             uname = data.get("user_name", "")
             if rid and cid and rid not in _action_reminder_tasks:
-                task = asyncio.create_task(_action_request_reminder(rid, cid, uname))
+                task = _safe_create_task(_action_request_reminder(rid, cid, uname))
                 _action_reminder_tasks[rid] = task
                 count += 1
         if count:
@@ -2173,10 +2173,10 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     # Generate AI bot replies (only if not taken over by real dispatch)
     bot_phase_snapshot = chat.bot_phase
     if bot_phase_snapshot != "dispatch_takeover":
-        asyncio.create_task(_background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
+        _safe_create_task(_background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
 
     # Start inactivity timer
-    _inactivity_tasks[chat_id] = asyncio.create_task(_check_chat_inactivity(chat_id))
+    _inactivity_tasks[chat_id] = _safe_create_task(_check_chat_inactivity(chat_id))
 
     return _support_msg_dict(msg, user_full)
 
@@ -2309,7 +2309,7 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
 
     # Agent 2 (Follow-up): schedule satisfaction check 24h from now
     _chat_lang = getattr(chat, "locale", "en") or "en"
-    asyncio.create_task(_followup_task(chat_id, user.id, _chat_lang))
+    _safe_create_task(_followup_task(chat_id, user.id, _chat_lang))
 
     return {"status": "closed"}
 

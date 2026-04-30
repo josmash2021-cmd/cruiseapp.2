@@ -16,7 +16,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -248,7 +248,7 @@ async def _send_offer_to_driver(
         except Exception as _re:
             logging.warning("[Dispatch] rider history lookup failed: %s", _re)
 
-    asyncio.create_task(event_bus.push_driver_offer(driver.id, [{
+    _safe_create_task(event_bus.push_driver_offer(driver.id, [{
         "offer_id": offer.id,
         "rider_name": rider_name,
         "rider_phone": rider_phone,
@@ -265,7 +265,7 @@ async def _send_offer_to_driver(
     }]))
 
     if driver.fcm_token:
-        asyncio.create_task(_send_fcm_push_async(
+        _safe_create_task(_send_fcm_push_async(
             driver.fcm_token,
             title="New Ride Offer",
             body="A rider needs a ride -- open Cruise to accept.",
@@ -328,7 +328,7 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                 )
                 timed_out_driver = timed_out_driver_result.scalar_one_or_none()
                 if timed_out_driver and timed_out_driver.fcm_token:
-                    asyncio.create_task(_send_fcm_push_async(
+                    _safe_create_task(_send_fcm_push_async(
                         timed_out_driver.fcm_token,
                         title="Offer Expired",
                         body="The ride offer was not accepted in time and has been reassigned.",
@@ -992,7 +992,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         old_task = _cascade_tasks.pop(trip.id, None)
         if old_task and not old_task.done():
             old_task.cancel()
-        task = asyncio.create_task(_auto_cascade(trip.id, offer.id, assigned.id))
+        task = _safe_create_task(_auto_cascade(trip.id, offer.id, assigned.id))
         _cascade_tasks[trip.id] = task
 
         return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
@@ -1298,7 +1298,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     )
             except Exception as e:
                 logging.error("Firestore sync on accept_offer failed: %s", e)
-        asyncio.create_task(_sync_firestore_accept())
+        _safe_create_task(_sync_firestore_accept())
 
     # -- SSE instant push to rider watching this trip (with FULL driver info) --
     # Uses await (not create_task) so the push is guaranteed delivered before HTTP response returns.
@@ -1476,7 +1476,7 @@ async def reject_offer(
             )
 
             # Restart cascade for the new offer
-            task = asyncio.create_task(
+            task = _safe_create_task(
                 _auto_cascade(trip.id, new_offer.id, next_driver.id)
             )
             _cascade_tasks[trip.id] = task

@@ -15,7 +15,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
+from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
 from services.fcm_service import _send_fcm_push
 from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
@@ -1388,7 +1388,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                     )
             except Exception as _e:
                 logging.warning("[WebBooking] Firestore sync scheduled trip %d failed: %s", trip.id, _e)
-        asyncio.create_task(_bg_sched_firestore_sync())
+        _safe_create_task(_bg_sched_firestore_sync())
         try:
             from services.fcm_service import send_to_topic_async
             _fare_str = f"${trip.fare:.2f}" if trip.fare else ""
@@ -1396,7 +1396,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             _do = (trip.dropoff_address or "")[:40]
             _sched_str = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
             _body = f"{_fare_str} \u00b7 {_pu} \u2192 {_do} \u00b7 {_sched_str}".strip(" \u00b7")
-            asyncio.create_task(send_to_topic_async(
+            _safe_create_task(send_to_topic_async(
                 topic="drivers_available",
                 title="New Scheduled Ride Available",
                 body=_body,
@@ -1438,7 +1438,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                         )
                 except Exception as _e:
                     logging.warning("[WebBooking] Firestore sync immediate trip %d failed: %s", trip.id, _e)
-            asyncio.create_task(_bg_imm_firestore_sync())
+            _safe_create_task(_bg_imm_firestore_sync())
         except Exception as _fs_err:
             logging.warning("[WebBooking] Failed to schedule Firestore sync for trip %d: %s", trip.id, _fs_err)
 
@@ -1524,7 +1524,7 @@ async def _web_dispatch_to_drivers(
             )
 
             # Auto-cascade to next drivers if not accepted
-            asyncio.create_task(_auto_cascade(trip_id, offer.id, first_driver.id))
+            _safe_create_task(_auto_cascade(trip_id, offer.id, first_driver.id))
 
     except Exception as e:
         logging.exception("[WebDispatch] Error for trip %d: %s", trip_id, e)
@@ -1805,9 +1805,9 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
     try:
         from services.event_bus import event_bus as _ev_bus
         for drv_id in affected_driver_ids:
-            asyncio.create_task(_ev_bus.push_driver_offer(drv_id, []))
+            _safe_create_task(_ev_bus.push_driver_offer(drv_id, []))
         # Also push a trip_update so rider-tracking-style listeners notice
-        asyncio.create_task(_ev_bus.push_trip_update(trip.id, {
+        _safe_create_task(_ev_bus.push_trip_update(trip.id, {
             "status": "cancelled",
             "cancel_reason": "rider_web_cancel",
             "cancelled_by": "rider",
@@ -1824,7 +1824,7 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
             for drv in drv_q.scalars().all():
                 if not drv.fcm_token:
                     continue
-                asyncio.create_task(_send_fcm_push_async(
+                _safe_create_task(_send_fcm_push_async(
                     drv.fcm_token,
                     title="Ride cancelled",
                     body="The rider cancelled this trip.",

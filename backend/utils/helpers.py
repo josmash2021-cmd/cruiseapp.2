@@ -1,11 +1,41 @@
 """Cruise App — Helper functions: datetime, haversine, dict converters."""
 
+import asyncio
+import logging
 import math
 import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+
+
+# ═══════════════════════════════════════════════════════
+#  Safe asyncio.create_task wrapper
+# ═══════════════════════════════════════════════════════
+
+_tasks: set[asyncio.Task] = set()
+
+
+def _safe_create_task(coro, name: str | None = None) -> asyncio.Task:
+    """Wrap asyncio.create_task() with exception logging.
+
+    Fire-and-forget tasks that raise exceptions are normally silently
+    dropped. This wrapper logs the exception and removes the task
+    reference so the set doesn't grow unbounded.
+    """
+    task = asyncio.create_task(coro, name=name)
+    _tasks.add(task)
+
+    def _on_done(t: asyncio.Task):
+        _tasks.discard(t)
+        if not t.cancelled() and (exc := t.exception()):
+            logging.getLogger("cruise.safe_task").error(
+                "Task %s failed: %s", t.get_name() or "unnamed", exc, exc_info=exc
+            )
+
+    task.add_done_callback(_on_done)
+    return task
 
 _PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")
 

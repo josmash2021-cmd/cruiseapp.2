@@ -7,25 +7,43 @@
   // ── Kimi Code MCP Integration ─────────────────────────────────────────
   "kimi.mcp.servers": {
     
-    // ── 1. SUPABASE (PostgreSQL) ── Highest Priority ───────────────────
-    // Connects to your production Supabase PostgreSQL database
-    // Pooler URL: postgresql://postgres.elvszwazwvpgqvnzxwnq@aws-1-us-east-2.pooler.supabase.com:5432/postgres
-    "cruiseapp-supabase": {
+    // ── 1. POSTGRESQL (Railway Production) ── Highest Priority ─────────
+    // Connects to your Railway PostgreSQL database (production)
+    // The MCP will use the DATABASE_URL from your Railway environment
+    "cruiseapp-postgresql": {
       "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
         "@gishubperu/mcp-postgresql",
         "--connection",
-        "postgresql://postgres.elvszwazwvpgqvnzxwnq@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+        "${env:DATABASE_URL}"
       ],
       "env": {
-        // Set your Supabase password as environment variable
-        // DO NOT hardcode passwords here — use .env file or system env vars
-        "PGPASSWORD": "${env:SUPABASE_DB_PASSWORD}"
+        // Railway PostgreSQL URL — set this in your environment variables
+        // Format: postgresql://user:password@host:port/database
+        "DATABASE_URL": "${env:DATABASE_URL}"
       },
       "disabled": false
     },
+
+    // ── 1b. SUPABASE (Fallback/Alternative) ────────────────────────────
+    // Uncomment and use this if your Railway app connects to Supabase
+    // instead of Railway's own PostgreSQL
+    // "cruiseapp-supabase": {
+    //   "type": "stdio",
+    //   "command": "npx",
+    //   "args": [
+    //     "-y",
+    //     "@gishubperu/mcp-postgresql",
+    //     "--connection",
+    //     "postgresql://postgres.elvszwazwvpgqvnzxwnq@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+    //   ],
+    //   "env": {
+    //     "PGPASSWORD": "${env:SUPABASE_DB_PASSWORD}"
+    //   },
+    //   "disabled": true
+    // },
 
     // ── 2. STRIPE ── Payment Processing ────────────────────────────────
     // Official Stripe MCP server for managing payments, customers, refunds

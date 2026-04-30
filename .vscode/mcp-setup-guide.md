@@ -12,41 +12,57 @@ This guide configures **3 MCP servers** for your CruiseApp ride-sharing project:
 
 ---
 
-## 1. Supabase MCP Server
+## 1. PostgreSQL MCP Server (Railway Production)
 
 ### What It Does
-- Query your production PostgreSQL database
+- Query your production PostgreSQL database on Railway
 - Read table schemas, indexes, relationships
 - Execute SELECT queries (read-only by default)
 - Analyze query performance
 
 ### Prerequisites
 
-1. **Get your Supabase password** from your Supabase dashboard:
-   - Go to: https://supabase.com/dashboard/project/elvszwazwvpgqvnzxwnq/settings/database
-   - Copy the password for user `postgres`
+1. **Get your Railway Database URL** from Railway Dashboard:
+   - Go to: https://railway.app/project/cruiseapp.2
+   - Click on your PostgreSQL service → Variables
+   - Copy the `DATABASE_URL` value
+   
+   It looks like:
+   ```
+   postgresql://postgres:PASSWORD@containers-xxx.railway.app:1234/railway
+   ```
 
 2. **Set environment variable** (choose ONE method):
 
    **Option A: Windows System Environment Variable (Recommended)**
    ```powershell
-   [System.Environment]::SetEnvironmentVariable("SUPABASE_DB_PASSWORD", "your-actual-password", "User")
+   [System.Environment]::SetEnvironmentVariable("DATABASE_URL", "postgresql://postgres:PASSWORD@containers-xxx.railway.app:1234/railway", "User")
    ```
    Then restart VS Code.
 
    **Option B: .env file in project root**
    Create `c:\Users\Puma\cruiseapp.2\.env`:
    ```
-   SUPABASE_DB_PASSWORD=your-actual-password
+   DATABASE_URL=postgresql://postgres:PASSWORD@containers-xxx.railway.app:1234/railway
    STRIPE_SECRET_KEY=sk_test_... or sk_live_...
    ```
    
    **Option C: Direct in settings.json (NOT recommended for production)**
-   Replace `"${env:SUPABASE_DB_PASSWORD}"` with your actual password.
+   Replace `"${env:DATABASE_URL}"` with your actual URL.
+
+### Alternative: Supabase PostgreSQL
+
+If your Railway app actually connects to Supabase instead of Railway PostgreSQL:
+
+1. Uncomment the `cruiseapp-supabase` section in `.vscode/settings.json`
+2. Set your Supabase password:
+   ```powershell
+   [System.Environment]::SetEnvironmentVariable("SUPABASE_DB_PASSWORD", "your-supabase-password", "User")
+   ```
 
 ### Test Connection
 
-After setting the password, open Kimi Code in VS Code and ask:
+After setting the URL, open Kimi Code in VS Code and ask:
 
 ```
 List all tables in the database

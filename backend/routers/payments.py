@@ -784,21 +784,27 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
 
-    # Verify signature when STRIPE_WEBHOOK_SECRET is configured; skip check if not set
-    if STRIPE_WEBHOOK_SECRET and _HAS_STRIPE:
-        try:
-            event = _stripe_mod.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-        except (ValueError, _stripe_mod.error.SignatureVerificationError) as e:
-            logging.warning("[Stripe Webhook] Signature verification failed: %s", e)
-            raise HTTPException(400, "Invalid signature")
-    else:
-        # No webhook secret configured -- parse payload directly (dev/test mode)
-        try:
-            event = json.loads(payload)
-        except (ValueError, json.JSONDecodeError) as e:
-            logging.warning("[Stripe Webhook] Invalid JSON payload: %s", e)
-            raise HTTPException(400, "Invalid payload")
-        logging.warning("[Stripe Webhook] Processing without signature verification (STRIPE_WEBHOOK_SECRET not set)")
+    # SECURITY: Always verify Stripe webhook signature. Never process unsigned webhooks.
+    if not sig_header:
+        logging.warning("[Stripe Webhook] Missing stripe-signature header")
+        raise HTTPException(400, "Missing stripe-signature")
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logging.error("[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured — rejecting webhook")
+        raise HTTPException(500, "Webhook secret not configured")
+
+    if not _HAS_STRIPE or _stripe_mod is None:
+        logging.error("[Stripe Webhook] Stripe SDK not available")
+        raise HTTPException(500, "Stripe not available")
+
+    try:
+        event = _stripe_mod.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        logging.warning("[Stripe Webhook] Invalid payload")
+        raise HTTPException(400, "Invalid payload")
+    except _stripe_mod.error.SignatureVerificationError:
+        logging.warning("[Stripe Webhook] Invalid signature")
+        raise HTTPException(400, "Invalid signature")
 
     event_type = event.get("type", "")
     event_id = event.get("id", "")

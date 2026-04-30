@@ -738,9 +738,20 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
         if key in body:
             _sanitize_string(str(body[key]))
             setattr(user, key, body[key])
-    # Handle password reset (never store plaintext for security)
+    # Handle password reset — requires explicit confirmation flag
+    # to prevent accidental or malicious password changes
     if "password" in body and body["password"]:
+        if not body.get("confirm_password_change"):
+            raise HTTPException(400, "Password changes require confirm_password_change=true")
         _sanitize_string(body["password"])
+        # Enforce minimum password strength
+        pw = body["password"]
+        if len(pw) < 8:
+            raise HTTPException(400, "Password must be at least 8 characters")
+        if not any(c.isupper() for c in pw):
+            raise HTTPException(400, "Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in pw):
+            raise HTTPException(400, "Password must contain at least one digit")
         user.password_hash = pwd.hash(body["password"])
     await db.commit()
     await db.refresh(user)

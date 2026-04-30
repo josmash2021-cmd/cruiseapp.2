@@ -31,6 +31,7 @@ from config import (
 )
 from services.event_bus import event_bus
 from services.socketio_service import emit_driver_location
+from services.redis_cache import _get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,20 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             speed=getattr(body, 'speed', 0.0),
         ))
 
+    # Update Redis Geo for fast nearby queries
+    try:
+        redis = await _get_redis()
+        if redis is not None:
+            if body.is_online:
+                await redis.geoadd("drivers:online", (body.lng, body.lat, str(driver_id)))
+                await redis.sadd("drivers:online:set", str(driver_id))
+                await redis.expire("drivers:online:set", 300)
+            else:
+                await redis.zrem("drivers:online", str(driver_id))
+                await redis.srem("drivers:online:set", str(driver_id))
+    except Exception as _redis_err:
+        logger.warning("Redis geo update failed for driver %s: %s", driver_id, _redis_err)
+
     # Sync driver location to Firestore (non-blocking).
     # When going offline, skip lat/lng update so the rider map isn't poisoned with (0,0).
     if _HAS_FIRESTORE and body.is_online:
@@ -181,27 +196,61 @@ async def get_nearby_drivers(
     if _cached and (_now - _cached[0]) < _NEARBY_CACHE_TTL:
         return _cached[1]
 
-    # Bounding box pre-filter in SQL (~0.009Â° per km at equator)
-    _lat_delta = radius_km / 111.0
-    _lng_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
-
-    result = await db.execute(
-        select(User.id, User.lat, User.lng, User.first_name, User.last_name)
-        .where(and_(
-            User.role == "driver", User.is_online == True,
-            User.lat.isnot(None), User.lng.isnot(None),
-            User.lat >= lat - _lat_delta, User.lat <= lat + _lat_delta,
-            User.lng >= lng - _lng_delta, User.lng <= lng + _lng_delta,
-        ))
-    )
+    # Try Redis Geo first for ultra-fast nearby queries
     nearby = []
-    for d_id, d_lat, d_lng, d_first, d_last in result.all():
-        # Use in-memory location if fresher than DB
-        mem = _driver_locations.get(d_id)
-        if mem and mem["is_online"]:
-            d_lat, d_lng = mem["lat"], mem["lng"]
-        if _haversine(lat, lng, d_lat or 0, d_lng or 0) <= radius_km:
-            nearby.append({"id": d_id, "lat": d_lat, "lng": d_lng, "name": f"{d_first} {d_last}"})
+    try:
+        redis = await _get_redis()
+        if redis is not None:
+            geo_results = await redis.georadius(
+                "drivers:online", lng, lat, radius_km, unit="km", withdist=True
+            )
+            if geo_results:
+                for item in geo_results:
+                    # aioredis returns tuples or lists depending on version
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        driver_id_str = item[0]
+                        dist = float(item[1])
+                    else:
+                        driver_id_str = item
+                        dist = 0.0
+                    # Fetch driver name from DB (or cache)
+                    d_res = await db.execute(
+                        select(User.id, User.first_name, User.last_name, User.lat, User.lng)
+                        .where(User.id == int(driver_id_str))
+                    )
+                    d_row = d_res.first()
+                    if d_row:
+                        nearby.append({
+                            "id": d_row.id,
+                            "lat": d_row.lat or lat,
+                            "lng": d_row.lng or lng,
+                            "name": f"{d_row.first_name or ''} {d_row.last_name or ''}".strip(),
+                            "distance_km": round(dist, 2),
+                        })
+    except Exception as _redis_err:
+        logger.warning("Redis georadius failed, falling back to SQL: %s", _redis_err)
+
+    # Fallback to PostgreSQL if Redis Geo is empty or failed
+    if not nearby:
+        _lat_delta = radius_km / 111.0
+        _lng_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+
+        result = await db.execute(
+            select(User.id, User.lat, User.lng, User.first_name, User.last_name)
+            .where(and_(
+                User.role == "driver", User.is_online == True,
+                User.lat.isnot(None), User.lng.isnot(None),
+                User.lat >= lat - _lat_delta, User.lat <= lat + _lat_delta,
+                User.lng >= lng - _lng_delta, User.lng <= lng + _lng_delta,
+            ))
+        )
+        for d_id, d_lat, d_lng, d_first, d_last in result.all():
+            # Use in-memory location if fresher than DB
+            mem = _driver_locations.get(d_id)
+            if mem and mem["is_online"]:
+                d_lat, d_lng = mem["lat"], mem["lng"]
+            if _haversine(lat, lng, d_lat or 0, d_lng or 0) <= radius_km:
+                nearby.append({"id": d_id, "lat": d_lat, "lng": d_lng, "name": f"{d_first} {d_last}"})
 
     response = {"count": len(nearby), "drivers": nearby}
     _nearby_cache[_cache_key] = (_now, response)

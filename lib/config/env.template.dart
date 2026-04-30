@@ -1,12 +1,15 @@
 // ┌─────────────────────────────────────────────────────────────┐
-// │  env.template.dart — TEMPLATE for env.dart                  │
+// │  env.template.dart — TEMPLATE for local development         │
 // │  Copy this file to env.dart and fill in your real values.   │
 // │  env.dart is gitignored and will NOT be committed.          │
+// │                                                             │
+// │  FOR PRODUCTION: Use --dart-define instead of this file:    │
+// │    flutter build apk --dart-define=CRUISE_API_KEY=...       │
 // └─────────────────────────────────────────────────────────────┘
 
 class Env {
   // ── Backend API authentication ──
-  // For local dev, use these defaults (they match backend/main.py defaults):
+  // For local dev only. Production builds MUST use --dart-define.
   static const String apiKey = 'dev-api-key-change-in-production';
   static const String hmacSecret = 'dev-hmac-secret-change-in-production';
 

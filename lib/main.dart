@@ -428,16 +428,18 @@ void main() async {
         };
       }
 
-      // Guard: fail loudly in release mode if dev placeholder credentials slipped through.
-      // This catches a failed Codemagic env injection before the app reaches users.
+      // Guard: fail loudly in release mode if secrets were not injected at build time.
+      // This catches a failed CI/CD env injection before the app reaches users.
       if (kReleaseMode) {
         assert(
-          Env.apiKey != 'dev-api-key-change-in-production',
-          'FATAL: dev API key in production build. Check Codemagic generate_env step.',
+          Env.apiKey.isNotEmpty,
+          'FATAL: CRUISE_API_KEY not injected at build time. '
+          'Pass --dart-define=CRUISE_API_KEY=... to flutter build.',
         );
         assert(
-          Env.hmacSecret != 'dev-hmac-secret-change-in-production',
-          'FATAL: dev HMAC secret in production build. Check Codemagic generate_env step.',
+          Env.hmacSecret.isNotEmpty,
+          'FATAL: CRUISE_HMAC_SECRET not injected at build time. '
+          'Pass --dart-define=CRUISE_HMAC_SECRET=... to flutter build.',
         );
       }
 

@@ -195,6 +195,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // mirrored yet, transient network). Without this poll the driver can
   // sit on the FINISH RIDE screen forever after dispatch cancels/completes.
   Timer? _statusPollTimer;
+  bool _isPollingTripStatus = false; // prevents overlapping in-flight requests
 
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
@@ -787,6 +788,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _statusPollTimer?.cancel();
     _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
       if (!mounted || _tripFinished) return;
+      // Guard: skip if a request is already in-flight (prevents polling storm
+      // when the network is slow or the backend is under load).
+      if (_isPollingTripStatus) return;
+      _isPollingTripStatus = true;
       try {
         final trip = await ApiService.getTrip(widget.tripId);
         if (!mounted || _tripFinished) return;
@@ -846,6 +851,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
       } catch (_) {
         // Ignore transient errors — next tick retries.
+      } finally {
+        _isPollingTripStatus = false;
       }
     });
   }

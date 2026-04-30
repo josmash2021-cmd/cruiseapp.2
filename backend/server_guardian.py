@@ -83,7 +83,7 @@ class ServerGuardian:
                 if line:
                     print(line.rstrip())
                     sys.stdout.flush()
-            except:
+            except Exception:
                 pass
     
     def run(self):

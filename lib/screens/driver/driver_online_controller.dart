@@ -92,6 +92,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Background verification + go-online — never blocks boot.
   Future<void> _verifyAndGoOnline() async {
+    // Signal UI immediately that we're going online — don't wait for any API
+    _setState(() => _isGoingOnline = true);
+
     // Retry driver ID if first attempt failed
     if (_driverId == null) {
       for (int attempt = 1; attempt <= 2; attempt++) {
@@ -111,9 +114,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         } catch (_) {}
       }
     }
-    if (!mounted) return;
+    if (!mounted) {
+      _setState(() => _isGoingOnline = false);
+      return;
+    }
     await _verifyDriverApproval();
-    if (!mounted) return;
+    if (!mounted) {
+      _setState(() => _isGoingOnline = false);
+      return;
+    }
     _goOnlineBackend();
   }
 

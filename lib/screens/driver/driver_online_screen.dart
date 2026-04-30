@@ -412,15 +412,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    // 2026-04-27 freeze fix: defer search-pulse start until the 400ms
-    // page transition has finished. Starting it immediately hammers
-    // setState() rebuilds during the fade+scale animation and causes
-    // a 1-2s freeze on mid-range devices.
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _phase == _Phase.searching) {
-        _searchPulse.repeat();
-      }
-    });
+    // Start search pulse immediately — the gold border animation on the
+    // "Finding trips" bar. This is cheap (just a CustomPaint) and gives
+    // instant visual feedback that the driver is online and searching.
+    _searchPulse.repeat();
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );
@@ -482,13 +477,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _boot();
 
-    // Mount the heavy MapWidget after the page transition has
-    // finished animating. Reduced from 450ms to 150ms for faster perceived
-    // response while still avoiding the freeze during navigation transition.
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (!mounted) return;
-      setState(() => _mapMounted = true);
-    });
+    // Mount the MapWidget immediately — the 150ms delay was causing a
+    // blank dark blue screen. The map now renders tiles right away.
+    // Heavy annotation manager creation is moved to Future.microtask
+    // inside onMapCreated so tiles render first, annotations after.
+    _mapMounted = true;
   }
 
   bool _appInForeground = true;

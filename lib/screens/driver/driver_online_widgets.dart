@@ -7,16 +7,46 @@ part of 'driver_online_screen.dart';
 extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   Widget _mapW(bool isDark) {
+    // Show a rich skeleton loader when position isn't ready yet.
+    // Never show a blank dark blue screen — always have visible feedback.
     if (_pos == null) {
       return Container(
         color: const Color(0xFF07080D),
         child: const Center(
-          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                color: Color(0xFFE8C547),
+                strokeWidth: 2,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Loading map...',
+                style: TextStyle(
+                  color: Color(0xFFE8C547),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Getting your location',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
-    // Defer the heavy PlatformView mount until after the page
-    // transition — show a loader so user knows the app is responding.
+    // MapWidget mounts immediately (no deferred delay). The native
+    // PlatformView starts rendering tiles right away. Annotation managers
+    // are created in a background microtask inside onMapCreated.
     if (!_mapMounted) {
       return Container(
         color: const Color(0xFF07080D),
@@ -54,37 +84,42 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           bearing: 0,
           pitch: 0,
         ),
-        onMapCreated: (ctrl) async {
+        onMapCreated: (ctrl) {
           _map = ctrl;
           _lastStyleDark = isDark;
-          // Polyline manager with no 'below' constraint — avoids silent failure
-          // when the layer name doesn't exist in the style.
-          _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-            below: "road-label",
-          );
-          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
-          // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
-          _pinAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
-          try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
-          // Use already-known position from home screen — no blocking GPS call needed
-          if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
-          _updateDriverAnnotation();
-          // Re-draw route if map initialised after _drawRoute already ran
-          if (_routePts.length > 1) {
-            _setRouteAnnotation(_routePts, _navyRoute);
-            await Future.delayed(const Duration(milliseconds: 200));
-            final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
-                ? _pickupLL
-                : _dropoffLL;
-            if (_pos != null) _fitBounds(_pos!, dest);
-          }
+          // Move ALL heavy annotation manager creation to a background
+          // microtask so the map tiles render FIRST. The driver sees the
+          // map immediately; annotations (gold dot, route lines) appear
+          // a few frames later. This eliminates the 1-2s blank screen.
+          Future.microtask(() async {
+            // Polyline manager with no 'below' constraint — avoids silent failure
+            // when the layer name doesn't exist in the style.
+            _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+              below: "road-label",
+            );
+            _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
+            // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
+            _pinAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
+            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
+            // Use already-known position from home screen — no blocking GPS call needed
+            if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
+            _updateDriverAnnotation();
+            // Re-draw route if map initialised after _drawRoute already ran
+            if (_routePts.length > 1) {
+              _setRouteAnnotation(_routePts, _navyRoute);
+              final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
+                  ? _pickupLL
+                  : _dropoffLL;
+              if (_pos != null) _fitBounds(_pos!, dest);
+            }
+          });
         },
         onStyleLoadedListener: (_) async {
           if (_map != null) {

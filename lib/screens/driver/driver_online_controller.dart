@@ -38,14 +38,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // background services (400ms transition + small buffer).
     // Use addPostFrameCallback so we don't block the first build frame.
     // Start everything immediately — no artificial delays
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Stagger service initialization to prevent UI thread saturation.
+    // Each service starts in its own microtask so the framework can
+    // pump frames between them — eliminates the 1s freeze on entry.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _startClock();
-      _startPolling();
-      _startPosStream();
-      _loadAllEarnings();
-      _startEarningsRefresh();
-      _startScheduledPoll();
+      await Future.microtask(() => _startPolling());
+      if (!mounted) return;
+      await Future.microtask(() => _startPosStream());
+      if (!mounted) return;
+      await Future.microtask(() => _loadAllEarnings());
+      if (!mounted) return;
+      await Future.microtask(() => _startEarningsRefresh());
+      if (!mounted) return;
+      await Future.microtask(() => _startScheduledPoll());
+      if (!mounted) return;
       // Fire-and-forget: these must not block the UI thread
       unawaited(_locate());
       unawaited(Future.microtask(_verifyAndGoOnline));

@@ -146,7 +146,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     LatLng pos, {
     double zoom = 15.5,
     double bearing = 0,
-    double tilt = 45,
+    double tilt = 0,
   }) {
     _map?.flyTo(
       mapbox.CameraOptions(
@@ -313,6 +313,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _dotPopDone = false;   // true after first-appearance pop completes
   double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
   bool _annotUpdateBusy = false; // prevents overlapping annotation updates
+  bool _isClearingAnnotations = false; // prevents create during clear
 
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();

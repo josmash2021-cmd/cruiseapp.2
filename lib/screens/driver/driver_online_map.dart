@@ -22,6 +22,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   Future<void> _updateDriverAnnotationInner() async {
     if (!mounted) return;
+    if (_isClearingAnnotations) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null || _pos == null) return;
 
@@ -299,17 +300,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _clearAllAnnotations() async {
-    await _clearRouteAnnotation();
-    await _clearPickupDropoffAnnotations();
-    final pointMgr = _pointAnnotMgr;
-    if (pointMgr == null) return;
-    for (final annot in [_carAnnot, _goldDotAnnot]) {
-      if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+    _isClearingAnnotations = true;
+    try {
+      await _clearRouteAnnotation();
+      await _clearPickupDropoffAnnotations();
+      final pointMgr = _pointAnnotMgr;
+      if (pointMgr == null) return;
+      for (final annot in [_carAnnot, _goldDotAnnot]) {
+        if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+      }
+      _carAnnot = null;
+      _goldDotAnnot = null;
+      _dotPopDone = false;
+      _dotPopScale = 0.0;
+    } finally {
+      _isClearingAnnotations = false;
     }
-    _carAnnot = null;
-    _goldDotAnnot = null;
-    _dotPopDone = false;
-    _dotPopScale = 0.0;
   }
 
   String _mapRideType(String raw) {

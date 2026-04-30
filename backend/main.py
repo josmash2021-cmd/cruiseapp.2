@@ -666,7 +666,6 @@ async def health(x_api_key: str = Header(default="")):
     if x_api_key != API_KEY:
         return {
             "status": "ok",
-            "version": "2.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 

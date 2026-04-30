@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import get_db, User, Trip, DispatchOffer, Vehicle
 from utils.security import _verify_api_key, _get_current_user
 from utils.helpers import utc_now, _haversine, _trip_dict
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
 from config import _HAS_FIRESTORE, firestore_sync
@@ -164,7 +164,7 @@ async def claim_scheduled_trip(
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
             driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Tu conductor"
-            _send_fcm_push(
+            _send_fcm_push_async(
                 token=rider.fcm_token,
                 title="Conductor asignado a tu viaje reservado",
                 body=f"{driver_name} ha aceptado tu viaje programado. Te notificaremos cuando este en camino.",
@@ -324,7 +324,7 @@ async def start_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push(
+            _send_fcm_push_async(
                 token=rider.fcm_token,
                 title="Tu conductor esta en camino",
                 body="Tu conductor ha iniciado el viaje y esta en camino al punto de recogida.",
@@ -374,7 +374,7 @@ async def cancel_claimed_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push(
+            _send_fcm_push_async(
                 token=rider.fcm_token,
                 title="Conductor cancelado",
                 body="Tu conductor ha cancelado el viaje reservado. Estamos buscando otro conductor.",
@@ -522,7 +522,7 @@ async def drop_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push(
+            _send_fcm_push_async(
                 token=rider.fcm_token,
                 title="Buscando otro conductor",
                 body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",

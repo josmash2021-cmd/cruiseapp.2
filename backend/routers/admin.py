@@ -24,7 +24,7 @@ from utils.helpers import (
     _user_dict, _trip_dict, _haversine, _resolve_rider_display, _safe_create_task,
 )
 from utils.ssn_encryption import is_ssn_provided
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from services.socketio_service import notify_user
 from config import (
     PUBLIC_URL, UPLOADS_DIR,
@@ -387,7 +387,7 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
         rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
         rider2 = rider_r2.scalar_one_or_none()
         if rider2 and rider2.fcm_token:
-            _safe_create_task(_send_fcm_push(
+            _safe_create_task(_send_fcm_push_async(
                 rider2.fcm_token,
                 "Driver Assigned",
                 f"{driver.first_name} has been assigned to your ride!",
@@ -677,7 +677,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                 body = reason or "Your verification was not approved. Please try again."
                 payload_type = "driver_rejected" if is_driver else "rider_rejected"
             _safe_create_task(
-                _send_fcm_push(
+                await _send_fcm_push_async(
                     user.fcm_token,
                     title,
                     body,
@@ -1289,7 +1289,7 @@ async def admin_send_notification(
         raise HTTPException(404, "User not found")
     if not user.fcm_token:
         raise HTTPException(400, "User has no FCM token registered")
-    _send_fcm_push(user.fcm_token, title, body, data)
+    _send_fcm_push_async(user.fcm_token, title, body, data)
     logging.info("[Admin] Push notification sent to user %d", user_id)
     return {"ok": True}
 
@@ -1314,7 +1314,7 @@ async def admin_broadcast_drivers(
     drivers = result.scalars().all()
     sent = 0
     for driver in drivers:
-        _send_fcm_push(driver.fcm_token, title, body, data)
+        _send_fcm_push_async(driver.fcm_token, title, body, data)
         sent += 1
     logging.info("[Admin] Broadcast sent to %d online drivers", sent)
     return {"ok": True, "sent": sent}
@@ -1339,7 +1339,7 @@ async def admin_broadcast_riders(
     riders = result.scalars().all()
     sent = 0
     for rider in riders:
-        _send_fcm_push(rider.fcm_token, title, body, data)
+        _send_fcm_push_async(rider.fcm_token, title, body, data)
         sent += 1
     logging.info("[Admin] Broadcast sent to %d riders", sent)
     return {"ok": True, "sent": sent}

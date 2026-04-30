@@ -15,7 +15,7 @@ from utils.security import (
 )
 from utils.helpers import utc_now, _haversine
 from routers.admin import _pricing_config
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from config import (
     PUBLIC_URL, GOOGLE_MAPS_API_KEY, _TUNNEL_URL_FILE,

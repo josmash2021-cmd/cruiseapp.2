@@ -24,7 +24,7 @@ from utils.security import (  # type: ignore[attr-defined]
     _security_audit_log,
 )
 from utils.helpers import _safe_create_task, utc_now, _support_msg_dict  # type: ignore[attr-defined]
-from services.fcm_service import _send_fcm_push  # type: ignore[attr-defined]
+from services.fcm_service import _send_fcm_push_async  # type: ignore[attr-defined]
 from config import (
     firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
 )
@@ -1669,7 +1669,7 @@ async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
                 title = "How did we do?"
                 body = f"Hi {name}, was your issue resolved? We're here if you need anything else."
 
-            await _send_fcm_push(
+            await _send_fcm_push_async(
                 token=user.fcm_token,
                 title=title,
                 body=body,

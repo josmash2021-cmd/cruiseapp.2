@@ -22,7 +22,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
 )
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     CHECKR_API_KEY, CHECKR_BASE_URL,
@@ -1484,11 +1484,11 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
                 drv = drv_r.scalar_one_or_none()
                 if drv and drv.fcm_token:
                     if new_tier == "premium":
-                        _send_fcm_push(drv.fcm_token, title="Upgraded to Premium!",
+                        await _send_fcm_push_async(drv.fcm_token, title="Upgraded to Premium!",
                             body="Your excellent rating earned you Premium status. You'll receive higher-paying rides!",
                             data={"type": "tier_upgrade", "tier": "premium"})
                     elif new_tier == "comfort" and old_tier == "premium":
-                        _send_fcm_push(drv.fcm_token, title="Tier Update",
+                        await _send_fcm_push_async(drv.fcm_token, title="Tier Update",
                             body="Your tier changed to Comfort. Improve your rating to 4.7+ to regain Premium status.",
                             data={"type": "tier_downgrade", "tier": "comfort"})
             except Exception:

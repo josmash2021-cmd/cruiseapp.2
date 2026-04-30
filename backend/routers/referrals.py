@@ -227,13 +227,13 @@ async def credit_referrer_if_qualified(
         # Push notification — let the rider know their $50 just landed.
         # Failures are tolerated (no FCM token, network blip, etc.).
         try:
-            from services.fcm_service import _send_fcm_push
+            from services.fcm_service import _send_fcm_push_async
             from sqlalchemy import select as _sel
             from models.database import User as _U
             _r = await db.execute(_sel(_U).where(_U.id == ref.referrer_id))
             _ru = _r.scalar_one_or_none()
             if _ru and _ru.fcm_token:
-                _send_fcm_push(
+                _send_fcm_push_async(
                     _ru.fcm_token,
                     "🎉 You earned $50 Cruise Cash!",
                     "Your referral completed 2 qualifying rides. Spend it on any trip.",

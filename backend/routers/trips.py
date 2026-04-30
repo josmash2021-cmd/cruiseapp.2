@@ -15,7 +15,7 @@ from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task
-from services.fcm_service import _send_fcm_push, send_to_topic_async
+from services.fcm_service import _send_fcm_push_async, send_to_topic_async
 from services.sms_service import (
     notify_guest_driver_assigned,
     notify_guest_driver_en_route,
@@ -492,7 +492,7 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Your driver"
-            _send_fcm_push(rider.fcm_token, title="Driver Found!",
+            await _send_fcm_push_async(rider.fcm_token, title="Driver Found!",
                 body=f"{driver_name} is on the way to pick you up.",
                 data={"type": "driver_found", "trip_id": str(trip_id)})
     except Exception as _fcm_err:
@@ -1104,30 +1104,30 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             if canonical_new == "driver_en_route":
-                _send_fcm_push(rider.fcm_token, title="Driver On The Way",
+                await _send_fcm_push_async(rider.fcm_token, title="Driver On The Way",
                     body="Your driver is heading to your pickup location.",
                     data={"type": "driver_en_route", "trip_id": str(trip_id)})
             elif canonical_new == "arrived":
-                _send_fcm_push(rider.fcm_token, title="Driver Arrived",
+                await _send_fcm_push_async(rider.fcm_token, title="Driver Arrived",
                     body="Your driver has arrived at the pickup point!",
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
             elif canonical_new == "in_trip":
-                _send_fcm_push(rider.fcm_token, title="Trip Started",
+                await _send_fcm_push_async(rider.fcm_token, title="Trip Started",
                     body="Your trip has started. Enjoy your ride!",
                     data={"type": "trip_started", "trip_id": str(trip_id)})
             elif canonical_new == "completed":
                 # Fix H7: differentiate notification based on actual charge outcome
                 if trip.payment_status == "paid":
                     fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-                    _send_fcm_push(rider.fcm_token, title="Trip Completed",
+                    await _send_fcm_push_async(rider.fcm_token, title="Trip Completed",
                         body=f"Your trip is complete. {fare_str} charged to your card.",
                         data={"type": "trip_completed", "trip_id": str(trip_id)})
                 else:
-                    _send_fcm_push(rider.fcm_token, title="Payment Failed",
+                    await _send_fcm_push_async(rider.fcm_token, title="Payment Failed",
                         body="Your trip is complete but we couldn't charge your card. Please update your payment method.",
                         data={"type": "payment_failed", "trip_id": str(trip_id)})
             elif canonical_new == "cancelled":
-                _send_fcm_push(rider.fcm_token, title="Trip Canceled",
+                await _send_fcm_push_async(rider.fcm_token, title="Trip Canceled",
                     body="Your trip has been canceled.",
                     data={"type": "trip_canceled", "trip_id": str(trip_id)})
     except Exception as _fcm_err:
@@ -1808,7 +1808,7 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
         if receiver_user and receiver_user.fcm_token:
             sender_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Someone"
             sender_role = "driver" if user.id == trip.driver_id else "rider"
-            _send_fcm_push(
+            await _send_fcm_push_async(
                 receiver_user.fcm_token,
                 title=f"Message from {sender_name}",
                 body=msg_text[:200],

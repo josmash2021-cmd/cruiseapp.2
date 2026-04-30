@@ -25,7 +25,7 @@ from utils.security import (
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
@@ -1528,7 +1528,7 @@ async def web_send_chat(trip_id: int, request: Request, db: AsyncSession = Depen
             sender_r = await db.execute(select(User).where(User.id == user_id))
             sender_user = sender_r.scalar_one_or_none()
             sender_name = f"{sender_user.first_name or ''} {sender_user.last_name or ''}".strip() if sender_user else "Rider"
-            _send_fcm_push(
+            await _send_fcm_push_async(
                 recv_user.fcm_token,
                 title=f"Message from {sender_name}",
                 body=msg_text[:200],
@@ -2260,7 +2260,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
 
     try:
         if db_user.fcm_token:
-            await _send_fcm_push(
+            await _send_fcm_push_async(
                 db_user.fcm_token,
                 "You're Approved! 🎉",
                 "Welcome to the Cruise family! Open the app to start driving.",
@@ -2368,7 +2368,7 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
 
     try:
         if db_user.fcm_token:
-            await _send_fcm_push(
+            await _send_fcm_push_async(
                 db_user.fcm_token,
                 "Verification Update",
                 reason or "Your driver application was not approved. Please try again.",
@@ -2507,7 +2507,7 @@ async def apply_referral_code(body: ApplyReferralIn, user: User = Depends(_get_c
     await db.commit()
     # Push notification to referrer
     if referrer.fcm_token:
-        _send_fcm_push(
+        await _send_fcm_push_async(
             referrer.fcm_token,
             title="ðŸŽ‰ Referral Bonus!",
             body=f"{db_user.first_name} joined using your code. $10 added to your earnings!",

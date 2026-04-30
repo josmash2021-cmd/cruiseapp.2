@@ -39,7 +39,7 @@ from models.database import (
     get_db,
 )
 from utils.security import _get_current_user, _verify_api_key
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 
 router = APIRouter()
 
@@ -305,7 +305,7 @@ async def bump_driver_referral_progress(
                 # FCM push — best-effort, swallow errors.
                 if referrer.fcm_token:
                     try:
-                        _send_fcm_push(
+                        _send_fcm_push_async(
                             referrer.fcm_token,
                             "Referral bonus earned!",
                             f"You just earned ${bonus_dollars:.0f} from a "

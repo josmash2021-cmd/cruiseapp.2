@@ -199,7 +199,9 @@ async def authenticate(sid: str, data: dict):
     except (JWTError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
         await sio.emit("auth_error", {"reason": "invalid_token"}, to=sid)
-        await sio.disconnect(sid)
+        # Do NOT force disconnect — let the client handle the auth_error
+        # and decide whether to reconnect with a fresh token.
+        # Forced disconnect causes a reconnect loop storm.
         return
 
     # Store metadata

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -70,7 +71,18 @@ class SocketService {
     if (_initialized) return;
 
     final serverUrl = ApiService.activeServerUrl;
-    final token = await ApiService.getToken();
+    var token = await ApiService.getToken();
+
+    // If token looks stale, try to refresh before connecting
+    // This prevents auth_error → disconnect → reconnect loops
+    if (token == null || token.isEmpty || token == 'null' || _isTokenLikelyExpired(token)) {
+      debugPrint('[Socket.io] Token missing or likely expired — attempting refresh');
+      final refreshed = await ApiService.refreshAccessToken();
+      if (refreshed) {
+        token = await ApiService.getToken();
+        debugPrint('[Socket.io] Token refreshed successfully');
+      }
+    }
 
     debugPrint('[Socket.io] Connecting to $serverUrl');
 
@@ -161,8 +173,15 @@ class SocketService {
       debugPrint('[Socket.io] Authenticated: $data');
     });
 
-    _socket!.on('auth_error', (data) {
-      debugPrint('[Socket.io] Auth error: $data');
+    _socket!.on('auth_error', (data) async {
+      debugPrint('[Socket.io] Auth error: $data — refreshing token and re-authenticating');
+      // Token rejected by server — refresh and try again
+      final refreshed = await ApiService.refreshAccessToken();
+      if (refreshed) {
+        _authenticate();
+      } else {
+        debugPrint('[Socket.io] Token refresh failed — will retry on next reconnect');
+      }
     });
 
     _socket!.on('trip_joined', (data) {
@@ -366,6 +385,26 @@ class SocketService {
           'source': source,
         });
       }
+    }
+  }
+
+  /// Check if a JWT token is likely expired by decoding its payload.
+  /// Returns true if the token expires within the next 5 minutes or is already expired.
+  static bool _isTokenLikelyExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true; // malformed
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final exp = payload['exp'] as int?;
+      if (exp == null) return false; // no expiry = assume valid
+      final expiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      // Consider expired if it expires in < 5 minutes (gives buffer for connection)
+      return expiry.isBefore(DateTime.now().add(const Duration(minutes: 5)));
+    } catch (e) {
+      debugPrint('[Socket.io] Token decode error: $e');
+      return true; // malformed token = treat as expired
     }
   }
 }

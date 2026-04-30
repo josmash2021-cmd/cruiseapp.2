@@ -516,13 +516,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       DriverBackgroundService().stop();
       // Reset sound guards so offer sounds play correctly after app resumes
       NotificationService.resetSoundGuards();
-      _startPolling();
+      _startPolling(); // _startPolling already calls _connectSse()
       _startClock();
       _startEarningsRefresh();
-      // Reconnect SSE if it dropped while in background
-      if (!_sseActive && _phase == _Phase.searching) {
-        _connectSse();
-      }
     }
   }
 

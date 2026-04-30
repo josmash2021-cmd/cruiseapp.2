@@ -4,6 +4,13 @@ part of 'driver_online_screen.dart';
 //  CONTROLLER — boot, GPS, polling, offers, navigation, trips
 // ══════════════════════════════════════════════════════════════
 
+// ── Global guards against polling storm (P1 fix) ──
+// These survive widget rebuilds and prevent multiple DriverOnlineScreen
+// instances from creating overlapping poll timers.
+int _driverOnlinePollingGen = 0;
+bool _driverOnlinePollLock = false;
+DateTime? _driverOnlineLastStartPolling;
+
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
   String _normalizePhotoUrl(dynamic rawUrl) {
@@ -1118,6 +1125,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   //  POLLING & CLOCK
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPolling() {
+    // ── Debounce: ignore rapid-fire calls within 1s ──
+    final now = DateTime.now();
+    if (_driverOnlineLastStartPolling != null &&
+        now.difference(_driverOnlineLastStartPolling!).inMilliseconds < 1000) {
+      debugPrint('[DriverOnline] _startPolling debounced (called within 1s)');
+      return;
+    }
+    _driverOnlineLastStartPolling = now;
+
     _pollT?.cancel();
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
@@ -1127,10 +1143,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // Polling fallback — only fires when SSE is DOWN to save battery.
     // Polls /dispatch/driver/pending every 5s; skipped entirely while SSE is active.
-    _poll();
+    final myGen = ++_driverOnlinePollingGen;
     _pollT = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _phase != _Phase.searching) return;
       if (_sseActive) return; // SSE handles it — skip polling entirely
+      if (myGen != _driverOnlinePollingGen) {
+        debugPrint('[DriverOnline] stale poll timer skipped (gen $myGen != $_driverOnlinePollingGen)');
+        return;
+      }
       debugPrint('[DriverOnline] SSE down — polling /dispatch/driver/pending');
       _poll();
     });

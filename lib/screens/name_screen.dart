@@ -34,11 +34,13 @@ class _NameScreenState extends State<NameScreen> {
   void initState() {
     super.initState();
     // Pre-fill from social auth if available
-    if (widget.firstName != null && widget.firstName!.isNotEmpty) {
-      _firstCtrl.text = widget.firstName!;
+    final first = widget.firstName;
+    final last = widget.lastName;
+    if (first != null && first.isNotEmpty) {
+      _firstCtrl.text = first;
     }
-    if (widget.lastName != null && widget.lastName!.isNotEmpty) {
-      _lastCtrl.text = widget.lastName!;
+    if (last != null && last.isNotEmpty) {
+      _lastCtrl.text = last;
     }
     _firstCtrl.addListener(_onChanged);
     _lastCtrl.addListener(_onChanged);
@@ -82,7 +84,7 @@ class _NameScreenState extends State<NameScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,6 +194,7 @@ class _NameScreenState extends State<NameScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),

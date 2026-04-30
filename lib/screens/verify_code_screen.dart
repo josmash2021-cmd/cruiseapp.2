@@ -114,7 +114,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     if (isValid) {
       if (widget.onVerified != null) {
         // Social registration flow — pop back with verified=true
-        widget.onVerified!(true);
+        widget.onVerified?.call(true);
         Navigator.of(context).pop(true);
       } else {
         // Normal registration flow — navigate to create-password screen
@@ -196,7 +196,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,6 +410,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),

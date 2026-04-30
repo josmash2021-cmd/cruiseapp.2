@@ -127,7 +127,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,6 +303,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),

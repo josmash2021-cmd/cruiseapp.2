@@ -310,8 +310,9 @@ class _SplashScreenState extends State<SplashScreen>
     String firstName = sessionUser?['firstName'] ?? '';
     if (firstName.isEmpty) {
       final fbUser = FirebaseAuth.instance.currentUser;
-      if (fbUser?.displayName != null && fbUser!.displayName!.isNotEmpty) {
-        firstName = fbUser.displayName!.split(' ').first;
+      final displayName = fbUser?.displayName;
+      if (displayName != null && displayName.isNotEmpty) {
+        firstName = displayName.split(' ').first;
       }
     }
     if (firstName.isEmpty) firstName = 'de nuevo';

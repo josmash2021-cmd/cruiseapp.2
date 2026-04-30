@@ -130,7 +130,12 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
       if (!mounted) return;
 
       // Cache user data locally — preserve existing photo if available
-      final user = result['user'] as Map<String, dynamic>;
+      final user = result['user'] as Map<String, dynamic>?;
+      if (user == null) {
+        setState(() => _verifying = false);
+        _errorText = S.of(context).connectionError;
+        return;
+      }
       final existingUser = await UserSession.getUser();
       String existingPhoto = existingUser?['photoPath'] ?? '';
       // Fallback: check persistent photo (survives logout)
@@ -206,7 +211,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,6 +397,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),

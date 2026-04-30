@@ -42,8 +42,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.prefillEmail != null && widget.prefillEmail!.isNotEmpty) {
-      _emailCtrl.text = widget.prefillEmail!;
+    final prefill = widget.prefillEmail;
+    if (prefill != null && prefill.isNotEmpty) {
+      _emailCtrl.text = prefill;
     }
     _emailCtrl.addListener(_validate);
     _passCtrl.addListener(_validate);
@@ -515,7 +516,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -827,7 +828,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               const SizedBox(height: 8),
 
               // ── Quick Access removed (production) ──
-              const Spacer(),
+              const SizedBox(height: 24),
             ],
           ),
         ),

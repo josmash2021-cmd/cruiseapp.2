@@ -152,7 +152,10 @@ class User(Base):
     phone_changes_count = Column(Integer, default=0)
     stripe_connect_id = Column(String(100), nullable=True)
     fcm_token = Column(String(500), nullable=True)
-    referral_code = Column(String(20), unique=True, nullable=True)
+    # Unique referral code shown to the rider (e.g. "JHON-A4F9"). Used by
+    # invitees during signup to credit the referrer once they qualify.
+    referral_code = Column(String(20), nullable=True, unique=True, index=True)
+    # Set on signup if the new user redeemed someone else's referral code.
     referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     # Driver-to-driver referral program (separate from rider Cruise Cash).
     # Stored on the same users row for fast lookup; details live in the
@@ -181,9 +184,6 @@ class User(Base):
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
     average_rating = Column(Float, default=5.0)
-    # Unique referral code shown to the rider (e.g. "JHON-A4F9"). Used by
-    # invitees during signup to credit the referrer once they qualify.
-    referral_code = Column(String(20), nullable=True, unique=True, index=True)
     # Set on signup if the new user redeemed someone else's referral code.
     referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     # Stripe Customer ID — created lazily the first time the rider tries

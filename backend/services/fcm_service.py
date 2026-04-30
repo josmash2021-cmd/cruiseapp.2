@@ -150,3 +150,26 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
                 logging.warning("[FCM] stale-token cleanup failed: %s", _clean_err)
         else:
             logging.warning("[FCM] Push failed: %s", _msg)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  UNIVERSAL WRAPPER — works in both sync and async contexts
+# ═══════════════════════════════════════════════════════════════
+
+def send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
+    """Universal FCM push sender — works in sync AND async contexts.
+    
+    Use this instead of _send_fcm_push() or _send_fcm_push_async().
+    It automatically detects if we're in an async context and handles accordingly.
+    """
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        # We're in an async context — schedule in background
+        if loop.is_running():
+            asyncio.create_task(_send_fcm_push_async(token, title, body, data, is_offer))
+        else:
+            loop.run_until_complete(_send_fcm_push_async(token, title, body, data, is_offer))
+    except RuntimeError:
+        # No event loop — sync context, call directly
+        _send_fcm_push(token, title, body, data, is_offer)

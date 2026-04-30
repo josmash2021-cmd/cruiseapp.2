@@ -34,6 +34,7 @@ import 'services/cache_service.dart';
 import 'services/map_cache_service.dart';
 import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
+import 'services/background_service.dart';
 import 'services/analytics_service.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
@@ -402,6 +403,7 @@ void main() async {
         _safeInit('Analytics', AnalyticsService.instance.init()),
         _safeInit('Socket', SocketService.init()),
         _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig()),
+        _safeInit('BackgroundService', DriverBackgroundService().initialize()),
       ]);
       debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group2Results)');
 

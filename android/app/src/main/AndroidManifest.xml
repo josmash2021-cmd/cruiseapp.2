@@ -80,6 +80,12 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- flutter_background_service foreground service -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
         <!-- FileProvider required by share_plus for sharing text/files -->
         <provider
             android:name="androidx.core.content.FileProvider"

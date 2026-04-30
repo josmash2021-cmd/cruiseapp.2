@@ -56,6 +56,7 @@ import 'trip_accepted_screen.dart';
 import 'scheduled_rides_screen.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/tier_badge.dart';
 
@@ -514,9 +515,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _goldDot.dispose();
       // Start background heartbeat to keep driver "online" in backend
       _startBackgroundHeartbeat();
+      // Start Android foreground service so the OS doesn't kill us
+      DriverBackgroundService().start();
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
       _stopBackgroundHeartbeat();
+      DriverBackgroundService().stop();
       // Reset sound guards so offer sounds play correctly after app resumes
       NotificationService.resetSoundGuards();
       _startPolling();

@@ -580,28 +580,26 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   //  STEP 0 — Direction Picker (1:1 with web - vertical cards)
   // ─────────────────────────────────────────────
   Widget _buildDirectionPicker() {
-    return Center(
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildDirectionCardVertical(
-              direction: AirportDirection.toAirport,
-              title: S.of(context).takeMeToAirport,
-              subtitle: S.of(context).flyingOutSubtitle,
-              isToAirport: true,
-            ),
-            const SizedBox(height: 18),
-            _buildDirectionCardVertical(
-              direction: AirportDirection.fromAirport,
-              title: S.of(context).pickMeUpFromAirport,
-              subtitle: S.of(context).justLandedSubtitle,
-              isToAirport: false,
-            ),
-          ],
-        ),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          _buildDirectionCardVertical(
+            direction: AirportDirection.toAirport,
+            title: S.of(context).takeMeToAirport,
+            subtitle: S.of(context).flyingOutSubtitle,
+            isToAirport: true,
+          ),
+          const SizedBox(height: 18),
+          _buildDirectionCardVertical(
+            direction: AirportDirection.fromAirport,
+            title: S.of(context).pickMeUpFromAirport,
+            subtitle: S.of(context).justLandedSubtitle,
+            isToAirport: false,
+          ),
+        ],
       ),
     );
   }

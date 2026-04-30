@@ -1062,16 +1062,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
 
     // Fire ALL independent reads in parallel — single await instead of 10+
+    // Each future wrapped with .catchError() so one failure doesn't crash all
     final results = await Future.wait([
-      LocalDataService.getFavorites(),          // 0
-      LocalDataService.getTripHistory(),        // 1
-      LocalDataService.getTopDestinations(limit: 3), // 2
-      LocalDataService.getNotifications(),      // 3
-      UserSession.getUser(),                    // 4
-      LocalDataService.hasActivePromo(),        // 5
-      LocalDataService.getActiveRide(),         // 6
-      LocalDataService.isIdentityVerified(),    // 7
-      _loadNextScheduledRide(),                 // 8
+      LocalDataService.getFavorites()
+          .catchError((_) => <FavoritePlace>[]),          // 0
+      LocalDataService.getTripHistory()
+          .catchError((_) => <TripHistoryItem>[]),        // 1
+      LocalDataService.getTopDestinations(limit: 3)
+          .catchError((_) => <FrequentDestination>[]),    // 2
+      LocalDataService.getNotifications()
+          .catchError((_) => <AppNotificationItem>[]),    // 3
+      UserSession.getUser()
+          .catchError((_) => null),                       // 4
+      LocalDataService.hasActivePromo()
+          .catchError((_) => false),                      // 5
+      LocalDataService.getActiveRide()
+          .catchError((_) => null),                       // 6
+      LocalDataService.isIdentityVerified()
+          .catchError((_) => false),                      // 7
+      _loadNextScheduledRide()
+          .catchError((_) => null),                       // 8
     ]);
 
     final favorites = results[0] as List<FavoritePlace>;

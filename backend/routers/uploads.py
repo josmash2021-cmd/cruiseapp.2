@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import get_db, User
 from utils.security import _get_current_user
-from services.storage import upload_file, _HAS_S3
+from services.storage import upload_file, _HAS_S3 as _storage_has_s3
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["uploads"])
@@ -54,7 +54,7 @@ async def upload_driver_document(
     Returns:
         {"key": "drivers/{id}/documents/<uuid>.ext", "signed_url": "..."}
     """
-    if not _HAS_S3:
+    if not _storage_has_s3:
         raise HTTPException(503, "S3 storage is not configured")
 
     # Authorization: users can only upload their own documents
@@ -99,7 +99,7 @@ async def upload_rider_profile_photo(
     Returns:
         {"key": "riders/{id}/profile/<uuid>.ext", "signed_url": "..."}
     """
-    if not _HAS_S3:
+    if not _storage_has_s3:
         raise HTTPException(503, "S3 storage is not configured")
 
     # Authorization: users can only upload their own photo

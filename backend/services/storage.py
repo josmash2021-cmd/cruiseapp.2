@@ -74,8 +74,12 @@ def _extension_from_content_type(content_type: str) -> str:
     return mapping.get(content_type, ".bin")
 
 
-def _validate_upload(data: bytes, content_type: str) -> None:
-    """Validate file size and MIME type. Raises ValueError on violation."""
+def _validate_upload(data: bytes, content_type: str) -> str:
+    """Validate file size and MIME type. Raises ValueError on violation.
+
+    Returns the (possibly corrected) content_type — if magic bytes sniff a
+    different type than declared, the sniffed type wins.
+    """
     if len(data) > _MAX_FILE_SIZE:
         raise ValueError(f"File too large: {len(data)} bytes (max {_MAX_FILE_SIZE})")
 
@@ -88,7 +92,7 @@ def _validate_upload(data: bytes, content_type: str) -> None:
     if content_type not in _ALLOWED_CONTENT_TYPES:
         raise ValueError(f"Unsupported file type: {content_type}")
 
-    return None
+    return content_type
 
 
 async def _get_client():
@@ -126,7 +130,7 @@ async def upload_file(
         ValueError: If file size or type is invalid.
         RuntimeError: If S3 is not configured.
     """
-    _validate_upload(file_data, content_type)
+    content_type = _validate_upload(file_data, content_type)
 
     # Normalize folder path
     folder = folder.strip("/")

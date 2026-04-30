@@ -1,0 +1,20 @@
+# Railway deployment config for the cruiseapp-functions background worker.
+# This service runs as a separate Python Web Service (NOT a Railway Function,
+# since Railway Functions use Bun/JS runtime only).
+#
+# To deploy:
+#   1. In Railway Dashboard, create a NEW SERVICE from this repo.
+#   2. Name it "cruiseapp-functions".
+#   3. Set the start command to: uvicorn backend.functions.cruiseapp-functions:app --host 0.0.0.0 --port ${PORT:-8000}
+#   4. Add the same environment variables as the main app (DATABASE_URL, REDIS_URL, etc.).
+#   5. Railway will auto-detect Python and install requirements.txt.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "uvicorn backend.functions.cruiseapp-functions:app --host 0.0.0.0 --port ${PORT:-8000}"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+healthcheckPath = "/health"
+healthcheckTimeout = 30

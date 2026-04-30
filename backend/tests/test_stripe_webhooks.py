@@ -52,7 +52,7 @@ async def test_payment_intent_succeeded(client: AsyncClient, test_trip):
     }
     payload = json.dumps(event).encode()
 
-    with patch("webhooks.stripe_webhook._stripe_mod") as mock_stripe:
+    with patch("routers.webhooks._stripe_mod") as mock_stripe:
         mock_stripe.Webhook.construct_event.return_value = event
         mock_stripe.error = MagicMock()
         mock_stripe.error.SignatureVerificationError = Exception
@@ -98,8 +98,8 @@ async def test_payment_intent_failed(client: AsyncClient, test_trip):
     }
     payload = json.dumps(event).encode()
 
-    with patch("webhooks.stripe_webhook._stripe_mod") as mock_stripe, \
-         patch("webhooks.stripe_webhook._get_helpers") as mock_helpers:
+    with patch("routers.webhooks._stripe_mod") as mock_stripe, \
+         patch("routers.webhooks._get_helpers") as mock_helpers:
         mock_stripe.Webhook.construct_event.return_value = event
         mock_stripe.error = MagicMock()
         mock_stripe.error.SignatureVerificationError = Exception
@@ -146,7 +146,7 @@ async def test_charge_refunded(client: AsyncClient, test_trip):
     }
     payload = json.dumps(event).encode()
 
-    with patch("webhooks.stripe_webhook._stripe_mod") as mock_stripe:
+    with patch("routers.webhooks._stripe_mod") as mock_stripe:
         mock_stripe.Webhook.construct_event.return_value = event
         mock_stripe.error = MagicMock()
         mock_stripe.error.SignatureVerificationError = Exception
@@ -183,7 +183,7 @@ async def test_unknown_event_returns_200(client: AsyncClient):
     }
     payload = json.dumps(event).encode()
 
-    with patch("webhooks.stripe_webhook._stripe_mod") as mock_stripe:
+    with patch("routers.webhooks._stripe_mod") as mock_stripe:
         mock_stripe.Webhook.construct_event.return_value = event
         mock_stripe.error = MagicMock()
         mock_stripe.error.SignatureVerificationError = Exception

@@ -2583,7 +2583,10 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         base_url = open(_TUNNEL_URL_FILE, "r").read().strip()
     if not base_url:
         base_url = "http://localhost:8000"
-    reset_link = f"{base_url}/auth/reset-page?token={reset_code}"
+    # Use URL hash fragment (#token=...) so the token is NOT sent to server
+    # in referrer headers or access logs. JavaScript on the page reads the
+    # fragment and submits it via POST to /auth/reset-password-web.
+    reset_link = f"{base_url}/auth/reset-page#token={reset_code}"
 
     # Send email
     _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
@@ -2625,7 +2628,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/auth/reset-page")
-async def reset_page(token: str = Query(...)):
+async def reset_page():
     """Serve a simple HTML page where the user can enter a new password."""
     _logo = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
     html = f"""<!DOCTYPE html>
@@ -2699,6 +2702,17 @@ input:focus{{border-color:#D4AF37}}
   </div>
 </div>
 <script>
+// Read token from URL hash fragment (not sent to server in logs/referrers)
+var _resetToken=(function(){{
+  var h=window.location.hash;
+  if(h&&h.startsWith('#token=')) return decodeURIComponent(h.slice(7));
+  return '';
+}})();
+if(!_resetToken){{
+  document.getElementById('msg').textContent='Invalid or missing reset link. Please request a new password reset.';
+  document.getElementById('msg').className='msg err';
+  document.getElementById('f').style.display='none';
+}}
 function checkReqs(){{
   var pw=document.getElementById('pw').value;
   toggle('r-len',pw.length>=8);
@@ -2722,7 +2736,7 @@ function toggle(id,ok){{
 function updateBtn(){{
   var pw=document.getElementById('pw').value;
   var pw2=document.getElementById('pw2').value;
-  var ok=pw.length>=8&&/[A-Z]/.test(pw)&&/[0-9]/.test(pw)&&/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw)&&pw===pw2&&pw2.length>0;
+  var ok=pw.length>=8&&/[A-Z]/.test(pw)&&/[0-9]/.test(pw)&&/[!@#$%^&*(),.?\\":{{}}|<>_\\-+=\\[\\]\\\\/~`]/.test(pw)&&pw===pw2&&pw2.length>0&&_resetToken;
   document.getElementById('btn').disabled=!ok;
 }}
 async function doReset(e){{
@@ -2733,12 +2747,13 @@ async function doReset(e){{
   var btn=document.getElementById('btn');
   msg.className='msg';msg.style.display='none';
   if(pw!==pw2){{msg.textContent='Passwords do not match';msg.className='msg err';return false}}
+  if(!_resetToken){{msg.textContent='Invalid reset link';msg.className='msg err';return false}}
   btn.disabled=true;btn.textContent='Resetting...';
   try{{
     var r=await fetch('/auth/reset-password-web',{{
       method:'POST',
       headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{token:'{token}',new_password:pw}})
+      body:JSON.stringify({{token:_resetToken,new_password:pw}})
     }});
     var d=await r.json();
     if(r.ok){{

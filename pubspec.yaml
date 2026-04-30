@@ -75,6 +75,9 @@ dependencies:
   connectivity_plus: ^6.1.4
   audioplayers: ^6.1.0
   socket_io_client: ^2.0.3+1
+  devtools_extensions: ^0.5.0
+  mcp_dart: ^2.1.1
+  mcp_toolkit: ^0.4.0
 
 dev_dependencies:
   flutter_test:

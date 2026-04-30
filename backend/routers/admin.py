@@ -24,6 +24,7 @@ from utils.helpers import (
     _user_dict, _trip_dict, _haversine, _resolve_rider_display,
 )
 from services.fcm_service import _send_fcm_push
+from services.socketio_service import notify_user
 from config import (
     PUBLIC_URL, UPLOADS_DIR,
     firestore_sync, _HAS_FIRESTORE,
@@ -635,13 +636,33 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         except Exception as e:
             logging.warning("Firestore verification sync failed: %s", e)
 
-    # Fire-and-forget FCM push so the user's device sees the decision
-    # instantly, even when the app is backgrounded or the Firestore
+    # Fire-and-forget real-time push (Socket.IO + FCM) so the user's device
+    # sees the decision instantly, even when backgrounded or the Firestore
     # listener is not attached (e.g. home screen after reinstall).
-    # Matches the /auth/dispatch-approve flow for drivers.
+    is_driver = (user.role or "") == "driver"
+    try:
+        await notify_user(
+            user_id,
+            "account_status_changed",
+            {
+                "status": action,
+                "role": user.role or "driver",
+                "reason": reason if action == "reject" else None,
+                "message": (
+                    "Your driver application has been approved!"
+                    if action == "approve" and is_driver
+                    else "Your account has been verified!"
+                    if action == "approve"
+                    else "Your application was not approved."
+                ),
+            },
+        )
+        logging.info("[ADMIN-VERIFY] Socket.IO push sent to user %d (%s)", user_id, action)
+    except Exception as e:
+        logging.warning("[ADMIN-VERIFY] Socket.IO push failed: %s", e)
+
     try:
         if user.fcm_token:
-            is_driver = (user.role or "") == "driver"
             if action == "approve":
                 title = "You're Approved! 🎉" if is_driver else "Account Verified ✓"
                 body = (
@@ -659,7 +680,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                     user.fcm_token,
                     title,
                     body,
-                    {"type": payload_type, "user_id": str(user_id)},
+                    {"type": payload_type, "user_id": str(user_id), "reason": reason or ""},
                 )
             )
             logging.info("[ADMIN-VERIFY] FCM push queued for user %d (%s)", user_id, action)

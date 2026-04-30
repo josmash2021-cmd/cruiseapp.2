@@ -28,6 +28,7 @@ from utils.helpers import utc_now, _user_dict, _haversine, _trip_dict
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
+from services.socketio_service import notify_user
 from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
 from config import (
     _otp_store, _OTP_TTL, PHOTOS_DIR, PUBLIC_URL,
@@ -2260,14 +2261,28 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
             logging.warning("[DISPATCH-APPROVE] Firestore approve sync failed: %s", e)
     else:
         logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False - Firestore sync skipped")
-    # ── Send push notification + email to the approved driver ──
+    # ── Send real-time Socket.IO push + FCM to the approved driver ──
+    try:
+        await notify_user(
+            user_id,
+            "account_status_changed",
+            {
+                "status": "approved",
+                "role": "driver",
+                "message": "Your driver application has been approved!",
+            },
+        )
+        logging.info("[DISPATCH-APPROVE] Socket.IO push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-APPROVE] Socket.IO push failed: %s", e)
+
     try:
         if db_user.fcm_token:
             await _send_fcm_push(
                 db_user.fcm_token,
                 "You're Approved! 🎉",
                 "Welcome to the Cruise family! Open the app to start driving.",
-                {"type": "driver_approved"},
+                {"type": "driver_approved", "user_id": str(user_id)},
             )
             logging.info("[DISPATCH-APPROVE] FCM push sent to user %d", user_id)
     except Exception as e:
@@ -2352,6 +2367,35 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
             firestore_sync.write_approval(user_id, "reject", reason=reason)
         except Exception as e:
             logging.warning("Firestore reject sync failed: %s", e)
+
+    # ── Send real-time Socket.IO push + FCM to the rejected driver ──
+    try:
+        await notify_user(
+            user_id,
+            "account_status_changed",
+            {
+                "status": "rejected",
+                "role": "driver",
+                "reason": reason,
+                "message": "Your driver application was not approved.",
+            },
+        )
+        logging.info("[DISPATCH-REJECT] Socket.IO push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-REJECT] Socket.IO push failed: %s", e)
+
+    try:
+        if db_user.fcm_token:
+            await _send_fcm_push(
+                db_user.fcm_token,
+                "Verification Update",
+                reason or "Your driver application was not approved. Please try again.",
+                {"type": "driver_rejected", "user_id": str(user_id), "reason": reason},
+            )
+            logging.info("[DISPATCH-REJECT] FCM push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-REJECT] FCM push failed: %s", e)
+
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 

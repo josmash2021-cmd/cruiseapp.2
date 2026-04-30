@@ -24,6 +24,8 @@ import 'config/feature_flags.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
+import 'screens/driver/driver_home_screen.dart';
+import 'screens/driver/driver_pending_review_screen.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/security_service.dart';
@@ -271,6 +273,16 @@ void _handleNotificationTap(RemoteMessage message) {
     HomeScreen.scheduledRideRefresh.value++;
     return;
   }
+
+  // ── Account approval / rejection taps ──
+  if (type == 'driver_approved' || type == 'rider_approved') {
+    _handleAccountApproved(type == 'driver_approved');
+    return;
+  }
+  if (type == 'driver_rejected' || type == 'rider_rejected') {
+    _handleAccountRejected(type == 'driver_rejected');
+    return;
+  }
 }
 
 /// Fetch scheduled trip from backend and navigate to RiderTrackingScreen.
@@ -323,6 +335,34 @@ void _navigateToScheduledTracking(int tripId) {
   }).catchError((e) {
     debugPrint('[FCM] Failed to fetch scheduled trip $tripId: $e');
   });
+}
+
+/// Navigate to the correct home screen after account approval.
+void _handleAccountApproved(bool isDriver) {
+  final nav = _navigatorKey.currentState;
+  if (nav == null) return;
+
+  // Remove any pending-review screen from the stack and push the home screen
+  final route = isDriver
+      ? MaterialPageRoute(builder: (_) => const DriverHomeScreen())
+      : MaterialPageRoute(builder: (_) => const HomeScreen());
+
+  nav.pushAndRemoveUntil(route, (r) => false);
+  debugPrint('[FCM] Navigated to ${isDriver ? "DriverHomeScreen" : "HomeScreen"} after approval');
+}
+
+/// Navigate to pending-review screen after account rejection.
+void _handleAccountRejected(bool isDriver) {
+  if (!isDriver) return; // riders don't have a pending-review screen
+
+  final nav = _navigatorKey.currentState;
+  if (nav == null) return;
+
+  nav.pushAndRemoveUntil(
+    MaterialPageRoute(builder: (_) => const DriverPendingReviewScreen()),
+    (r) => false,
+  );
+  debugPrint('[FCM] Navigated to DriverPendingReviewScreen after rejection');
 }
 
 void main() async {
@@ -713,6 +753,20 @@ Future<void> heavyInit() async {
             // Scheduled ride status changed — refresh home screen card
             if (type == 'scheduled_claimed' || type == 'scheduled_driver_cancelled') {
               HomeScreen.scheduledRideRefresh.value++;
+            }
+
+            // ── Account approval / rejection (driver + rider) ──
+            // When dispatch approves or rejects, navigate the user instantly
+            // so they don't stay stuck on "Application Under Review".
+            if (type == 'driver_approved' || type == 'rider_approved') {
+              LocalDataService.setDriverApprovalStatus('approved').then((_) {
+                _handleAccountApproved(type == 'driver_approved');
+              });
+            }
+            if (type == 'driver_rejected' || type == 'rider_rejected') {
+              LocalDataService.setDriverApprovalStatus('rejected').then((_) {
+                _handleAccountRejected(type == 'driver_rejected');
+              });
             }
           });
           // Handle notification tap when app is backgrounded

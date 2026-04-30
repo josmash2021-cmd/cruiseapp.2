@@ -578,6 +578,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   }
 
   bool _approvalGatePassed = false;
+  bool _isGoingOnline = false; // prevents duplicate go-online calls
 
   bool _nearPickupNotified = false;
   bool _nearDropoffNotified = false;

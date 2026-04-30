@@ -46,8 +46,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _loadAllEarnings();
       _startEarningsRefresh();
       _startScheduledPoll();
+      // Fire-and-forget: these must not block the UI thread
       unawaited(_locate());
-      unawaited(_verifyAndGoOnline());
+      unawaited(Future.microtask(_verifyAndGoOnline));
     });
 
     // Listen for network recovery — proactively reconnect SSE + re-register
@@ -687,6 +688,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _goOnlineBackend() {
+    if (_isGoingOnline) {
+      debugPrint('[DriverOnline] _goOnlineBackend already in progress, skipping');
+      return;
+    }
     if (_driverId == null) {
       debugPrint('âš ï¸ _goOnlineBackend: _driverId is null, skipping');
       return;
@@ -705,6 +710,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       });
       return;
     }
+    _isGoingOnline = true;
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);
@@ -715,6 +721,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           isOnline: true,
         )
         .then((_) {
+          _isGoingOnline = false;
           debugPrint('âœ… Driver online successfully');
           AnalyticsService.instance.logDriverOnline();
           // Show persistent notification (fire-and-forget, non-blocking)
@@ -726,6 +733,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           );
         })
         .catchError((e) {
+          _isGoingOnline = false;
           debugPrint('âŒ Failed to go online: $e');
           // Retry after 5s so driver doesn't stay silently offline
           Future.delayed(const Duration(seconds: 5), () {
@@ -758,6 +766,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   //  DRIVER POSITION STREAM (smooth movement on map)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPosStream() {
+    // Prevent duplicate GPS streams — cancel existing before creating new
+    _posStream?.cancel();
+    _posStream = null;
+
     // Start GpsService for Firebase RTDB uploads + presence
     if (_driverId != null) {
       _gpsService.startTracking(_driverId.toString());

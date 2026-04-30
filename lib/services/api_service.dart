@@ -2340,143 +2340,192 @@ class ApiService {
 
   // ── SSE real-time stream for driver pending offers ──
   /// Returns a stream of offer events with automatic reconnection + exponential backoff.
-  static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) async* {
-    int backoffMs = 1000; // Start at 1s, max 30s
-    const maxBackoffMs = 30000;
-    int retries = 0;
+  /// CANCELABLE: when the consumer unsubscribes, the HTTP connection is closed and
+  /// the retry loop stops — preventing connection leaks in production.
+  static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) {
+    final controller = StreamController<List<Map<String, dynamic>>>();
+    http.StreamedResponse? activeResponse;
+    bool cancelled = false;
 
-    while (true) {
-      bool gotData = false;
-      try {
-        final h = await _authHeaders();
-        final request = http.Request(
-          'GET',
-          Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
-        );
-        request.headers.addAll(h);
-        final response = await _client.send(request);
-        if (response.statusCode != 200) {
-          debugPrint('[SSE] Driver stream HTTP ${response.statusCode}');
-          break; // Non-recoverable (auth error, etc.)
-        }
+    Future<void> doConnect() async {
+      int backoffMs = 1000;
+      const maxBackoffMs = 30000;
+      int retries = 0;
 
-        // Connected — reset backoff
-        backoffMs = 1000;
-        retries = 0;
+      while (!cancelled) {
+        try {
+          final h = await _authHeaders();
+          final request = http.Request(
+            'GET',
+            Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
+          );
+          request.headers.addAll(h);
+          final response = await _client.send(request);
+          activeResponse = response;
 
-        String buffer = '';
-        await for (final chunk in response.stream.transform(utf8.decoder)) {
-          buffer += chunk;
-          while (buffer.contains('\n\n')) {
-            final idx = buffer.indexOf('\n\n');
-            final block = buffer.substring(0, idx);
-            buffer = buffer.substring(idx + 2);
+          if (response.statusCode != 200) {
+            debugPrint('[SSE] Driver stream HTTP ${response.statusCode}');
+            break; // Non-recoverable (auth error, etc.)
+          }
 
-            String? eventType;
-            String? data;
-            for (final line in block.split('\n')) {
-              if (line.startsWith('event: ')) {
-                eventType = line.substring(7);
-              } else if (line.startsWith('data: ')) {
-                data = line.substring(6);
+          // Connected — reset backoff
+          backoffMs = 1000;
+          retries = 0;
+
+          String buffer = '';
+          await for (final chunk in response.stream.transform(utf8.decoder)) {
+            if (cancelled) break;
+            buffer += chunk;
+            while (buffer.contains('\n\n')) {
+              final idx = buffer.indexOf('\n\n');
+              final block = buffer.substring(0, idx);
+              buffer = buffer.substring(idx + 2);
+
+              String? eventType;
+              String? data;
+              for (final line in block.split('\n')) {
+                if (line.startsWith('event: ')) {
+                  eventType = line.substring(7);
+                } else if (line.startsWith('data: ')) {
+                  data = line.substring(6);
+                }
+              }
+
+              // Skip heartbeat pings
+              if (eventType == 'heartbeat') continue;
+
+              if (eventType == 'offers_update' && data != null) {
+                try {
+                  final parsed = jsonDecode(data);
+                  if (parsed is List && !cancelled) {
+                    controller.add(parsed.cast<Map<String, dynamic>>());
+                  }
+                } catch (_) {}
               }
             }
-
-            // Skip heartbeat pings
-            if (eventType == 'heartbeat') continue;
-
-            if (eventType == 'offers_update' && data != null) {
-              try {
-                final parsed = jsonDecode(data);
-                if (parsed is List) {
-                  gotData = true;
-                  yield parsed.cast<Map<String, dynamic>>();
-                }
-              } catch (_) {}
-            }
           }
+        } catch (e) {
+          if (cancelled) break;
+          debugPrint('[SSE] Driver stream error (retry ${retries + 1}): $e');
         }
-      } catch (e) {
-        debugPrint('[SSE] Driver stream error (retry ${retries + 1}): $e');
+
+        if (cancelled) break;
+
+        // Exponential backoff before reconnect — cap at 30s
+        retries++;
+        debugPrint('[SSE] Reconnecting driver stream in ${backoffMs}ms...');
+        await Future.delayed(Duration(milliseconds: backoffMs));
+        backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
       }
 
-      // Exponential backoff before reconnect — NEVER give up, cap at 30s
-      retries++;
-      debugPrint('[SSE] Reconnecting driver stream in ${backoffMs}ms...');
-      await Future.delayed(Duration(milliseconds: backoffMs));
-      backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
+      if (!controller.isClosed) {
+        await controller.close();
+      }
     }
+
+    controller.onCancel = () {
+      cancelled = true;
+      activeResponse?.stream.drain().catchError((_) {});
+    };
+
+    doConnect();
+    return controller.stream;
   }
 
   // ── SSE real-time stream for rider trip status ──
   /// Returns a stream of trip status events with automatic reconnection + exponential backoff.
   /// PRIMARY channel for instant updates (<100ms) — replaces Firestore listener.
-  static Stream<Map<String, dynamic>> streamTripStatus(int tripId) async* {
-    int backoffMs = 1000;
-    const maxBackoffMs = 30000;
-    int retries = 0;
+  /// CANCELABLE: when the consumer unsubscribes, the HTTP connection is closed.
+  static Stream<Map<String, dynamic>> streamTripStatus(int tripId) {
+    final controller = StreamController<Map<String, dynamic>>();
+    http.StreamedResponse? activeResponse;
+    bool cancelled = false;
 
-    while (true) {
-      try {
-        final h = await _authHeaders();
-        final request = http.Request(
-          'GET',
-          Uri.parse('$_baseUrl/dispatch/trip/$tripId/stream'),
-        );
-        request.headers.addAll(h);
-        final response = await _client.send(request);
-        if (response.statusCode != 200) {
-          debugPrint('[SSE] Trip stream HTTP ${response.statusCode}');
-          break;
-        }
+    Future<void> doConnect() async {
+      int backoffMs = 1000;
+      const maxBackoffMs = 30000;
+      int retries = 0;
 
-        // Connected — reset backoff
-        backoffMs = 1000;
-        retries = 0;
+      while (!cancelled) {
+        try {
+          final h = await _authHeaders();
+          final request = http.Request(
+            'GET',
+            Uri.parse('$_baseUrl/dispatch/trip/$tripId/stream'),
+          );
+          request.headers.addAll(h);
+          final response = await _client.send(request);
+          activeResponse = response;
 
-        String buffer = '';
-        await for (final chunk in response.stream.transform(utf8.decoder)) {
-          buffer += chunk;
-          while (buffer.contains('\n\n')) {
-            final idx = buffer.indexOf('\n\n');
-            final block = buffer.substring(0, idx);
-            buffer = buffer.substring(idx + 2);
+          if (response.statusCode != 200) {
+            debugPrint('[SSE] Trip stream HTTP ${response.statusCode}');
+            break;
+          }
 
-            String? eventType;
-            String? data;
-            for (final line in block.split('\n')) {
-              if (line.startsWith('event: ')) {
-                eventType = line.substring(7);
-              } else if (line.startsWith('data: ')) {
-                data = line.substring(6);
+          // Connected — reset backoff
+          backoffMs = 1000;
+          retries = 0;
+
+          String buffer = '';
+          await for (final chunk in response.stream.transform(utf8.decoder)) {
+            if (cancelled) break;
+            buffer += chunk;
+            while (buffer.contains('\n\n')) {
+              final idx = buffer.indexOf('\n\n');
+              final block = buffer.substring(0, idx);
+              buffer = buffer.substring(idx + 2);
+
+              String? eventType;
+              String? data;
+              for (final line in block.split('\n')) {
+                if (line.startsWith('event: ')) {
+                  eventType = line.substring(7);
+                } else if (line.startsWith('data: ')) {
+                  data = line.substring(6);
+                }
+              }
+
+              if (eventType == 'heartbeat') continue;
+
+              if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
+                try {
+                  final parsed = jsonDecode(data);
+                  if (parsed is Map<String, dynamic> && !cancelled) {
+                    if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
+                      parsed['status'] = 'no_drivers';
+                    }
+                    controller.add(parsed);
+                  }
+                } catch (_) {}
               }
             }
-
-            if (eventType == 'heartbeat') continue;
-
-            if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
-              try {
-                final parsed = jsonDecode(data);
-                if (parsed is Map<String, dynamic>) {
-                  if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
-                    parsed['status'] = 'no_drivers';
-                  }
-                  yield parsed;
-                }
-              } catch (_) {}
-            }
           }
+        } catch (e) {
+          if (cancelled) break;
+          debugPrint('[SSE] Trip stream error (retry ${retries + 1}): $e');
         }
-      } catch (e) {
-        debugPrint('[SSE] Trip stream error (retry ${retries + 1}): $e');
+
+        if (cancelled) break;
+
+        retries++;
+        if (retries > 10) break;
+        debugPrint('[SSE] Reconnecting trip stream in ${backoffMs}ms...');
+        await Future.delayed(Duration(milliseconds: backoffMs));
+        backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
       }
 
-      retries++;
-      if (retries > 10) break;
-      debugPrint('[SSE] Reconnecting trip stream in ${backoffMs}ms...');
-      await Future.delayed(Duration(milliseconds: backoffMs));
-      backoffMs = (backoffMs * 2).clamp(1000, maxBackoffMs);
+      if (!controller.isClosed) {
+        await controller.close();
+      }
     }
+
+    controller.onCancel = () {
+      cancelled = true;
+      activeResponse?.stream.drain().catchError((_) {});
+    };
+
+    doConnect();
+    return controller.stream;
   }
 
   /// Driver polls for their pending ride offers (returns a LIST now).

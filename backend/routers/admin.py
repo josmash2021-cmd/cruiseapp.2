@@ -846,8 +846,9 @@ async def admin_bulk_update_user_status(
     if not user_ids or not status:
         raise HTTPException(400, "user_ids and status are required")
 
-    if status not in ("active", "inactive", "suspended", "blocked"):
-        raise HTTPException(400, f"Invalid status: {status}")
+    _ALLOWED_STATUSES = ("active", "inactive", "suspended", "blocked", "deleted", "deactivated", "pending_deletion")
+    if status not in _ALLOWED_STATUSES:
+        raise HTTPException(400, f"Invalid status: {status}. Must be one of: {', '.join(_ALLOWED_STATUSES)}")
 
     updated = 0
     for user_id in user_ids:

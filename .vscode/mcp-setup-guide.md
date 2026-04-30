@@ -10,8 +10,12 @@ Local development uses SQLite, but all production data lives in Supabase.
 | **Supabase (PostgreSQL)** | Production database queries | ✅ Configured |
 | **Stripe** | Payment processing | ✅ Configured |
 | **Filesystem** | Project file access | ✅ Configured |
+| **Context7** | Flutter/Dart documentation | ✅ Configured |
 
-**Not Available:** Firebase/Firestore MCP (Google hasn't released one).
+**Not Available:**
+- Firebase/Firestore MCP (Google hasn't released one)
+- Flutter MCP (doesn't exist)
+- Dart MCP (doesn't exist)
 
 ---
 
@@ -99,6 +103,33 @@ List the last 10 payments from Stripe
 ## 3. Filesystem MCP Server
 
 Already configured to access `c:\Users\Puma\cruiseapp.2`.
+
+---
+
+## 4. Context7 MCP Server (Flutter/Dart Docs)
+
+### What It Does
+- Access Flutter framework documentation
+- Access Dart language documentation
+- Access pub.dev package documentation
+- Useful for: API reference, widget docs, troubleshooting
+
+### No API Key Required
+Context7 works without authentication for basic usage.
+
+### Example Queries
+
+```
+How do I use Geolocator.getPositionStream in Flutter?
+```
+
+```
+What are the parameters for CameraOptions in Mapbox Flutter?
+```
+
+```
+Explain how StreamBuilder works in Flutter
+```
 
 ---
 

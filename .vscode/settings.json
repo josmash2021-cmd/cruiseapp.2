@@ -50,6 +50,19 @@
         "c:\\Users\\Puma\\cruiseapp.2"
       ],
       "disabled": false
+    },
+
+    // ── 4. CONTEXT7 ── Flutter/Dart Documentation ──────────────────────
+    // Provides access to Flutter, Dart, and pub.dev package documentation.
+    // Useful for: API reference, widget docs, troubleshooting Flutter issues.
+    "cruiseapp-context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "disabled": false
     }
   },
 

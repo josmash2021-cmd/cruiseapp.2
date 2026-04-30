@@ -162,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _isVerified = LocalDataService.isVerifiedSync;
   String _verificationStatus = LocalDataService.isVerifiedSync ? 'approved' : '';
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _verificationSub;
+  int _verificationRetryCount = 0;
 
   // Service zone state
   Set<String> _activeServiceStates = {};

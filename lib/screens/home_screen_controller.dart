@@ -64,6 +64,7 @@ extension _HomeScreenController on _HomeScreenState {
       return;
     }
 
+    _verificationRetryCount = 0; // Reset on new subscription
     _verificationSub?.cancel();
     _verificationSub = FirebaseFirestore.instance
         .collection('verifications')
@@ -116,7 +117,16 @@ extension _HomeScreenController on _HomeScreenState {
           }
         }
       }
-    }, onError: (_) {});
+    }, onError: (e) {
+      debugPrint('[Verification] Firestream error: $e');
+      // Retry with exponential backoff (max 30s)
+      _verificationRetryCount++;
+      final delay = Duration(seconds: math.min(30, 2 << _verificationRetryCount));
+      debugPrint('[Verification] Retrying in ${delay.inSeconds}s (attempt $_verificationRetryCount)');
+      Future.delayed(delay, () {
+        if (mounted) _listenVerificationStatus();
+      });
+    });
   }
 
   /// Check backend for verification status using dashboard (single call).

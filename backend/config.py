@@ -131,3 +131,74 @@ except Exception:
 # ── n8n Webhooks ──
 N8N_WEBHOOK_BASE = os.getenv("N8N_WEBHOOK_BASE", "")  # e.g. https://n8n.example.com/webhook
 _HAS_N8N = bool(N8N_WEBHOOK_BASE)
+
+# ── S3 / Railway Bucket ──
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+_HAS_S3 = bool(S3_ENDPOINT and S3_BUCKET_NAME and S3_ACCESS_KEY and S3_SECRET_KEY)
+
+# ── Railway Volume ──
+VOLUME_PATH = os.getenv("VOLUME_PATH", "")
+
+
+def validate_startup_config():
+    """Validate critical configuration at startup. Logs warnings for missing
+    optional services, but never hardcodes secrets or crashes on missing
+    non-critical config.
+    """
+    # ── S3 / Bucket ──
+    s3_vars = {
+        "S3_ENDPOINT": S3_ENDPOINT,
+        "S3_BUCKET_NAME": S3_BUCKET_NAME,
+        "S3_ACCESS_KEY": S3_ACCESS_KEY,
+        "S3_SECRET_KEY": S3_SECRET_KEY,
+    }
+    missing_s3 = [k for k, v in s3_vars.items() if not v]
+    if missing_s3:
+        logging.warning(
+            "[Config] S3 storage incomplete — missing: %s. "
+            "File uploads will return 503 until bucket is configured.",
+            ", ".join(missing_s3),
+        )
+    else:
+        logging.info("[Config] S3 storage configured (bucket=%s, region=%s)", S3_BUCKET_NAME, S3_REGION)
+
+    # ── Volume ──
+    if not VOLUME_PATH:
+        logging.warning(
+            "[Config] VOLUME_PATH not set — local temp storage will use fallback "
+            "directory (ephemeral on Railway). Mount a volume at /app/data for persistence."
+        )
+    else:
+        import os as _os
+        _os.makedirs(VOLUME_PATH, exist_ok=True)
+        _os.makedirs(_os.path.join(VOLUME_PATH, "temp"), exist_ok=True)
+        _os.makedirs(_os.path.join(VOLUME_PATH, "cache"), exist_ok=True)
+        logging.info("[Config] Volume mounted at %s", VOLUME_PATH)
+
+    # ── Stripe ──
+    if not STRIPE_SECRET:
+        logging.warning("[Config] STRIPE_SECRET_KEY not set — payments disabled")
+    if not STRIPE_WEBHOOK_SECRET:
+        logging.warning("[Config] STRIPE_WEBHOOK_SECRET not set — Stripe webhooks will fail")
+
+    # ── Twilio ──
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        logging.warning("[Config] Twilio credentials incomplete — SMS disabled")
+
+    # ── Firestore ──
+    if not _HAS_FIRESTORE:
+        logging.warning("[Config] Firestore not available — real-time features degraded")
+
+    # ── n8n ──
+    if not _HAS_N8N:
+        logging.warning("[Config] N8N_WEBHOOK_BASE not set — n8n integrations disabled")
+
+    # ── Checkr ──
+    if not CHECKR_API_KEY:
+        logging.warning("[Config] CHECKR_API_KEY not set — background checks disabled")
+
+    logging.info("[Config] Startup validation complete")

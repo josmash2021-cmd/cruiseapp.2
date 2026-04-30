@@ -298,6 +298,13 @@ async def lifespan(app: FastAPI):
         # Don't return - let the server start so health checks pass
         # But skip agent startup
 
+    # ── Startup config validation (logs warnings for missing services) ──
+    try:
+        from config import validate_startup_config
+        validate_startup_config()
+    except Exception as _cfg_err:
+        logging.warning("[Lifespan] Startup config validation failed: %s", _cfg_err)
+
     # Only start agents if DB is initialized
     if db_initialized:
         logging.info("[Lifespan] Starting agent initialization...")
@@ -441,6 +448,8 @@ from routers.driver_referrals import (
 )
 from routers.vip import router as vip_router
 from routers.system import router as system_router
+from routers.uploads import router as uploads_router
+from routers.webhooks import router as webhooks_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -457,6 +466,8 @@ app.include_router(referrals_router)
 app.include_router(driver_referrals_router)
 app.include_router(vip_router)
 app.include_router(system_router)
+app.include_router(uploads_router)
+app.include_router(webhooks_router)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
@@ -1609,13 +1620,15 @@ async def _connection_watchdog():
             logging.error("[Watchdog] Unexpected error: %s", _outer)
 
         await asyncio.sleep(30)
-# ── Stripe Webhooks router ──────────────────────────────
+# ── Stripe Webhooks router (legacy — now in routers/webhooks.py) ──
+# The new consolidated webhooks router is registered above.
+# Keep legacy import as fallback for backward compatibility.
 try:
     from webhooks.stripe_webhook import router as stripe_wh_router
     app.include_router(stripe_wh_router)
-    logging.info("[Webhooks] Stripe webhook router registered")
+    logging.info("[Webhooks] Legacy Stripe webhook router registered")
 except ImportError as _wh_err:
-    logging.warning("[Webhooks] Could not load stripe webhook router: %s", _wh_err)
+    pass
 # -------------------------------------------------------
 #  SERVER STARTUP (if run directly)
 # -------------------------------------------------------

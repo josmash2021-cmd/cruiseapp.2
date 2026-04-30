@@ -97,11 +97,11 @@ async def cleanup(
             result = await db.execute(
                 text("""
                     UPDATE dispatch_offers
-                    SET status = 'expired', updated_at = :now
+                    SET status = 'expired'
                     WHERE status = 'pending' AND created_at < :cutoff
                     RETURNING id
                 """),
-                {"now": now, "cutoff": cutoff},
+                {"cutoff": cutoff},
             )
             expired_ids = [row[0] for row in result.fetchall()]
             results["stale_offers"] = {"expired_count": len(expired_ids)}
@@ -127,18 +127,18 @@ async def cleanup(
             logger.warning("[Worker] expired_otp cleanup failed: %s", e)
             results["expired_otp"] = {"error": str(e)}
 
-    # 3. Stale FCM tokens (users not seen in 90 days)
+    # 3. Stale FCM tokens (users not active in 90 days)
     if "stale_fcm_tokens" in payload.tasks:
         try:
             cutoff = now - timedelta(days=90)
             result = await db.execute(
                 text("""
                     UPDATE users
-                    SET fcm_token = NULL, updated_at = :now
-                    WHERE fcm_token IS NOT NULL AND last_seen_at < :cutoff
+                    SET fcm_token = NULL
+                    WHERE fcm_token IS NOT NULL AND last_active_at < :cutoff
                     RETURNING id
                 """),
-                {"now": now, "cutoff": cutoff},
+                {"cutoff": cutoff},
             )
             cleared = [row[0] for row in result.fetchall()]
             results["stale_fcm_tokens"] = {"cleared_count": len(cleared)}

@@ -406,12 +406,22 @@ async def send_otp(body: SendOtpIn, request: Request):
         # Fire-and-forget email sending - respond immediately to avoid client timeout
         _safe_create_task(_try_send_email_bg())
 
-        # Always return the code so user can verify even if email is delayed/fails
+        # In production, NEVER return the code in the response.
+        # The user must receive it via the intended channel (email/SMS).
+        # Only in DEBUG/development mode may we return the code for testing.
+        _is_debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+        if _is_debug:
+            return {
+                "ok": True,
+                "method": "display",
+                "message": "Use this verification code",
+                "note": "Code also being sent to your email.",
+                "debug_code": code,
+            }
         return {
             "ok": True,
-            "method": "display",
-            "message": "Use this verification code",
-            "note": "Code also being sent to your email."
+            "method": "email",
+            "message": "Verification code sent to your email.",
         }
     
     # â"€â"€ Try Twilio SMS if configured and phone provided â"€â"€

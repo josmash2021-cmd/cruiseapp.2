@@ -63,6 +63,20 @@
         "@upstash/context7-mcp"
       ],
       "disabled": false
+    },
+
+    // ── 5. DART MCP SERVER ── Official Dart/Flutter Tooling ────────────
+    // Google's official MCP server for Dart/Flutter development.
+    // Tools: analyze_files, dart_fix, dart_format, pub, run_tests,
+    //        get_runtime_errors, get_widget_tree, hot_reload, etc.
+    // Requires: Dart SDK 3.9+ (you have 3.11.1 ✓)
+    "cruiseapp-dart-mcp": {
+      "type": "stdio",
+      "command": "dart",
+      "args": [
+        "mcp-server"
+      ],
+      "disabled": false
     }
   },
 

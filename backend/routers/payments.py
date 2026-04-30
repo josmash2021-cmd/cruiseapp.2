@@ -2001,7 +2001,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
     # Trigger welcome email via n8n (same as mobile app register)
     if trigger_welcome_email and user.email:
         try:
-            trigger_welcome_email(user.email, user.first_name)
+            await trigger_welcome_email(user.email, user.first_name)
         except Exception as _n8n_err:
             logging.warning("[WebAuth] Welcome email trigger failed: %s", _n8n_err)
 

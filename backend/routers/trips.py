@@ -1135,7 +1135,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # --- n8n webhook triggers ===
     if canonical_new == "completed":
-        asyncio.ensure_future(_n8n_fire("trip-completed", {
+        asyncio.create_task(_n8n_fire("trip-completed", {
             "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
             "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
             "rider_email": rider.email if rider else "",
@@ -1149,7 +1149,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             "vehicle_type": trip.vehicle_type or "sedan",
         }))
         if trip.payment_status == "failed":
-            asyncio.ensure_future(_n8n_fire("payment-failed", {
+            asyncio.create_task(_n8n_fire("payment-failed", {
                 "trip_id": trip.id, "rider_id": trip.rider_id,
                 "rider_name": f"{rider.first_name} {rider.last_name}" if rider else "",
                 "fare": float(trip.fare or 0),
@@ -1334,7 +1334,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
 
     # --- n8n webhook trigger ===
     _cancelled_by = "driver" if user.id == trip.driver_id else "rider"
-    asyncio.ensure_future(_n8n_fire("trip-cancelled", {
+    asyncio.create_task(_n8n_fire("trip-cancelled", {
         "trip_id": trip.id, "rider_id": trip.rider_id, "driver_id": trip.driver_id,
         "cancel_reason": reason or "", "cancelled_by": _cancelled_by,
         "cancellation_fee": cancellation_fee,

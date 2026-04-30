@@ -116,14 +116,22 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
 
       // Check driver approval status
       final vStatus = user['verification_status'] as String? ?? 'none';
+      final isVerified = user['is_verified'] == true || user['isVerified'] == true;
+      final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
+      final bool driverIsApproved = _isApprovedStatus(vStatus) ||
+          _isApprovedStatus(accountStatus) ||
+          isVerified;
+
       // Cache it locally so splash screen routes correctly on next restart
-      if (vStatus == 'approved' || vStatus == 'pending' || vStatus == 'rejected') {
+      if (driverIsApproved) {
+        await LocalDataService.setDriverApprovalStatus('approved');
+      } else if (vStatus == 'pending' || vStatus == 'rejected') {
         await LocalDataService.setDriverApprovalStatus(vStatus);
       }
       if (!mounted) return;
       setState(() => _loading = false);
 
-      if (vStatus == 'approved') {
+      if (driverIsApproved) {
         Navigator.of(context).pushAndRemoveUntil(
           slideFromRightRoute(const DriverHomeScreen()),
           (_) => false,
@@ -187,9 +195,14 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
           await UserSession.saveMode('driver');
           await UserSession.initPhotoNotifier();
           final vStatus = user['verification_status'] as String? ?? 'none';
+          final isVerified = user['is_verified'] == true || user['isVerified'] == true;
+          final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
+          final bool driverIsApproved = _isApprovedStatus(vStatus) ||
+              _isApprovedStatus(accountStatus) ||
+              isVerified;
           if (!mounted) return;
           setState(() => _loading = false);
-          if (vStatus == 'approved') {
+          if (driverIsApproved) {
             Navigator.of(context).pushAndRemoveUntil(
               slideFromRightRoute(const DriverHomeScreen()),
               (_) => false,
@@ -212,6 +225,17 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       });
       return;
     }
+  }
+
+  /// Returns true for any status string that indicates an approved driver.
+  bool _isApprovedStatus(String? status) {
+    if (status == null) return false;
+    final s = status.toLowerCase().trim();
+    return s == 'approved' ||
+        s == 'active' ||
+        s == 'online' ||
+        s == 'clear' ||
+        s == 'verified';
   }
 
   @override

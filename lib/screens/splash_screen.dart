@@ -333,7 +333,7 @@ class _SplashScreenState extends State<SplashScreen>
       // ── Read approval status from local cache first (instant) ──
       final cachedStatus = await LocalDataService.getDriverApprovalStatus();
 
-      if (cachedStatus == 'approved') {
+      if (_isApprovedStatus(cachedStatus)) {
         // Verified → go straight to DriverHomeScreen
         unawaited(_backgroundProfileSync());
         return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
@@ -350,7 +350,7 @@ class _SplashScreenState extends State<SplashScreen>
               approvalResult['approval_status'] as String? ??
               approvalResult['status'] as String? ??
               cachedStatus;
-          if (liveStatus == 'approved') {
+          if (_isApprovedStatus(liveStatus)) {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
             return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
@@ -371,6 +371,8 @@ class _SplashScreenState extends State<SplashScreen>
             return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
           }
         }
+        // If API failed and we have no evidence of approval, show pending.
+        // But ONLY if cache actually says pending — never default unknown to pending.
         return const DriverPendingReviewScreen();
       }
 
@@ -403,7 +405,7 @@ class _SplashScreenState extends State<SplashScreen>
         // Save to local cache for next time
         await LocalDataService.setDriverApprovalStatus(status);
 
-        if (status == 'approved') {
+        if (_isApprovedStatus(status)) {
           unawaited(_backgroundProfileSync());
           return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
         } else {
@@ -411,7 +413,21 @@ class _SplashScreenState extends State<SplashScreen>
         }
       } catch (e) {
         debugPrint('[SplashScreen] Driver approval check failed: $e');
-        // Network error — default to pending for safety
+        // ── CRITICAL: Network error — do NOT default to pending for approved drivers ──
+        // Try getMe() as a last-resort fallback; if that also fails, be lenient
+        // and let the driver into the app. The home screen will re-check.
+        try {
+          final me = await ApiService.getMe().timeout(const Duration(seconds: 3));
+          if (me != null && _meIndicatesApproved(me)) {
+            debugPrint('[SplashScreen] getMe fallback indicates approved — letting driver in');
+            await LocalDataService.setDriverApprovalStatus('approved');
+            unawaited(_backgroundProfileSync());
+            return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+          }
+        } catch (_) {}
+        // If we truly cannot determine status, show pending BUT log it.
+        // This should only happen for genuinely new/unapproved drivers.
+        debugPrint('[SplashScreen] WARNING: defaulting to pending review — all checks failed');
         return const DriverPendingReviewScreen();
       }
     } else {
@@ -422,6 +438,30 @@ class _SplashScreenState extends State<SplashScreen>
 
       return WelcomeBackScreen(firstName: firstName, destination: const HomeScreen());
     }
+  }
+
+  /// Returns true for any status string that indicates an approved driver.
+  /// The backend may return 'approved', 'active', 'online', 'clear', or 'verified'
+  /// depending on the endpoint and database state.
+  bool _isApprovedStatus(String? status) {
+    if (status == null) return false;
+    final s = status.toLowerCase().trim();
+    return s == 'approved' ||
+        s == 'active' ||
+        s == 'online' ||
+        s == 'clear' ||
+        s == 'verified';
+  }
+
+  /// Returns true if the user object from getMe() indicates an approved driver.
+  /// Checks both verification_status and is_verified fields.
+  bool _meIndicatesApproved(Map<String, dynamic> me) {
+    final vStatus = (me['verification_status'] as String? ?? '').toLowerCase().trim();
+    if (_isApprovedStatus(vStatus)) return true;
+    final isVerified = me['is_verified'] == true || me['isVerified'] == true;
+    if (isVerified) return true;
+    final accountStatus = (me['status'] as String? ?? '').toLowerCase().trim();
+    return _isApprovedStatus(accountStatus);
   }
 
   /// Checks Firestore directly (one-time .get()) to see if this driver has

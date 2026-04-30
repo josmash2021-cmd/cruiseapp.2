@@ -593,6 +593,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       null, null,
     ).then((cam) {
       if (!mounted || _map == null) return;
+      // FIX: Consistent zoom clamp 11-16 across all phases. Previously arriving
+      // phase allowed zoom up to 16 but chaseCamera allowed 17, causing a jarring
+      // zoom jump when transitioning from arriving → onTrip.
       final zoom = (cam.zoom ?? 14.0).clamp(11.0, 16.0);
       final clampedCam = mapbox.CameraOptions(
         center: cam.center,
@@ -618,6 +621,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Keeps the driver at ~35% from the bottom of the visible map area
   /// (between the top and bottom cards) so the route ahead is always visible.
   /// Uses a fixed zoom to prevent zoom jitter from constant bounds re-calculation.
+  /// 
+  /// FIX: Includes remaining route points so curvy roads stay in view,
+  /// and clamps zoom to 12-16 (was 12-17) so dropoff never goes off-screen
+  /// on short trips.
   void _chaseCamera() {
     if (_map == null) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
@@ -648,6 +655,39 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
       ));
     }
+    // FIX: Include remaining route points ahead of driver so curvy roads
+    // don't go off-screen. We sample every Nth point to avoid overloading
+    // cameraForCoordinates while still capturing the route shape.
+    if (_routePts.length >= 2 && _segDist.isNotEmpty) {
+      final totalM = _segDist.last;
+      final stepM = totalM > 500 ? 150.0 : 75.0; // denser sampling on short routes
+      double cursorM = _traveledM;
+      int lastIdx = -1;
+      while (cursorM < totalM) {
+        // Find the segment containing cursorM
+        int idx = 0;
+        for (int i = 1; i < _segDist.length; i++) {
+          if (_segDist[i] >= cursorM) { idx = i - 1; break; }
+          if (i == _segDist.length - 1) idx = i - 1;
+        }
+        if (idx != lastIdx && idx >= 0 && idx < _routePts.length) {
+          final p = _routePts[idx];
+          pts.add(mapbox.Point(
+            coordinates: mapbox.Position(p.longitude, p.latitude),
+          ));
+          lastIdx = idx;
+        }
+        cursorM += stepM;
+      }
+      // Always include the final dropoff point (already added above, but
+      // ensure the last route point is included if it's not exactly dropoff)
+      if (_routePts.last.latitude != widget.dropoffLatLng.latitude ||
+          _routePts.last.longitude != widget.dropoffLatLng.longitude) {
+        pts.add(mapbox.Point(
+          coordinates: mapbox.Position(_routePts.last.longitude, _routePts.last.latitude),
+        ));
+      }
+    }
 
     _cameraAnimating = true;
     const dur = 1200;
@@ -667,10 +707,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       null,
     ).then((camera) {
       if (!mounted || _map == null) return;
+      // FIX: Clamp zoom 12-16 (was 12-17). On short trips the computed zoom
+      // could hit 17 which cuts off the dropoff pin. 16 is the sweet spot
+      // that keeps both driver and destination visible with card padding.
+      final computedZoom = camera.zoom ?? 15.0;
+      final zoom = math.max(12.0, math.min(16.0, computedZoom));
       _map!.flyTo(
         mapbox.CameraOptions(
           center: camera.center,
-          zoom: math.max(12.0, math.min(17.0, camera.zoom ?? 15.0)),
+          zoom: zoom,
           bearing: 0,
           pitch: 0,
           padding: camera.padding,
@@ -954,6 +999,19 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               } catch (_) {}
               _updateAnnotations();
               // Rider is identified by pickup pin — no location puck on tracking screen
+
+              // FIX: Immediately fit bounds once map is ready so the rider sees
+              // the full route (pickup + dropoff + driver) instead of a static
+              // zoom-14 view centered on pickup. This is critical for the smooth
+              // transition from SearchingDriverScreen → RiderTrackingScreen.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && _map != null) {
+                  // Small delay to ensure annotation managers are fully initialized
+                  Future.delayed(const Duration(milliseconds: 150), () {
+                    if (mounted && _map != null) _fitRouteBounds();
+                  });
+                }
+              });
             },
             onStyleLoadedListener: (_) async {
               if (_map != null) {
@@ -980,6 +1038,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // so _updateCarSmooth() recreates it instead of updating a ghost.
               _carAnnot = null;
               _carAnnotCreating = false;
+
+              // FIX: After style reload, re-fit bounds to ensure the route is
+              // still visible. Style reloads can reset the camera position.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && _map != null) {
+                  Future.delayed(const Duration(milliseconds: 200), () {
+                    if (mounted && _map != null) _fitRouteBounds();
+                  });
+                }
+              });
             },
           ),
         ),

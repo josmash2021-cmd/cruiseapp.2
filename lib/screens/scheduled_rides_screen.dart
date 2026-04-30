@@ -1097,6 +1097,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       child: Stack(
         children: [
           mapbox.MapWidget(
+            textureView: true,
             styleUri: MapboxConfig.styleDark,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(

@@ -871,7 +871,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             else
               RepaintBoundary(
                 child: mapbox.MapWidget(
+                  textureView: true,
                   styleUri: MapboxConfig.styleDark,
+                  onMapLoadErrorListener: (err) => debugPrint('[RideRequest] Load error: ${err.message} (type: ${err.type})'),
                   // Handoff camera: if the previous screen (map picker)
                   // handed us its final view, boot in that exact state
                   // so there's no visible teleport between the two maps.

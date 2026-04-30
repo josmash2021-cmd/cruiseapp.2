@@ -21,9 +21,11 @@ class GpsService {
   final _database = FirebaseDatabase.instance;
 
   // ── Intervals ───────────────────────────────────────────────────────
-  static const Duration _socketIOInterval = Duration(milliseconds: 200);
-  static const Duration _rtdbInterval = Duration(seconds: 2);
-  static const double _minDistanceMeters = 0.5; // delta compression: 50cm for max accuracy
+  // FIX: Increased from 200ms to 1000ms to reduce network congestion
+  // and prevent battery drain. Still smooth for rider tracking.
+  static const Duration _socketIOInterval = Duration(milliseconds: 1000);
+  static const Duration _rtdbInterval = Duration(seconds: 5); // Increased from 2s
+  static const double _minDistanceMeters = 2.0; // Increased from 0.5m to reduce noise
 
   // ── Timers ──────────────────────────────────────────────────────────
   Timer? _socketIOTimer;
@@ -66,7 +68,7 @@ class GpsService {
     );
 
     _setupPresence(driverId);
-    debugPrint('[GPS] Started: Socket.io 200ms + RTDB 2s backup');
+    debugPrint('[GPS] Started: Socket.io 1s + RTDB 5s backup');
   }
 
   /// Attach or detach the driver's active trip context.

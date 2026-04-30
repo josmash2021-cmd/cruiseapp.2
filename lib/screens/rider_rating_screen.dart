@@ -203,6 +203,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
             Positioned.fill(
               child: IgnorePointer(
                 child: mapbox.MapWidget(
+                  textureView: true,
                   styleUri: MapboxConfig.styleDark,
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(

@@ -373,8 +373,24 @@ class _SplashScreenState extends State<SplashScreen>
         return const DriverPendingReviewScreen();
       }
 
-      // ── No cached status ('none') → fetch from backend (one time only) ──
+      // ── No cached status ('none') → check Firestore FIRST, then backend ──
+      // This prevents approved drivers from being stuck in "Reviewing" after
+      // app update when SharedPreferences are cleared but Firestore has the truth.
       await initFuture;
+
+      // 1) Try Firestore first (fast, works offline, survives app updates)
+      final fsStatus = await _quickFirestoreDriverCheck();
+      if (fsStatus == 'approved') {
+        await LocalDataService.setDriverApprovalStatus('approved');
+        unawaited(_backgroundProfileSync());
+        return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+      }
+      if (fsStatus == 'rejected') {
+        await LocalDataService.setDriverApprovalStatus('rejected');
+        return const DriverPendingReviewScreen();
+      }
+
+      // 2) Firestore says pending → confirm with backend API
       try {
         final approvalResult = await ApiService.getDriverApprovalStatus()
             .timeout(const Duration(seconds: 3));

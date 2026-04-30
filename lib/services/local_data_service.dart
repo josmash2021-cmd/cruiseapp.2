@@ -666,11 +666,30 @@ class LocalDataService {
   
   /// Returns true if driver was EVER approved (even if cache is old).
   /// This prevents approved drivers from being stuck in pending review.
+  /// Checks multiple cache keys for resilience across app updates.
   static Future<bool> wasDriverEverApproved() async {
     final prefs = _p;
+
+    // Primary key: driver_approval_status_v1
     final status = prefs.getString(_driverApprovalKey);
-    // If we have ANY record of approval, trust it
-    return status == 'approved';
+    if (status == 'approved') return true;
+
+    // Fallback key #1: driver_status (used by driver_pending_review_screen.dart)
+    final legacyStatus = prefs.getString('driver_status');
+    if (legacyStatus == 'approved') {
+      // Migrate to primary key for consistency
+      await prefs.setString(_driverApprovalKey, 'approved');
+      return true;
+    }
+
+    // Fallback key #2: driver onboarding completion indicator
+    final onboardingComplete = prefs.getBool('driver_onboarding_complete') ?? false;
+    if (onboardingComplete) {
+      await prefs.setString(_driverApprovalKey, 'approved');
+      return true;
+    }
+
+    return false;
   }
   
   /// Clear approval status (called on logout)

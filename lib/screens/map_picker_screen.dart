@@ -411,7 +411,9 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           // ── Map ──
           RepaintBoundary(
             child: mapbox.MapWidget(
+              textureView: true,
               styleUri: MapboxConfig.styleDark,
+              onMapLoadErrorListener: (err) => debugPrint('[MapPicker] Load error: ${err.message} (type: ${err.type})'),
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(
                     coordinates: mapbox.Position(

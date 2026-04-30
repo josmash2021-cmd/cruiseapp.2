@@ -1678,7 +1678,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         children: [
           RepaintBoundary(
             child: mapbox.MapWidget(
+              textureView: true,
               styleUri: _mapStyleUri,
+              onMapLoadErrorListener: (err) => debugPrint('[MapScreen] Load error: ${err.message} (type: ${err.type})'),
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(coordinates: mapbox.Position(
                   _currentPosition?.longitude ?? -86.8104,

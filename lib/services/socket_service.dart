@@ -82,15 +82,17 @@ class SocketService {
     _socket = io.io(
       serverUrl,
       io.OptionBuilder()
-          .setTransports(['websocket'])  // PRIORITY: WebSocket only (faster than polling fallback)
+          // FIX: Use both websocket AND polling for maximum compatibility
+          // Some devices/networks block WebSocket but allow HTTP polling
+          .setTransports(['websocket', 'polling'])
           .setQuery(queryParams)         // Token in query string for handshake auth
           .enableForceNew()
           .enableReconnection()
-          .setReconnectionAttempts(10)   // Limit reconnection attempts (was 999)
-          .setReconnectionDelay(1000)    // Start at 1s
-          .setReconnectionDelayMax(10000) // Cap at 10s
-          .setRandomizationFactor(0.3)   // Add jitter to prevent thundering herd
-          .setTimeout(10000)             // 10s connection timeout
+          .setReconnectionAttempts(5)    // Reduced from 10 to prevent log spam
+          .setReconnectionDelay(2000)    // Start at 2s (was 1s)
+          .setReconnectionDelayMax(15000) // Cap at 15s (was 10s)
+          .setRandomizationFactor(0.5)   // More jitter to prevent thundering herd
+          .setTimeout(15000)             // 15s connection timeout (was 10s)
           .build(),
     );
 

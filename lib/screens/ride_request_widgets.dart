@@ -2670,6 +2670,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 IgnorePointer(
                   child: RepaintBoundary(
                     child: mapbox.MapWidget(
+                      textureView: true,
                       styleUri: MapboxConfig.styleDark,
                       cameraOptions: mapbox.CameraOptions(
                         center: mapbox.Point(

@@ -92,8 +92,8 @@ sio = socketio.AsyncServer(
     cors_allowed_origins=_get_cors_origins(),
     logger=False,                      # toggle True for debug
     engineio_logger=False,
-    ping_timeout=10,                   # Faster stale detection (was 20)
-    ping_interval=5,                   # More frequent pings (was 10)
+    ping_timeout=20,                   # Allow 20s for pong (mobile networks can be slow)
+    ping_interval=10,                  # Ping every 10s (was 5s — less battery drain)
     max_http_buffer_size=1_000_000,
     # client_manager=_create_manager(),  # DISABLED: Redis adapter causes blocking with 1 worker
 )

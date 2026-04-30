@@ -528,16 +528,21 @@ async def rate_limit_middleware(request: Request, call_next):
     if _path not in ("/ping", "/docs", "/openapi.json"):
         # ── Tiered rate limiting (stricter for auth, moderate for general API) ──
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
+        # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
+            import inspect
             if "/auth/" in _path:
                 # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
-                _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
+                _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
             elif "/payments/" in _path or "/webhooks/" in _path:
                 # Payment endpoints: 30 req/min per IP (prevents charge spam)
-                _tiered_rate_limiter.check(f"pay:{client_ip}", max_requests=30, window_seconds=60)
+                _check = _tiered_rate_limiter.check(f"pay:{client_ip}", max_requests=30, window_seconds=60)
             else:
                 # General API: 100 req/min per IP
-                _tiered_rate_limiter.check(f"api:{client_ip}", max_requests=100, window_seconds=60)
+                _check = _tiered_rate_limiter.check(f"api:{client_ip}", max_requests=100, window_seconds=60)
+            # Await if the limiter is async (Redis backend), otherwise it's already done
+            if inspect.isawaitable(_check):
+                await _check
         except HTTPException:
             # Re-raise 429 from tiered limiter as a JSONResponse
             return JSONResponse({"detail": "Too many requests. Please try again later."}, status_code=429)

@@ -477,7 +477,9 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
             // Map background
             Positioned.fill(
               child: mapbox.MapWidget(
+                textureView: true,
                 styleUri: MapboxConfig.styleDark,
+                onMapLoadErrorListener: (err) => debugPrint('[WaitingDriver] Load error: ${err.message} (type: ${err.type})'),
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(
                     coordinates: mapbox.Position(

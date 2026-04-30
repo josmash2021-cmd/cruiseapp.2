@@ -508,7 +508,9 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
           Positioned.fill(
             child: RepaintBoundary(
               child: mapbox.MapWidget(
+              textureView: true,
               styleUri: MapboxConfig.styleNavigation,
+              onMapLoadErrorListener: (err) => debugPrint('[GameNav] Load error: ${err.message} (type: ${err.type})'),
               cameraOptions: mapbox.CameraOptions(
                 center: mapbox.Point(
                   coordinates: mapbox.Position(_currentPos.longitude, _currentPos.latitude),

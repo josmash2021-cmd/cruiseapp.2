@@ -1175,7 +1175,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                 child: Stack(
                   children: [
                     mapbox.MapWidget(
+                      textureView: true,
                       styleUri: MapboxConfig.styleDark,
+                      onMapLoadErrorListener: (err) => debugPrint('[ScheduleBooking] Load error: ${err.message} (type: ${err.type})'),
                       cameraOptions: mapbox.CameraOptions(
                         center: mapbox.Point(coordinates: mapbox.Position(_mapCenter.longitude, _mapCenter.latitude)),
                         zoom: 14.0,

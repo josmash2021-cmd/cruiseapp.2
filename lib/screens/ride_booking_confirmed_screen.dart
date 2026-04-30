@@ -168,6 +168,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
               IgnorePointer(
                 child: RepaintBoundary(
                   child: mapbox.MapWidget(
+                    textureView: true,
                     styleUri: MapboxConfig.styleDark,
                     cameraOptions: mapbox.CameraOptions(
                       center: mapbox.Point(

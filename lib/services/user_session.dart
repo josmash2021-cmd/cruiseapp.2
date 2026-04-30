@@ -192,6 +192,13 @@ class UserSession {
           userId: int.tryParse(profileUid),
           role: profile['role']?.toString() ?? 'rider',
         );
+
+        // Sync driver approval status from backend profile so local cache
+        // stays fresh even if SharedPreferences are cleared on app update.
+        final vStatus = profile['verification_status']?.toString();
+        if (vStatus == 'approved' || vStatus == 'pending' || vStatus == 'rejected') {
+          await LocalDataService.setDriverApprovalStatus(vStatus!);
+        }
         if (cachedPhotoPath.isNotEmpty) {
           photoNotifier.value = cachedPhotoPath;
         }

@@ -771,6 +771,35 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  BACKGROUND HEARTBEAT — keeps driver online when app is backgrounded
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  void _startBackgroundHeartbeat() {
+    _bgHeartbeatTimer?.cancel();
+    // Send heartbeat every 30s to keep driver "online" in backend.
+    // This prevents the backend from marking the driver offline due to
+    // inactivity while the app is backgrounded.
+    _bgHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_driverId == null || _pos == null) return;
+      try {
+        await ApiService.updateDriverLocation(
+          driverId: _driverId!,
+          lat: _pos!.latitude,
+          lng: _pos!.longitude,
+          isOnline: true,
+        );
+        debugPrint('[DriverOnline] Background heartbeat sent');
+      } catch (e) {
+        debugPrint('[DriverOnline] Background heartbeat failed: $e');
+      }
+    });
+  }
+
+  void _stopBackgroundHeartbeat() {
+    _bgHeartbeatTimer?.cancel();
+    _bgHeartbeatTimer = null;
+  }
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  DRIVER POSITION STREAM (smooth movement on map)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPosStream() {

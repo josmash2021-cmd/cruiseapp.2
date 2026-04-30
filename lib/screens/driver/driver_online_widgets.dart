@@ -23,6 +23,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,
+        textureView: true,
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),

@@ -506,20 +506,26 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (!mounted) return;
     if (state == AppLifecycleState.paused) {
       _appInForeground = false;
+      // Keep SSE alive in background so driver still receives offers.
+      // Only cancel polling timer (REST fallback) — SSE is more efficient.
       _pollT?.cancel();
-      _offerSseSub?.cancel();
-      _sseReconnectTimer?.cancel();
-      _sseActive = false;
       _clock?.cancel();
       _earningsRefreshTimer?.cancel();
       _goldDot.dispose();
+      // Start background heartbeat to keep driver "online" in backend
+      _startBackgroundHeartbeat();
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
+      _stopBackgroundHeartbeat();
       // Reset sound guards so offer sounds play correctly after app resumes
       NotificationService.resetSoundGuards();
       _startPolling();
       _startClock();
       _startEarningsRefresh();
+      // Reconnect SSE if it dropped while in background
+      if (!_sseActive && _phase == _Phase.searching) {
+        _connectSse();
+      }
     }
   }
 
@@ -549,6 +555,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _earningsRefreshTimer?.cancel();
+    _bgHeartbeatTimer?.cancel();
     _panelAnimCtrl?.dispose();
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();
@@ -782,6 +789,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// Pause availability temporarily — driver stays online but won't receive offers.
   bool _isPaused = false;
   Timer? _pauseTimer;
+
+  /// Background heartbeat timer — keeps driver "online" in backend when app is backgrounded.
+  Timer? _bgHeartbeatTimer;
 
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {

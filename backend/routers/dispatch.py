@@ -31,16 +31,19 @@ from config import (
 )
 from services.event_bus import event_bus
 from routers.admin import _pricing_config
+from utils.bounded_cache import TTLCache, BoundedDict
 
 router = APIRouter()
 
 DRIVER_SHARE_RATE = 0.60
 
 # Local dict to track action-request reminder tasks (avoids cross-router import)
-_action_reminder_tasks: dict[int, asyncio.Task] = {}
+# Bounded: max 2,000 tasks
+_action_reminder_tasks = BoundedDict[int, asyncio.Task](max_size=2000, name="action_reminder_tasks")
 
 # Track running cascade tasks per trip so we don't double-cascade
-_cascade_tasks: dict[int, asyncio.Task] = {}
+# Bounded: max 1,000 tasks, entries expire after 5 minutes
+_cascade_tasks = TTLCache[int, asyncio.Task](ttl_seconds=300, max_size=1000, name="cascade_tasks")
 
 # Cascade configuration — wait must match OFFER_TIMEOUT_SECONDS (45s)
 # so the driver's UI countdown and the server-side expiry are in sync.
@@ -48,7 +51,8 @@ _CASCADE_MAX_DRIVERS = 10      # try up to 10 drivers before giving up
 _CASCADE_WAIT_SECONDS = OFFER_TIMEOUT_SECONDS  # 45s — matches the driver UI countdown
 
 # In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
-_route_cache: dict = {}
+# Bounded: max 1,000 entries, 5-minute TTL
+_route_cache = TTLCache[tuple, tuple](ttl_seconds=300, max_size=1000, name="route_cache")
 _ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
 
 

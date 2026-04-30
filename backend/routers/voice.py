@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import TWILIO_PHONE_NUMBER, TWILIO_AUTH_TOKEN
+from utils.bounded_cache import TTLCache
 
 router = APIRouter()
 
@@ -26,7 +27,8 @@ def _validate_twilio_sig(url: str, form_data: dict, signature: str) -> None:
         pass  # twilio package not installed – skip
 
 # In-memory voice session store: call_sid -> {agent_name, phase, category, msg_count, lang}
-_voice_sessions: dict = {}
+# Bounded: max 2,000 sessions, entries expire after 30 minutes
+_voice_sessions = TTLCache[str, dict](ttl_seconds=1800, max_size=2000, name="voice_sessions")
 
 _AGENT_NAMES = [
     "Lucía", "Sofía", "Isabella", "Valentina", "Camila",

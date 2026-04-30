@@ -702,8 +702,11 @@ async def void_web_paypal_auth(authorization_id: str, request: Request):
 
 from fastapi.responses import RedirectResponse
 
+from utils.bounded_cache import TTLCache
+
 # Rate limiting for web checkout — max 10 requests per IP per minute
-_web_checkout_hits: dict = {}  # ip -> [timestamps]
+# Bounded: max 5,000 IPs, entries expire after 1 minute
+_web_checkout_hits = TTLCache[str, list](ttl_seconds=60, max_size=5000, name="web_checkout_hits")
 _WEB_CHECKOUT_MAX = 10
 _WEB_CHECKOUT_WINDOW = 60  # seconds
 

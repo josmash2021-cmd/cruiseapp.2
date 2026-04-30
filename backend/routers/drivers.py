@@ -30,6 +30,7 @@ from config import (
     _nearby_cache, _NEARBY_CACHE_TTL,
 )
 from utils.ssn_encryption import decrypt_ssn
+from utils.bounded_cache import TTLCache, BoundedDict
 from services.event_bus import event_bus
 from services.socketio_service import emit_driver_location
 from services.redis_cache import _get_redis
@@ -93,15 +94,17 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # In-memory driver location store for ultra-fast reads (bypasses DB for location)
-_driver_locations: dict = {}  # driver_id -> {"lat": float, "lng": float, "is_online": bool, "ts": float}
+# Bounded: max 5,000 drivers, entries expire after 1 hour of inactivity
+_driver_locations = TTLCache[int, dict](ttl_seconds=3600, max_size=5000, name="driver_locations")
 
 # Cache of active trip per driver - avoids DB query on every location update (~800ms interval)
-_driver_active_trip: dict = {}  # driver_id -> (monotonic_ts, trip_id_or_None)
-_ACTIVE_TRIP_CACHE_TTL = 5.0  # seconds
+# Bounded: max 5,000 drivers, entries expire after 30 seconds
+_driver_active_trip = TTLCache[int, tuple](ttl_seconds=30, max_size=5000, name="driver_active_trip")
 
 # Throttle DB writes: only persist location to DB every N seconds per driver
 # In-memory location is ALWAYS updated instantly (real-time for SSE/nearby)
-_driver_last_db_write: dict = {}  # driver_id -> monotonic_ts
+# Bounded: max 5,000 drivers
+_driver_last_db_write = BoundedDict[int, float](max_size=5000, name="driver_last_db_write")
 _DB_WRITE_THROTTLE = 3.0  # seconds — DB write at most every 3s per driver
 
 @router.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])

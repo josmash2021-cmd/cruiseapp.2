@@ -20,6 +20,7 @@ from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import User, RevokedToken, AuditLog, SessionLocal, get_db
+from utils.bounded_cache import TTLCache
 
 # -- Config --
 API_KEY = os.getenv("API_KEY") or ""
@@ -415,9 +416,7 @@ def _create_login_token(user_id: int) -> str:
 #  Auth dependencies (with in-memory user cache for hot paths)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-_user_cache: dict = {}  # user_id -> (User, timestamp)
-_USER_CACHE_TTL = 300.0  # seconds â€” refresh from DB every 30s
-_MAX_USER_CACHE = 2000  # cap entries to prevent memory leak
+_user_cache = TTLCache[int, tuple](ttl_seconds=300, max_size=2000, name="user_cache")
 
 def invalidate_user_cache(user_id: int):
     """Call when user status/role changes (block, delete, role upgrade)."""

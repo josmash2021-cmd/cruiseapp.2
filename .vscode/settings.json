@@ -1,0 +1,99 @@
+{
+  // ═══════════════════════════════════════════════════════════════════════
+  //  CRUISEAPP MCP SERVERS CONFIGURATION
+  //  Model Context Protocol servers for Kimi Code / VS Code
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Kimi Code MCP Integration ─────────────────────────────────────────
+  "kimi.mcp.servers": {
+    
+    // ── 1. SUPABASE (PostgreSQL) ── Highest Priority ───────────────────
+    // Connects to your production Supabase PostgreSQL database
+    // Pooler URL: postgresql://postgres.elvszwazwvpgqvnzxwnq@aws-1-us-east-2.pooler.supabase.com:5432/postgres
+    "cruiseapp-supabase": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@gishubperu/mcp-postgresql",
+        "--connection",
+        "postgresql://postgres.elvszwazwvpgqvnzxwnq@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+      ],
+      "env": {
+        // Set your Supabase password as environment variable
+        // DO NOT hardcode passwords here — use .env file or system env vars
+        "PGPASSWORD": "${env:SUPABASE_DB_PASSWORD}"
+      },
+      "disabled": false
+    },
+
+    // ── 2. STRIPE ── Payment Processing ────────────────────────────────
+    // Official Stripe MCP server for managing payments, customers, refunds
+    "cruiseapp-stripe": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@stripe/mcp",
+        "--api-key=${env:STRIPE_SECRET_KEY}"
+      ],
+      "env": {
+        "STRIPE_SECRET_KEY": "${env:STRIPE_SECRET_KEY}"
+      },
+      "disabled": false
+    },
+
+    // ── 3. FILESYSTEM ── Project File Access ───────────────────────────
+    // Allows Kimi to read/write files in your project directory
+    "cruiseapp-filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "c:\\Users\\Puma\\cruiseapp.2"
+      ],
+      "disabled": false
+    }
+  },
+
+  // ── Alternative: AntiDrift Stripe MCP (more features) ─────────────────
+  // Uncomment below and comment out the official Stripe MCP above if you need:
+  // - Invoices, products, subscriptions management
+  // - More detailed customer data access
+  // "cruiseapp-stripe-antidrift": {
+  //   "type": "stdio",
+  //   "command": "npx",
+  //   "args": ["-y", "@antidrift/mcp-stripe"],
+  //   "env": {
+  //     "STRIPE_SECRET_KEY": "${env:STRIPE_SECRET_KEY}"
+  //   },
+  //   "disabled": true
+  // },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  FIREBASE MCP — NOT AVAILABLE AS STANDALONE SERVER
+  // ═══════════════════════════════════════════════════════════════════════
+  // There is NO official Firebase/Firestore MCP server available on npm.
+  // 
+  // RECOMMENDED ALTERNATIVES:
+  // 1. Use the Supabase MCP (above) for database operations — your backend
+  //    already syncs between Firestore and PostgreSQL.
+  // 2. Use Firebase CLI + shell scripts for Firestore operations.
+  // 3. Use the Firebase Admin SDK in Python scripts that Kimi can run.
+  //
+  // If you need Firestore MCP in the future, consider:
+  // - Building a custom MCP server using firebase-admin Node.js SDK
+  // - Using the Firebase REST API directly
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── VS Code General Settings ──────────────────────────────────────────
+  "editor.formatOnSave": true,
+  "editor.rulers": [80, 120],
+  "files.exclude": {
+    "**/.dart_tool": true,
+    "**/build": true,
+    "**/.flutter-plugins*": true,
+    "**/.packages": true
+  }
+}

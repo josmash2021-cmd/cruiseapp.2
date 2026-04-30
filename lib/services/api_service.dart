@@ -493,8 +493,8 @@ class ApiService {
     await SecurityService.storeCredential('jwt', token);
     final fp = SecurityService.createTokenFingerprint(token);
     await SecurityService.storeCredential('token_fp', fp);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    // SECURITY: Never store JWT in SharedPreferences (plaintext on rooted devices).
+    // Only use Keystore/Keychain via SecurityService (flutter_secure_storage).
     SecurityService.logSecurityEvent('token_stored');
   }
 
@@ -510,12 +510,9 @@ class ApiService {
       _cachedToken = secureToken;
       return _cachedToken;
     }
-    final prefs = await SharedPreferences.getInstance();
-    _cachedToken = prefs.getString(_tokenKey);
-    if (_cachedToken != null) {
-      await SecurityService.storeCredential('jwt', _cachedToken!);
-    }
-    return _cachedToken;
+    // SECURITY: No fallback to SharedPreferences. If secure storage fails,
+    // the user must log in again. This prevents JWT theft on rooted devices.
+    return null;
   }
 
   static Future<String?> _getRefreshToken() async {
@@ -590,8 +587,13 @@ class ApiService {
     await SecurityService.deleteCredential('jwt');
     await SecurityService.deleteCredential('token_fp');
     await SecurityService.deleteCredential('refresh_jwt');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
+    // SECURITY: Also clear any legacy JWT from SharedPreferences (migration cleanup).
+    // This ensures old plaintext tokens are removed from previous app versions.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_refreshTokenKey);
+    } catch (_) {}
     // Clear all caches on logout
     clearCache();
     clearUserCache();

@@ -42,6 +42,11 @@ class GpsService {
   DateTime? _lastRTDBAt;
   LatLng? _lastSocketIOPos;
   StreamSubscription? _presenceSub;
+  StreamSubscription<bool>? _socketReconnectSub;
+
+  /// Queued position update to flush when Socket.IO reconnects.
+  /// Set when Socket.IO is disconnected but we have a new position.
+  LatLng? _pendingSocketIOPos;
 
   /// Whether the service is actively uploading.
   bool get isTracking => _socketIOTimer != null || _rtdbTimer != null;
@@ -55,7 +60,7 @@ class GpsService {
 
     _activeDriverId = driverId;
 
-    // Primary: Socket.io every 200ms (when enabled)
+    // Primary: Socket.io every 1s (when enabled)
     _socketIOTimer = Timer.periodic(
       _socketIOInterval,
       (_) => unawaited(_uploadViaSocketIO()),
@@ -66,6 +71,14 @@ class GpsService {
       _rtdbInterval,
       (_) => unawaited(_uploadToFirebase()),
     );
+
+    // Listen for Socket.IO reconnections to flush queued updates
+    _socketReconnectSub = SocketService.connectionHealthStream.listen((connected) {
+      if (connected && _pendingSocketIOPos != null) {
+        debugPrint('[GPS] Socket.IO reconnected — flushing queued position');
+        unawaited(_uploadViaSocketIO(force: true));
+      }
+    });
 
     _setupPresence(driverId);
     debugPrint('[GPS] Started: Socket.io 1s + RTDB 5s backup');
@@ -105,6 +118,8 @@ class GpsService {
     _rtdbTimer = null;
     _presenceSub?.cancel();
     _presenceSub = null;
+    _socketReconnectSub?.cancel();
+    _socketReconnectSub = null;
 
     final id = _activeDriverId;
     if (id != null) {
@@ -121,6 +136,7 @@ class GpsService {
     _lastSocketIOAt = null;
     _lastRTDBAt = null;
     _lastSocketIOPos = null;
+    _pendingSocketIOPos = null;
   }
 
   /// Remove the active trip location from RTDB when the ride ends or cancels.
@@ -149,21 +165,30 @@ class GpsService {
 
   // ── Upload methods ──────────────────────────────────────────────────
 
-  Future<void> _uploadViaSocketIO() async {
+  Future<void> _uploadViaSocketIO({bool force = false}) async {
     if (_currentPos == null || _activeDriverId == null) return;
     if (!FeatureFlags.useSocketIO) return;
-    if (!SocketService.isConnected) return;
 
-    // Delta compression: skip if moved < 0.5m AND speed is very low
+    // If not connected, queue the latest position for flush on reconnect
+    if (!SocketService.isConnected) {
+      _pendingSocketIOPos = _currentPos;
+      return;
+    }
+
+    // Use queued position if flushing after reconnect
+    final pos = force && _pendingSocketIOPos != null ? _pendingSocketIOPos! : _currentPos!;
+
+    // Delta compression: skip if moved < 2m AND speed is very low
     // Always send if driver is moving (speed > 1 m/s) to ensure fluid tracking
-    if (_lastSocketIOPos != null && _currentSpeed < 1.0) {
+    final lastPos = force && _pendingSocketIOPos != null ? _lastSocketIOPos : _lastSocketIOPos;
+    if (lastPos != null && _currentSpeed < 1.0) {
       final dist = _haversineMeters(
-        _currentPos!.latitude,
-        _currentPos!.longitude,
-        _lastSocketIOPos!.latitude,
-        _lastSocketIOPos!.longitude,
+        pos.latitude,
+        pos.longitude,
+        lastPos.latitude,
+        lastPos.longitude,
       );
-      if (dist < _minDistanceMeters) return;
+      if (dist < _minDistanceMeters && !force) return;
     }
 
     final tripId = int.tryParse(_activeTripId ?? '');
@@ -171,13 +196,14 @@ class GpsService {
 
     SocketService.sendDriverLocation(
       tripId: tripId,
-      lat: _currentPos!.latitude,
-      lng: _currentPos!.longitude,
+      lat: pos.latitude,
+      lng: pos.longitude,
       heading: _currentHeading,
       speed: _currentSpeed,
     );
 
-    _lastSocketIOPos = _currentPos;
+    _lastSocketIOPos = pos;
+    _pendingSocketIOPos = null;
     _lastSocketIOAt = DateTime.now();
   }
 

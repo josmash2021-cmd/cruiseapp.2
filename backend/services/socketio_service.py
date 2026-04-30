@@ -139,14 +139,15 @@ async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
             params = parse_qs(query_string)
             token = params.get("token", [""])[0]
 
-    # Allow connections without token (guest/anonymous) — they can listen but not emit
+    # Reject connections without a valid token — no anonymous access
     if not token or token == "null":
-        logger.info("[Socket.io] Anonymous connection: %s", sid)
-        _connection_meta[sid] = {"user_id": None, "role": None, "rooms": set()}
-        return True
+        logger.warning("[Socket.io] Rejected anonymous connection: %s", sid)
+        await sio.emit("auth_error", {"message": "Authentication required"}, to=sid)
+        return False
 
     if not _JWT_SECRET:
         logger.error("[Socket.io] JWT secret not configured — rejecting auth")
+        await sio.emit("auth_error", {"message": "Server misconfigured"}, to=sid)
         return False
 
     try:
@@ -154,9 +155,8 @@ async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
         user_id = int(payload["sub"])
     except (JWTError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
-        # Allow connection anyway (anonymous) — client can authenticate later
-        _connection_meta[sid] = {"user_id": None, "role": None, "rooms": set()}
-        return True
+        await sio.emit("auth_error", {"message": "Invalid or expired token"}, to=sid)
+        return False
 
     # Store metadata immediately so the connection is usable without
     # requiring a separate 'authenticate' event.

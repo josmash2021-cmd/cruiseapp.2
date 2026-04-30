@@ -527,6 +527,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _countdownTimer?.cancel();
     _imminentRideTimer?.cancel();
     _pendingSearchTimer?.cancel();
+    _pendingSearchTimer = null;
     _locationSub?.cancel();
     _zonesSub?.cancel();
     _driverLocationSub?.cancel();

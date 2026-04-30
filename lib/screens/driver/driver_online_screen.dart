@@ -481,10 +481,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _boot();
 
-    // Mount the heavy MapWidget after the 400ms page transition has
-    // finished animating. The placeholder shown until then is the same
-    // dark color as the map's "no GPS" state, so the user sees no flash.
-    Future.delayed(const Duration(milliseconds: 450), () {
+    // Mount the heavy MapWidget after the page transition has
+    // finished animating. Reduced from 450ms to 150ms for faster perceived
+    // response while still avoiding the freeze during navigation transition.
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
       setState(() => _mapMounted = true);
     });

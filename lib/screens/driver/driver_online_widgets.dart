@@ -16,9 +16,32 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       );
     }
     // Defer the heavy PlatformView mount until after the page
-    // transition — same dark fill as above, so no visible flash.
+    // transition — show a loader so user knows the app is responding.
     if (!_mapMounted) {
-      return Container(color: const Color(0xFF07080D));
+      return Container(
+        color: const Color(0xFF07080D),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                color: Color(0xFFE8C547),
+                strokeWidth: 2,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Finding trips...',
+                style: TextStyle(
+                  color: Color(0xFFE8C547),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     return RepaintBoundary(
       child: mapbox.MapWidget(

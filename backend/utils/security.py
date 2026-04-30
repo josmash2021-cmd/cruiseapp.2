@@ -605,16 +605,32 @@ async def _require_dispatch_auth(
     x_device_fp: str = Header(default=""),
     x_client_version: str = Header(default=""),
 ):
+    """Require dispatch/owner authentication.
+
+    Two valid paths:
+    1. HMAC-signed request with the EXACT DISPATCH_API_KEY (not any valid API key).
+    2. Valid Bearer JWT with role="owner" and an active dispatch session.
+
+    General mobile-app API keys are REJECTED — they must NOT access admin endpoints.
+    """
     client_ip = request.client.host if request.client else "unknown"
 
+    # PATH 1: HMAC signature with DISPATCH_API_KEY only
     if x_api_key and x_timestamp and x_nonce and x_signature:
         try:
             _verify_api_key(request, x_api_key, x_timestamp, x_nonce,
                             x_signature, x_device_fp, x_client_version)
+            # CRITICAL: Verify this is the DISPATCH_API_KEY, not just any valid API key
+            if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
+                _record_violation(client_ip)
+                _security_audit_log("admin_unauthorized", client_ip,
+                                    f"non-dispatch key used on admin endpoint: {x_api_key[:8]}...")
+                raise HTTPException(403, "Admin access required — dispatch key only")
             return
         except HTTPException:
-            pass
+            pass  # Fall through to Bearer token check
 
+    # PATH 2: Bearer JWT with owner role and active dispatch session
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Owner authorization required")
     token = authorization.split(" ")[1]

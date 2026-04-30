@@ -240,7 +240,7 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
     return _trip_dict(trip)
 
 
-@router.get("/admin/stripe/instant-payouts-status", dependencies=[Depends(_verify_api_key)])
+@router.get("/admin/stripe/instant-payouts-status", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_check_instant_payouts():
     """Verify whether Instant Payouts is enabled at the platform level.
 
@@ -281,7 +281,7 @@ async def admin_check_instant_payouts():
         return {"ok": False, "error": str(e)[:300]}
 
 
-@router.post("/admin/cancel-all-active", dependencies=[Depends(_verify_api_key)])
+@router.post("/admin/cancel-all-active", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
     """Emergency: cancel ALL active trips. Requires API key auth.
 
@@ -1125,7 +1125,7 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
         logging.error("[Admin] Error getting active trips: %s", e)
         raise HTTPException(500, f"Error getting trips: {str(e)}")
 
-@router.get("/admin/heatmap", dependencies=[Depends(_verify_api_key)])
+@router.get("/admin/heatmap", dependencies=[Depends(_require_dispatch_auth)])
 async def get_heatmap_data(
     hours: int = Query(2, description="Hours of data to include"),
     db: AsyncSession = Depends(get_db)
@@ -1157,7 +1157,7 @@ async def get_heatmap_data(
         raise HTTPException(500, f"Error getting heatmap: {str(e)}")
 
 
-@router.post("/admin/trips/assign", dependencies=[Depends(_verify_api_key)])
+@router.post("/admin/trips/assign", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_assign_driver(
     trip_id: int = Query(...),
     driver_id: int = Query(...),
@@ -1218,7 +1218,7 @@ async def admin_assign_driver(
         logging.error("[Admin] Error assigning driver: %s", e)
         raise HTTPException(500, f"Error assigning driver: {str(e)}")
 
-@router.post("/admin/drivers/message", dependencies=[Depends(_verify_api_key)])
+@router.post("/admin/drivers/message", dependencies=[Depends(_require_dispatch_auth)])
 async def message_driver(
     driver_id: int = Query(...),
     message: str = Query(...),

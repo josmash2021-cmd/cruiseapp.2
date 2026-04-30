@@ -233,7 +233,7 @@ async def _check_fraud_patterns(user_context: dict[str, Any]) -> tuple[bool, str
             days_old = (datetime.now(timezone.utc) - account_created).days
             if days_old < 7 and refund_count > 0:
                 return True, "New account (< 7 days) with refund request — high fraud risk"
-        except:
+        except (ValueError, TypeError):
             pass
     
     # Check if trip was actually completed

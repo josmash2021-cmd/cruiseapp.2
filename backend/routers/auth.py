@@ -32,6 +32,7 @@ from services.socketio_service import notify_user
 from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
 from config import (
     _otp_store, _OTP_TTL, PHOTOS_DIR, PUBLIC_URL,
+    _otp_attempt_tracker, _MAX_OTP_ATTEMPTS, _OTP_ATTEMPT_WINDOW,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, TWILIO_SERVICE_SID,
     EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY,
     firestore_sync, _HAS_FIRESTORE,
@@ -485,9 +486,30 @@ async def send_otp(body: SendOtpIn, request: Request):
         "warning": "SMS/Email service temporarily unavailable. Please contact support or try again later.",
     }
 
+def _check_otp_rate_limit(otp_key: str) -> bool:
+    """Return True if the key is allowed to attempt OTP verification."""
+    now = time.time()
+    attempts = _otp_attempt_tracker.get(otp_key, [])
+    # Keep only attempts within the window
+    attempts = [t for t in attempts if now - t < _OTP_ATTEMPT_WINDOW]
+    if len(attempts) >= _MAX_OTP_ATTEMPTS:
+        return False
+    return True
+
+
+def _record_otp_attempt(otp_key: str):
+    """Record a failed OTP verification attempt."""
+    now = time.time()
+    attempts = _otp_attempt_tracker.get(otp_key, [])
+    attempts = [t for t in attempts if now - t < _OTP_ATTEMPT_WINDOW]
+    attempts.append(now)
+    _otp_attempt_tracker[otp_key] = attempts
+
+
 @router.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
 async def verify_otp(body: VerifyOtpIn):
-    """Check a verification code. Tries Twilio Verify API first, then local store."""
+    """Check a verification code. Tries Twilio Verify API first, then local store.
+    Rate-limited: max 5 failed attempts per 15 minutes per phone/email."""
     import urllib.request, urllib.parse
     phone = (body.phone or "").strip()
     email = (body.email or "").strip().lower()
@@ -496,10 +518,16 @@ async def verify_otp(body: VerifyOtpIn):
     if not otp_key or not code:
         raise HTTPException(400, "Phone or email, and code required")
 
+    # -- Rate limit check --
+    if not _check_otp_rate_limit(otp_key):
+        logging.warning("[OTP] Rate limit exceeded for %s", otp_key)
+        raise HTTPException(429, "Too many attempts. Please request a new code.")
+
     # -- 1. Local OTP store (always checked first -- backend-generated codes) --
     entry = _otp_store.get(otp_key)
     if entry and entry["code"] == code and entry["expires"] > time.time():
         _otp_store.pop(otp_key, None)
+        _otp_attempt_tracker.pop(otp_key, None)  # Clear attempts on success
         logging.info("[OTP] Verified via local store for %s", otp_key)
         return {"valid": True}
 
@@ -526,12 +554,16 @@ async def verify_otp(body: VerifyOtpIn):
             if status == 200:
                 if json.loads(resp_body).get("status") == "approved":
                     _otp_store.pop(otp_key, None)
+                    _otp_attempt_tracker.pop(otp_key, None)  # Clear attempts on success
                     logging.info("[OTP] Verified via Twilio Verify for %s", phone)
                     return {"valid": True}
         except Exception as e:
             logging.warning("[OTP] Twilio Verify check error: %s", e)
 
-    logging.warning("[OTP] Invalid code for %s", otp_key)
+    # Record failed attempt
+    _record_otp_attempt(otp_key)
+    logging.warning("[OTP] Invalid code for %s (attempt %d/%d)", otp_key,
+                    len(_otp_attempt_tracker.get(otp_key, [])), _MAX_OTP_ATTEMPTS)
     return {"valid": False}
 
 

@@ -24,6 +24,12 @@ _otp_store: dict = {}
 _OTP_TTL = 300
 _MAX_OTP_ENTRIES = 5000  # cap for memory safety
 
+# ── OTP verification rate limiter ──
+# Max 5 failed attempts per 15 minutes per phone/email
+_otp_attempt_tracker: dict = {}  # {otp_key: [(timestamp, success), ...]}
+_MAX_OTP_ATTEMPTS = 5
+_OTP_ATTEMPT_WINDOW = 900  # 15 minutes
+
 # ── Dispatch cache ──
 _pending_cache: dict = {}
 _PENDING_CACHE_TTL = 1.5  # Short TTL — offers are time-critical; invalidated on accept/reject

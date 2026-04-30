@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 # ── Owner / Dispatch ──
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")
 OWNER_PASSWORD_HASH = os.getenv("OWNER_PASSWORD_HASH", "")
-OWNER_PASSWORD = os.getenv("OWNER_PASSWORD", "")
+# OWNER_PASSWORD removed — use OWNER_PASSWORD_HASH only
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://cruiseapp2-production.up.railway.app")
 DISPATCH_ALLOWED_IPS = os.getenv("DISPATCH_ALLOWED_IPS", "")
 

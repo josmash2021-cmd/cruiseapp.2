@@ -1103,31 +1103,55 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           pitch: 0.0,
           bearing: 0.0,
         ),
+        // FIX: textureView works on more devices than surfaceView (default)
+        textureView: true,
         onMapCreated: (ctrl) async {
-          _mapController = ctrl;
-          // Disable Mapbox native puck IMMEDIATELY before any annotation creation
-          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-          _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           try {
-            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-            await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
-          } catch (_) {}
-          setState(() => _mapReady = true);
-        },
-        onStyleLoadedListener: (_) async {
-          if (_mapController != null) {
-            // Re-disable puck after style reload (Mapbox may re-enable it)
-            await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-            await _applyNavyGoldTheme(_mapController!);
+            _mapController = ctrl;
+            // Disable Mapbox native puck IMMEDIATELY before any annotation creation
+            await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+            
+            // FIX: Create annotation manager with error handling
+            try {
+              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+            } catch (e) {
+              debugPrint('[DriverMap] Failed to create annotation manager: $e');
+            }
+            
             if (_pointAnnotMgr != null) {
               try {
-                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
               } catch (_) {}
             }
+            
+            setState(() => _mapReady = true);
+          } catch (e) {
+            debugPrint('[DriverMap] onMapCreated error: $e');
           }
+        },
+        onStyleLoadedListener: (_) async {
+          try {
+            if (_mapController != null) {
+              // Re-disable puck after style reload (Mapbox may re-enable it)
+              await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+              await _applyNavyGoldTheme(_mapController!);
+              if (_pointAnnotMgr != null) {
+                try {
+                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                } catch (_) {}
+              }
+            }
+          } catch (e) {
+            debugPrint('[DriverMap] onStyleLoaded error: $e');
+          }
+        },
+        // FIX: Catch map load errors
+        onMapLoadErrorListener: (err) {
+          debugPrint('[DriverMap] Load error: ${err.message} (type: ${err.type})');
         },
       ),
     );

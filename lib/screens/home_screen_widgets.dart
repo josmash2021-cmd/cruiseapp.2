@@ -16,6 +16,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildFullMap() {
     // Default to NYC if no GPS yet — map shows immediately, camera moves later
     final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
+    
+    // CRITICAL FIX: Use MapWidget with explicit widget options for compatibility
+    // Some devices fail with default renderer. Using textureView + fallback.
     return mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleDark,
@@ -25,44 +28,71 @@ extension _HomeScreenWidgets on _HomeScreenState {
         ),
         zoom: 15.0,
       ),
+      // FIX: textureView works on more devices than surfaceView (default)
+      // surfaceView can crash on some Mali GPUs and older devices
+      textureView: true,
       onMapCreated: (ctrl) async {
-        _miniMapController = ctrl;
-        // Cache controller for reuse across screens
-        MapControllerCache.instance.cache(ctrl);
-        ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-        ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-        ctrl.attribution
-            .updateSettings(mapbox.AttributionSettings(enabled: false));
-        ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-        _miniMapAnnotMgr =
-            await ctrl.annotations.createPointAnnotationManager();
         try {
-          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
-        } catch (_) {}
-        // Explicitly disable Mapbox native location puck — GoldLocationDot
-        // annotation handles location display with smooth interpolation.
-        await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-        // Create gold dot annotation immediately if position is already known
-        if (_currentLatLng != null) _updateMiniMapAnnotation();
-        // Draw route if there's an active ride
-        if (_activeRide != null) {
-          _drawRouteOnMap();
+          _miniMapController = ctrl;
+          // Cache controller for reuse across screens
+          MapControllerCache.instance.cache(ctrl);
+          
+          // FIX: Disable all UI elements that might cause rendering issues
+          await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+          await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+          await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+          await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+          
+          // FIX: Create annotation manager with error handling
+          try {
+            _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+          } catch (e) {
+            debugPrint('[Map] Failed to create annotation manager: $e');
+          }
+          
+          // FIX: Apply layer properties only if annotation manager exists
+          if (_miniMapAnnotMgr != null) {
+            try {
+              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
+            } catch (_) {}
+          }
+          
+          // Explicitly disable Mapbox native location puck
+          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+          
+          // Create gold dot annotation immediately if position is already known
+          if (_currentLatLng != null) _updateMiniMapAnnotation();
+          
+          // Draw route if there's an active ride
+          if (_activeRide != null) {
+            _drawRouteOnMap();
+          }
+        } catch (e) {
+          debugPrint('[Map] onMapCreated error: $e');
         }
       },
       onStyleLoadedListener: (_) async {
-        if (_miniMapController != null) {
-          await _applyDarkNavyGoldTheme(_miniMapController!);
-          // Re-apply annotation manager layer properties after style reload
-          if (_miniMapAnnotMgr != null) {
-            try {
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
-            } catch (_) {}
+        try {
+          if (_miniMapController != null) {
+            await _applyDarkNavyGoldTheme(_miniMapController!);
+            // Re-apply annotation manager layer properties after style reload
+            if (_miniMapAnnotMgr != null) {
+              try {
+                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (_) {}
+            }
           }
+        } catch (e) {
+          debugPrint('[Map] onStyleLoaded error: $e');
         }
+      },
+      // FIX: onMapLoadErrorListener catches style/load errors
+      onMapLoadErrorListener: (err) {
+        debugPrint('[Map] Load error: ${err.message} (type: ${err.type})');
       },
     );
   }

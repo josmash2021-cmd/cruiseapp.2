@@ -98,6 +98,10 @@ async def migrate_ssns(dry_run: bool = True):
 
 
 if __name__ == "__main__":
+    # Windows: use SelectorEventLoop for psycopg3 compatibility
+    import asyncio
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     dry_run = "--apply" not in sys.argv
     exit_code = asyncio.run(migrate_ssns(dry_run=dry_run))
     sys.exit(exit_code)

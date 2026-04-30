@@ -629,40 +629,45 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                     Expanded(
-                      child: TextField(
-                        controller: _inputCtrl,
-                        keyboardType: _usePhone
-                            ? TextInputType.phone
-                            : TextInputType.emailAddress,
-                        inputFormatters: _usePhone
-                            ? [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(10),
-                              ]
-                            : [],
-                        style: TextStyle(color: c.textPrimary, fontSize: 16),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          hintText: _usePhone
-                              ? '(000) 000-0000'
-                              : S.of(context).emailAddressHint,
-                          hintStyle: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 16,
+                      child: AutofillGroup(
+                        child: TextField(
+                          controller: _inputCtrl,
+                          keyboardType: _usePhone
+                              ? TextInputType.phone
+                              : TextInputType.emailAddress,
+                          inputFormatters: _usePhone
+                              ? [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(10),
+                                ]
+                              : [],
+                          autofillHints: _usePhone
+                              ? const [AutofillHints.telephoneNumber]
+                              : const [AutofillHints.email, AutofillHints.username],
+                          style: TextStyle(color: c.textPrimary, fontSize: 16),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText: _usePhone
+                                ? '(000) 000-0000'
+                                : S.of(context).emailAddressHint,
+                            hintStyle: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 16,
+                            ),
+                            prefixIcon: _usePhone
+                                ? null
+                                : Icon(
+                                    Icons.email_outlined,
+                                    color: c.textTertiary,
+                                    size: 20,
+                                  ),
+                            prefixIconConstraints: _usePhone
+                                ? null
+                                : const BoxConstraints(
+                                    minWidth: 36,
+                                    minHeight: 0,
+                                  ),
                           ),
-                          prefixIcon: _usePhone
-                              ? null
-                              : Icon(
-                                  Icons.email_outlined,
-                                  color: c.textTertiary,
-                                  size: 20,
-                                ),
-                          prefixIconConstraints: _usePhone
-                              ? null
-                              : const BoxConstraints(
-                                  minWidth: 36,
-                                  minHeight: 0,
-                                ),
                         ),
                       ),
                     ),

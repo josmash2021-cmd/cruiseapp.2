@@ -297,31 +297,37 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         ),
                         const SizedBox(height: 40),
 
-                        // ── Email field ──
-                        _buildField(
-                          controller: _emailCtrl,
-                          label: S.of(context).emailOrPhone,
-                          icon: Icons.person_outline_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 18),
-
-                        // ── Password field ──
-                        _buildField(
-                          controller: _passCtrl,
-                          label: S.of(context).passwordLabel,
-                          icon: Icons.lock_outline_rounded,
-                          obscure: _obscure,
-                          suffix: IconButton(
-                            icon: Icon(
-                              _obscure
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: Colors.white38,
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                setState(() => _obscure = !_obscure),
+                        // ── Email + Password fields (AutofillGroup) ──
+                        AutofillGroup(
+                          child: Column(
+                            children: [
+                              _buildField(
+                                controller: _emailCtrl,
+                                label: S.of(context).emailOrPhone,
+                                icon: Icons.person_outline_rounded,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: const [AutofillHints.email, AutofillHints.username],
+                              ),
+                              const SizedBox(height: 18),
+                              _buildField(
+                                controller: _passCtrl,
+                                label: S.of(context).passwordLabel,
+                                icon: Icons.lock_outline_rounded,
+                                obscure: _obscure,
+                                autofillHints: const [AutofillHints.password],
+                                suffix: IconButton(
+                                  icon: Icon(
+                                    _obscure
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: Colors.white38,
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscure = !_obscure),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
 
@@ -519,11 +525,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
     bool obscure = false,
     Widget? suffix,
     TextInputType keyboardType = TextInputType.text,
+    Iterable<String>? autofillHints,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
+      autofillHints: autofillHints,
       style: const TextStyle(color: Colors.white, fontSize: 16),
       cursorColor: _gold,
       decoration: InputDecoration(

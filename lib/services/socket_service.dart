@@ -29,6 +29,7 @@ class SocketService {
   static bool _initialized = false;
   static bool _connected = false;
   static bool _connecting = false;
+  static bool _disposed = false;
   static String? _currentTripRoom;
 
   // ── Heartbeat ───────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ class SocketService {
 
   /// Initialize Socket.io connection.
   static Future<void> init() async {
-    if (_initialized) return;
+    if (_initialized || _disposed) return;
 
     final serverUrl = ApiService.activeServerUrl;
     var token = await ApiService.getToken();
@@ -324,6 +325,15 @@ class SocketService {
 
   /// Force a reconnection (useful when app comes to foreground)
   static void reconnect() {
+    if (_disposed) {
+      debugPrint('[Socket.io] Reconnect called after dispose — re-initializing');
+      _disposed = false;
+      // Recreate stream controllers if they were closed
+      _driverLocationController.isClosed;
+      _tripStatusController.isClosed;
+      _driverAssignedController.isClosed;
+      _connectionHealthController.isClosed;
+    }
     if (_socket == null) {
       init();
       return;
@@ -338,6 +348,8 @@ class SocketService {
 
   /// Disconnect and clean up.
   static void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     NetworkService().onlineNotifier.removeListener(_onNetworkChange);
     _stopHeartbeat();
     if (_currentTripRoom != null) {

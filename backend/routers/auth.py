@@ -260,76 +260,6 @@ async def check_exists(body: CheckExistsIn, db: AsyncSession = Depends(get_db)):
 async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
 
-    # ── Apple Review demo accounts — skip OTP, return tokens directly ──
-    _demo_pw = os.getenv("DEMO_ACCOUNT_PASSWORD", "")
-    _DEMO_ACCOUNTS = {
-        "+15550001234": {"password": _demo_pw, "role": "rider"},
-        "+15550005678": {"password": _demo_pw, "role": "driver"},
-        "applereview@cruiseride.com": {"password": _demo_pw, "role": "rider"},
-        "appledriver@cruiseride.com": {"password": _demo_pw, "role": "driver"},
-    }
-    identifier_clean = body.identifier.strip().lower() if "@" in body.identifier else body.identifier.strip()
-    _demo_enabled = os.getenv("ENABLE_DEMO_ACCOUNTS", "").lower() in ("true", "1", "yes")
-    demo = _DEMO_ACCOUNTS.get(identifier_clean) if _demo_enabled else None
-    if demo and body.password == demo["password"]:
-        role = body.role or demo["role"]
-        is_driver = role == "driver"
-        demo_email = identifier_clean if "@" in identifier_clean else ("appledriver@cruiseride.com" if is_driver else "applereview@cruiseride.com")
-        demo_phone = identifier_clean if "@" not in identifier_clean else ("+15550005678" if is_driver else "+15550001234")
-        # Find demo user by email OR phone (covers both login methods)
-        q = select(User).where(
-            ((func.lower(User.email) == demo_email) | (User.phone == demo_phone)),
-            User.role == role,
-        )
-        result = await db.execute(q)
-        user = result.scalar_one_or_none()
-        if not user:
-            # Auto-create demo user
-            user = User(
-                first_name="Apple" if not is_driver else "Demo",
-                last_name="Reviewer" if not is_driver else "Driver",
-                email=demo_email,
-                phone=demo_phone,
-                password_hash=pwd.hash(demo["password"]),
-                role=role,
-                status="active",
-                email_verified=True,
-                verification_status="approved" if is_driver else "none",
-                is_verified=True if is_driver else False,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-            # Auto-create vehicle for demo driver so they can go online
-            if is_driver:
-                existing_v = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
-                if not existing_v.scalar_one_or_none():
-                    v = Vehicle(
-                        user_id=user.id,
-                        make="Chevrolet",
-                        model="Suburban",
-                        year="2024",
-                        color="Black",
-                        plate="DEMO-001",
-                        vehicle_type="vip",
-                        insurance_valid=True,
-                        registration_valid=True,
-                    )
-                    db.add(v)
-                    await db.commit()
-                    logging.info("[DEMO] Auto-created vehicle for driver id=%s", user.id)
-            logging.info("[DEMO] Auto-created %s account id=%s", role, user.id)
-        # Ensure existing demo drivers are approved
-        if is_driver and user.verification_status != "approved":
-            user.verification_status = "approved"
-            user.is_verified = True
-            await db.commit()
-            await db.refresh(user)
-        token = await _create_driver_aware_token_from_user(user, db)
-        refresh = _create_refresh_token(user.id)
-        logging.info("[DEMO] Direct login for Apple review account: %s (%s)", identifier_clean, role)
-        return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
-
     # Layer 5: Brute force protection
     if _check_login_throttle(client_ip):
         _record_violation(client_ip)
@@ -411,16 +341,6 @@ async def send_otp(body: SendOtpIn, request: Request):
     
     if not phone and not email:
         raise HTTPException(400, "Phone or email required")
-
-    # ── Apple App Review demo account — fixed OTP, no real SMS/email ──
-    REVIEW_PHONE = "+15550001234"
-    REVIEW_EMAIL = "applereview@cruiseride.com"
-    REVIEW_CODE  = "123456"
-    if phone == REVIEW_PHONE or email == REVIEW_EMAIL:
-        otp_key = phone if phone else email
-        _otp_store[otp_key] = {"code": REVIEW_CODE, "expires": time.time() + 86400, "email": email, "phone": phone}
-        logging.info("[OTP] Apple review account — fixed code %s for %s", REVIEW_CODE, otp_key)
-        return {"ok": True, "method": "review_account"}
 
     # Use phone as key for OTP store (or email if no phone)
     otp_key = phone if phone else email

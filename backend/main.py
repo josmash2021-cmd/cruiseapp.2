@@ -29,7 +29,13 @@ from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 import asyncio
 from typing import Optional, List
+
+# ── Load .env BEFORE any module that reads environment variables ──
+# Modules like utils.security read os.getenv at import time. If .env
+# isn't loaded first, those imports see empty values and either crash
+# (Railway) or auto-generate insecure defaults (local dev).
 from dotenv import load_dotenv
+load_dotenv()
 
 # Support chat AI cache & health monitoring
 from support_cache import find_cached_response, add_natural_variation, claude_health, load_cache, maybe_cache_response
@@ -55,8 +61,6 @@ from services.socketio_service import sio, configure as _configure_socketio
 
 # Automatic PostgreSQL backup system
 from db_backup import backup_scheduler as _backup_scheduler, get_status as _backup_status
-
-load_dotenv()  # Load .env file (gitignored)
 
 import base64
 import socketio
@@ -408,6 +412,12 @@ except ImportError:
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None, default_response_class=_default_response_class)
 
 # Configure Socket.io JWT (same secret as REST API)
+# Guard: if JWT_SECRET is empty/missing, fail fast with a clear message.
+if not JWT_SECRET:
+    raise ValueError(
+        "JWT_SECRET is not set. Check Railway Variables (or .env for local dev). "
+        "This is required for WebSocket authentication."
+    )
 _configure_socketio(jwt_secret=JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 # Wrap FastAPI with Socket.io ASGI app

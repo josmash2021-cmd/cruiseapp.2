@@ -30,6 +30,11 @@ _JWT_ALGORITHM = "HS256"
 
 def configure(jwt_secret: str, algorithm: str = "HS256"):
     global _JWT_SECRET, _JWT_ALGORITHM
+    if not jwt_secret:
+        raise ValueError(
+            "JWT secret cannot be empty. Ensure JWT_SECRET env var is set "
+            "and loaded before socketio_service.configure() is called."
+        )
     _JWT_SECRET = jwt_secret
     _JWT_ALGORITHM = algorithm
 

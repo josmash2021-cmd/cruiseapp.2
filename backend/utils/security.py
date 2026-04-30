@@ -22,12 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import User, RevokedToken, AuditLog, SessionLocal, get_db
 
 # -- Config --
-API_KEY = os.getenv("API_KEY", "")
-HMAC_SECRET = os.getenv("HMAC_SECRET", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "")
-DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY", "")
+API_KEY = os.getenv("API_KEY") or ""
+HMAC_SECRET = os.getenv("HMAC_SECRET") or ""
+JWT_SECRET = os.getenv("JWT_SECRET") or ""
+DISPATCH_API_KEY = os.getenv("DISPATCH_API_KEY") or ""
 
-# Validate secrets at import time â€” refuse to start with empty/default keys
+# Validate secrets at import time — refuse to start with empty/default keys
 if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
     _is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
     if _is_railway:

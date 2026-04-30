@@ -2094,7 +2094,7 @@ async def initiate_background_check(
                     "last_name": user.last_name,
                     "email": user.email,
                     "phone": user.phone,
-                    "ssn": decrypt_ssn(user.ssn) if user.ssn else "",
+                    "ssn": get_ssn_last4(user.ssn) if user.ssn else "",
                 },
                 timeout=15,
             )

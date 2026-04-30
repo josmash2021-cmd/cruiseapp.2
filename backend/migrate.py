@@ -98,8 +98,7 @@ MIGRATIONS = [
     ("users", "checkr_report_id", "VARCHAR(100)"),
     ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),
     ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
-    ("users", "password_plain", "VARCHAR(255)"),
-    ("users", "password_visible", "VARCHAR(255)"),
+
     ("users", "driver_referral_code", "VARCHAR(20)"),
     ("support_chats", "agent_name", "VARCHAR(100)"),
     ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),

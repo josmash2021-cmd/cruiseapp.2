@@ -740,8 +740,7 @@ async def migrate_add_columns(conn):
     new_columns = [
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
-        ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "ssn", "VARCHAR(11)"),
+        ("users", "ssn", "VARCHAR(255)"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
@@ -828,11 +827,9 @@ async def migrate_postgres(conn):
     Checks column existence BEFORE ALTER TABLE to avoid AccessExclusiveLock
     on columns that already exist (prevents deadlocks with concurrent queries)."""
     migrations = [
-        ("users", "password_plain", "VARCHAR(255)"),
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
-        ("users", "password_visible", "VARCHAR(255)"),
-        ("users", "ssn", "VARCHAR(11)"),
+        ("users", "ssn", "VARCHAR(255)"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),

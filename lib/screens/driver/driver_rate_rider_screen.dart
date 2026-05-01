@@ -9,6 +9,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
+import '../../services/api_service.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
 import '../../utils/responsive.dart';
@@ -87,8 +88,18 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     setState(() => _submitting = true);
     HapticService.mediumImpact();
 
-    // Save to Firebase RTDB
+    // Save to backend SQL database (primary source of truth)
     if (_stars > 0) {
+      try {
+        await ApiService.rateTrip(
+          tripId: widget.tripId,
+          stars: _stars,
+          comment: _selectedTags.isNotEmpty ? _selectedTags.join(', ') : null,
+        );
+      } catch (e) {
+        debugPrint('[DriverRateRider] Backend rating failed: $e');
+      }
+      // Also save to Firebase RTDB (for realtime analytics)
       try {
         await FirebaseDatabase.instance
             .ref('ratings/riders')

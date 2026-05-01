@@ -969,44 +969,14 @@ class _NewDriverInstructionsScreenState
                 children: [
                   _buildPage0(context),
                   _buildPage1(context),
-                  _buildPage(
-                    icon: Icons.star_rounded,
-                    iconColor: _gold,
-                    title: S.of(context).deliver5StarService,
-                    subtitle: S.of(context).makeRideMemorableSubtitle,
-                    items: [
-                      _InstructionItem(
-                        icon: Icons.waving_hand_rounded,
-                        color: const Color(0xFFE8C547),
-                        title: S.of(context).greetEveryRider,
-                        body: S.of(context).greetEveryRiderBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.route_rounded,
-                        color: const Color(0xFF4CAF50),
-                        title: S.of(context).efficientRoutes,
-                        body: S.of(context).efficientRoutesBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.tune_rounded,
-                        color: const Color(0xFF9C27B0),
-                        title: S.of(context).respectPreferences,
-                        body: S.of(context).respectPreferencesBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.star_rounded,
-                        color: const Color(0xFFFF9800),
-                        title: S.of(context).goExtraMile,
-                        body: S.of(context).goExtraMileBody,
-                      ),
-                    ],
-                  ),
+                  _buildPage2(context),
                 ],
               ),
             ),
 
-            // ── "Let's Go" button (appears after viewing all pages) ──
-            if (_viewedAllPages)
+            // ── "Let's Go" button (appears after viewing all pages, but NOT on page 2
+            // because Page 2 has its own embedded button) ──
+            if (_viewedAllPages && _currentPage != 2)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: SizedBox(
@@ -1096,6 +1066,18 @@ class _NewDriverInstructionsScreenState
 
   Widget _buildPage1(BuildContext context) {
     return const _Page1();
+  }
+
+  Widget _buildPage2(BuildContext context) {
+    return _Page2(
+      onLetsGo: () {
+        HapticService.mediumImpact();
+        Navigator.of(context).pushAndRemoveUntil(
+          slideFromRightRoute(const DriverProfilePhotoScreen()),
+          (_) => false,
+        );
+      },
+    );
   }
 
   Widget _buildPage({
@@ -1836,6 +1818,347 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin {
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dot({required bool active}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: active ? 24 : 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: active ? _gold : Colors.white.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(3),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAGE 2 — "Deliver 5-Star Service" (full-bleed background redesign)
+// ═══════════════════════════════════════════════════════════════
+
+class _Page2 extends StatefulWidget {
+  final VoidCallback onLetsGo;
+  const _Page2({required this.onLetsGo});
+
+  @override
+  State<_Page2> createState() => _Page2State();
+}
+
+class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin {
+  static const _gold = Color(0xFFD4AF37);
+  static const _goldDark = Color(0xFFB8960C);
+  late final AnimationController _animCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _fade(double begin, double end) =>
+      Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Animation<Offset> _slideUp(double begin, double end) =>
+      Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Widget _animatedCard({
+    required double fadeBegin,
+    required double fadeEnd,
+    required double slideBegin,
+    required double slideEnd,
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return FadeTransition(
+      opacity: _fade(fadeBegin, fadeEnd),
+      child: SlideTransition(
+        position: _slideUp(slideBegin, slideEnd),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: _gold, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      description,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.5,
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Background image ──
+        Image.asset(
+          'assets/images/five_star_service.png',
+          fit: BoxFit.cover,
+        ),
+        // ── Dark gradient overlay ──
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.3),
+                Colors.black.withValues(alpha: 0.85),
+              ],
+            ),
+          ),
+        ),
+        // ── Content ──
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
+                // ── Header icon ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.2),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _animCtrl,
+                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                      ),
+                    ),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _gold, width: 2),
+                        color: Colors.black.withValues(alpha: 0.5),
+                      ),
+                      child: const Icon(
+                        Icons.star_rounded,
+                        color: _gold,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // ── Title + Subtitle pill ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.3),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'DELIVER 5-STAR SERVICE',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _gold,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'MAKE EVERY RIDE MEMORABLE',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 3.0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // ── Cards ──
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _animatedCard(
+                        fadeBegin: 0.2, fadeEnd: 0.5,
+                        slideBegin: 0.2, slideEnd: 0.5,
+                        icon: Icons.waving_hand_rounded,
+                        title: 'GREET EVERY RIDER',
+                        description: 'WELCOME RIDERS BY NAME',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.35, fadeEnd: 0.65,
+                        slideBegin: 0.35, slideEnd: 0.65,
+                        icon: Icons.location_on_rounded,
+                        title: 'EFFICIENT ROUTES',
+                        description: 'FOLLOW GPS NAVIGATION AND TAKE THE FASTEST ROUTE',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.5, fadeEnd: 0.8,
+                        slideBegin: 0.5, slideEnd: 0.8,
+                        icon: Icons.volume_up_rounded,
+                        title: 'RESPECT PREFERENCES',
+                        description: 'KEEP MUSIC LOW AND ASK FOR PREFERENCES',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.65, fadeEnd: 0.95,
+                        slideBegin: 0.65, slideEnd: 0.95,
+                        icon: Icons.star_rounded,
+                        title: 'GO THE EXTRA MILE',
+                        description: 'HELP WITH LUGGAGE AND OFFER A PREMIUM EXPERIENCE',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ── Dots + Let's Go button ──
+                FadeTransition(
+                  opacity: _fade(0.8, 1.0),
+                  child: Column(
+                    children: [
+                      // 3 dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _dot(active: false),
+                          const SizedBox(width: 8),
+                          _dot(active: false),
+                          const SizedBox(width: 8),
+                          _dot(active: true),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Let's Go button
+                      GestureDetector(
+                        onTap: widget.onLetsGo,
+                        child: Container(
+                          width: double.infinity,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_gold, _goldDark],
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _gold.withValues(alpha: 0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                "Let's Go!",
+                                style: TextStyle(
+                                  color: Color(0xFF0A0A0A),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                color: Color(0xFF0A0A0A),
+                                size: 22,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),

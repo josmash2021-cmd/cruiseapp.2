@@ -1033,11 +1033,19 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                   } catch (_) {}
                 }
               }
-              // Car annotation is DESTROYED on style reload — Mapbox clears all
-              // annotations when the style changes. We MUST null out _carAnnot
-              // so _updateCarSmooth() recreates it instead of updating a ghost.
+              // Annotation managers are DESTROYED on style reload — Mapbox
+              // clears all annotations AND managers when the style changes.
+              // We MUST null them out so they're recreated in onMapCreated.
               _carAnnot = null;
               _carAnnotCreating = false;
+              _carAnnotMgr = null;
+              _pointAnnotMgr = null;
+              _polylineAnnotMgr = null;
+              _pickupAnnot = null;
+              _dropoffAnnot = null;
+              _remainingRouteAnnot = null;
+              _dimmedRouteAnnot = null;
+              _approachAnnot = null;
 
               // FIX: After style reload, re-fit bounds to ensure the route is
               // still visible. Style reloads can reset the camera position.

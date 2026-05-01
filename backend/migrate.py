@@ -115,7 +115,7 @@ MIGRATIONS = [
     ("rider_payment_methods", "created_at", "TIMESTAMP WITH TIME ZONE"),
     ("users", "cruise_level", "VARCHAR(20) DEFAULT 'bronze'"),
     ("users", "active_session_id", "VARCHAR(64)"),
-    ("users", "average_rating", "FLOAT DEFAULT 5.0"),
+    ("users", "average_rating", "FLOAT"),
     ("trips", "guest_first_name", "VARCHAR(100)"),
     ("trips", "guest_last_name", "VARCHAR(100)"),
     ("trips", "guest_phone", "VARCHAR(30)"),

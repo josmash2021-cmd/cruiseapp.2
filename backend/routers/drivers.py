@@ -1335,8 +1335,10 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
 
     # Recompute cruise level from live stats (self-healing: fixes stale DB values)
     from cruise_level_agent import compute_tier
-    effective_rating = round(avg_rating, 2) if avg_rating else 5.0
-    correct_level = compute_tier(completed, float(effective_rating))
+    effective_rating = round(avg_rating, 2) if avg_rating is not None else None
+    # compute_tier requires a float; use 0.0 for new drivers (bronze has no rating req)
+    _tier_rating = effective_rating if effective_rating is not None else 0.0
+    correct_level = compute_tier(completed, float(_tier_rating))
 
     # Fetch stored cruise level and update DB if it drifted
     driver_r = await db.execute(select(User).where(User.id == driver_id))
@@ -1347,8 +1349,9 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
             driver_obj.cruise_level = correct_level
             await db.commit()
             logger.info(
-                "get_driver_stats self-healed cruise_level for driver %d: %s -> %s (%d trips, %.2f rating)",
-                driver_id, stored_level, correct_level, completed, float(effective_rating),
+                "get_driver_stats self-healed cruise_level for driver %d: %s -> %s (%d trips, %s rating)",
+                driver_id, stored_level, correct_level, completed,
+                f"{effective_rating:.2f}" if effective_rating is not None else "none",
             )
         except Exception as e:
             logger.warning("get_driver_stats failed to persist cruise_level for driver %d: %s", driver_id, e)

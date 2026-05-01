@@ -183,7 +183,7 @@ class User(Base):
     background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
-    average_rating = Column(Float, default=5.0)
+    average_rating = Column(Float, nullable=True, default=None)
     # Set on signup if the new user redeemed someone else's referral code.
     referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     # Stripe Customer ID — created lazily the first time the rider tries

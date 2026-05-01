@@ -274,6 +274,15 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // ── Chat message tap ──
+  if (type == 'chat_message') {
+    final tripId = int.tryParse(message.data['trip_id'] ?? '');
+    if (tripId != null) {
+      _navigateToChat(tripId);
+    }
+    return;
+  }
+
   // ── Account approval / rejection taps ──
   if (type == 'driver_approved' || type == 'rider_approved') {
     _handleAccountApproved(type == 'driver_approved');
@@ -334,6 +343,30 @@ void _navigateToScheduledTracking(int tripId) {
     ));
   }).catchError((e) {
     debugPrint('[FCM] Failed to fetch scheduled trip $tripId: $e');
+  });
+}
+
+/// Navigate to ChatScreen from FCM tap.
+void _navigateToChat(int tripId) {
+  final nav = _navigatorKey.currentState;
+  if (nav == null) return;
+
+  ApiService.getTrip(tripId).then((trip) {
+    final driverName = (trip['driver_name'] ?? 'Driver').toString();
+    final driverPhone = (trip['driver_phone'] ?? '').toString();
+    final driverPhoto = trip['driver_photo_url']?.toString();
+
+    nav.push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        recipientName: driverName,
+        recipientPhone: driverPhone.isNotEmpty ? driverPhone : null,
+        tripId: tripId,
+        avatarInitial: driverName.isNotEmpty ? driverName[0] : 'D',
+      ),
+    ));
+    debugPrint('[FCM] Navigated to ChatScreen for trip $tripId');
+  }).catchError((e) {
+    debugPrint('[FCM] Failed to fetch trip $tripId for chat navigation: $e');
   });
 }
 

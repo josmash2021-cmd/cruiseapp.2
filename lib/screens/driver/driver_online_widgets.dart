@@ -101,7 +101,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           _pointAnnotMgr = null;
           _pinAnnotMgr = null;
           _carAnnot = null;
+          _carAnnotGen = 0;
           _goldDotAnnot = null;
+          _goldDotAnnotGen = 0;
           _pickupAnnot = null;
           _dropoffAnnot = null;
           _prevDriverAnnot = null;

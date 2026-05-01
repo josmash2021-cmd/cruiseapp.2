@@ -37,11 +37,14 @@ class SmoothMotion {
 
   /// How much of the residual lat/lng gap to close per second via
   /// proportional correction. Higher = more responsive, follows GPS closer.
-  static const double _correctionPerSec = 1.8;
+  /// Lowered from 1.8 → 1.2 for silkier gliding — less visible snap to raw GPS.
+  static const double _correctionPerSec = 1.2;
 
   /// Freeze velocity after this many seconds without a fresh GPS fix.
-  /// 2 s is enough for urban GPS shadows while keeping responsiveness.
-  static const double _maxExtrapolationSec = 2.0;
+  /// 3.5 s allows the dot to keep gliding through brief urban GPS shadows
+  /// (tunnels, buildings) without stalling, while still freezing if GPS
+  /// is truly lost.
+  static const double _maxExtrapolationSec = 3.5;
 
   double? get lat => _lat;
   double? get lng => _lng;

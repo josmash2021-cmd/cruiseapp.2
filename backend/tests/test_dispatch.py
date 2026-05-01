@@ -10,10 +10,8 @@ async def test_dispatch_assigns_driver(client: AsyncClient, test_trip, test_driv
     """POST /admin/dispatch assigns the nearest online driver to the trip."""
     from tests.conftest import _make_auth_headers
 
-    headers = {
-        **_make_auth_headers(),
-        "x-dispatch-key": "test-dispatch-key",
-    }
+    # Dispatch endpoints require the DISPATCH_API_KEY as x_api_key for HMAC signing
+    headers = _make_auth_headers(api_key="test-dispatch-key")
 
     resp = await client.post(
         "/admin/dispatch",
@@ -32,10 +30,8 @@ async def test_dispatch_missing_trip(client: AsyncClient, test_driver):
     """POST /admin/dispatch with non-existent trip returns error."""
     from tests.conftest import _make_auth_headers
 
-    headers = {
-        **_make_auth_headers(),
-        "x-dispatch-key": "test-dispatch-key",
-    }
+    # Dispatch endpoints require the DISPATCH_API_KEY as x_api_key for HMAC signing
+    headers = _make_auth_headers(api_key="test-dispatch-key")
 
     resp = await client.post(
         "/admin/dispatch",

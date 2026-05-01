@@ -317,8 +317,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false;   // true after first-appearance pop completes
   double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
-  bool _annotUpdateBusy = false; // prevents overlapping annotation updates
+  bool _annotUpdateBusy = false; // prevents overlapping annotation update() IPC calls
+  bool _annotCreateBusy = false; // prevents parallel create/delete (stricter than update)
   bool _isClearingAnnotations = false; // prevents create during clear
+  // Monotonically incremented generation counter captured when each
+  // annotation is created. If _mapGeneration has moved on, the annotation
+  // is stale (native map was recreated) and must NOT be touched.
+  int _goldDotAnnotGen = 0;
+  int _carAnnotGen = 0;
 
   // -- Turn-by-turn navigation --
   final NavigationService _navService = NavigationService();

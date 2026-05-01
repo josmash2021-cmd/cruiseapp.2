@@ -382,6 +382,20 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore accept sync failed: %s", e)
+    # Socket.io: notify rider that driver was assigned (real-time update)
+    try:
+        _safe_create_task(notify_driver_assigned(
+            trip_id=trip.id,
+            driver_id=driver_id,
+            driver_info={
+                "driver_name": f"{driver.first_name or ''} {driver.last_name or ''}".strip() or "Your driver",
+                "driver_phone": driver.phone or "",
+                "status": "accepted",
+            },
+        ))
+    except Exception as _socket_err:
+        logging.warning("[Socket.io] driver_assigned emit failed on admin accept: %s", _socket_err)
+
     # Send push notification to rider: "Driver assigned!"
     try:
         rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))

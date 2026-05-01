@@ -16,14 +16,19 @@ import math
 import os
 import sys
 
+# Fix psycopg3 async on Windows (ProactorEventLoop incompatibility)
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Allow imports from backend root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import datetime, timezone
-from sqlalchemy import select, update, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-from models.database import get_db, Trip
+from models.database import Trip
+from db_url import resolve_database_url
 
 
 def _haversine(lat1, lng1, lat2, lng2) -> float:
@@ -40,9 +45,24 @@ def _haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 async def backfill():
-    async for db in get_db():
-        db: AsyncSession
+    # Use the same URL resolution as the app (strips bad query params)
+    database_url = resolve_database_url(async_driver=True)
+    if not database_url or database_url.startswith("sqlite"):
+        print("[ERROR] No PostgreSQL database URL resolved. Set DATABASE_URL env var.")
+        return
 
+    # Mask password for logging
+    safe_url = database_url
+    if "@" in safe_url:
+        _pre, _post = safe_url.split("@", 1)
+        _scheme_user = _pre.rsplit(":", 1)[0] if ":" in _pre.rsplit("//", 1)[-1] else _pre
+        safe_url = f"{_scheme_user}:***@{_post}"
+    print(f"[DB] Connecting to: {safe_url}")
+
+    engine = create_async_engine(database_url, echo=False)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+    async with SessionLocal() as db:
         # Find completed trips with NULL distance or NULL duration
         result = await db.execute(
             select(Trip).where(
@@ -58,10 +78,11 @@ async def backfill():
         trips = result.scalars().all()
 
         if not trips:
-            print("✅ No trips need backfilling. All completed trips have distance and duration.")
+            print("[OK] No trips need backfilling. All completed trips have distance and duration.")
+            await engine.dispose()
             return
 
-        print(f"📝 Found {len(trips)} completed trip(s) with missing distance/duration")
+        print(f"[INFO] Found {len(trips)} completed trip(s) with missing distance/duration")
 
         updated = 0
         skipped = 0
@@ -78,15 +99,30 @@ async def backfill():
 
             # Calculate duration from timestamps
             duration_minutes = None
-            if trip.completed_at:
+            end_time = trip.completed_at
+            # Edge case: status is 'completed' but completed_at is NULL
+            # Use updated_at only if it's reasonably close to started_at
+            # (within 3 hours), otherwise the updated_at was bumped by some
+            # unrelated later write.
+            if end_time is None and trip.status == "completed" and trip.updated_at:
                 if trip.started_at:
-                    delta = trip.completed_at - trip.started_at
+                    delta = trip.updated_at - trip.started_at
+                    if delta.total_seconds() <= 3 * 3600:  # 3 hours max
+                        end_time = trip.updated_at
+                elif trip.created_at:
+                    delta = trip.updated_at - trip.created_at
+                    if delta.total_seconds() <= 3 * 3600:
+                        end_time = trip.updated_at
+            if end_time:
+                if trip.started_at:
+                    delta = end_time - trip.started_at
                     duration_minutes = max(1, int(delta.total_seconds() / 60))
                 elif trip.created_at:
-                    delta = trip.completed_at - trip.created_at
+                    delta = end_time - trip.created_at
                     duration_minutes = max(1, int(delta.total_seconds() / 60))
-                elif distance_miles:
-                    duration_minutes = max(1, int(distance_miles * 2))
+            # Fallback: estimate from distance at ~2.5 min/mile (city driving)
+            if duration_minutes is None and distance_miles:
+                duration_minutes = max(3, int(distance_miles * 2.5))
 
             # Apply updates only if we computed values
             if distance_miles is not None and trip.distance is None:
@@ -97,18 +133,19 @@ async def backfill():
             if distance_miles is not None or duration_minutes is not None:
                 updated += 1
                 print(
-                    f"  → Trip {trip.id}: distance={trip.distance} mi, "
+                    f"  [UPDATED] Trip {trip.id}: distance={trip.distance} mi, "
                     f"duration={trip.duration} min"
                 )
             else:
                 skipped += 1
                 print(
-                    f"  ⚠ Trip {trip.id}: SKIPPED — no coords or timestamps available"
+                    f"  [SKIPPED] Trip {trip.id}: no coords or timestamps available"
                 )
 
         await db.commit()
-        print(f"\n✅ Done: {updated} trip(s) updated, {skipped} skipped.")
-        break  # get_db() is an async generator; only need one session
+        print(f"\n[DONE] {updated} trip(s) updated, {skipped} skipped.")
+
+    await engine.dispose()
 
 
 if __name__ == "__main__":

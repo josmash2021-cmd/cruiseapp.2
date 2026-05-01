@@ -1631,6 +1631,10 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     if not trip:
         raise HTTPException(404, "Trip not found")
 
+    # Only allow rating completed or cancelled trips
+    if trip.status not in ("completed", "cancelled"):
+        raise HTTPException(400, "Trip must be completed before rating")
+
     # Determine who we're rating
     to_user_id = trip.driver_id if user.id == trip.rider_id else trip.rider_id
     if not to_user_id:

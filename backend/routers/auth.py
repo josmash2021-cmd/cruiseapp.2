@@ -334,6 +334,17 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     # Successful login ï¿½ clear failures
     _clear_login_failures(client_ip)
 
+    # Apple App Store review bypass: skip OTP, return tokens directly
+    if user.email and user.email.lower() in ("applereview@cruiseride.com", "applereviewdriver@cruiseride.com"):
+        token = await _create_driver_aware_token_from_user(user, db)
+        refresh = _create_refresh_token(user.id)
+        return {
+            "access_token": token,
+            "refresh_token": refresh,
+            "token_type": "bearer",
+            "user": _user_dict(user),
+        }
+
     login_token = _create_login_token(user.id)
     return {
         "login_token": login_token,

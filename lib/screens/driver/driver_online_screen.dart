@@ -519,6 +519,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _startPolling(); // _startPolling already calls _connectSse()
       _startClock();
       _startEarningsRefresh();
+      // On Android the PlatformView is destroyed in background and recreated
+      // on resume. onMapCreated resets annotation managers, but if the map
+      // was NOT recreated (warm resume), old annotations may still exist.
+      // Clear everything after a short delay so the map is ready, then redraw
+      // the driver dot. This prevents duplicate gold dots after resume.
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        _clearAllAnnotations().then((_) {
+          if (mounted) _updateDriverAnnotation();
+        });
+      });
     }
   }
 
@@ -600,10 +611,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       }
       final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
       if (oid.isEmpty || _routeCache.containsKey(oid)) continue;
-      final pLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
-      final pLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
-      final dLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
-      final dLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+      final pLat = _safeDouble(offer['pickup_lat']);
+      final pLng = _safeDouble(offer['pickup_lng']);
+      final dLat = _safeDouble(offer['dropoff_lat']);
+      final dLng = _safeDouble(offer['dropoff_lng']);
       if (pLat == 0 || pLng == 0 || dLat == 0 || dLng == 0) continue;
       final pickupLL  = LatLng(pLat, pLng);
       final dropoffLL = LatLng(dLat, dLng);

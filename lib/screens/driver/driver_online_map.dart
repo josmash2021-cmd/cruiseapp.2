@@ -290,7 +290,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
     for (final annot in [_pickupAnnot, _dropoffAnnot, _prevDriverAnnot, _prevPickupAnnot, _prevDropoffAnnot]) {
-      if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+      if (annot != null) {
+        try { await pointMgr.delete(annot); } catch (_) {}
+      }
     }
     _pickupAnnot = null;
     _dropoffAnnot = null;
@@ -306,11 +308,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _clearRouteAnnotation();
       // Clear pickup/dropoff/preview pins
       await _clearPickupDropoffAnnotations();
-      // Clear driver car / gold dot annotations on the main point manager
+      // Clear driver car / gold dot annotations on the main point manager.
+      // If the manager is stale (map recreated), delete may throw — swallow
+      // and null the reference so the next tick recreates on the fresh map.
       final pointMgr = _pointAnnotMgr;
       if (pointMgr != null) {
         for (final annot in [_carAnnot, _goldDotAnnot]) {
-          if (annot != null) try { await pointMgr.delete(annot); } catch (_) {}
+          if (annot != null) {
+            try { await pointMgr.delete(annot); } catch (_) {}
+          }
         }
       }
       _carAnnot = null;
@@ -402,10 +408,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
     _isCardAnimating = true;
 
-    final pickupLat  = (offer['pickup_lat']  as num?)?.toDouble() ?? 0;
-    final pickupLng  = (offer['pickup_lng']  as num?)?.toDouble() ?? 0;
-    final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
-    final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+    final pickupLat  = _safeDouble(offer['pickup_lat']);
+    final pickupLng  = _safeDouble(offer['pickup_lng']);
+    final dropoffLat = _safeDouble(offer['dropoff_lat']);
+    final dropoffLng = _safeDouble(offer['dropoff_lng']);
     final pickupLL  = LatLng(pickupLat,  pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final driverPos = _pos ?? pickupLL; // fallback when GPS hasn't resolved yet

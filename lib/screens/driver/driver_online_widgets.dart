@@ -87,6 +87,29 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         onMapCreated: (ctrl) {
           _map = ctrl;
           _lastStyleDark = isDark;
+          // CRITICAL: reset all annotation references before creating new managers.
+          // On Android the PlatformView (SurfaceView) is destroyed when the app
+          // goes to background and recreated on resume. This triggers onMapCreated
+          // again with a fresh native map. If we keep stale annotation references
+          // pointing to the old map's managers, _updateDriverAnnotation() will
+          // try to update/delete non-existent native objects, silently fail,
+          // then create duplicates on the new map.
+          _polylineAnnotMgr = null;
+          _pointAnnotMgr = null;
+          _pinAnnotMgr = null;
+          _carAnnot = null;
+          _goldDotAnnot = null;
+          _pickupAnnot = null;
+          _dropoffAnnot = null;
+          _prevDriverAnnot = null;
+          _prevPickupAnnot = null;
+          _prevDropoffAnnot = null;
+          _routeAnnot = null;
+          _previewPickupAnnot = null;
+          _previewDropoffAnnot = null;
+          _dotPopDone = false;
+          _dotPopScale = 0.0;
+
           // Move ALL heavy annotation manager creation to a background
           // microtask so the map tiles render FIRST. The driver sees the
           // map immediately; annotations (gold dot, route lines) appear
@@ -899,6 +922,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
+  /// Safely extract a finite double from dynamic backend data.
+  /// Rejects null, NaN, and Infinity so downstream calculations never throw.
+  double _safeDouble(dynamic value, {double fallback = 0}) {
+    if (value == null) return fallback;
+    final d = (value as num).toDouble();
+    if (d.isNaN || d.isInfinite) return fallback;
+    return d;
+  }
+
   /// Decode a Google/OSRM polyline string into a list of [lng,lat] coordinate pairs.
   List<List<double>> _decodePolylineCoords(String encoded) {
     final pts = <List<double>>[];
@@ -931,12 +963,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     LatLng dropoff,
   ) async {
     final token = MapboxConfig.accessToken;
-    final dLng = driver.longitude.toStringAsFixed(6);
-    final dLat = driver.latitude.toStringAsFixed(6);
-    final pLng = pickup.longitude.toStringAsFixed(6);
-    final pLat = pickup.latitude.toStringAsFixed(6);
-    final oLng = dropoff.longitude.toStringAsFixed(6);
-    final oLat = dropoff.latitude.toStringAsFixed(6);
+    // Guard against NaN/Infinity coordinates that crash toStringAsFixed
+    double safeCoord(double v) => v.isFinite ? v : 0.0;
+    final dLng = safeCoord(driver.longitude).toStringAsFixed(6);
+    final dLat = safeCoord(driver.latitude).toStringAsFixed(6);
+    final pLng = safeCoord(pickup.longitude).toStringAsFixed(6);
+    final pLat = safeCoord(pickup.latitude).toStringAsFixed(6);
+    final oLng = safeCoord(dropoff.longitude).toStringAsFixed(6);
+    final oLat = safeCoord(dropoff.latitude).toStringAsFixed(6);
 
     // Fetch two legs from OSRM
     List<List<double>> allPts = [];
@@ -1012,25 +1046,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const deepBlack = Color(0xFF0F0F0F);
     const mutedGray = Color(0xFF9A9A9A);
 
-    // Parse offer data.
+    // Parse offer data with NaN/Infinity guards — backend can send malformed
+    // coordinates that crash distance calculations (ceil/toStringAsFixed on NaN).
     // Rating display rules (backend-driven via rider_rides_count):
     //   rider_is_new == true                          -> "New rider"
     //   ratingsCount > 0 && rating > 0                -> show star rating
     //   else                                          -> show nothing
-    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
-    final ratingsCount =
-        (offer['rider_ratings_count'] as num?)?.toInt() ?? 0;
+    final rating = _safeDouble(offer['rider_rating']);
+    final ratingsCount = _safeDouble(offer['rider_ratings_count']).toInt();
     final riderIsNew = offer['rider_is_new'] == true;
     final hasRating = !riderIsNew && ratingsCount > 0 && rating > 0;
-    final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
+    final fare = _safeDouble(offer['fare']);
     final rawPickupAddr =
         (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
     final dropoffAddr =
         (offer['dropoff_address'] as String?) ?? S.of(context).dropoffFallback;
-    final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
-    final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
-    final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
-    final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+    final pickupLat = _safeDouble(offer['pickup_lat']);
+    final pickupLng = _safeDouble(offer['pickup_lng']);
+    final dropoffLat = _safeDouble(offer['dropoff_lat']);
+    final dropoffLng = _safeDouble(offer['dropoff_lng']);
     final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
@@ -1059,20 +1093,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       tripDistMi = tripDistKm * 0.621371;
     } else {
       if (_pos != null) {
-        distToPickupKm = _hav(_pos!, pickupLL);
-        etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-        distToPickupMi = distToPickupKm * 0.621371;
+        var dtp = _hav(_pos!, pickupLL);
+        // Guard against NaN from _hav with invalid coordinates
+        if (!dtp.isFinite) dtp = 0;
+        distToPickupKm = dtp;
+        etaToPickup = (dtp * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        distToPickupMi = dtp * 0.621371;
       } else {
         distToPickupKm = 0;
         etaToPickup = 1;
         distToPickupMi = 0;
       }
-      tripDistKm = _hav(pickupLL, dropoffLL);
-      tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      tripDistMi = tripDistKm * 0.621371;
+      var td = _hav(pickupLL, dropoffLL);
+      if (!td.isFinite) td = 0;
+      tripDistKm = td;
+      tripEta = (td * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripDistMi = td * 0.621371;
     }
 
-    if (_pos != null) {
+    if (_pos != null && pickupLat != 0 && pickupLng != 0 && dropoffLat != 0 && dropoffLng != 0) {
       _offerMapUrlCache.putIfAbsent(
         offerId,
         () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
@@ -1752,20 +1791,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final offer = _previewingOffer!;
     final name = (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final rating = (offer['rider_rating'] as num?)?.toDouble() ?? 0;
-    final ratingsCount =
-        (offer['rider_ratings_count'] as num?)?.toInt() ?? 0;
+    final rating = _safeDouble(offer['rider_rating']);
+    final ratingsCount = _safeDouble(offer['rider_ratings_count']).toInt();
     final riderIsNew = offer['rider_is_new'] == true;
     final hasRating = !riderIsNew && ratingsCount > 0 && rating > 0;
-    final fare = (offer['fare'] as num?)?.toDouble() ?? 0;
+    final fare = _safeDouble(offer['fare']);
     final rawPickupAddr2 =
         (offer['pickup_address'] as String?) ?? S.of(context).pickupFallback;
     final dropoffAddr =
         (offer['dropoff_address'] as String?) ?? S.of(context).dropoffFallback;
-    final pickupLat = (offer['pickup_lat'] as num?)?.toDouble() ?? 0;
-    final pickupLng = (offer['pickup_lng'] as num?)?.toDouble() ?? 0;
-    final dropoffLat = (offer['dropoff_lat'] as num?)?.toDouble() ?? 0;
-    final dropoffLng = (offer['dropoff_lng'] as num?)?.toDouble() ?? 0;
+    final pickupLat = _safeDouble(offer['pickup_lat']);
+    final pickupLng = _safeDouble(offer['pickup_lng']);
+    final dropoffLat = _safeDouble(offer['dropoff_lat']);
+    final dropoffLng = _safeDouble(offer['dropoff_lng']);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
@@ -1786,15 +1824,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     } else {
       if (_pos != null) {
         final distToPickupKm = _hav(_pos!, pickupLL);
-        etaToPickup = (distToPickupKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-        distToPickupMi = distToPickupKm * 0.621371;
+        final safeDist = distToPickupKm.isFinite ? distToPickupKm : 0.0;
+        etaToPickup = (safeDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        distToPickupMi = safeDist * 0.621371;
       } else {
         etaToPickup = 1;
         distToPickupMi = 0;
       }
       final tripDistKm = _hav(pickupLL, dropoffLL);
-      tripEta = (tripDistKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      tripDistMi = tripDistKm * 0.621371;
+      final safeTripDist = tripDistKm.isFinite ? tripDistKm : 0.0;
+      tripEta = (safeTripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripDistMi = safeTripDist * 0.621371;
     }
 
     const cCardBg = Color(0xFF1A1A1F); // ignore: unused_local_variable

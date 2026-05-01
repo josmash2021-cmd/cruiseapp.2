@@ -1317,7 +1317,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
     _preFetchOfferRoutes(filtered);
-    if (isNewFirstOffer) {
+    // Only auto-trigger preview when not already animating — prevents race
+    // where a rapid second offer interrupts the first preview mid-animation,
+    // leaving orphaned annotations on the map.
+    if (isNewFirstOffer && !_isCardAnimating) {
       _autoTriggerRoutePreview(filtered.first);
     }
   }

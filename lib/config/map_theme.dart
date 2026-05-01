@@ -21,7 +21,7 @@ class MapTheme {
   static const String _building   = '#1A2B4D';   // lighter navy — visible against _navy
   static const String _building3D = '#223A66';   // even lighter for 3D extrusion tops
   static const String _water      = '#0D1F3F';   // lighter than _navy, visible
-  static const String _park       = '#0F2E1F';   // dark green — distinct from navy
+  static const String _park       = '#0A1128';   // navy — blends into background, no green
   static const String _poiText    = '#A8B0C4';   // light grey-blue, readable on dark
   static const String _poiIcon    = '#8A94A8';   // slightly darker for icons
   static const String _placeLabel = '#C4CCE0';   // white-ish for city/neighborhood names

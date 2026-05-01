@@ -393,38 +393,66 @@ void main() async {
         }
       };
 
-      // M1: Graceful error widget in release mode — no blocking modal.
-      // Shows a small inline error instead of a full-screen "restart app" message.
-      // Widget build errors are non-fatal; the app can often recover by rebuilding
-      // the widget tree (e.g., after a network hiccup or brief memory pressure).
+      // M1: Graceful error widget in release mode — NON-BLOCKING.
+      // Widget build errors are almost always transient (null during async
+      // load, NaN from backend, brief memory pressure). Showing a full-screen
+      // modal blocks the user from interacting with the UI and prevents the
+      // widget from self-healing on the next rebuild.
+      //
+      // Strategy:
+      //   - First 5 errors in 10s → return SizedBox.shrink() so the tree
+      //     rebuilds cleanly on the next frame. Log to Crashlytics.
+      //   - >5 errors in 10s → something is genuinely broken (infinite loop,
+      //     memory exhaustion). Show the blocking modal as last resort.
       if (kReleaseMode) {
+        final errorTimes = <DateTime>[];
         ErrorWidget.builder = (FlutterErrorDetails details) {
-          return Material(
-            color: Colors.black.withValues(alpha: 0.85),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.white38, size: 32),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Temporary glitch',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'The app will recover automatically.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-                    ),
-                  ],
+          final now = DateTime.now();
+          errorTimes.removeWhere((t) => now.difference(t).inSeconds > 10);
+          errorTimes.add(now);
+
+          // Always log the error
+          FirebaseCrashlytics.instance.recordError(
+            details.exception,
+            details.stack,
+            fatal: false,
+            reason: 'Build error: ${details.exception.toString().substring(0, details.exception.toString().length.clamp(0, 200))}',
+          );
+
+          // Fatal threshold: >5 build errors in 10 seconds
+          if (errorTimes.length > 5) {
+            return Material(
+              color: Colors.black.withValues(alpha: 0.92),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.white38, size: 40),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Something went wrong',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white70, fontSize: 17, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Please restart the app.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
+            );
+          }
+
+          // Non-fatal: invisible placeholder. The framework will rebuild
+          // this subtree on the next frame. If the error was transient
+          // (e.g., null during offer card render), the user sees nothing.
+          return const SizedBox.shrink();
         };
       }
 

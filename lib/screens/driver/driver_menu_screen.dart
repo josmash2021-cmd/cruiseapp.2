@@ -52,6 +52,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   String _rating = '—';
   int _completedTrips = 0;
   int _totalTrips = 0;
+  int _ratingsCount = 0;
   double _avgRating = 0;
   String? _photoUrl;
   String? _dispatchPassword;
@@ -173,9 +174,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             final avgRating = rawRating == null
                 ? 0.0
                 : (rawRating as num).toDouble();
+            final ratingsCount = (stats['ratings_count'] as num?)?.toInt() ?? 0;
             setState(() {
               _completedTrips = completed;
               _totalTrips = total;
+              _ratingsCount = ratingsCount;
               _avgRating = avgRating;
               // Show '—' for new drivers instead of '0.0'
               _rating = avgRating <= 0 ? '—' : avgRating.toStringAsFixed(1);
@@ -558,18 +561,58 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                           ),
                         ),
                       const SizedBox(width: 10),
-                      // Rating — visual stars
+                      // Rating — visual stars + "New" badge for < 5 ratings
                       if (_profileLoaded) ...[
-                        _buildStarRating(_rating),
-                        const SizedBox(width: 5),
-                        Text(
-                          _rating,
-                          style: TextStyle(
-                            color: dc.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        if (_ratingsCount == 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFE8C547).withValues(alpha: 0.4),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Text(
+                              'New Driver',
+                              style: TextStyle(
+                                color: Color(0xFFE8C547),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                        else ...[
+                          _buildStarRating(_rating),
+                          const SizedBox(width: 5),
+                          Text(
+                            _rating,
+                            style: TextStyle(
+                              color: dc.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
+                          if (_ratingsCount < 5) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'New',
+                                style: TextStyle(
+                                  color: const Color(0xFFE8C547).withValues(alpha: 0.9),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ] else
                         Container(
                           height: 14, width: 60,

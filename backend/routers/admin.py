@@ -1280,8 +1280,62 @@ async def admin_assign_driver(
         trip.driver_id = driver_id
         trip.status = "requested"
         await db.commit()
+        await db.refresh(trip)
         
         logging.info("[Admin] Manually assigned trip %d to driver %d", trip_id, driver_id)
+        
+        # ── Real-time sync: Socket.IO + FCM + SSE ──
+        try:
+            _safe_create_task(emit_trip_status(
+                trip_id=trip.id,
+                status="requested",
+                extra={"driver_id": driver_id},
+            ))
+        except Exception as _socket_err:
+            logging.warning("[Socket.io] trip_status emit failed on admin assign: %s", _socket_err)
+        
+        try:
+            _safe_create_task(notify_driver_assigned(
+                trip_id=trip.id,
+                driver_id=driver_id,
+                driver_info={
+                    "driver_name": f"{driver.first_name or ''} {driver.last_name or ''}".strip() or "Your driver",
+                    "driver_phone": driver.phone or "",
+                    "status": "requested",
+                },
+            ))
+        except Exception as _socket_err:
+            logging.warning("[Socket.io] driver_assigned emit failed on admin assign: %s", _socket_err)
+        
+        try:
+            from services.event_bus import event_bus as _ev_bus
+            _safe_create_task(_ev_bus.push_trip_update(trip.id, {
+                "status": "requested",
+                "trip_id": trip.id,
+                "driver_id": driver_id,
+            }))
+        except Exception as _sse_err:
+            logging.warning("[SSE] trip update push failed on admin assign: %s", _sse_err)
+        
+        try:
+            rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_res.scalar_one_or_none()
+            if rider and rider.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    rider.fcm_token,
+                    "Driver Assigned",
+                    f"{driver.first_name} has been assigned to your ride!",
+                    data={"type": "driver_assigned", "trip_id": str(trip.id)},
+                ))
+            if driver.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    driver.fcm_token,
+                    "New Assignment",
+                    "You have been assigned a new ride. Open the app to accept.",
+                    data={"type": "new_assignment", "trip_id": str(trip.id)},
+                ))
+        except Exception as _fcm_err:
+            logging.warning("[FCM] push failed on admin assign: %s", _fcm_err)
         
         return {
             "status": "assigned",

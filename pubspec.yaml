@@ -2,7 +2,7 @@ name: cruise_app
 description: "Cruise — Premium ride-sharing app connecting riders with professional drivers."
 publish_to: 'none'
 
-version: 1.0.3+466
+version: 1.0.3+467
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

@@ -8,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
+import 'payout_methods_screen.dart';
 
 /// Full-featured earnings screen — fetches real data from the backend.
 /// Falls back to empty state if API is unreachable.
@@ -50,6 +51,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   double _pendingBalance = 0.0;
   bool _stripeConnected = false;
   List<Map<String, dynamic>> _cashoutHistory = [];
+
+  // Payout methods
+  bool _hasPayoutMethod = false;
 
   double get _maxDay {
     final m = _dailyEarnings.isEmpty ? 0.0 : _dailyEarnings.reduce(max);
@@ -105,6 +109,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     _listAnim = CurvedAnimation(parent: _listCtrl, curve: Curves.easeOutCubic);
     _fetchEarnings();
     _fetchPayoutData();
+    _fetchPayoutMethods();
   }
 
   Future<void> _fetchEarnings() async {
@@ -203,6 +208,18 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       if (mounted) {
         setState(() => _payoutError = S.of(context).couldNotLoadPayoutData);
       }
+    }
+  }
+
+  Future<void> _fetchPayoutMethods() async {
+    try {
+      final methods = await ApiService.getPayoutMethods();
+      if (!mounted) return;
+      setState(() {
+        _hasPayoutMethod = methods.isNotEmpty;
+      });
+    } catch (e) {
+      debugPrint('[Earnings] _fetchPayoutMethods error: $e');
     }
   }
 
@@ -428,38 +445,96 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Cash Out ──
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        HapticService.mediumImpact();
-                        _showCashOutSheet();
-                      },
-                      icon: const Icon(Icons.account_balance_rounded, size: 20),
-                      label: Text(
-                        S.of(context).cashOut,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                  // ── Cash Out (only when balance > 0 and payout method exists) ──
+                  if (_hasPayoutMethod && _pendingBalance > 0)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          HapticService.mediumImpact();
+                          _showCashOutSheet();
+                        },
+                        icon: const Icon(Icons.account_balance_rounded, size: 20),
+                        label: Text(
+                          S.of(context).cashOut,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 4,
+                          shadowColor: _gold.withValues(alpha: 0.4),
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                    )
+                  else if (!_hasPayoutMethod)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          HapticService.mediumImpact();
+                          _openPayoutMethodsScreen();
+                        },
+                        icon: const Icon(Icons.account_balance_wallet_rounded, size: 20),
+                        label: Text(
+                          S.of(context).configurePayments,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                        elevation: 4,
-                        shadowColor: _gold.withValues(alpha: 0.4),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    )
+                  else
+                    // Has payout method but $0 balance — show disabled Cash Out
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.account_balance_rounded, size: 20),
+                        label: Text(
+                          S.of(context).cashOut,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold.withValues(alpha: 0.2),
+                          foregroundColor: Colors.white.withValues(alpha: 0.4),
+                          disabledBackgroundColor: _gold.withValues(alpha: 0.15),
+                          disabledForegroundColor: Colors.white.withValues(alpha: 0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
                       ),
                     ),
-                  ),
                   const SizedBox(height: 12),
 
                   // ── Stripe Connect (Setup Payouts) ──
-                  _StripeConnectButton(),
+                  _StripeConnectButton(onMethodsChanged: _fetchPayoutMethods),
 
                   const SizedBox(height: 20),
 
@@ -853,11 +928,21 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       isScrollControlled: true,
       builder: (ctx) {
         return _CashOutSheet(
-          available: _total,
+          available: _pendingBalance,
           onCashedOut: _fetchEarnings,
         );
       },
     );
+  }
+
+  void _openPayoutMethodsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PayoutMethodsScreen()),
+    ).then((_) {
+      // Refresh payout method status when returning
+      _fetchPayoutMethods();
+      _fetchPayoutData();
+    });
   }
 }
 
@@ -1417,6 +1502,9 @@ class _OptionCard extends StatelessWidget {
 
 // ── Stripe Connect Setup Payouts Button ──────────────────────────────────────
 class _StripeConnectButton extends StatefulWidget {
+  final VoidCallback? onMethodsChanged;
+  const _StripeConnectButton({this.onMethodsChanged});
+
   @override
   State<_StripeConnectButton> createState() => _StripeConnectButtonState();
 }
@@ -1463,6 +1551,8 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
+      // Also notify parent to refresh payout methods status
+      widget.onMethodsChanged?.call();
     } on ApiException catch (e) {
       debugPrint('[StripeConnectButton] API error: ${e.message}');
       if (mounted) {
@@ -1521,48 +1611,88 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
       );
     }
     if (_connected == true) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A3A2A),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
-            const SizedBox(width: 10),
-            Text(s.payoutsConnected,
-                style: const TextStyle(
-                    color: Color(0xFF34A853),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15)),
-          ],
-        ),
+      return Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A3A2A),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
+                const SizedBox(width: 10),
+                Text(s.payoutsConnected,
+                    style: const TextStyle(
+                        color: Color(0xFF34A853),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Manage payout methods link
+          GestureDetector(
+            onTap: () => _openPayoutMethodsFromContext(context),
+            child: Text(
+              'Manage payout methods',
+              style: TextStyle(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.7),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       );
     }
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: OutlinedButton.icon(
-        onPressed: _loading ? null : _startOnboarding,
-        icon: _loading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.account_balance_wallet_rounded, size: 20),
-        label: Text(_loading ? s.openingLabel : s.configurePayments,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _startOnboarding,
+            icon: _loading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.account_balance_wallet_rounded, size: 20),
+            label: Text(_loading ? s.openingLabel : s.configurePayments,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        // Alternative: go to Payout Methods screen
+        GestureDetector(
+          onTap: () => _openPayoutMethodsFromContext(context),
+          child: Text(
+            'Or manage payout methods',
+            style: TextStyle(
+              color: const Color(0xFFE8C547).withValues(alpha: 0.6),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  void _openPayoutMethodsFromContext(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PayoutMethodsScreen()),
+    ).then((_) => widget.onMethodsChanged?.call());
   }
 }
 

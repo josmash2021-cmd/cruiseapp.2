@@ -19,6 +19,18 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   static const _surface = Color(0xFF141414);
   static const _red = Color(0xFFFF453A);
 
+  /// Format minutes into a human-readable string.
+  ///   ≤ 60  → "45 min"
+  ///   > 60  → "2h 15m"  (hours + minutes)
+  static String _formatDuration(int minutes) {
+    if (minutes <= 0) return '-';
+    if (minutes < 60) return '$minutes min';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}m';
+  }
+
   int _selectedFilter = 0; // 0=All, 1=Completed, 2=Cancelled
 
   bool _loading = true;
@@ -503,7 +515,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                           if (duration > 0)
                             _miniInfo(
                               Icons.schedule_rounded,
-                              '$duration min',
+                              _formatDuration(duration),
                             )
                           else
                             _miniInfo(
@@ -693,7 +705,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                     ),
                     _detailStat(
                       S.of(context).durationLabel,
-                      duration > 0 ? '$duration min' : '-',
+                      _formatDuration(duration),
                     ),
                     if (tip > 0)
                       _detailStat(

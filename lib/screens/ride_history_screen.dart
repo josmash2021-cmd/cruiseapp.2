@@ -20,6 +20,18 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   List<TripHistoryItem> _trips = [];
   bool _loading = true;
 
+  /// Format minutes into a human-readable string.
+  ///   ≤ 60  → "45 min"
+  ///   > 60  → "2h 15m"  (hours + minutes)
+  static String _formatDuration(int minutes) {
+    if (minutes <= 0) return '-- min';
+    if (minutes < 60) return '$minutes min';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}m';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,9 +71,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               miles: distanceMiles > 0
                   ? '${distanceMiles.toStringAsFixed(1)} mi'
                   : '--',
-              duration: durationMinutes > 0
-                  ? '$durationMinutes min'
-                  : '-- min',
+              duration: _formatDuration(durationMinutes),
               createdAt:
                   DateTime.tryParse(t['created_at']?.toString() ?? '') ??
                   DateTime.now(),

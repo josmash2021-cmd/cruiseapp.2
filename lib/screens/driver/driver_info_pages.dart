@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -966,38 +967,7 @@ class _NewDriverInstructionsScreenState
                 onPageChanged: _onPageChanged,
                 physics: const ClampingScrollPhysics(),
                 children: [
-                  _buildPage(
-                    icon: Icons.local_car_wash_rounded,
-                    iconColor: const Color(0xFF2196F3),
-                    title: S.of(context).keepVehicleSpotless,
-                    subtitle: S.of(context).firstImpressionsMatter,
-                    items: [
-                      _InstructionItem(
-                        icon: Icons.local_car_wash_rounded,
-                        color: const Color(0xFF2196F3),
-                        title: S.of(context).cleanInsideOut,
-                        body: S.of(context).cleanInsideOutBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.ac_unit_rounded,
-                        color: const Color(0xFF00BCD4),
-                        title: S.of(context).freshComfortable,
-                        body: S.of(context).freshComfortableBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.phone_android_rounded,
-                        color: const Color(0xFF9C27B0),
-                        title: S.of(context).phoneMountCharger,
-                        body: S.of(context).phoneMountChargerBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.dry_cleaning_rounded,
-                        color: const Color(0xFF4CAF50),
-                        title: S.of(context).professionalAppearance,
-                        body: S.of(context).professionalAppearanceBody,
-                      ),
-                    ],
-                  ),
+                  _buildPage0(context),
                   _buildPage(
                     icon: Icons.shield_rounded,
                     iconColor: const Color(0xFF4CAF50),
@@ -1151,6 +1121,10 @@ class _NewDriverInstructionsScreenState
     );
   }
 
+  Widget _buildPage0(BuildContext context) {
+    return const _Page0();
+  }
+
   Widget _buildPage({
     required IconData icon,
     required Color iconColor,
@@ -1255,6 +1229,350 @@ class _NewDriverInstructionsScreenState
           ),
         ],
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAGE 0 — "Keep Your Vehicle Spotless" (full-bleed background redesign)
+// ═══════════════════════════════════════════════════════════════
+
+class _Page0 extends StatefulWidget {
+  const _Page0();
+
+  @override
+  State<_Page0> createState() => _Page0State();
+}
+
+class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin {
+  static const _gold = Color(0xFFD4AF37);
+  late final AnimationController _animCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _fade(double begin, double end) =>
+      Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Animation<Offset> _slideUp(double begin, double end) =>
+      Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Widget _animatedCard({
+    required double fadeBegin,
+    required double fadeEnd,
+    required double slideBegin,
+    required double slideEnd,
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return FadeTransition(
+      opacity: _fade(fadeBegin, fadeEnd),
+      child: SlideTransition(
+        position: _slideUp(slideBegin, slideEnd),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: _gold, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.5,
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Background image ──
+        Image.asset(
+          'assets/images/suburban_2023_interior_fullframe.png',
+          fit: BoxFit.cover,
+        ),
+        // ── Dark gradient overlay ──
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.3),
+                Colors.black.withValues(alpha: 0.85),
+              ],
+            ),
+          ),
+        ),
+        // ── Content ──
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
+                // ── Header icon ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.2),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _animCtrl,
+                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                      ),
+                    ),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _gold, width: 2),
+                        color: Colors.black.withValues(alpha: 0.5),
+                      ),
+                      child: const Icon(
+                        Icons.local_car_wash_rounded,
+                        color: _gold,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // ── Title ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.2),
+                  child: Text(
+                    'KEEP YOUR VEHICLE SPOTLESS',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _gold,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.0,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.8),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── Subtitle ──
+                FadeTransition(
+                  opacity: _fade(0.1, 0.3),
+                  child: Text(
+                    'FIRST IMPRESSIONS MATTER',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 3.0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // ── Cards ──
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _animatedCard(
+                        fadeBegin: 0.2, fadeEnd: 0.5,
+                        slideBegin: 0.2, slideEnd: 0.5,
+                        icon: Icons.auto_fix_high_rounded,
+                        title: 'CLEAN INSIDE & OUT',
+                        description: 'WASH YOUR CAR REGULARLY AND KEEP THE INTERIOR CLEAN',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.35, fadeEnd: 0.65,
+                        slideBegin: 0.35, slideEnd: 0.65,
+                        icon: Icons.ac_unit_rounded,
+                        title: 'FRESH & COMFORTABLE',
+                        description: 'KEEP THE CABIN FRESH WITH A PLEASANT SCENT',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.5, fadeEnd: 0.8,
+                        slideBegin: 0.5, slideEnd: 0.8,
+                        icon: Icons.phone_iphone_rounded,
+                        title: 'PHONE MOUNT & CHARGER',
+                        description: 'USE A SECURE PHONE MOUNT AND OFFER A CHARGER',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.65, fadeEnd: 0.95,
+                        slideBegin: 0.65, slideEnd: 0.95,
+                        icon: Icons.checkroom_rounded,
+                        title: 'PROFESSIONAL APPEARANCE',
+                        description: 'DRESS NEATLY AND PROFESSIONALLY',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ── Dots + swipe hint ──
+                FadeTransition(
+                  opacity: _fade(0.8, 1.0),
+                  child: Column(
+                    children: [
+                      // 3 dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _dot(active: true),
+                          const SizedBox(width: 8),
+                          _dot(active: false),
+                          const SizedBox(width: 8),
+                          _dot(active: false),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Bouncing swipe text
+                      _BounceText(
+                        text: 'SWIPE TO CONTINUE',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dot({required bool active}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: active ? 24 : 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: active ? _gold : Colors.white.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(3),
+      ),
+    );
+  }
+}
+
+// ── Bouncing text widget ──
+class _BounceText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _BounceText({required this.text, required this.style});
+
+  @override
+  State<_BounceText> createState() => _BounceTextState();
+}
+
+class _BounceTextState extends State<_BounceText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final y = 4 * math.sin(_ctrl.value * 2 * math.pi);
+        return Transform.translate(
+          offset: Offset(0, y),
+          child: Text(widget.text, style: widget.style),
+        );
+      },
     );
   }
 }

@@ -1303,9 +1303,12 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     except Exception:
         pass
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
+    # Use driver_assigned_at for accurate en-route timing (not updated_at which
+    # changes on any trip update).
     cancellation_fee = 0.0
     if trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
-        minutes_elapsed = (datetime.now(timezone.utc) - trip.updated_at).total_seconds() / 60 if trip.updated_at else 0
+        reference_time = trip.driver_assigned_at or trip.updated_at
+        minutes_elapsed = (datetime.now(timezone.utc) - reference_time).total_seconds() / 60 if reference_time else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
     # Capture previous status BEFORE overwriting (needed for webhook payload)

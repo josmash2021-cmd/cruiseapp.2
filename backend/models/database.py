@@ -273,6 +273,7 @@ class Trip(Base):
     silent_ride = Column(Boolean, default=False)
     wheelchair_accessible = Column(Boolean, default=False)
     arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
+    driver_assigned_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)

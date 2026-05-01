@@ -1279,6 +1279,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         cascade_task.cancel()
 
     trip.driver_id = driver_id
+    trip.driver_assigned_at = datetime.now(timezone.utc)
     trip.status = "driver_en_route"
     await db.commit()
 

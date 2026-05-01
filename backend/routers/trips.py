@@ -486,6 +486,19 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
     except Exception as _sse_err:
         logging.warning("[SSE] accept_trip push failed: %s", _sse_err)
 
+    # Socket.io: notify rider that driver was assigned (real-time update)
+    try:
+        _safe_create_task(notify_driver_assigned(
+            trip_id=trip.id,
+            driver_id=body.driver_id,
+            driver_info={
+                "driver_name": f"{user.first_name or ''} {user.last_name or ''}".strip() or "Your driver",
+                "status": "driver_en_route",
+            },
+        ))
+    except Exception as _socket_err:
+        logging.warning("[Socket.io] driver_assigned emit failed: %s", _socket_err)
+
     # FCM push: "Driver Found" notification to rider
     try:
         rider_res = await db.execute(select(User).where(User.id == trip.rider_id))

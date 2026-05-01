@@ -39,6 +39,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   List<Map<String, dynamic>> _methods = [];
   bool _loading = true;
   bool _linkingBank = false;
+  String? _loadError;
 
   @override
   void initState() {
@@ -47,10 +48,20 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   }
 
   Future<void> _loadMethods() async {
+    final errorMsg = S.of(context).couldNotLoadPaymentMethods;
+    String? error;
     try {
       _methods = await ApiService.getPayoutMethods();
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      debugPrint('[PayoutMethods] _loadMethods error: $e');
+      error = errorMsg;
+    }
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _loadError = error;
+      });
+    }
   }
 
   bool get _hasDebitCard =>
@@ -240,6 +251,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                         strokeWidth: 2,
                       ),
                     )
+                  : _loadError != null
+                  ? _buildError(_loadError!)
                   : _methods.isEmpty
                   ? _buildEmpty()
                   : ListView.separated(
@@ -386,6 +399,40 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildError(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent.withValues(alpha: 0.7), size: 40),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextButton.icon(
+              onPressed: _loadMethods,
+              icon: const Icon(Icons.refresh_rounded, color: _gold, size: 18),
+              label: Text(
+                S.of(context).retry,
+                style: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -749,9 +796,20 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           ),
         );
       }
-    } catch (_) {
-      // Silent — _loadMethods() will surface anything that did persist
-      // server-side. Most likely cause is a duplicate row from a retry.
+    } catch (e) {
+      debugPrint('[Payout] _addBankMethod error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).failedToAddMethod),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
     }
   }
 

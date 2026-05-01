@@ -41,6 +41,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   List<Map<String, dynamic>> _transactions = [];
 
+  // Error states
+  String? _earningsError;
+  String? _payoutError;
+
   // Auto-payout data
   DateTime? _nextPayoutDate;
   double _pendingBalance = 0.0;
@@ -117,7 +121,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       } catch (_) {}
     }
 
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _earningsError = null;
+    });
     try {
       final data = await ApiService.getDriverEarnings(period: period);
       if (!mounted) return;
@@ -128,9 +135,13 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       });
       // Update cache
       prefs.setString(cacheKey, jsonEncode(data));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Earnings] _fetchEarnings error: $e');
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _earningsError = S.of(context).couldNotLoadEarnings;
+      });
     }
   }
 
@@ -183,10 +194,16 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         _pendingBalance = (info['pending_balance'] as num?)?.toDouble() ?? 0.0;
         _stripeConnected = info['stripe_connected'] as bool? ?? false;
         _cashoutHistory = history;
+        _payoutError = null;
         final raw = info['next_payout_date'] as String?;
         if (raw != null) _nextPayoutDate = DateTime.tryParse(raw);
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Earnings] _fetchPayoutData error: $e');
+      if (mounted) {
+        setState(() => _payoutError = S.of(context).couldNotLoadPayoutData);
+      }
+    }
   }
 
   @override
@@ -310,6 +327,44 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                     ),
                   ),
                   const SizedBox(height: 24),
+
+                  // ── Earnings error banner ──
+                  if (_earningsError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.redAccent.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline_rounded,
+                              color: Colors.redAccent.withValues(alpha: 0.8), size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _earningsError!,
+                              style: TextStyle(
+                                color: Colors.redAccent.withValues(alpha: 0.9),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: _fetchEarnings,
+                            child: Icon(Icons.refresh_rounded,
+                                color: _gold, size: 20),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // ── Period selector ──
                   Container(
@@ -1369,6 +1424,7 @@ class _StripeConnectButton extends StatefulWidget {
 class _StripeConnectButtonState extends State<_StripeConnectButton> {
   bool _loading = false;
   bool? _connected;
+  String? _error;
 
   @override
   void initState() {
@@ -1379,23 +1435,46 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
   Future<void> _checkStatus() async {
     try {
       final s = await ApiService.getStripeConnectStatus();
-      if (mounted) setState(() => _connected = s['connected'] == true);
-    } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _connected = s['connected'] == true;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      debugPrint('[StripeConnectButton] _checkStatus error: $e');
+      if (mounted) {
+        setState(() => _error = S.of(context).payoutSetupFailed);
+      }
+    }
   }
 
   Future<void> _startOnboarding() async {
     setState(() => _loading = true);
     try {
       final url = await ApiService.getStripeConnectLink();
+      if (url.isEmpty) {
+        if (mounted) {
+          setState(() => _error = S.of(context).payoutSetupUnavailable);
+        }
+        return;
+      }
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
-    } catch (e) {
+    } on ApiException catch (e) {
+      debugPrint('[StripeConnectButton] API error: ${e.message}');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context).payoutSetupFailed), backgroundColor: Colors.red),
-        );
+        final msg = e.statusCode == 503
+            ? S.of(context).payoutSetupUnavailable
+            : S.of(context).payoutSetupFailed;
+        setState(() => _error = msg);
+      }
+    } catch (e) {
+      debugPrint('[StripeConnectButton] error: $e');
+      if (mounted) {
+        setState(() => _error = S.of(context).payoutSetupFailed);
       }
     } finally {
       if (mounted) {
@@ -1407,6 +1486,40 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
+    // Error state: show red banner with retry
+    if (_error != null && _connected != true) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.redAccent.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent.withValues(alpha: 0.8), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _error!,
+                style: TextStyle(
+                  color: Colors.redAccent.withValues(alpha: 0.9),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: _startOnboarding,
+              child: const Icon(Icons.refresh_rounded, color: Color(0xFFE8C547), size: 20),
+            ),
+          ],
+        ),
+      );
+    }
     if (_connected == true) {
       return Container(
         width: double.infinity,
@@ -1421,8 +1534,8 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
           children: [
             const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
             const SizedBox(width: 10),
-            Text(S.of(context).payoutsConnected,
-                style: TextStyle(
+            Text(s.payoutsConnected,
+                style: const TextStyle(
                     color: Color(0xFF34A853),
                     fontWeight: FontWeight.w700,
                     fontSize: 15)),
@@ -1441,7 +1554,7 @@ class _StripeConnectButtonState extends State<_StripeConnectButton> {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.account_balance_wallet_rounded, size: 20),
-        label: Text(_loading ? 'Abriendo...' : 'Configurar Pagos',
+        label: Text(_loading ? s.openingLabel : s.configurePayments,
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,

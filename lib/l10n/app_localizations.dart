@@ -3232,6 +3232,20 @@ class S {
   String get payoutSetupFailed => _es
       ? 'No se pudo configurar los pagos. Intenta de nuevo más tarde.'
       : 'Could not set up payments. Please try again later.';
+  String get payoutSetupUnavailable => _es
+      ? 'Los pagos no están disponibles en este momento. Contacta soporte.'
+      : 'Payouts are temporarily unavailable. Contact support.';
+  String get couldNotLoadEarnings => _es
+      ? 'No se pudieron cargar las ganancias. Toca el ícono para reintentar.'
+      : 'Could not load earnings. Tap the icon to retry.';
+  String get couldNotLoadPayoutData => _es
+      ? 'No se pudieron cargar los datos de pago.'
+      : 'Could not load payout data.';
+  String get couldNotLoadPaymentMethods => _es
+      ? 'No se pudieron cargar los métodos de pago. Toca reintentar.'
+      : 'Could not load payment methods. Tap retry.';
+  String get configurePayments => _es ? 'Configurar Pagos' : 'Configure Payments';
+  String get openingLabel => _es ? 'Abriendo...' : 'Opening...';
 
   // ── Referral Screen (NEW) ──
   String get inviteFriendsTitle => _es ? 'Invitar Amigos' : 'Invite Friends';

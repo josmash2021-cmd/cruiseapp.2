@@ -572,6 +572,17 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
             return {"status": "timeout", "payment_intent_id": trip.stripe_payment_intent_id}
         except _stripe_mod.error.StripeError as e:
             logging.error("[Capture] Failed for trip %s: %s", trip.id, e)
+            # Cancel the old hold before creating a new charge to prevent
+            # duplicate holds on the rider's card.
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, _stripe_mod.PaymentIntent.cancel, trip.stripe_payment_intent_id),
+                    timeout=10.0,
+                )
+                logging.info("[Capture] Cancelled old hold %s for trip %s", trip.stripe_payment_intent_id, trip.id)
+            except Exception as _cancel_err:
+                logging.warning("[Capture] Could not cancel old hold %s: %s", trip.stripe_payment_intent_id, _cancel_err)
             # Fall through to create new charge
 
     # No existing hold - charge the saved card directly

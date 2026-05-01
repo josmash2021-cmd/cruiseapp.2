@@ -236,6 +236,53 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore trip sync failed: %s", e)
+
+    # ── Real-time sync for status changes ──
+    if "status" in body:
+        try:
+            _safe_create_task(emit_trip_status(
+                trip_id=trip.id,
+                status=trip.status,
+                extra={
+                    "driver_id": trip.driver_id,
+                    "cancel_reason": trip.cancel_reason,
+                },
+            ))
+        except Exception as _socket_err:
+            logging.warning("[Socket.io] trip_status emit failed on admin update: %s", _socket_err)
+
+        try:
+            from services.event_bus import event_bus as _ev_bus
+            _safe_create_task(_ev_bus.push_trip_update(trip.id, {
+                "status": trip.status,
+                "trip_id": trip.id,
+                "driver_id": trip.driver_id,
+                "cancel_reason": trip.cancel_reason,
+            }))
+        except Exception as _sse_err:
+            logging.warning("[SSE] trip update push failed on admin update: %s", _sse_err)
+
+        # FCM push for terminal or important status changes
+        try:
+            rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_res.scalar_one_or_none()
+            if rider and rider.fcm_token and trip.status in ("cancelled", "completed", "driver_en_route", "arrived", "in_trip"):
+                _status_title = {
+                    "cancelled": ("Trip Canceled", "Your trip has been canceled."),
+                    "completed": ("Trip Completed", "Your trip is complete."),
+                    "driver_en_route": ("Driver On The Way", "Your driver is heading to your pickup location."),
+                    "arrived": ("Driver Arrived", "Your driver has arrived at the pickup point!"),
+                    "in_trip": ("Trip Started", "Your trip has started. Enjoy your ride!"),
+                }.get(trip.status, ("Trip Update", f"Trip status changed to {trip.status}"))
+                _safe_create_task(_send_fcm_push_async(
+                    rider.fcm_token,
+                    _status_title[0],
+                    _status_title[1],
+                    data={"type": trip.status, "trip_id": str(trip.id)},
+                ))
+        except Exception as _fcm_err:
+            logging.warning("[FCM] push failed on admin update: %s", _fcm_err)
+
     _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(body.keys())}")
     return _trip_dict(trip)
 

@@ -93,40 +93,52 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
       final pmId = si.paymentMethodId;
       await LocalDataService.saveStripePaymentMethodId(pmId);
 
-      // Step 4: Save locally and return
+      // Step 4: ALSO sync to backend so card survives reinstall
+      try {
+        await ApiService.syncPaymentMethodToBackend(
+          stripePaymentMethodId: pmId,
+          type: 'stripe_card',
+          last4: last4,
+          brand: brand,
+          setDefault: true,
+        );
+      } catch (syncErr) {
+        debugPrint('[CreditCardScreen] backend sync failed (non-fatal): $syncErr');
+        // Non-fatal: card is still saved locally and will be retried on next ride
+      }
+
+      // Step 5: Save locally and return
       await _saveCardLocally(brand, last4);
       if (mounted) Navigator.of(context).pop('$brand:$last4');
-    } on StripeException catch (_) {
+    } on StripeException catch (e) {
       if (!mounted) return;
-      // Stripe failed — still save card locally so user can retry later
-      await _saveCardLocally(brand, last4);
-      if (!mounted) return;
+      final msg = _stripeErrorMessage(e);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.orange.shade700,
+          backgroundColor: Colors.red.shade800,
           content: Text(
-            'Card saved locally. Payment setup will retry when you book a ride.',
+            msg,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          duration: const Duration(seconds: 4),
         ),
       );
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) Navigator.of(context).pop('$brand:$last4');
-      });
+      setState(() => _isLoading = false);
+      return; // Stay on screen so user can correct and retry
     } catch (e) {
       if (!mounted) return;
-      // Any other error — still save card locally
+      // Network or backend error — save locally for retry later
       await _saveCardLocally(brand, last4);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.orange.shade700,
           content: Text(
-            'Card saved locally. Payment setup will retry when you book a ride.',
+            'Card saved locally. Will retry when you book a ride.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           behavior: SnackBarBehavior.floating,
@@ -147,6 +159,47 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     await LocalDataService.linkPaymentMethod('credit_card');
     await LocalDataService.saveCreditCardLast4(last4);
     await LocalDataService.saveCreditCardBrand(brand);
+  }
+
+  /// Convert a StripeException into a user-friendly localized message.
+  String _stripeErrorMessage(StripeException e) {
+    final code = e.error.code.toString().toLowerCase();
+    final declineCode = (e.error as dynamic)?.declineCode?.toString().toLowerCase() ?? '';
+
+    // Test card in live mode
+    if (code.contains('test_mode_live_card') || declineCode == 'test_mode_live_card') {
+      return 'This is a test card. Please use a real card for live payments.';
+    }
+    // Card declined
+    if (declineCode == 'card_declined' || code.contains('card_declined')) {
+      return 'Your card was declined. Please try a different card.';
+    }
+    // Insufficient funds
+    if (declineCode == 'insufficient_funds') {
+      return 'Insufficient funds. Please try a different payment method.';
+    }
+    // Incorrect CVC
+    if (declineCode == 'incorrect_cvc' || code.contains('incorrect_cvc')) {
+      return 'Incorrect security code. Please check and try again.';
+    }
+    // Expired card
+    if (declineCode == 'expired_card' || code.contains('expired_card')) {
+      return 'Your card has expired. Please update your payment method.';
+    }
+    // Incorrect number
+    if (declineCode == 'incorrect_number' || code.contains('incorrect_number')) {
+      return 'The card number is incorrect. Please verify the details.';
+    }
+    // Processing error
+    if (declineCode == 'processing_error' || code.contains('processing_error')) {
+      return 'Payment processing error. Please try again.';
+    }
+    // Fraudulent
+    if (declineCode == 'fraudulent') {
+      return 'This payment was flagged for security. Please contact your bank or try a different card.';
+    }
+    // Generic
+    return e.error.localizedMessage ?? 'Payment failed. Please try again or use a different method.';
   }
 
   @override

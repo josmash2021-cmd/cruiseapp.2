@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
 )
-from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn
+from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn
 from utils.security import (
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     pwd, _create_token, _create_refresh_token, _create_login_token,
@@ -113,7 +113,15 @@ async def create_setup_intent(
             "customer_id": customer_id,
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
 
 
 # -------------------------------------------------------
@@ -184,7 +192,15 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
             "currency": intent.currency,
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
 
 
 @router.get("/payments/intent/{intent_id}", dependencies=[Depends(_verify_api_key)])
@@ -201,7 +217,15 @@ async def get_payment_intent(intent_id: str, user: User = Depends(_get_current_u
             "currency": intent.currency,
         }
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
 
 
 @router.post("/payments/cancel/{intent_id}", dependencies=[Depends(_verify_api_key)])
@@ -261,6 +285,147 @@ async def capture_payment_intent(intent_id: str, user: User = Depends(_get_curre
             "captured": intent.status == "succeeded",
         }
     except _stripe_mod.error.StripeError as e:
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  RIDER PAYMENT METHOD SYNC
+# ═══════════════════════════════════════════════════════════════════
+
+@router.post("/users/me/payment-methods/sync", dependencies=[Depends(_verify_api_key)])
+async def sync_payment_method(
+    body: RiderPaymentMethodIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sync a Stripe PaymentMethod to the backend after client-side tokenization.
+    Creates or updates a RiderPaymentMethod row so the card is available for
+    off-session charging and survives app reinstalls."""
+    if not body.stripe_pm_id:
+        raise HTTPException(400, "stripe_pm_id is required")
+
+    # Check if already exists
+    existing_r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user.id,
+            RiderPaymentMethod.stripe_pm_id == body.stripe_pm_id,
+        )
+    )
+    existing = existing_r.scalar_one_or_none()
+    if existing:
+        return {"status": "already_exists", "method_id": existing.id}
+
+    # Unset previous default if this one should be default
+    if body.set_default:
+        await db.execute(
+            text("""
+                UPDATE rider_payment_methods
+                SET is_default = FALSE
+                WHERE user_id = :uid
+            """),
+            {"uid": user.id},
+        )
+
+    method = RiderPaymentMethod(
+        user_id=user.id,
+        method_type=body.method_type or "stripe_card",
+        display_name=body.display_name or "Card",
+        stripe_pm_id=body.stripe_pm_id,
+        is_default=body.set_default,
+    )
+    db.add(method)
+    await db.commit()
+    await db.refresh(method)
+    return {"status": "created", "method_id": method.id}
+
+
+@router.get("/users/me/payment-methods", dependencies=[Depends(_verify_api_key)])
+async def get_my_payment_methods(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all saved payment methods for the current rider.
+    Used by the Flutter app to restore cards after reinstall."""
+    result = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id)
+            .order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.desc())
+    )
+    methods = result.scalars().all()
+    return [
+        {
+            "id": m.id,
+            "method_type": m.method_type,
+            "display_name": m.display_name,
+            "stripe_pm_id": m.stripe_pm_id,
+            "is_default": m.is_default,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in methods
+    ]
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  STRIPE LINK / FINANCIAL CONNECTIONS (BANK ACCOUNT)
+# ═══════════════════════════════════════════════════════════════════
+
+@router.post("/stripe/financial-connections", dependencies=[Depends(_verify_api_key)])
+async def create_financial_connections_session(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a Stripe Financial Connections session so the rider can link
+    a bank account for ACH payments. Returns a URL to open in a WebView
+    or external browser."""
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured on this server")
+
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        raise HTTPException(500, "Could not initialise payment customer")
+
+    try:
+        session = _stripe_mod.financial_connections.Session.create(
+            account_holder={"type": "customer", "customer": customer_id},
+            permissions=["payment_method"],
+            return_url=f"{os.environ.get('PUBLIC_URL', 'https://cruiseinride.com')}/bank-connected",
+        )
+        return {"url": session.url, "client_secret": session.client_secret}
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[Stripe] Financial Connections session failed: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+@router.post("/stripe/link-session", dependencies=[Depends(_verify_api_key)])
+async def create_link_session(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a Stripe Billing Portal session for the rider to manage
+    payment methods (including Link). Falls back to Financial Connections
+    if the customer has no existing Link setup."""
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured on this server")
+
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        raise HTTPException(500, "Could not initialise payment customer")
+
+    try:
+        session = _stripe_mod.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=f"{os.environ.get('PUBLIC_URL', 'https://cruiseinride.com')}/payment-success",
+        )
+        return {"url": session.url}
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[Stripe] Billing portal session failed: %s", e)
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 
@@ -482,7 +647,15 @@ async def capture_web_hold(intent_id: str, request: Request):
         logging.info("[WebCapture] Captured: %s (amount=%d)", intent.id, intent.amount_received)
         return {"status": intent.status, "amount_captured": intent.amount_received}
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
 
 
 @router.post("/payments/web/cancel/{intent_id}")
@@ -501,7 +674,15 @@ async def cancel_web_hold(intent_id: str, request: Request):
         logging.info("[WebCancel] Cancelled hold: %s", intent.id)
         return {"status": intent.status}
     except _stripe_mod.error.StripeError as e:
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        # Forward structured error data so the Flutter client can map decline codes
+        # to localized user-friendly messages.
+        detail = {
+            "message": str(getattr(e, "user_message", None) or e),
+            "code": getattr(e, "code", None),
+            "decline_code": getattr(e, "decline_code", None),
+            "type": getattr(e, "type", None),
+        }
+        raise HTTPException(400, detail=detail)
 
 
 # -------------------------------------------------------

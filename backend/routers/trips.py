@@ -257,6 +257,24 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
 
 @router.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # SECURITY: Validate rider has a valid payment method before creating trip
+    # (skip for test mode / sandbox where no real charge occurs)
+    is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
+    if not is_sandbox and user.role == "rider":
+        pm_r = await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == user.id,
+                RiderPaymentMethod.method_type == "stripe_card",
+                RiderPaymentMethod.stripe_pm_id.isnot(None),
+            )
+        )
+        has_pm = pm_r.scalar_one_or_none() is not None
+        if not has_pm:
+            raise HTTPException(
+                400,
+                "No payment method on file. Please add a card in Payment Methods before booking.",
+            )
+
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id

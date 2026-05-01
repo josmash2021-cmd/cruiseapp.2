@@ -3229,6 +3229,90 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  RIDER PAYMENT METHOD SYNC
+  // ═══════════════════════════════════════════════════════
+
+  /// Sync a Stripe PaymentMethod to the backend so it survives app reinstalls
+  /// and is available for off-session charging.
+  static Future<Map<String, dynamic>> syncPaymentMethodToBackend({
+    required String stripePaymentMethodId,
+    required String type,
+    required String last4,
+    required String brand,
+    bool setDefault = true,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/users/me/payment-methods/sync'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'stripe_pm_id': stripePaymentMethodId,
+            'method_type': type,
+            'display_name': '${brand[0].toUpperCase()}${brand.substring(1)} ending in $last4',
+            'set_default': setDefault,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Fetch the rider's saved payment methods from the backend.
+  /// Used to restore cards after app reinstall.
+  static Future<List<Map<String, dynamic>>> getMyPaymentMethods() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/users/me/payment-methods'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    final dynamic data = _parse(res);
+    if (data is List) {
+      final out = <Map<String, dynamic>>[];
+      final listData = data;
+      for (var i = 0; i < listData.length; i++) {
+        final dynamic item = listData[i];
+        if (item is Map<String, dynamic>) {
+          out.add(item);
+        } else if (item is Map) {
+          out.add(Map<String, dynamic>.from(item));
+        }
+      }
+      return out;
+    }
+    return [];
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  STRIPE LINK / FINANCIAL CONNECTIONS (BANK ACCOUNT)
+  // ═══════════════════════════════════════════════════════
+
+  /// Create a Stripe Financial Connections session for bank account linking.
+  static Future<Map<String, dynamic>?> createFinancialConnectionsSession() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/financial-connections'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Create a Stripe Billing Portal session for Link payment method management.
+  static Future<Map<String, dynamic>?> createLinkSession() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/link-session'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  STRIPE PAYMENT INTENT
   // ═══════════════════════════════════════════════════════
 

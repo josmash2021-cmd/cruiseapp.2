@@ -1,7 +1,9 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/haptic_service.dart';
+import '../services/api_service.dart';
 
 import '../l10n/app_localizations.dart';
 import 'tap_to_pay_screen.dart';
@@ -117,6 +119,61 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     });
   }
 
+  /// Open Stripe Financial Connections to link a bank account.
+  Future<void> _openBankConnection(BuildContext ctx) async {
+    HapticService.selectionClick();
+    final s = S.of(ctx);
+    
+    // Show loading indicator
+    if (!mounted) return;
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: _gold),
+      ),
+    );
+
+    try {
+      final result = await ApiService.createFinancialConnectionsSession();
+      if (!mounted) {
+        Navigator.of(ctx, rootNavigator: true).pop();
+        return;
+      }
+      Navigator.of(ctx, rootNavigator: true).pop(); // dismiss loading
+
+      if (result != null && result['url'] != null) {
+        final url = Uri.parse(result['url'] as String);
+        if (await canLaunchUrl(url)) {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        } else {
+          if (!mounted) return;
+          _showBankError(ctx, s.genericPaymentError);
+        }
+      } else {
+        if (!mounted) return;
+        _showBankError(ctx, s.genericPaymentError);
+      }
+    } catch (e) {
+      if (!mounted) {
+        Navigator.of(ctx, rootNavigator: true).pop();
+        return;
+      }
+      Navigator.of(ctx, rootNavigator: true).pop(); // dismiss loading
+      _showBankError(ctx, '${s.genericPaymentError} (${e.toString()})');
+    }
+  }
+
+  void _showBankError(BuildContext ctx, String msg) {
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red.shade800,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -208,18 +265,14 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       entryCtl: _entryCtl,
                       staggerDelay: 0.16,
                       id: PaymentMethodId.bank,
-                      // Never selected — wrapped in the coming-soon
-                      // ribbon below; tap is a no-op until the real
-                      // ACH integration lands.
-                      selected: false,
+                      selected: _selected == PaymentMethodId.bank,
                       iconBg: const Color(0xFF0F1A12),
                       iconBorder:
                           const Color(0xFF22C55E).withValues(alpha: 0.45),
                       label: 'Bank Account',
                       icon: const Icon(Icons.account_balance_rounded,
                           color: Color(0xFF22C55E), size: 28),
-                      comingSoon: true,
-                      onTap: () {/* disabled */},
+                      onTap: () => _openBankConnection(context),
                     ),
                     if (widget.showTestMode)
                       _PayCard(
@@ -335,6 +388,7 @@ class _PayCard extends StatefulWidget {
     this.secondary,
     required this.icon,
     required this.onTap,
+    // ignore: unused_element_parameter
     this.comingSoon = false,
   });
 

@@ -24,6 +24,52 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
+  /// Show a dialog when the rider has no payment method on file.
+  void _showAddPaymentMethodDialog() {
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          s.noPaymentMethod,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+          ),
+        ),
+        content: Text(
+          'Please add a payment method before booking a ride.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              s.cancel,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _openCreditCardScreen(AppColors.of(context), null);
+            },
+            child: const Text(
+              'Add Card',
+              style: TextStyle(
+                color: Color(0xFFE8C547),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadPinIcon() async {
     _goldPinIcon = await renderCircularPinBytes(
       icon: CircularPinIcon.person,
@@ -162,6 +208,49 @@ extension _RideRequestController on _RideRequestScreenState {
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
     });
+    // Also try to restore payment methods from backend (survives reinstall)
+    _restorePaymentMethodsFromBackend();
+  }
+
+  /// Fetch saved payment methods from backend and sync to local storage.
+  /// This ensures cards survive app reinstalls and device switches.
+  Future<void> _restorePaymentMethodsFromBackend() async {
+    try {
+      final methods = await ApiService.getMyPaymentMethods();
+      if (methods.isEmpty) return;
+      // Find the default stripe_card
+      final stripeCards = methods.where((m) => m['method_type'] == 'stripe_card').toList();
+      if (stripeCards.isEmpty) return;
+      final defaultCard = stripeCards.firstWhere(
+        (m) => m['is_default'] == true,
+        orElse: () => stripeCards.first,
+      );
+      final pmId = defaultCard['stripe_pm_id'] as String?;
+      final displayName = defaultCard['display_name'] as String? ?? '';
+      if (pmId == null) return;
+
+      // Extract last4 and brand from display_name (e.g. "Visa ending in 4242")
+      final last4Match = RegExp(r'(\d{4})$').firstMatch(displayName);
+      final last4 = last4Match?.group(1) ?? '****';
+      final brand = displayName.split(' ').first.toLowerCase();
+
+      // Save locally
+      await LocalDataService.saveStripePaymentMethodId(pmId);
+      await LocalDataService.saveCreditCardLast4(last4);
+      await LocalDataService.saveCreditCardBrand(brand);
+      await LocalDataService.linkPaymentMethod('credit_card');
+
+      if (mounted) {
+        _setState(() {
+          _linkedPaymentMethods = {'credit_card'};
+          _savedCardLast4 = last4;
+          _savedCardBrand = brand;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RideRequest] restorePaymentMethods failed: $e');
+      // Non-fatal: local methods still work
+    }
   }
 
   // ── Location ──
@@ -869,6 +958,13 @@ extension _RideRequestController on _RideRequestScreenState {
     void Function(void Function()) setSheetState,
   ) async {
     if (_rideFlowLocked || _isProcessingPayment) return;
+
+    // Validate payment method exists before proceeding
+    if (!_hasAnyPaymentMethod && _selectedPaymentMethod != 'test_mode') {
+      _showAddPaymentMethodDialog();
+      return;
+    }
+
     _rideFlowLocked = true;
     setSheetState(() => _isProcessingPayment = true);
     _setState(() => _isProcessingPayment = true);
@@ -940,6 +1036,13 @@ extension _RideRequestController on _RideRequestScreenState {
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
     if (option == null) return;
     if (_rideFlowLocked || _isProcessingPayment) return;
+
+    // Validate payment method exists before proceeding
+    if (!_hasAnyPaymentMethod && _selectedPaymentMethod != 'test_mode') {
+      _showAddPaymentMethodDialog();
+      return;
+    }
+
     _rideFlowLocked = true;
     // Show the spinner immediately so the rider sees feedback even
     // before the native sheet opens. The try/finally below guarantees
@@ -1896,13 +1999,71 @@ extension _RideRequestController on _RideRequestScreenState {
     
     if (error is stripe.StripeException) {
       errorCode = error.error.code.toString();
+      final declineCode = (error.error as dynamic)?.declineCode?.toString().toLowerCase() ?? '';
+      final errCode = errorCode.toLowerCase();
+      
       switch (error.error.code) {
         case stripe.FailureCode.Canceled:
           // User cancelled - no dialog needed
           return false;
         default:
-          errorTitle = s.paymentDeclined;
-          errorMessage = s.genericPaymentError;
+          // Map specific decline codes to user-friendly localized messages
+          if (declineCode == 'card_declined' || errCode.contains('card_declined')) {
+            errorTitle = s.cardDeclined;
+            errorMessage = s.cardDeclinedMsg;
+            errorCode = 'card_declined';
+          } else if (declineCode == 'insufficient_funds') {
+            errorTitle = s.insufficientFunds;
+            errorMessage = s.insufficientFundsMsg;
+            errorCode = 'insufficient_funds';
+          } else if (declineCode == 'expired_card' || errCode.contains('expired_card')) {
+            errorTitle = s.cardExpired;
+            errorMessage = s.cardExpiredMsg;
+            errorCode = 'expired_card';
+          } else if (declineCode == 'incorrect_number' || errCode.contains('incorrect_number')) {
+            errorTitle = s.invalidCardNumber;
+            errorMessage = s.invalidCardNumberMsg;
+            errorCode = 'incorrect_number';
+          } else if (declineCode == 'incorrect_cvc' || errCode.contains('incorrect_cvc')) {
+            errorTitle = s.cardDeclined;
+            errorMessage = 'Incorrect security code. Please check and try again.';
+            errorCode = 'incorrect_cvc';
+          } else if (declineCode == 'test_mode_live_card' || errCode.contains('test_mode_live_card')) {
+            errorTitle = s.cardDeclined;
+            errorMessage = 'This is a test card. Please use a real card for live payments.';
+            errorCode = 'test_mode_live_card';
+          } else if (declineCode == 'processing_error' || errCode.contains('processing_error')) {
+            errorTitle = s.paymentDeclined;
+            errorMessage = 'Payment processing error. Please try again.';
+            errorCode = 'processing_error';
+          } else if (declineCode == 'fraudulent') {
+            errorTitle = s.paymentDeclined;
+            errorMessage = 'This payment was flagged for security. Please contact your bank or try a different card.';
+            errorCode = 'fraudulent';
+          } else {
+            errorTitle = s.paymentDeclined;
+            errorMessage = s.genericPaymentError;
+          }
+      }
+    } else if (error is Map<String, dynamic>) {
+      // Backend may return structured error with decline_code
+      final backendDecline = (error['decline_code'] ?? error['code'])?.toString().toLowerCase() ?? '';
+      final backendMsg = error['message']?.toString() ?? '';
+      if (backendDecline == 'card_declined') {
+        errorTitle = s.cardDeclined;
+        errorMessage = s.cardDeclinedMsg;
+        errorCode = 'card_declined';
+      } else if (backendDecline == 'insufficient_funds') {
+        errorTitle = s.insufficientFunds;
+        errorMessage = s.insufficientFundsMsg;
+        errorCode = 'insufficient_funds';
+      } else if (backendMsg.toLowerCase().contains('no payment method')) {
+        errorTitle = s.noPaymentMethod;
+        errorMessage = 'Please add a payment method before booking.';
+        errorCode = 'no_payment_method';
+      } else {
+        errorTitle = s.paymentDeclined;
+        errorMessage = backendMsg.isNotEmpty ? backendMsg : s.genericPaymentError;
       }
     } else if (error.toString().toLowerCase().contains('paypal')) {
       errorTitle = s.paypalDeclined;

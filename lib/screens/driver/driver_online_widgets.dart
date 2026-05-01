@@ -198,21 +198,29 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ? Colors.white.withValues(alpha: 0.2)
         : Colors.black.withValues(alpha: 0.15);
 
+    // Build pages dynamically — hide "LAST TRIP" for new drivers
+    // who haven't completed any trips yet.
+    final hasLastTrip = _lastTripEarnings > 0;
     final amounts = [
       _weeklyEarnings,
       _earnings,
-      _lastTripEarnings,
+      if (hasLastTrip) _lastTripEarnings,
     ];
     final prevAmounts = [
       _prevWeeklyEarnings,
       _prevEarnings,
-      _prevLastTripEarnings,
+      if (hasLastTrip) _prevLastTripEarnings,
     ];
     final labels = [
       S.of(context).thisWeek.toUpperCase(),
       S.of(context).today.toUpperCase(),
-      S.of(context).lastTripLabel.toUpperCase(),
+      if (hasLastTrip) S.of(context).lastTripLabel.toUpperCase(),
     ];
+    final pageCount = amounts.length;
+
+    // Clamp _earningsPage so it never points past the last valid page
+    // (e.g. when a driver goes from 3 pages to 2 after app restart).
+    final safePage = _earningsPage.clamp(0, pageCount - 1);
 
     Widget pillPage(double amount, double prevAmount, String label) {
       return ClipRRect(
@@ -258,16 +266,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    for (int i = 0; i < 3; i++) ...[
+                    for (int i = 0; i < pageCount; i++) ...[
                       Container(
                         width: 4,
                         height: 4,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: i == _earningsPage ? dotActive : dotInactive,
+                          color: i == safePage ? dotActive : dotInactive,
                         ),
                       ),
-                      if (i < 2) const SizedBox(width: 3),
+                      if (i < pageCount - 1) const SizedBox(width: 3),
                     ],
                   ],
                 ),
@@ -281,10 +289,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return GestureDetector(
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity == null) return;
-        if (details.primaryVelocity! < -200 && _earningsPage < 2) {
-          _setState(() => _earningsPage++);
-        } else if (details.primaryVelocity! > 200 && _earningsPage > 0) {
-          _setState(() => _earningsPage--);
+        if (details.primaryVelocity! < -200 && safePage < pageCount - 1) {
+          _setState(() => _earningsPage = safePage + 1);
+        } else if (details.primaryVelocity! > 200 && safePage > 0) {
+          _setState(() => _earningsPage = safePage - 1);
         }
       },
       child: SizedBox(
@@ -300,11 +308,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: child,
           ),
           child: Center(
-            key: ValueKey<int>(_earningsPage),
+            key: ValueKey<int>(safePage),
             child: pillPage(
-              amounts[_earningsPage],
-              prevAmounts[_earningsPage],
-              labels[_earningsPage],
+              amounts[safePage],
+              prevAmounts[safePage],
+              labels[safePage],
             ),
           ),
         ),

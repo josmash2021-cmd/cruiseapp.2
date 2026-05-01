@@ -359,6 +359,56 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
                 logging.warning(
                     "Firestore bulk-cancel sync failed for trip %d: %s", trip_id, e
                 )
+
+    # ── Real-time sync: Socket.IO + FCM per canceled trip ──
+    for t in trips:
+        try:
+            _safe_create_task(emit_trip_status(
+                trip_id=t.id,
+                status="cancelled",
+                extra={
+                    "cancel_reason": "admin_bulk_cleanup",
+                    "cancelled_by": "admin",
+                },
+            ))
+        except Exception as _socket_err:
+            logging.warning("[Socket.io] trip_status emit failed on bulk cancel trip %d: %s", t.id, _socket_err)
+
+        try:
+            from services.event_bus import event_bus as _ev_bus
+            _safe_create_task(_ev_bus.push_trip_update(t.id, {
+                "status": "cancelled",
+                "trip_id": t.id,
+                "cancel_reason": "admin_bulk_cleanup",
+                "cancelled_by": "admin",
+            }))
+        except Exception as _sse_err:
+            logging.warning("[SSE] trip update push failed on bulk cancel trip %d: %s", t.id, _sse_err)
+
+        try:
+            if t.rider_id:
+                rider_res = await db.execute(select(User).where(User.id == t.rider_id))
+                rider = rider_res.scalar_one_or_none()
+                if rider and rider.fcm_token:
+                    _safe_create_task(_send_fcm_push_async(
+                        rider.fcm_token,
+                        "Trip Canceled",
+                        "Your trip has been canceled by dispatch.",
+                        data={"type": "trip_canceled", "trip_id": str(t.id)},
+                    ))
+            if t.driver_id:
+                driver_res = await db.execute(select(User).where(User.id == t.driver_id))
+                driver = driver_res.scalar_one_or_none()
+                if driver and driver.fcm_token:
+                    _safe_create_task(_send_fcm_push_async(
+                        driver.fcm_token,
+                        "Trip Canceled",
+                        "A trip has been canceled by dispatch.",
+                        data={"type": "trip_canceled", "trip_id": str(t.id)},
+                    ))
+        except Exception as _fcm_err:
+            logging.warning("[FCM] push failed on bulk cancel trip %d: %s", t.id, _fcm_err)
+
     _security_audit_log("ADMIN_BULK_CANCEL", "api", f"canceled={canceled}")
     return {"canceled_count": len(canceled), "trip_ids": canceled}
 

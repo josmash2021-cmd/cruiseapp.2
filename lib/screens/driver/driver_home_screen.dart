@@ -820,9 +820,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // 150ms of the fade+scale transition, the driver still feels a
     // ~1s freeze. By waiting 300ms the transition is already 75%
     // done and the user perceives it as smooth.
-    // REMOVED: sound + heavy haptic caused 1-2s freeze on go-online.
-    // Light haptic only — instant, no audio engine blocking.
+    // Sound + haptic: play AFTER navigation starts to avoid freeze.
+    // The old order (sound+haptic before push) stacked MethodChannel
+    // round-trips on the same frame as the route transition, causing
+    // ~1s freeze. New order: push first, then fire-and-forget sound.
     HapticService.lightImpact();
+    NotificationService.playOnlineSound();
     final result = await pushFuture;
     if (!mounted) return;
     setState(() => _isNavigatingToOnline = false);

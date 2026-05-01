@@ -7,8 +7,9 @@ import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../services/user_session.dart';
 import '../home_screen.dart';
-import '../../main.dart' show themeNotifier;
+import '../../main.dart' show themeNotifier, accessibilityNotifier;
 import '../privacy_screen.dart';
+import '../accessibility_screen.dart';
 import 'driver_manage_account_screen.dart';
 import 'driver_settings_pages.dart';
 
@@ -29,7 +30,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
 
   // Toggles
   bool _nightMode = true;
-  bool _accessibility = false;
 
   @override
   void initState() {
@@ -54,7 +54,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     if (!mounted) return;
     setState(() {
       _nightMode = prefs.getBool('driver_night_mode') ?? true;
-      _accessibility = prefs.getBool('driver_accessibility') ?? false;
     });
   }
 
@@ -63,10 +62,15 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     themeNotifier.setNightMode(v);
   }
 
-  Future<void> _setAccessibility(bool v) async {
-    setState(() => _accessibility = v);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('driver_accessibility', v);
+  /// Whether any accessibility feature is currently enabled.
+  /// Used to show the user that a11y settings are active.
+  bool get _anyA11yEnabled {
+    final n = accessibilityNotifier;
+    return n.highContrast ||
+        n.reduceMotion ||
+        n.screenReaderHints ||
+        n.colorBlindMode != 'none' ||
+        n.textScale != 1.0;
   }
 
   @override
@@ -159,12 +163,16 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
 
                 // ═══ GENERAL SECTION ═══
                 _sectionHeader(S.of(context).generalLabel),
-                _toggleItem(
+                _navItem(
                   Icons.accessibility_new_rounded,
                   S.of(context).accessibilityLabel,
-                  S.of(context).accessibilityFeatures,
-                  _accessibility,
-                  _setAccessibility,
+                  _anyA11yEnabled
+                      ? 'On'
+                      : S.of(context).accessibilityFeatures,
+                  () => Navigator.push(
+                    context,
+                    slideFromRightRoute(const AccessibilityScreen()),
+                  ),
                 ),
                 _toggleItem(
                   Icons.dark_mode_rounded,

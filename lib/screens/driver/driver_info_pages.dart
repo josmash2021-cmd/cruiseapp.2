@@ -652,7 +652,7 @@ class LearningCenterScreen extends StatelessWidget {
                             height: 44,
                             decoration: BoxDecoration(
                               color: topic.color.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             child: Icon(topic.icon, color: topic.color, size: 22),
                           ),
@@ -1290,10 +1290,12 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin {
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       title,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: _gold,
                         fontSize: 13,
@@ -1304,6 +1306,7 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin {
                     const SizedBox(height: 3),
                     Text(
                       description,
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 11,
@@ -1725,38 +1728,43 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // ── Title ──
+                // ── Title + Subtitle pill ──
                 FadeTransition(
-                  opacity: _fade(0.0, 0.2),
-                  child: Text(
-                    'DRIVE SAFE, ALWAYS',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _gold,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2.0,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withValues(alpha: 0.8),
-                          blurRadius: 8,
+                  opacity: _fade(0.0, 0.3),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'DRIVE SAFE, ALWAYS',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _gold,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'SAFETY IS YOUR #1 PRIORITY',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 3.0,
+                          ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // ── Subtitle ──
-                FadeTransition(
-                  opacity: _fade(0.1, 0.3),
-                  child: Text(
-                    'SAFETY IS YOUR #1 PRIORITY',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 3.0,
                     ),
                   ),
                 ),

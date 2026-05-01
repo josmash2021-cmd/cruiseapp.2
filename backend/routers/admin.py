@@ -339,6 +339,55 @@ async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = D
             )
         except Exception as e:
             logging.warning("Firestore cancel sync failed: %s", e)
+
+    # ── Real-time sync: Socket.IO + FCM + SSE ──
+    # Notify rider and driver (if assigned) that the trip was cancelled
+    try:
+        _safe_create_task(emit_trip_status(
+            trip_id=trip.id,
+            status="cancelled",
+            extra={
+                "cancel_reason": trip.cancel_reason,
+                "cancelled_by": "admin",
+            },
+        ))
+    except Exception as _socket_err:
+        logging.warning("[Socket.io] trip_status emit failed on admin cancel: %s", _socket_err)
+
+    try:
+        from services.event_bus import event_bus as _ev_bus
+        _safe_create_task(_ev_bus.push_trip_update(trip.id, {
+            "status": "cancelled",
+            "trip_id": trip.id,
+            "cancel_reason": trip.cancel_reason,
+            "cancelled_by": "admin",
+        }))
+    except Exception as _sse_err:
+        logging.warning("[SSE] trip update push failed on admin cancel: %s", _sse_err)
+
+    try:
+        rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_res.scalar_one_or_none()
+        if rider and rider.fcm_token:
+            _safe_create_task(_send_fcm_push_async(
+                rider.fcm_token,
+                "Trip Canceled",
+                "Your trip has been canceled by dispatch.",
+                data={"type": "trip_canceled", "trip_id": str(trip.id)},
+            ))
+        if trip.driver_id:
+            driver_res = await db.execute(select(User).where(User.id == trip.driver_id))
+            driver = driver_res.scalar_one_or_none()
+            if driver and driver.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    driver.fcm_token,
+                    "Trip Canceled",
+                    "A trip has been canceled by dispatch.",
+                    data={"type": "trip_canceled", "trip_id": str(trip.id)},
+                ))
+    except Exception as _fcm_err:
+        logging.warning("[FCM] push failed on admin cancel: %s", _fcm_err)
+
     _security_audit_log("ADMIN_TRIP_CANCELLED", "admin", f"trip_id={trip_id} reason={reason}")
     return _trip_dict(trip)
 

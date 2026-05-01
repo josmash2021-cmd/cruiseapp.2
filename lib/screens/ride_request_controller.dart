@@ -349,7 +349,7 @@ extension _RideRequestController on _RideRequestScreenState {
         // Show premium "Driver Found" overlay, then auto-navigate quickly
         if (!_driverFoundVisible && !_navigatingToTracking) {
           _driverFoundVisible = true;
-          HapticFeedback.heavyImpact();
+          HapticService.heavyImpact();
 
           // Init animation controllers
           _dfCheckCtrl?.dispose();
@@ -1717,7 +1717,7 @@ extension _RideRequestController on _RideRequestScreenState {
       if (!mounted) return;
 
       // Navigate to animated confirmation screen
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 400),

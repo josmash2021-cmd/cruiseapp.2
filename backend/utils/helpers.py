@@ -234,9 +234,18 @@ def _trip_dict(t) -> dict:
             "guest_last_name": getattr(t, "guest_last_name", None),
             "guest_phone": getattr(t, "guest_phone", None),
         }
+        # Compute derived distance/duration from pickup/dropoff coordinates
+        # so the frontend always has values even when raw DB columns are NULL.
         if d.get("pickup_lat") and d.get("dropoff_lat"):
-            d["distance_miles"] = round(_haversine(d["pickup_lat"], d["pickup_lng"], d["dropoff_lat"], d["dropoff_lng"]) * 0.621371, 1)
-            d["duration_minutes"] = max(round(d["distance_miles"] * 2.5), 3) if d["distance_miles"] else None
+            computed_miles = round(_haversine(d["pickup_lat"], d["pickup_lng"], d["dropoff_lat"], d["dropoff_lng"]) * 0.621371, 1)
+            computed_minutes = max(round(computed_miles * 2.5), 3) if computed_miles else None
+            d["distance_miles"] = computed_miles
+            d["duration_minutes"] = computed_minutes
+            # Backfill the raw fields that Flutter reads when the DB values are NULL
+            if d.get("distance") is None:
+                d["distance"] = computed_miles
+            if d.get("duration") is None:
+                d["duration"] = computed_minutes
         return d
     except Exception as e:
         import logging

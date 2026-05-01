@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
@@ -181,7 +181,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                   const Spacer(),
                   GestureDetector(
                     onTap: () async {
-                      HapticFeedback.selectionClick();
+                      HapticService.selectionClick();
                       setState(() {
                         for (final i in _items) {
                           i.unread = false;
@@ -368,7 +368,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   Widget _buildItem(_InboxItem item) {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         if (item.unread) {
           setState(() => item.unread = false);
           if (item.id > 0) {

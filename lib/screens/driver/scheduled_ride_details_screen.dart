@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -139,7 +139,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
       try {
         await ApiService.startScheduledTrip(_tripId);
         if (!mounted) return;
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
         _navigateToTripScreen();
         return;
       } catch (e) {

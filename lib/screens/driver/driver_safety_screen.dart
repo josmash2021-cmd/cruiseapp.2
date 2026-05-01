@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
@@ -96,7 +96,7 @@ class DriverSafetyScreen extends StatelessWidget {
                       title: 'Share Trip Status',
                       subtitle: 'Send your real-time location to a contact',
                       onTap: () async {
-                        HapticFeedback.lightImpact();
+                        HapticService.lightImpact();
                         try {
                           final result = await ApiService.shareTrip(tripId);
                           final shareUrl = result['share_url'] as String?;
@@ -119,7 +119,7 @@ class DriverSafetyScreen extends StatelessWidget {
                       subtitle: 'Flag unsafe behavior for review',
                       color: Colors.orange,
                       onTap: () {
-                        HapticFeedback.mediumImpact();
+                        HapticService.mediumImpact();
                         _showReportSheet(context);
                       },
                     ),
@@ -129,7 +129,7 @@ class DriverSafetyScreen extends StatelessWidget {
                       title: 'Record Audio',
                       subtitle: 'Start recording for your safety',
                       onTap: () {
-                        HapticFeedback.lightImpact();
+                        HapticService.lightImpact();
                         _showToast(context, 'Audio recording started');
                       },
                     ),
@@ -204,7 +204,7 @@ class DriverSafetyScreen extends StatelessWidget {
           ),
           GestureDetector(
             onTap: () async {
-              HapticFeedback.heavyImpact();
+              HapticService.heavyImpact();
               final uri = Uri.parse('tel:911');
               if (await canLaunchUrl(uri)) await launchUrl(uri);
             },

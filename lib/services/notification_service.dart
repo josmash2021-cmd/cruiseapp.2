@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' show Color;
+import 'haptic_service.dart';
 import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -247,7 +248,7 @@ class NotificationService {
       payload: payload,
     );
 
-    if (vibrateEnabled) HapticFeedback.mediumImpact();
+    if (vibrateEnabled) HapticService.mediumImpact();
   }
 
   // ── Trip offer notification (driver) ─────────────────────────────────
@@ -314,7 +315,7 @@ class NotificationService {
       payload: payload ?? 'trip_offer',
     );
 
-    if (vibrateEnabled) HapticFeedback.heavyImpact();
+    if (vibrateEnabled) HapticService.heavyImpact();
     debugPrint('[NotificationService] offer notification shown: $title');
   }
 

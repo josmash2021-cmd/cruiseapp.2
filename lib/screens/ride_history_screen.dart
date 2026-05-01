@@ -44,6 +44,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
         final backendTrips = await ApiService.getRiderTrips(userId);
         if (backendTrips.isNotEmpty) {
           final parsed = backendTrips.map((t) {
+            // Prefer computed fields from backend; fallback to raw distance/duration
+            final double distanceMiles = (t['distance_miles'] as num?)?.toDouble() ??
+                (t['distance'] as num?)?.toDouble() ?? 0.0;
+            final int durationMinutes = (t['duration_minutes'] as num?)?.toInt() ??
+                (t['duration'] as num?)?.toInt() ?? 0;
             return TripHistoryItem(
               tripId: (t['id'] as num?)?.toInt(),
               pickup: t['pickup_address']?.toString() ?? '',
@@ -51,9 +56,12 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               rideName: t['vehicle_type']?.toString() ?? 'Comfort',
               price:
                   '\$${((t['fare'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
-              miles:
-                  '${((t['distance'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)} mi',
-              duration: '${(t['duration'] as num?)?.toInt() ?? 0} min',
+              miles: distanceMiles > 0
+                  ? '${distanceMiles.toStringAsFixed(1)} mi'
+                  : '--',
+              duration: durationMinutes > 0
+                  ? '$durationMinutes min'
+                  : '-- min',
               createdAt:
                   DateTime.tryParse(t['created_at']?.toString() ?? '') ??
                   DateTime.now(),

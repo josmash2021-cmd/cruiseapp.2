@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
@@ -225,7 +225,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
               ),
               GestureDetector(
                 onTap: () async {
-                  HapticFeedback.heavyImpact();
+                  HapticService.heavyImpact();
                   final uri = Uri.parse('tel:911');
                   if (await canLaunchUrl(uri)) await launchUrl(uri);
                 },
@@ -389,7 +389,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   Future<void> _alertAllContacts() async {
     if (_isSendingSos || _trustedContacts.isEmpty) return;
     setState(() => _isSendingSos = true);
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     try {
       // Get current location
@@ -459,7 +459,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   void _shareTrip(BuildContext context) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     Share.share(
       'I\'m riding with Cruise! Track my trip live for safety. '
       'Download Cruise at ${ApiService.publicBaseUrl} 🚗',
@@ -467,7 +467,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   void _showVerifyTip(BuildContext context, AppColors c) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -552,7 +552,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   void _showTrustedContacts(BuildContext context, AppColors c) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

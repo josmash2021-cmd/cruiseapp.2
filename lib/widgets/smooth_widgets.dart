@@ -1,5 +1,5 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 
 /// Botón ultra-smooth con feedback táctil profesional
 class SmoothButton extends StatefulWidget {
@@ -76,7 +76,7 @@ class _SmoothButtonState extends State<SmoothButton>
       _isPressed = true;
       _controller.forward();
       if (widget.enableHaptic) {
-        HapticFeedback.lightImpact();
+        HapticService.lightImpact();
       }
     }
   }

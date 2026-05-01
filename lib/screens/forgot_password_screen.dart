@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
@@ -40,7 +40,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       await ApiService.forgotPassword(identifier);
       if (!mounted) return;
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
       setState(() {
         _sent = true;
         _loading = false;

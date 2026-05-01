@@ -87,6 +87,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         onMapCreated: (ctrl) {
           _map = ctrl;
           _lastStyleDark = isDark;
+          // Increment generation so any stale annotation refs from the old
+          // PlatformView are recognized as dead and recreated fresh.
+          _mapGeneration++;
           // CRITICAL: reset all annotation references before creating new managers.
           // On Android the PlatformView (SurfaceView) is destroyed when the app
           // goes to background and recreated on resume. This triggers onMapCreated
@@ -531,7 +534,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 controller: _offerPageCtrl,
                 onPageChanged: (index) {
                   _setState(() => _currentOfferIndex = index);
-                  HapticFeedback.selectionClick();
+                  HapticService.selectionClick();
                   // Only trigger preview if not already animating
                   if (index < _pendingOffers.length && !_isCardAnimating) {
                     _autoTriggerRoutePreview(_pendingOffers[index]);
@@ -1180,7 +1183,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
-                HapticFeedback.lightImpact();
+                HapticService.lightImpact();
                 _rejectOffer(offer);
               },
               child: Container(
@@ -1534,36 +1537,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         const SizedBox(height: 4),
 
         // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
-        GestureDetector(
-          onTapDown: (_) => _setState(() => _isAcceptPressed = true),
-          onTapUp: (_) {
-            _setState(() => _isAcceptPressed = false);
-            _acceptOffer(offer);
-          },
-          onTapCancel: () => _setState(() => _isAcceptPressed = false),
-          child: AnimatedScale(
-            scale: _isAcceptPressed ? 0.97 : 1.0,
-            duration: const Duration(milliseconds: 100),
-            child: Container(
-              width: double.infinity,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD4A843),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  S.of(context).accept,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+        _buildAcceptButton(offer, offerId),
       ],
     );
   }
@@ -1612,6 +1586,56 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     }
     // Base 253 = old 275 minus 22 for the removed _ShimmerBadge row.
     return 253 + extra + (botPad > 20 ? botPad - 10 : 0);
+  }
+
+  Widget _buildAcceptButton(Map<String, dynamic> offer, String offerId) {
+    final bool isAccepting = _offerAcceptState == _OfferAcceptState.routing &&
+        _acceptingCardId == offerId;
+    return GestureDetector(
+      onTapDown: isAccepting
+          ? null
+          : (_) => _setState(() => _isAcceptPressed = true),
+      onTapUp: isAccepting
+          ? null
+          : (_) {
+              _setState(() => _isAcceptPressed = false);
+              _acceptOffer(offer);
+            },
+      onTapCancel: () => _setState(() => _isAcceptPressed = false),
+      child: AnimatedScale(
+        scale: _isAcceptPressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        child: Container(
+          width: double.infinity,
+          height: 48,
+          decoration: BoxDecoration(
+            color: isAccepting
+                ? const Color(0xFFD4A843).withValues(alpha: 0.5)
+                : const Color(0xFFD4A843),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: isAccepting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation(Colors.black),
+                    ),
+                  )
+                : Text(
+                    S.of(context).accept,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Format a scheduled ride time relative to now — always 12-hour clock
@@ -2450,7 +2474,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // Re-center / overview button
               GestureDetector(
                 onTap: () {
-                  HapticFeedback.lightImpact();
+                  HapticService.lightImpact();
                   _fitBoundsMulti([_pos!, _pickupLL, _dropoffLL]);
                 },
                 child: Container(
@@ -3200,7 +3224,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             5,
                             (i) => GestureDetector(
                               onTap: () {
-                                HapticFeedback.selectionClick();
+                                HapticService.selectionClick();
                                 _setState(() => _stars = i + 1);
                               },
                               child: Padding(
@@ -3564,7 +3588,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       padding: const EdgeInsets.only(bottom: 6),
       child: ListTile(
         onTap: () {
-          HapticFeedback.selectionClick();
+          HapticService.selectionClick();
           tap();
         },
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -3651,7 +3675,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         });
                         if (_slideVal >= 0.88 && !_slid) {
                           _slid = true;
-                          HapticFeedback.heavyImpact();
+                          HapticService.heavyImpact();
                           onDone();
                         }
                       },
@@ -3786,7 +3810,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   ) {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
+        HapticService.lightImpact();
         tap();
       },
       child: Container(
@@ -3848,7 +3872,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   Widget _actionBtn(IconData ic, VoidCallback tap) {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
+        HapticService.lightImpact();
         tap();
       },
       child: Container(

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../navigation/nav_state_machine.dart';
 import '../l10n/app_localizations.dart';
@@ -243,7 +243,7 @@ class DriverActionPanel extends StatelessWidget {
                       height: 52,
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          HapticFeedback.mediumImpact();
+                          HapticService.mediumImpact();
                           if (onStartNavigation != null) {
                             onStartNavigation!();
                           } else {
@@ -276,7 +276,7 @@ class DriverActionPanel extends StatelessWidget {
                       height: 56,
                       child: ElevatedButton.icon(
                         onPressed: () {
-                          HapticFeedback.heavyImpact();
+                          HapticService.heavyImpact();
                           onArrivedAtPickup();
                         },
                         icon: const Icon(Icons.check_circle_rounded, size: 24),
@@ -427,7 +427,7 @@ class DriverActionPanel extends StatelessWidget {
                   height: 56,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      HapticFeedback.heavyImpact();
+                      HapticService.heavyImpact();
                       onStartTrip();
                     },
                     icon: const Icon(Icons.play_arrow_rounded, size: 28),
@@ -532,7 +532,7 @@ class DriverActionPanel extends StatelessWidget {
                   height: 56,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      HapticFeedback.heavyImpact();
+                      HapticService.heavyImpact();
                       onArrivedAtDropoff();
                     },
                     icon: const Icon(Icons.location_on_rounded, size: 24),
@@ -631,7 +631,7 @@ class DriverActionPanel extends StatelessWidget {
                   height: 56,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      HapticFeedback.heavyImpact();
+                      HapticService.heavyImpact();
                       onFinishTrip();
                     },
                     icon: const Icon(Icons.flag_rounded, size: 28),

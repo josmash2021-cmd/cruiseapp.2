@@ -1,6 +1,7 @@
 ﻿import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../config/mapbox_config.dart';
@@ -137,7 +138,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
   Future<void> _submit() async {
     if (_submitting) return;
     setState(() => _submitting = true);
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
 
     if (widget.tripId != null) {
       try {
@@ -158,7 +159,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
 
   void _skip() {
     if (_submitting) return;
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     _navigateToHome();
   }
 
@@ -268,7 +269,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                         final filled = i < _ratingStars;
                         return GestureDetector(
                           onTap: () {
-                            HapticFeedback.lightImpact();
+                            HapticService.lightImpact();
                             setState(() => _ratingStars = i + 1);
                           },
                           child: Padding(
@@ -329,7 +330,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                         final sel = _feedbackChips.contains(label);
                         return GestureDetector(
                           onTap: () {
-                            HapticFeedback.selectionClick();
+                            HapticService.selectionClick();
                             setState(() {
                               sel
                                   ? _feedbackChips.remove(label)
@@ -462,7 +463,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                             ),
                             child: GestureDetector(
                               onTap: () {
-                                HapticFeedback.selectionClick();
+                                HapticService.selectionClick();
                                 setState(() {
                                   _customTip = false;
                                   _tipAmount = sel ? 0 : amt;
@@ -601,7 +602,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     // ── Favorite driver ──
                     GestureDetector(
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        HapticService.selectionClick();
                         setState(() => _saveDriver = !_saveDriver);
                       },
                       child: ClipRRect(

@@ -25,6 +25,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (_isClearingAnnotations) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null || _pos == null) return;
+    // If the map was recreated since this annotation was created, the
+    // annotation ref is stale. Null it so a fresh one is created.
+    if (_goldDotAnnot != null) {
+      try {
+        // A stale annotation throws when we touch geometry. Use that as
+        // a cheap staleness test before the expensive update() IPC call.
+        _goldDotAnnot!.geometry = _goldDotAnnot!.geometry;
+      } catch (_) {
+        _goldDotAnnot = null;
+      }
+    }
+    if (_carAnnot != null) {
+      try {
+        _carAnnot!.geometry = _carAnnot!.geometry;
+      } catch (_) {
+        _carAnnot = null;
+      }
+    }
 
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
@@ -352,11 +370,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return R * 2 * math.atan2(math.sqrt(x), math.sqrt(1 - x));
   }
 
-  void _fitBounds(LatLng a, LatLng b) {
-    _fitBoundsMulti([a, b]);
+  Future<void> _fitBounds(LatLng a, LatLng b) async {
+    await _fitBoundsMulti([a, b]);
   }
 
-  void _fitBoundsMulti(List<LatLng> points) {
+  Future<void> _fitBoundsMulti(List<LatLng> points) async {
     if (points.isEmpty || _map == null) return;
     final coords = points
         .map((p) => mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
@@ -371,17 +389,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Preserve current tilt/bearing if cinematic is active
     final currentPitch = _offerTiltAnim?.value ?? 0.0;
     final currentBearing = _offerBearingAnim?.value ?? 0.0;
-    _map!.cameraForCoordinatesPadding(
-      coords,
-      mapbox.CameraOptions(
-        pitch: currentPitch > 1 ? currentPitch : 0,
-        bearing: currentBearing.abs() > 0.5 ? currentBearing : 0,
-      ),
-      mapbox.MbxEdgeInsets(top: topArea, left: 60, bottom: cardArea, right: 60),
-      null, null,
-    ).then((cam) {
-      if (mounted) _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
-    });
+    try {
+      final cam = await _map!.cameraForCoordinatesPadding(
+        coords,
+        mapbox.CameraOptions(
+          pitch: currentPitch > 1 ? currentPitch : 0,
+          bearing: currentBearing.abs() > 0.5 ? currentBearing : 0,
+        ),
+        mapbox.MbxEdgeInsets(top: topArea, left: 60, bottom: cardArea, right: 60),
+        null, null,
+      );
+      if (mounted) {
+        await _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+      }
+    } catch (e) {
+      debugPrint('[DriverOnline] _fitBoundsMulti error: $e');
+    }
   }
 
   /// Auto-trigger cinematic route preview when first offer arrives.
@@ -441,8 +464,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 1: Camera zoom to fit full route (flat, no tilt) ──
-    _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
-    await Future.delayed(const Duration(milliseconds: 500));
+    await _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
     if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
 
     // ── PHASE 2: Create pins at size 0 (invisible) ──

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 
 import '../services/api_service.dart';
 
@@ -77,7 +77,7 @@ class _TransferCruiseCashScreenState extends State<TransferCruiseCashScreen>
       _submitting = true;
       _error = null;
     });
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     try {
       final res = await ApiService.transferCruiseCash(
         recipientCode: code,
@@ -100,7 +100,7 @@ class _TransferCruiseCashScreenState extends State<TransferCruiseCashScreen>
         _submitting = false;
         _error = e.toString().replaceFirst('ApiException: ', '');
       });
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
     }
   }
 

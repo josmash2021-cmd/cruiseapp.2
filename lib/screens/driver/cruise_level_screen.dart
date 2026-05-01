@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
@@ -717,7 +717,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         _showTierDetail(tier, isCurrent, isLocked);
       },
       child: Container(

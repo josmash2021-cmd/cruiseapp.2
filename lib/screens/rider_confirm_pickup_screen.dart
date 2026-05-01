@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 
 import '../widgets/verified_avatar.dart';
 import '../l10n/app_localizations.dart';
@@ -310,7 +311,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Future<void> _onDriverStartedTrip() async {
     if (_driverStarted || _pressed) return;
     _driverStarted = true;
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     // Stop hint animations like manual press does
     _handCtrl.stop();
     _ripple1Ctrl.stop();
@@ -511,7 +512,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Future<void> _onConfirmPressed() async {
     if (_pressed || _driverStarted) return;
     _pressed = true;
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     // Stop hint animations
     _handCtrl.stop();
     _ripple1Ctrl.stop();

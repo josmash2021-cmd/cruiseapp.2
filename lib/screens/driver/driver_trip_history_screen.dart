@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../l10n/app_localizations.dart';
@@ -153,7 +153,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                   return Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        HapticService.selectionClick();
                         setState(() => _selectedFilter = i);
                       },
                       child: AnimatedContainer(
@@ -294,8 +294,11 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final riderName =
         (trip['rider'] ?? trip['rider_name'] ?? dropoff) as String;
     final date = (trip['date'] ?? trip['created_at'] ?? '') as String;
-    final distance = (trip['distance'] as num?)?.toDouble() ?? 0.0;
-    final duration = (trip['duration'] as num?)?.toInt() ?? 0;
+    // Prefer computed fields from backend; fallback to raw distance/duration
+    final distance = (trip['distance_miles'] as num?)?.toDouble() ??
+        (trip['distance'] as num?)?.toDouble() ?? 0.0;
+    final duration = (trip['duration_minutes'] as num?)?.toInt() ??
+        (trip['duration'] as num?)?.toInt() ?? 0;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
@@ -601,8 +604,10 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
         (trip['dropoff_address'] ?? trip['dropoff'] ?? '') as String;
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0.0;
     final tip = (trip['tip'] as num?)?.toDouble() ?? 0.0;
-    final distance = (trip['distance'] as num?)?.toDouble() ?? 0.0;
-    final duration = (trip['duration'] as num?)?.toInt() ?? 0;
+    final distance = (trip['distance_miles'] as num?)?.toDouble() ??
+        (trip['distance'] as num?)?.toDouble() ?? 0.0;
+    final duration = (trip['duration_minutes'] as num?)?.toInt() ??
+        (trip['duration'] as num?)?.toInt() ?? 0;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

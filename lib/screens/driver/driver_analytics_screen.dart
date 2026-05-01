@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
@@ -224,7 +224,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
                   return Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        HapticService.selectionClick();
                         setState(() => _selectedPeriod = i);
                       },
                       child: AnimatedContainer(
@@ -684,7 +684,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
   }
 
   void _showSessionDetail(_Session s) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     final duration = s.end.difference(s.start);
     final durationStr = '${duration.inHours}h ${duration.inMinutes.remainder(60)}m';
     final rate = duration.inMinutes > 0

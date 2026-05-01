@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -470,7 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _callRecipient() async {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     if ((_recipientPhone ?? '').isEmpty) {
       await _resolveRecipientPhone();
     }

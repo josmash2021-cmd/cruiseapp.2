@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../l10n/app_localizations.dart';
@@ -253,7 +253,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   void _advanceStep() {
     if (_finishing) return;
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _stepCtrl.reverse().then((_) {
       if (!mounted) return;
       setState(() {
@@ -270,7 +270,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _captureAndComplete() async {
     _finishing = true;
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     setState(() => _ringProgress = 1.0);
     _doneCtrl.forward();
 

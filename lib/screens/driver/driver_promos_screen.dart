@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../l10n/app_localizations.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -779,7 +779,7 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
   //  DETAIL BOTTOM SHEET
   // ═══════════════════════════════════════════════════
   void _showPromoDetail(_Promo p) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

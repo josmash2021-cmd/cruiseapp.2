@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 
 class BouncingButton extends StatefulWidget {
   final Widget child;
@@ -48,7 +48,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
   }
 
   void _onTapDown(TapDownDetails details) {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     _controller.forward();
   }
 

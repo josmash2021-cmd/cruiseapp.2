@@ -1,6 +1,6 @@
 ﻿import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
@@ -489,7 +489,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         Navigator.of(
           context,
         ).push(slideFromRightRoute(const DriverProfileScreen()));
@@ -701,7 +701,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          HapticFeedback.selectionClick();
+          HapticService.selectionClick();
           onTap();
         },
         child: Container(
@@ -777,7 +777,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: ListTile(
         onTap: () {
-          HapticFeedback.selectionClick();
+          HapticService.selectionClick();
           onTap();
         },
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

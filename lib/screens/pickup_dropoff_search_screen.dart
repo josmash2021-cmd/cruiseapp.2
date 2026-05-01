@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../config/api_keys.dart';
@@ -285,7 +286,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   /// can nudge the pin to the exact dropoff location, then confirm to
   /// go straight to route preview — same flow as "Choose on map".
   Future<void> _confirmDropoffOnMap(PlaceDetails seed) async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     if (!mounted) return;
 
     // ── Single-canvas map picker (same as _openMapPicker) ──
@@ -352,7 +353,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   }
 
   Future<void> _openMapPicker() async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     final lat = _resolvedLat ?? widget.initialPickupLat;
     final lng = _resolvedLng ?? widget.initialPickupLng;
 
@@ -426,7 +427,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   }
 
   Future<void> _onSavedPlaceTap(String key) async {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     final fav = _findFavoriteByKey(key);
     if (fav == null || fav.address.isEmpty) {
       // Not saved yet — open map picker so the user can pick & save later
@@ -454,7 +455,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   }
 
   Future<void> _onRecentTap(String recent) async {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     if (_editingDropoff) {
       _dropoffCtrl.text = recent;
       _onTextChanged(recent);
@@ -1412,7 +1413,7 @@ class _SuggestionRowState extends State<_SuggestionRow>
       },
       child: GestureDetector(
         onTap: () {
-          HapticFeedback.selectionClick();
+          HapticService.selectionClick();
           widget.onTap();
         },
         onTapDown: (_) => setState(() => _pressed = true),

@@ -947,7 +947,12 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
         if not trip.duration and trip.started_at:
             delta = trip.completed_at - trip.started_at
             trip.duration = max(1, int(delta.total_seconds() / 60))
+        elif not trip.duration and trip.created_at:
+            # Fallback: use created_at → completed_at if started_at was never set
+            delta = trip.completed_at - trip.created_at
+            trip.duration = max(1, int(delta.total_seconds() / 60))
         elif not trip.duration and trip.distance:
+            # Last resort: estimate from distance
             trip.duration = max(1, int(trip.distance * 2))
     # Auto-calculate earnings split (vehicle-type-dependent commission).
     # `trip.fare` already includes any wait-time surcharge added in the

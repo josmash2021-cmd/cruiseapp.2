@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
@@ -430,7 +431,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               Clipboard.setData(
                                 ClipboardData(text: _dispatchPassword!),
                               );
-                              HapticFeedback.lightImpact();
+                              HapticService.lightImpact();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
@@ -474,7 +475,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                       setState(() {
                                         _showPassword = !_showPassword;
                                       });
-                                      HapticFeedback.lightImpact();
+                                      HapticService.lightImpact();
                                     },
                                     child: Icon(
                                       _showPassword
@@ -623,7 +624,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   Widget _buildModeCard() {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         Navigator.push(
           context,
           slideFromRightRoute(const CruiseLevelScreen()),
@@ -690,7 +691,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   ) {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         onTap();
       },
       child: Container(

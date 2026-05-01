@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
@@ -140,6 +141,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
   bool _lastStyleDark = true;
+  // Monotonically incremented every time onMapCreated fires. Guards against
+  // stale annotation refs surviving a PlatformView recreation.
+  int _mapGeneration = 0;
   // Cache: offerId → Future<String> static map URL (with real routed polyline)
   final Map<String, Future<String>> _offerMapUrlCache = {};
 
@@ -565,6 +569,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _routePulseCtrl?.dispose();
     _pulseCtrl?.dispose();
     _rejectSlideCtrl?.dispose();
+    _rejectSlideCtrl = null;
     _scheduledBounceCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
@@ -927,7 +932,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   scale: _scheduledBounceAnim ?? const AlwaysStoppedAnimation(1.0),
                   child: GestureDetector(
                     onTap: () {
-                      HapticFeedback.mediumImpact();
+                      HapticService.mediumImpact();
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
@@ -1012,7 +1017,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ),
                   child: GestureDetector(
                     onTap: () {
-                      HapticFeedback.selectionClick();
+                      HapticService.selectionClick();
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
@@ -1149,7 +1154,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   fabBorder,
                   const Color(0xFF4285F4),
                   () {
-                    HapticFeedback.mediumImpact();
+                    HapticService.mediumImpact();
                     _recenterCamera();
                   },
                 ),

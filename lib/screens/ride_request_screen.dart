@@ -27,6 +27,7 @@ import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
+import '../services/haptic_service.dart';
 import '../services/places_service.dart';
 import '../state/rider_trip_controller.dart';
 import 'credit_card_screen.dart';

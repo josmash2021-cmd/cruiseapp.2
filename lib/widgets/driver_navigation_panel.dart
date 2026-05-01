@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'verified_avatar.dart';
 import '../models/lat_lng.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -335,7 +336,7 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
                     height: 52,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        HapticFeedback.mediumImpact();
+                        HapticService.mediumImpact();
                         _launchExternalNavigation();
                       },
                       icon: const Icon(Icons.navigation_rounded, size: 22),
@@ -366,7 +367,7 @@ class _DriverNavigationPanelState extends State<DriverNavigationPanel> {
                   height: 56,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      HapticFeedback.heavyImpact();
+                      HapticService.heavyImpact();
                       _handleMainAction();
                     },
                     icon: Icon(_getActionIcon(), size: 24),

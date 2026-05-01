@@ -5,7 +5,7 @@ import '../config/agent_prompts.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/queue_status_widget.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
@@ -870,7 +870,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          HapticFeedback.lightImpact();
+          HapticService.lightImpact();
           setState(() {
             _voted = true;
             _helpful = isPositive;

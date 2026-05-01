@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -743,7 +744,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_docStatusLoaded) {
       // If docs expired, navigate to documents page to re-upload
       if (_hasExpiredDocs) {
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
         await Navigator.of(context).push(
           slideFromRightRoute(const DriverDocumentsScreen()),
         );
@@ -753,7 +754,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       // If vehicle docs not approved, navigate to documents page
       if (!_vehicleDocsApproved) {
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
         await Navigator.of(context).push(
           slideFromRightRoute(const DriverDocumentsScreen()),
         );
@@ -821,7 +822,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // done and the user perceives it as smooth.
     // REMOVED: sound + heavy haptic caused 1-2s freeze on go-online.
     // Light haptic only — instant, no audio engine blocking.
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     final result = await pushFuture;
     if (!mounted) return;
     setState(() => _isNavigatingToOnline = false);
@@ -896,7 +897,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (offers.isNotEmpty) {
         // Trip arrived! Redirect to online screen
         _stopTripPolling();
-        HapticFeedback.heavyImpact();
+        HapticService.heavyImpact();
         _navigateToOnlineScreen();
       }
     } catch (_) {}
@@ -961,7 +962,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       selectedIndex: _navIndex,
       onDestinationSelected: (i) {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         if (i == 0) { setState(() => _navIndex = 0); return; }
         setState(() => _navIndex = i);
         final route = i == 1
@@ -1191,7 +1192,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _glassBtn(
           Icons.menu_rounded,
           onTap: () {
-            HapticFeedback.selectionClick();
+            HapticService.selectionClick();
             Navigator.of(context).push(
               PageRouteBuilder(
                 pageBuilder: (ctx, a, sa) => const DriverMenuScreen(),
@@ -1285,7 +1286,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           Icons.event_note_rounded,
           badge: _scheduledAvailableCount > 0 ? _scheduledAvailableCount : null,
           onTap: () {
-            HapticFeedback.selectionClick();
+            HapticService.selectionClick();
             Navigator.of(context).push(
               slideFromRightRoute(const ScheduledRidesScreen()),
             );
@@ -1318,7 +1319,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_scheduledAvailableCount == 0) return const SizedBox.shrink();
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         Navigator.of(context).push(
           slideFromRightRoute(const ScheduledRidesScreen()),
         );
@@ -1704,7 +1705,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   const Spacer(),
                   GestureDetector(
                     onTap: () {
-                      HapticFeedback.selectionClick();
+                      HapticService.selectionClick();
                       Navigator.of(context).push(
                         slideFromRightRoute(const DriverTripHistoryScreen()),
                       );
@@ -1814,7 +1815,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         onTap();
       },
       child: Container(
@@ -1922,7 +1923,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _actionTile(IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         onTap();
       },
       child: Container(

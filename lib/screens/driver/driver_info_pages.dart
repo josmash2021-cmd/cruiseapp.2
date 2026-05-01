@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
@@ -630,7 +630,7 @@ class LearningCenterScreen extends StatelessWidget {
                   final topic = topics[i];
                   return GestureDetector(
                     onTap: () {
-                      HapticFeedback.selectionClick();
+                      HapticService.selectionClick();
                       Navigator.push(
                         context,
                         slideFromRightRoute(_LearningTopicScreen(topic: topic)),
@@ -1089,7 +1089,7 @@ class _NewDriverInstructionsScreenState
                     ),
                     child: ElevatedButton(
                       onPressed: () {
-                        HapticFeedback.mediumImpact();
+                        HapticService.mediumImpact();
                         Navigator.of(context).pushAndRemoveUntil(
                           slideFromRightRoute(
                               const DriverProfilePhotoScreen()),
@@ -1463,7 +1463,7 @@ class _BugReporterScreenState extends State<BugReporterScreen> {
                       child: ElevatedButton(
                         onPressed: () {
                           if (_controller.text.trim().isEmpty) return;
-                          HapticFeedback.mediumImpact();
+                          HapticService.mediumImpact();
                           setState(() => _submitted = true);
                         },
                         style: ElevatedButton.styleFrom(

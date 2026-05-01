@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import 'package:geolocator/geolocator.dart';
@@ -480,7 +481,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   void _onPhaseChanged(TripPhase phase) {
     if (!mounted) return;
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     setState(() {
       _slideVal = 0;
       _slid     = false;
@@ -1156,7 +1157,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   // =========================================================================
 
   void _arrivedAtPickup() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _sm.arriveAtPickup();
     setState(() {
       _cameraFollowing = false;
@@ -1168,7 +1169,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Tapped "Arrived" in bottom bar → update status & go back to trip detail.
   void _arrivedAndGoBack() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _sm.arriveAtPickup();
     _updateTripStatus('arrived_pickup',
         extra: {'driverArrivedAt': FieldValue.serverTimestamp()});
@@ -1227,9 +1228,9 @@ class _DriverNavScreenState extends State<DriverNavScreen>
       });
       // Haptic feedback at 90s (30s before free ends) and 120s (free ends)
       if (_waitSeconds == 90) {
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
       } else if (_waitSeconds == _freeWaitMinutes * 60) {
-        HapticFeedback.heavyImpact();
+        HapticService.heavyImpact();
         AnalyticsService.instance.logEvent('wait_time_free_expired');
       }
     });
@@ -1274,7 +1275,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   Future<void> _startRide() async {
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     // ── Check if rider confirmed pickup ──
     bool riderConfirmed = false;
@@ -1423,7 +1424,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _completeTrip() async {
     if (_completing) return;
     setState(() => _completing = true);
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     _sm.arriveAtDropoff();
     _sm.completeTrip();
     await _gpsService.clearTripLocation();
@@ -1459,7 +1460,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   Future<void> _exitNav() async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
 
     // Cancel all running timers/tickers before leaving so nothing fires
     // against the popped widget or its annotation managers.
@@ -1520,7 +1521,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   }
 
   void _showTripOptions() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF111318),
@@ -1900,7 +1901,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
+        HapticService.lightImpact();
         _showUpcomingSteps();
       },
       child: Material(
@@ -2110,7 +2111,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Widget _buildResumeButton() {
     return GestureDetector(
       onTap: () {
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
         _recenter();
       },
       child: Container(
@@ -2160,7 +2161,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _mapFab(
           icon: Icons.gps_fixed_rounded,
           onTap: () {
-            HapticFeedback.mediumImpact();
+            HapticService.mediumImpact();
             _recenter();
           },
           active: _cameraFollowing && !_isOverview,
@@ -2170,7 +2171,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _mapFab(
           icon: _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
           onTap: () {
-            HapticFeedback.lightImpact();
+            HapticService.lightImpact();
             setState(() => _isMuted = !_isMuted);
           },
           active: _isMuted,
@@ -2180,7 +2181,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
         _mapFab(
           icon: Icons.shield_rounded,
           onTap: () {
-            HapticFeedback.mediumImpact();
+            HapticService.mediumImpact();
             Navigator.of(context).push(PageRouteBuilder(
               pageBuilder: (_, __, ___) => DriverSafetyScreen(
                 tripId: widget.tripId,

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
@@ -637,7 +637,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   }
 
   Future<void> _setDefault(dynamic id) async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     try {
       await ApiService.setDefaultPayoutMethod(
         id is int ? id : int.parse(id.toString()),
@@ -660,7 +660,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   }
 
   Future<void> _connectBankAccount() async {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     setState(() => _linkingBank = true);
     try {
       final url = await ApiService.getStripeConnectLink();
@@ -760,7 +760,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   /// Stripe Connect external_account. The raw PAN never reaches our
   /// servers.
   Future<void> _connectDebitCard() async {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     setState(() => _linkingBank = true);
     try {
       // Stripe.instance.createToken with CardTokenParams.

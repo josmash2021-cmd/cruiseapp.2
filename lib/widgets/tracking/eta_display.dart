@@ -451,7 +451,7 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                 height: 54,
                 child: ElevatedButton(
                   onPressed: () async {
-                    HapticFeedback.mediumImpact();
+                    HapticService.mediumImpact();
                     // Submit rating to backend
                     if (widget.tripId != null) {
                       try {

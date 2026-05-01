@@ -957,7 +957,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _lastRerouteTime = DateTime.now();
     _rerouteCount++;
     debugPrint('Rerouting (#$_rerouteCount)');
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
 
     final dest = _phase == _Phase.enRouteToPickup ? _pickupLL : _dropoffLL;
     final routeId = _phase == _Phase.enRouteToPickup ? 'pickup' : 'trip';
@@ -968,7 +968,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _onNearPickup() {
     if (_nearPickupNotified || _phase != _Phase.enRouteToPickup) return;
     _nearPickupNotified = true;
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     // Send final position to backend so rider sees driver at pickup
     if (_driverId != null) {
       ApiService.updateDriverLocation(
@@ -984,7 +984,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _onNearDropoff() {
     if (_nearDropoffNotified || _phase != _Phase.inTrip) return;
     _nearDropoffNotified = true;
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     // Send final position to backend so rider sees driver at dropoff
     if (_driverId != null) {
       ApiService.updateDriverLocation(
@@ -1280,14 +1280,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (isNewFirstOffer) {
       // Escalating haptic burst — 3 heavy pulses spaced 160ms so the driver
       // can't miss the offer even with the phone flat on a table.
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
       Future.delayed(const Duration(milliseconds: 160), () {
         if (!mounted) return;
-        HapticFeedback.heavyImpact();
+        HapticService.heavyImpact();
       });
       Future.delayed(const Duration(milliseconds: 320), () {
         if (!mounted) return;
-        HapticFeedback.heavyImpact();
+        HapticService.heavyImpact();
       });
       final firstOffer = filtered.first;
       if (_appInForeground) {
@@ -1394,15 +1394,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _acceptedOfferIds.add(offerId);
     }
 
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
-    // Block further taps but do NOT change visual state — card stays normal
-    // until we navigate away to the full-screen confirmation.
+    // Block further taps — show loading state on the button
     _setState(() {
-      _offerAcceptState = _OfferAcceptState.routing; // blocks re-entry, no visual change
+      _offerAcceptState = _OfferAcceptState.routing;
+      _acceptingCardId = oid;
     });
 
-    final acceptFuture = (() async {
+    try {
+      final acceptFuture = (() async {
       if (offerId != null && _driverId != null) {
         await ApiService.acceptRideOffer(
           offerId: offerId,
@@ -1484,10 +1485,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ── Reset offer state and navigate to full-screen accepted screen ──
     _tappedCardIds.clear();
     _lastAutoTriggeredOfferId = null;
-    _setState(() {
-      _offerAcceptState = _OfferAcceptState.normal;
-      _acceptingCardId = null;
-    });
+    if (mounted) {
+      _setState(() {
+        _offerAcceptState = _OfferAcceptState.normal;
+        _acceptingCardId = null;
+      });
+    }
 
     // Write accepted status to Firestore immediately — bypasses the 2-second
     // backend→Firestore sync delay so the rider's listener fires instantly.
@@ -1517,7 +1520,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       );
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
+      return;
+    }
     final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
     // Use the backend's rider_is_new flag as the source of truth — it now
@@ -1676,35 +1682,59 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _tripId = null;
       _currentOfferId = null;
     }
+    } catch (e, stack) {
+      debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
+      debugPrint(stack.toString());
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+        _snack('Error accepting offer. Please try again.');
+      }
+    }
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
-    HapticFeedback.lightImpact();
-    final offerId = r['offer_id'] as int?;
-    if (offerId != null) _rejectedOfferIds.add(offerId);
+    try {
+      HapticService.lightImpact();
+      final offerId = r['offer_id'] as int?;
+      if (offerId != null) _rejectedOfferIds.add(offerId);
 
-    // INSTANT dismiss — remove card + clear map in the same frame
-    _setState(() {
-      _rejectingOfferId = null;
-      _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
-      if (_pendingOffers.isEmpty) _hideFindingBar = false;
-      _previewingOffer = null;
-      _offerRouteShown = false;
-      _fullSegOne = [];
-      _fullSegTwo = [];
-    });
-    _rejectSlideCtrl?.reset();
-    await _clearAllAnnotations();
-    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      // INSTANT dismiss — remove card + clear map in the same frame
+      if (mounted) {
+        _setState(() {
+          _rejectingOfferId = null;
+          _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+          if (_pendingOffers.isEmpty) _hideFindingBar = false;
+          _previewingOffer = null;
+          _offerRouteShown = false;
+          _fullSegOne = [];
+          _fullSegTwo = [];
+        });
+      }
+      // Guard: don't reset a disposed controller (can throw)
+      if (_rejectSlideCtrl != null &&
+          (_rejectSlideCtrl!.isAnimating || _rejectSlideCtrl!.isCompleted)) {
+        try { _rejectSlideCtrl!.reset(); } catch (_) {}
+      }
+      await _clearAllAnnotations();
+      if (_pos != null && mounted) {
+        _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      }
 
-    // Fire-and-forget API rejection — UI already updated
-    if (offerId != null && _driverId != null) {
-      ApiService.rejectRideOffer(
-        offerId: offerId,
-        driverId: _driverId!,
-      ).catchError((_) => <String, dynamic>{});
+      // Fire-and-forget API rejection — UI already updated
+      if (offerId != null && _driverId != null) {
+        ApiService.rejectRideOffer(
+          offerId: offerId,
+          driverId: _driverId!,
+        ).catchError((_) => <String, dynamic>{});
+      }
+      if (offerId != null) _routeCache.remove(offerId.toString());
+    } catch (e, stack) {
+      debugPrint('[DriverOnline] _rejectOffer error: $e');
+      debugPrint(stack.toString());
     }
-    if (offerId != null) _routeCache.remove(offerId.toString());
   }
 
   // â”€â”€ _accept and _decline removed — now using _acceptOffer / _rejectOffer â”€â”€
@@ -1805,7 +1835,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _arrivePickup() async {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     if (_tripId != null) {
       try {
         await ApiService.updateTripStatus(tripId: _tripId!, status: 'arrived');
@@ -1824,7 +1854,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _startTrip() async {
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     // ── Check if rider confirmed pickup ──
     bool riderConfirmed = false;
@@ -1878,7 +1908,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// User pressed "Start Navigation" from the route summary — begin actual nav.
   /// If _isPickupSummary, transition to enRouteToPickup; otherwise inTrip.
   Future<void> _beginNavigation() async {
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     if (_isPickupSummary) {
       // ── Navigate to pickup ──
@@ -1963,7 +1993,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
     _navTimer?.cancel();
     if (_tripId != null) {
       try {
@@ -2022,7 +2052,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
     // Block going offline while an offer is visible
     if (_pendingOffers.isNotEmpty || _previewingOffer != null) {
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -2046,7 +2076,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       );
       return;
     }
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _goOfflineBackend();
 
     // Cancel all background tasks before navigating to prevent post-dispose crashes
@@ -2075,7 +2105,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
   
   void _pauseAvailability() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _setState(() => _isPaused = true);
     
     // Stop polling for offers while paused
@@ -2139,7 +2169,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Go back to home without going offline — driver stays connected.
   void _goBack() {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     final result = <String, dynamic>{
       'earnings': _earnings,
       'trips': _trips,

@@ -429,7 +429,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ? _PressableScale(
                                 key: ValueKey('ride_horizontal_${option.id}'),
                                 onTap: () {
-                                  HapticFeedback.selectionClick();
+                                  HapticService.selectionClick();
                                   _setState(() => _gridExpanded = true);
                                 },
                                 child: _buildRideHorizontalCard(c, option),
@@ -443,7 +443,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       child: _PressableScale(
                                         key: ValueKey('ride_opt_${displayOptions[i].id}'),
                                         onTap: () {
-                                          HapticFeedback.selectionClick();
+                                          HapticService.selectionClick();
                                           _ctrl.selectRideOption(displayOptions[i]);
                                           // Collapse to single card after pick.
                                           _setState(() => _gridExpanded = false);
@@ -534,7 +534,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ? S.of(context).bookScheduledRide
                             : S.of(context).requestRide,
                         onTap: () {
-                          HapticFeedback.mediumImpact();
+                          HapticService.mediumImpact();
                           _startRideDirectly(c, option);
                         },
                       ),

@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
@@ -324,7 +324,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                         return Expanded(
                           child: GestureDetector(
                             onTap: () {
-                              HapticFeedback.selectionClick();
+                              HapticService.selectionClick();
                               setState(() => _selectedPeriod = i);
                               _fetchEarnings();
                             },
@@ -379,7 +379,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                     height: 56,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        HapticFeedback.mediumImpact();
+                        HapticService.mediumImpact();
                         _showCashOutSheet();
                       },
                       icon: const Icon(Icons.account_balance_rounded, size: 20),
@@ -887,7 +887,7 @@ class _CashOutSheetState extends State<_CashOutSheet>
 
   Future<void> _confirm() async {
     setState(() => _submitting = true);
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
 
     if (AppConfig.sandboxPayments) {
       await Future.delayed(const Duration(milliseconds: 800));
@@ -1005,10 +1005,10 @@ class _CashOutSheetState extends State<_CashOutSheet>
         msg = 'Instant Cashout is not available right now.';
       }
       _showSnack(msg, _gold);
-      HapticFeedback.lightImpact();
+      HapticService.lightImpact();
       return;
     }
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     setState(() => _selected = method);
   }
 
@@ -1498,7 +1498,7 @@ class _CashoutSuccessScreenState extends State<_CashoutSuccessScreen>
       duration: const Duration(milliseconds: 500),
     );
 
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _iconCtrl.forward();
     Future.delayed(const Duration(milliseconds: 250), () {
       if (mounted) _sparkleCtrl.repeat();

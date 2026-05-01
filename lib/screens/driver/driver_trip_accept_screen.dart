@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -568,7 +569,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final distM = _haversineMeters(driverPos, widget.pickupLatLng);
     if (distM <= _pickupRadiusMeters && !_nearPickup) {
       setState(() => _nearPickup = true);
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
       _gpsSub?.cancel(); // Stop listening once arrived
     }
   }
@@ -586,7 +587,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Navigate to dropoff (ride started) ─────────────────────────────────
   void _goNavigateDropoff({bool overview = false}) {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _openNativeMaps(widget.dropoffLatLng);
   }
 
@@ -609,7 +610,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final distM = _haversineMeters(driverPos, widget.dropoffLatLng);
     if (distM <= _dropoffRadiusMeters && !_nearDropoff) {
       setState(() => _nearDropoff = true);
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
       _dropoffGpsSub?.cancel();
     }
   }
@@ -764,7 +765,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
       if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
-        HapticFeedback.mediumImpact();
+        HapticService.mediumImpact();
         if (mounted) {
           setState(() => _riderConfirmedPickup = true);
         }
@@ -863,7 +864,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _onExternalCompletion() {
     if (_tripFinished) return;
     setState(() => _tripFinished = true);
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     _finishFadeCtrl.forward(from: 0);
 
@@ -942,7 +943,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_tripFinished) return;
     setState(() => _tripFinished = true);
     await _ensureFirebaseAuth();
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     // Show completion overlay immediately (do not block on network)
     _finishFadeCtrl.forward(from: 0);
@@ -1016,7 +1017,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Navigation ────────────────────────────────────────────────────────────
   void _goNavigate({bool overview = false}) {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _openNativeMaps(widget.pickupLatLng);
   }
 
@@ -1284,7 +1285,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Chat ─────────────────────────────────────────────────────────────────
   void _openChat() async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     // Resolve driver user ID before navigating so chat doesn't have to await
     final driverId = await ApiService.getCurrentUserId();
     if (!mounted) return;
@@ -1455,7 +1456,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Safety / Help menus ───────────────────────────────────────────────────
   void _showSafetyMenu() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _showSheet(
       title: S.of(context).safetyCenter,
       icon: Icons.shield_rounded,
@@ -1475,7 +1476,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   void _showHelpMenu() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _showSheet(
       title: S.of(context).helpTitle,
       icon: Icons.help_rounded,
@@ -1526,7 +1527,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Help button 4 — Contact Support (live chat) ────────────────────────
   void _openSupportChat() {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     Navigator.of(context).push(
       slideFromRightRoute(const CruiseSupportChatScreen()),
     );
@@ -2304,7 +2305,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   void _returnToDriverHome() {
     if (!mounted) return;
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     // Pop with 'back_to_home' so the parent (DriverOnlineController) knows
     // the driver pressed back — NOT that the trip was cancelled.  The trip
     // stays active in Firestore/backend and the driver home screen will
@@ -2891,7 +2892,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       child: ElevatedButton(
         onPressed: _slid ? null : () {
           setState(() => _slid = true);
-          HapticFeedback.heavyImpact();
+          HapticService.heavyImpact();
           // Navigate immediately — don't wait for route animation
           Future.delayed(const Duration(milliseconds: 400), () {
             if (!mounted) return;
@@ -3030,7 +3031,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       });
                       if (_arrivedSlideVal >= 0.88) {
                         setState(() => _arrivedSlidDone = true);
-                        HapticFeedback.heavyImpact();
+                        HapticService.heavyImpact();
                         _confirmArrival();
                       }
                     },
@@ -3096,7 +3097,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       child: ElevatedButton(
         onPressed: _startRideSlidDone ? null : () {
           setState(() => _startRideSlidDone = true);
-          HapticFeedback.heavyImpact();
+          HapticService.heavyImpact();
           Future.delayed(const Duration(milliseconds: 300), () {
             if (!mounted) return;
             setState(() => _rideStarted = true);

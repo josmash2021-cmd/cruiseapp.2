@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
@@ -1254,7 +1254,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   }
 
   Future<void> _uploadFile(String path, String docType) async {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(S.of(context).uploadingDocument),

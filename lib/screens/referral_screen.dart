@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/api_service.dart';
@@ -86,14 +87,14 @@ class _ReferralScreenState extends State<ReferralScreen>
             ? "You're now linked to ${res['inviter_first_name']}!"
             : 'Code redeemed!';
       });
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _redeeming = false;
         _redeemError = e.toString().replaceFirst('ApiException: ', '');
       });
-      HapticFeedback.heavyImpact();
+      HapticService.heavyImpact();
     }
   }
 
@@ -134,7 +135,7 @@ class _ReferralScreenState extends State<ReferralScreen>
 
   Future<void> _copyCode() async {
     if (_code.isEmpty) return;
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     await Clipboard.setData(ClipboardData(text: _code));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -149,7 +150,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   }
 
   Future<void> _share() async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     final msg = _shareMessage.isNotEmpty
         ? _shareMessage
         : 'Use my Cruise code $_code — we both get \$50 in Cruise Cash!';
@@ -179,7 +180,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   }
 
   Future<void> _openTransfer() async {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => TransferCruiseCashScreen(balanceCents: _balanceCents),

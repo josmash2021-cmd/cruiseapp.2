@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -85,7 +85,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   Future<void> _submit() async {
     if (_submitting) return;
     setState(() => _submitting = true);
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
 
     // Save to Firebase RTDB
     if (_stars > 0) {
@@ -307,7 +307,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
         final filled = i < _stars;
         return GestureDetector(
           onTap: () {
-            HapticFeedback.lightImpact();
+            HapticService.lightImpact();
             setState(() => _stars = i + 1);
           },
           child: AnimatedContainer(
@@ -342,7 +342,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           final selected = _selectedTags.contains(tag);
           return GestureDetector(
             onTap: () {
-              HapticFeedback.selectionClick();
+              HapticService.selectionClick();
               setState(() {
                 if (selected) {
                   _selectedTags.remove(tag);

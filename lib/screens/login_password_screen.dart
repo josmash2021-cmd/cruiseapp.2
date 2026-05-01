@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
@@ -460,7 +460,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
         _loading = false;
         _errorText = msg;
       });
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
     } catch (e) {
       if (!mounted) return;
       // Auto re-probe for a working server URL and retry once
@@ -505,7 +505,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
         _loading = false;
         _errorText = S.of(context).connectionError;
       });
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
     }
   }
 

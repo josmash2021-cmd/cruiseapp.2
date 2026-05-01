@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
@@ -586,7 +586,7 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
     final sel = _defaultMap == key;
     return GestureDetector(
       onTap: () async {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         // For third-party apps, check if installed first
         final scheme = _mapSchemes[key];
         if (scheme != null) {

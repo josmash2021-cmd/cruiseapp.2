@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -188,7 +188,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     try {
       final result = await ApiService.claimScheduledTrip(tripId);
       if (!mounted) return;
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           result['message'] ?? S.of(context).scheduledRideConfirmed,
@@ -218,7 +218,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     try {
       await ApiService.cancelScheduledTrip(tripId);
       if (!mounted) return;
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
       setState(() => _claimedIds.remove(tripId));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(S.of(context).rideCancelled, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),

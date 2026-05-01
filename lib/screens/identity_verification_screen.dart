@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/app_theme.dart';
@@ -1394,7 +1394,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       await Future.delayed(const Duration(milliseconds: 50));
     }
     setState(() => _capturing = true);
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();
       final inputImage = InputImage.fromFilePath(xFile.path);

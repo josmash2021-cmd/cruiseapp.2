@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
@@ -96,7 +96,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         final remaining = offer.secondsRemaining;
         // Haptic warning at 5 seconds
         if (remaining == 5 && !_warningHaptic5Played) {
-          HapticFeedback.heavyImpact();
+          HapticService.heavyImpact();
           _warningHaptic5Played = true;
         }
         // Auto-decline expired offers
@@ -216,7 +216,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   Future<void> _onAccept(RideOffer offer) async {
     if (_accepting) return;
     setState(() => _accepting = true);
-    HapticFeedback.heavyImpact();
+    HapticService.heavyImpact();
 
     // Guard against null GPS position — cannot navigate without it
     final driverPos = _driverPos;
@@ -304,7 +304,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   }
 
   void _onReject(RideOffer offer) {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     _showRejectReasonDialog(offer);
   }
 
@@ -370,7 +370,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   }
 
   void _goOffline() {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     Navigator.of(context).pop();
   }
 

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import '../services/tap_to_pay_service.dart';
 import '../l10n/app_localizations.dart';
 
@@ -142,7 +142,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
   }
 
   void _handleSuccess() {
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     
     // Delay para mostrar el éxito antes de cerrar
     Future.delayed(const Duration(seconds: 2), () {
@@ -154,7 +154,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
   }
 
   void _onCancel() async {
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     
     await _tapToPayService.cancelPayment();
     widget.onPaymentCancelled?.call();

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
@@ -134,7 +135,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
         _verifying = false;
       });
       _shakeCtrl.forward(from: 0);
-      HapticFeedback.mediumImpact();
+      HapticService.mediumImpact();
     }
   }
 

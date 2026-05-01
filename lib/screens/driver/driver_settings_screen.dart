@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
@@ -240,7 +240,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: ListTile(
         onTap: () {
-          HapticFeedback.selectionClick();
+          HapticService.selectionClick();
           onTap();
         },
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -312,7 +312,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
         trailing: Switch.adaptive(
           value: value,
           onChanged: (v) {
-            HapticFeedback.selectionClick();
+            HapticService.selectionClick();
             onChanged(v);
           },
           activeThumbColor: _gold,

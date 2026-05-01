@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -70,7 +71,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   void _copyCode() {
     if (_code.isEmpty) return;
-    HapticFeedback.lightImpact();
+    HapticService.lightImpact();
     Clipboard.setData(ClipboardData(text: _code));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -84,7 +85,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   void _shareInvite() {
     if (_code.isEmpty) return;
-    HapticFeedback.mediumImpact();
+    HapticService.mediumImpact();
     final amount = _dollars(_amountCents);
     final rides = _ridesRequired;
     final s = S.of(context);

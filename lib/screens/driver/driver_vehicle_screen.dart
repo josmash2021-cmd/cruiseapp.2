@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../services/haptic_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
@@ -621,7 +621,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.selectionClick();
+        HapticService.selectionClick();
         if (canUpload) {
           _uploadDocument(docType, invalidTitle);
         }

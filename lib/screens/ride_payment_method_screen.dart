@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../services/haptic_service.dart';
 
 import '../l10n/app_localizations.dart';
 import 'tap_to_pay_screen.dart';
@@ -109,7 +109,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
   }
 
   void _pick(String id) {
-    HapticFeedback.selectionClick();
+    HapticService.selectionClick();
     setState(() => _selected = id);
     // Small delay so the user sees the gold check animate, then close.
     Future.delayed(const Duration(milliseconds: 260), () {

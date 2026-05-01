@@ -393,6 +393,26 @@ async def notify_driver_assigned(trip_id: int, driver_id: int, driver_info: dict
     )
 
 
+async def emit_chat_message(trip_id: int, sender_id: int, sender_role: str, message: str, timestamp: int) -> None:
+    """Broadcast a chat message to all participants in a trip room.
+
+    Used as a sub-100ms real-time channel alongside Firebase RTDB.
+    When both rider and driver have the app open, Socket.IO delivers
+    the message instantly without waiting for RTDB sync.
+    """
+    await sio.emit(
+        "chat_message",
+        {
+            "trip_id": trip_id,
+            "sender_id": sender_id,
+            "sender_role": sender_role,
+            "message": message,
+            "timestamp": timestamp,
+        },
+        room=f"trip:{trip_id}",
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Metrics / health
 # ═══════════════════════════════════════════════════════════════════════

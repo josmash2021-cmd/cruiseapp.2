@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -45,6 +46,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static final _driverAssignedController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static final _chatMessageController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -60,6 +63,11 @@ class SocketService {
   /// Payload: {trip_id, driver_id, ...}
   static Stream<Map<String, dynamic>> get driverAssignedStream =>
       _driverAssignedController.stream;
+
+  /// Stream of chat message events.
+  /// Payload: {trip_id, sender_id, sender_role, message, timestamp}
+  static Stream<Map<String, dynamic>> get chatMessageStream =>
+      _chatMessageController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -206,6 +214,12 @@ class SocketService {
       final map = _toMap(data);
       _driverAssignedController.add(map);
       debugPrint('[Socket.io] Driver assigned: ${map['driver_id']}');
+    });
+
+    _socket!.on('chat_message', (data) {
+      final map = _toMap(data);
+      _chatMessageController.add(map);
+      debugPrint('[Socket.io] Chat message from ${map['sender_role']}: ${map['message']?.toString().substring(0, math.min(30, (map['message']?.toString().length ?? 0)))}...');
     });
 
     // Listen to network recovery to proactively reconnect
@@ -373,6 +387,9 @@ class SocketService {
     }
     if (!_driverAssignedController.isClosed) {
       _driverAssignedController.close();
+    }
+    if (!_chatMessageController.isClosed) {
+      _chatMessageController.close();
     }
     if (!_connectionHealthController.isClosed) {
       _connectionHealthController.close();

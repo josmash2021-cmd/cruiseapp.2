@@ -32,7 +32,7 @@ from services.n8n_webhooks import fire as _n8n_fire
 from routers.drivers import reevaluate_driver_tier
 from cruise_level_agent import evaluate_driver_level
 from services.event_bus import event_bus
-from services.socketio_service import emit_trip_status, notify_user, notify_driver_assigned
+from services.socketio_service import emit_trip_status, notify_user, notify_driver_assigned, emit_chat_message
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     firestore_sync, _HAS_FIRESTORE,
@@ -1813,6 +1813,19 @@ async def send_chat_message(trip_id: int, request: Request, user: User = Depends
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
+
+    # --- Socket.IO instant broadcast (sub-100ms when both online) ===
+    try:
+        sender_role = "driver" if user.id == trip.driver_id else "rider"
+        _safe_create_task(emit_chat_message(
+            trip_id=trip_id,
+            sender_id=user.id,
+            sender_role=sender_role,
+            message=msg_text,
+            timestamp=int(msg.created_at.timestamp() * 1000) if msg.created_at else int(datetime.now(timezone.utc).timestamp() * 1000),
+        ))
+    except Exception:
+        pass  # Never let Socket.IO failure block chat
 
     # --- FCM push notification to the other participant ===
     try:

@@ -180,6 +180,9 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         if body.hold_only:
             intent_params["capture_method"] = "manual"
 
+        # Save payment method for future off-session charges
+        intent_params["setup_future_usage"] = "off_session"
+
         if body.trip_id:
             intent_params["metadata"]["trip_id"] = str(body.trip_id)
 

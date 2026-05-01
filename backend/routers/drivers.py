@@ -21,6 +21,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
+    _compute_user_rating,
 )
 from services.fcm_service import _send_fcm_push_async
 from config import (
@@ -1325,10 +1326,7 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
     canceled = int(trip_row.cancelled_count or 0)
 
     # Average rating (lightweight index scan)
-    ratings_r = await db.execute(
-        select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
-    )
-    avg_rating = ratings_r.scalar()
+    avg_rating, ratings_count = await _compute_user_rating(db, driver_id)
 
     acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
     on_time_rate = round(((completed / total_trips) * 100), 1) if total_trips > 0 else 100.0
@@ -1366,6 +1364,7 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
         "canceled_trips": canceled,
         "on_time_rate": on_time_rate,
         "avg_rating": effective_rating,
+        "ratings_count": ratings_count,
         "cruise_level": correct_level,
     }
 

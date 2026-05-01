@@ -14,7 +14,7 @@ from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating
 from services.fcm_service import _send_fcm_push_async, send_to_topic_async
 from services.sms_service import (
     notify_guest_driver_assigned,
@@ -1721,14 +1721,11 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
 
         # Update driver's average_rating in users table and sync to Firestore
         try:
-            avg_result = await db.execute(
-                select(func.avg(Rating.stars)).where(Rating.to_user_id == trip.driver_id)
-            )
-            avg_rating = avg_result.scalar() or 5.0
+            avg_rating, _ = await _compute_user_rating(db, trip.driver_id)
             driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
             driver = driver_result.scalar_one_or_none()
             if driver:
-                driver.average_rating = round(float(avg_rating), 2)
+                driver.average_rating = avg_rating
                 await db.commit()
                 # Sync updated rating + cruise level to Firestore
                 if _HAS_FIRESTORE:
@@ -1753,14 +1750,11 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     # Mirror: if a driver rated the rider, recompute the rider's average_rating
     if to_user_id == trip.rider_id and trip.rider_id:
         try:
-            avg_result = await db.execute(
-                select(func.avg(Rating.stars)).where(Rating.to_user_id == trip.rider_id)
-            )
-            avg_rating = avg_result.scalar()
+            avg_rating, _ = await _compute_user_rating(db, trip.rider_id)
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
             rider = rider_result.scalar_one_or_none()
-            if rider and avg_rating is not None:
-                rider.average_rating = round(float(avg_rating), 2)
+            if rider:
+                rider.average_rating = avg_rating
                 await db.commit()
         except Exception as e:
             logging.warning("[Rating] avg_rating update failed for rider %s: %s", trip.rider_id, e)

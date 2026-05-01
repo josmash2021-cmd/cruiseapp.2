@@ -73,11 +73,11 @@ async def evaluate_driver_level(db, driver_id: int) -> Optional[str]:
     avg_r = await db.execute(
         select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
     )
-    avg_rating = avg_r.scalar() or 5.0
-    avg_rating = round(float(avg_rating), 2)
+    avg_val = avg_r.scalar()
+    avg_rating = round(float(avg_val), 2) if avg_val is not None else None
 
-    # Compute correct tier
-    new_tier = compute_tier(completed_trips, avg_rating)
+    # Compute correct tier (use 0.0 for new drivers with no ratings)
+    new_tier = compute_tier(completed_trips, avg_rating if avg_rating is not None else 0.0)
     old_tier = getattr(driver, "cruise_level", None) or "bronze"
 
     if new_tier != old_tier:

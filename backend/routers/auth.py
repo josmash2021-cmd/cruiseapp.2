@@ -24,7 +24,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
@@ -962,19 +962,9 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
 
     data = _user_dict(user)
     try:
-        cnt_q = await db.execute(
-            select(func.count(Rating.id)).where(Rating.to_user_id == user.id)
-        )
-        cnt = cnt_q.scalar() or 0
-        if cnt:
-            avg_q = await db.execute(
-                select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id)
-            )
-            avg = avg_q.scalar()
-            data["average_rating"] = round(float(avg), 2) if avg is not None else None
-        else:
-            data["average_rating"] = None
-        data["ratings_count"] = int(cnt)
+        avg_rating, ratings_count = await _compute_user_rating(db, user.id)
+        data["average_rating"] = avg_rating
+        data["ratings_count"] = ratings_count
     except Exception as e:
         logging.warning("[/auth/me] rating stats failed: %s", e)
         data["average_rating"] = None
@@ -1030,15 +1020,9 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
 
     # Ratings
     try:
-        cnt_q = await db.execute(select(func.count(Rating.id)).where(Rating.to_user_id == user.id))
-        cnt = cnt_q.scalar() or 0
-        if cnt:
-            avg_q = await db.execute(select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id))
-            avg = avg_q.scalar()
-            profile["average_rating"] = round(float(avg), 2) if avg is not None else None
-        else:
-            profile["average_rating"] = None
-        profile["ratings_count"] = int(cnt)
+        avg_rating, ratings_count = await _compute_user_rating(db, user.id)
+        profile["average_rating"] = avg_rating
+        profile["ratings_count"] = ratings_count
     except Exception:
         profile["average_rating"] = None
         profile["ratings_count"] = 0
@@ -1407,19 +1391,9 @@ async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db
 
     data = _user_dict(db_user)
     try:
-        cnt_q = await db.execute(
-            select(func.count(Rating.id)).where(Rating.to_user_id == db_user.id)
-        )
-        cnt = cnt_q.scalar() or 0
-        if cnt:
-            avg_q = await db.execute(
-                select(func.avg(Rating.stars)).where(Rating.to_user_id == db_user.id)
-            )
-            avg = avg_q.scalar()
-            data["average_rating"] = round(float(avg), 2) if avg is not None else None
-        else:
-            data["average_rating"] = None
-        data["ratings_count"] = int(cnt)
+        avg_rating, ratings_count = await _compute_user_rating(db, db_user.id)
+        data["average_rating"] = avg_rating
+        data["ratings_count"] = ratings_count
     except Exception as e:
         logging.warning("[/auth/web/profile] rating stats failed: %s", e)
         data["average_rating"] = None
@@ -1450,15 +1424,9 @@ async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
     try:
-        cnt_q = await db.execute(select(func.count()).select_from(Rating).where(Rating.to_user_id == user.id))
-        cnt = cnt_q.scalar() or 0
-        if cnt:
-            avg_q = await db.execute(select(func.avg(Rating.stars)).where(Rating.to_user_id == user.id))
-            avg = avg_q.scalar()
-            data["average_rating"] = round(float(avg), 2) if avg is not None else None
-        else:
-            data["average_rating"] = None
-        data["ratings_count"] = int(cnt)
+        avg_rating, ratings_count = await _compute_user_rating(db, user.id)
+        data["average_rating"] = avg_rating
+        data["ratings_count"] = ratings_count
     except Exception:
         data["average_rating"] = None
         data["ratings_count"] = 0

@@ -253,6 +253,31 @@ def _trip_dict(t) -> dict:
         return {"id": getattr(t, "id", None), "status": getattr(t, "status", None), "error": str(e)}
 
 
+async def _compute_user_rating(db, user_id: int) -> tuple[float | None, int]:
+    """Calculate a user's average rating and ratings count.
+
+    Returns (average_rating, ratings_count).
+    average_rating is None if the user has no ratings.
+    ratings_count is always >= 0.
+    """
+    from sqlalchemy import select, func
+    from models.database import Rating
+
+    cnt_q = await db.execute(
+        select(func.count(Rating.id)).where(Rating.to_user_id == user_id)
+    )
+    cnt = cnt_q.scalar() or 0
+    if cnt:
+        avg_q = await db.execute(
+            select(func.avg(Rating.stars)).where(Rating.to_user_id == user_id)
+        )
+        avg = avg_q.scalar()
+        avg_rating = round(float(avg), 2) if avg is not None else None
+    else:
+        avg_rating = None
+    return avg_rating, int(cnt)
+
+
 def _vehicle_dict(v) -> dict:
     return {
         "id": v.id, "make": v.make, "model": v.model, "year": v.year,

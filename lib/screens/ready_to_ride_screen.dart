@@ -6,9 +6,11 @@ import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import 'home_screen.dart';
 
+/// Luxury full-screen "You're set to ride" onboarding completion screen.
+/// Matches the driver onboarding pages style with full-bleed background,
+/// glassmorphism cards, and staggered entrance animations.
 class ReadyToRideScreen extends StatefulWidget {
-  static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
+  static const _gold = Color(0xFFD4AF37);
 
   final String firstName;
 
@@ -19,26 +21,21 @@ class ReadyToRideScreen extends StatefulWidget {
 }
 
 class _ReadyToRideScreenState extends State<ReadyToRideScreen>
-    with SingleTickerProviderStateMixin {
-  static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
+    with TickerProviderStateMixin {
+  static const _gold = Color(0xFFD4AF37);
 
-  late AnimationController _fadeCtrl;
-  late Animation<double> _fadeAnim;
+  late AnimationController _animCtrl;
   bool _locationGranted = false;
   bool _showLocationPrompt = false;
 
   @override
   void initState() {
     super.initState();
-    _fadeCtrl = AnimationController(
+    _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1400),
     );
-    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOutCubic);
-    _fadeCtrl.forward();
-
-    // Check if location is already granted
+    _animCtrl.forward();
     _checkLocationStatus();
   }
 
@@ -52,7 +49,7 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
 
   @override
   void dispose() {
-    _fadeCtrl.dispose();
+    _animCtrl.dispose();
     super.dispose();
   }
 
@@ -87,274 +84,329 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
     );
   }
 
+  /// Staggered fade + slide animation for a child widget.
+  Widget _staggered({
+    required double begin,
+    required double end,
+    required Widget child,
+    Offset slideBegin = const Offset(0, 0.08),
+  }) {
+    return AnimatedBuilder(
+      animation: _animCtrl,
+      builder: (_, __) {
+        final t = _animCtrl.value;
+        final interval = Interval(begin, end, curve: Curves.easeOutCubic);
+        final progress = interval.transform(t.clamp(0.0, 1.0));
+        return Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(
+              slideBegin.dx * (1 - progress),
+              slideBegin.dy * (1 - progress) * 60,
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
+    final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Column(
-          children: [
-            // ── Top illustration area ──
-            Container(
-              width: double.infinity,
-              height: 300,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    _gold.withValues(alpha: 0.25),
-                    _gold.withValues(alpha: 0.08),
-                    c.bg,
-                  ],
-                ),
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── Full-screen background ──
+          Image.asset(
+            'assets/images/safety_rules_suburban.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+          ),
+
+          // ── Dark gradient overlay ──
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x4D000000), // 30% black
+                  Color(0xD9000000), // 85% black
+                ],
+                stops: [0.0, 0.75],
               ),
-              child: Stack(
-                alignment: Alignment.center,
+            ),
+          ),
+
+          // ── Content ──
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
                 children: [
-                  // Glow effect behind illustration
-                  Positioned(
-                    top: 80,
+                  const SizedBox(height: 20),
+
+                  // ── Header: icon + title + subtitle in pill ──
+                  _staggered(
+                    begin: 0.0,
+                    end: 0.25,
                     child: Container(
-                      width: 200,
-                      height: 200,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            _gold.withValues(alpha: 0.15),
-                            Colors.transparent,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: _gold.withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Shield icon
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF1A1A1A),
+                              border: Border.all(
+                                color: _gold.withValues(alpha: 0.5),
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.shield_rounded,
+                              color: _gold,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          // Title
+                          Text(
+                            "YOU'RE SET TO RIDE.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: _gold,
+                              letterSpacing: 2.0,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          // Subtitle
+                          Text(
+                            "WE'RE HERE WHEN YOU NEED US.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              letterSpacing: 3.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Safety cards ──
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _staggered(
+                          begin: 0.20,
+                          end: 0.50,
+                          child: _safetyCard(
+                            icon: Icons.verified_user_rounded,
+                            title: 'ALL DRIVERS MUST PASS REGULAR BACKGROUND CHECKS',
+                            desc: s.safetyPoint1,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _staggered(
+                          begin: 0.35,
+                          end: 0.65,
+                          child: _safetyCard(
+                            icon: Icons.route_rounded,
+                            title: 'WE MONITOR RIDES FOR UNUSUAL ACTIVITY',
+                            desc: s.safetyPoint2,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _staggered(
+                          begin: 0.50,
+                          end: 0.80,
+                          child: _safetyCard(
+                            icon: Icons.support_agent_rounded,
+                            title: 'FEEL UNSAFE? CONNECT WITH SAFETY SPECIALISTS',
+                            desc: s.safetyPoint3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Location toggle hint ──
+                  _staggered(
+                    begin: 0.75,
+                    end: 0.90,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: _gold,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          s.locationAlwaysOn,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Take your first ride button ──
+                  _staggered(
+                    begin: 0.80,
+                    end: 1.0,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFFD4AF37),
+                              Color(0xFFB8960C),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
+                        ),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            foregroundColor: const Color(0xFF0A0A0A),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                          ),
+                          onPressed: _goToHome,
+                          child: Text(
+                            s.takeFirstRide.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  // Road / landscape abstraction
-                  Positioned(
-                    bottom: 40,
-                    child: Container(
-                      width: 280,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            _gold.withValues(alpha: 0.18),
-                            Colors.purple.withValues(alpha: 0.12),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(40),
-                      ),
-                    ),
-                  ),
-                  // Person walking icon
-                  Positioned(
-                    top: 90,
-                    child: Icon(
-                      Icons.directions_walk_rounded,
-                      size: 110,
-                      color:
-                          c.isDark ? Colors.white70 : const Color(0xFF3D2E1A),
-                    ),
-                  ),
-                  // Small car
-                  Positioned(
-                    bottom: 55,
-                    right: 70,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.directions_car_filled_rounded,
-                        size: 32,
-                        color: _gold,
-                      ),
-                    ),
-                  ),
+
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
+          ),
 
-            // ── Content ──
+          // ── Location permission prompt overlay ──
+          if (_showLocationPrompt && !_locationGranted)
+            _locationPromptOverlay(s),
+        ],
+      ),
+    );
+  }
+
+  /// Glassmorphism safety card.
+  Widget _safetyCard({
+    required IconData icon,
+    required String title,
+    required String desc,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _gold.withValues(alpha: 0.25),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Icon container
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: _gold, size: 24),
+            ),
+            const SizedBox(width: 14),
+            // Text
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(
-                      S.of(context).readyToRide,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: c.textPrimary,
-                        height: 1.2,
-                        letterSpacing: -0.5,
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _gold,
+                      letterSpacing: 1.2,
                     ),
-                    const SizedBox(height: 28),
-
-                    // ── Safety points ──
-                    _safetyRow(
-                      c,
-                      Icons.verified_user_outlined,
-                      S.of(context).safetyPoint1,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    desc,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.white.withValues(alpha: 0.75),
+                      height: 1.35,
                     ),
-                    const SizedBox(height: 20),
-                    _safetyRow(
-                      c,
-                      Icons.route_rounded,
-                      S.of(context).safetyPoint2,
-                    ),
-                    const SizedBox(height: 20),
-                    _safetyRow(
-                      c,
-                      Icons.security_rounded,
-                      S.of(context).safetyPoint3,
-                    ),
-
-                    // ── Location prompt (shown after user taps button) ──
-                    if (_showLocationPrompt && !_locationGranted) ...[
-                      const SizedBox(height: 28),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: _gold.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [_gold, _goldLight],
-                                ),
-                              ),
-                              child: const Icon(
-                                Icons.location_on_rounded,
-                                color: Colors.black,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              S.of(context).enableLocationTitle,
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                color: c.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              S.of(context).enableLocationDesc,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: c.textSecondary,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _gold,
-                                  foregroundColor: Colors.black,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(22),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                onPressed: _requestLocation,
-                                child: Text(
-                                  S.of(context).allowLocation,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    const Spacer(),
-
-                    // ── Location always-on hint ──
-                    if (_locationGranted)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check_circle_rounded,
-                                color: _gold, size: 16),
-                            const SizedBox(width: 6),
-                            Text(
-                              S.of(context).locationAlwaysOn,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: c.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    // ── Take your first ride ──
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 32),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_gold, _goldLight],
-                            ),
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              foregroundColor: const Color(0xFF1A1400),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(28),
-                              ),
-                            ),
-                            onPressed: _goToHome,
-                            child: Text(
-                              S.of(context).takeFirstRide,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
@@ -363,31 +415,86 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
     );
   }
 
-  Widget _safetyRow(AppColors c, IconData icon, String text) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: _gold.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, size: 18, color: _gold),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 14,
-              color: c.textSecondary,
-              height: 1.45,
+  /// Full-screen location permission overlay.
+  Widget _locationPromptOverlay(S s) {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.7),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _gold.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFD4AF37), Color(0xFFB8960C)],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.location_on_rounded,
+                    color: Colors.black,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  s.enableLocationTitle,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  s.enableLocationDesc,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white.withValues(alpha: 0.6),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    onPressed: _requestLocation,
+                    child: Text(
+                      s.allowLocation,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }

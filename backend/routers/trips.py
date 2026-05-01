@@ -1128,7 +1128,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
 
     # Auto-charge rider when trip is completed
     charge_result = None
-    if canonical_new == "completed" and trip.payment_status == "unpaid":
+    if canonical_new == "completed" and trip.payment_status in ("unpaid", "held"):
         try:
             charge_result = await _charge_trip(trip, db)
         except Exception as e:
@@ -1318,8 +1318,17 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         logging.info("[Dispatch] Cancelled stale offer id=%d for cancelled trip %d", stale_offer.id, trip.id)
 
     # ---"= REFUND LOGIC ==="=
-    # If rider was charged, issue refund (full or less cancellation fee)
-    if trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
+    # If a hold exists but was not yet captured, cancel it to release funds.
+    if trip.payment_status == "held" and trip.stripe_payment_intent_id and _HAS_STRIPE:
+        try:
+            _stripe_mod.PaymentIntent.cancel(trip.stripe_payment_intent_id)
+            trip.payment_status = "cancelled"
+            logging.info("[Cancel] Trip %d hold cancelled (pi=%s)", trip_id, trip.stripe_payment_intent_id)
+        except Exception as e:
+            logging.warning("[Cancel] Failed to cancel hold for trip %d: %s", trip_id, e)
+            trip.payment_status = "pending_refund"
+    # If rider was already charged, issue refund (full or less cancellation fee)
+    elif trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
         try:
             # Attempt refund through Stripe API
             refund_amount_cents = int(((trip.fare or 0) - cancellation_fee) * 100)

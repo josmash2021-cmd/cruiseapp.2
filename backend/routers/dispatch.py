@@ -880,6 +880,13 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     await db.commit()
     await db.refresh(trip)
 
+    # If a PaymentIntent hold was provided, mark payment_status as "held"
+    # so the backend knows a hold exists for proper cancellation handling.
+    if trip.stripe_payment_intent_id and trip.payment_status == "unpaid":
+        trip.payment_status = "held"
+        await db.commit()
+        await db.refresh(trip)
+
     # ── Cruise Cash discount ──────────────────────────────────
     # Apply any Cruise Cash the rider has accumulated to this trip's
     # fare. Up to $50 per ride; if the balance covers everything, the

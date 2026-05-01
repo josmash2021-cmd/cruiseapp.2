@@ -240,6 +240,7 @@ class Trip(Base):
     cancel_reason = Column(Text, nullable=True)
     payment_status = Column(String(20), default="unpaid")
     stripe_payment_intent_id = Column(String(100), nullable=True)
+    stripe_tip_payment_intent_id = Column(String(100), nullable=True)
     surge_multiplier = Column(Float, default=1.0)
     base_fare = Column(Float, nullable=True)
     cancellation_fee = Column(Float, default=0.0)

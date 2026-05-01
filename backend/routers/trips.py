@@ -1707,7 +1707,7 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
                 pm = pm_r.scalars().first()
                 if pm:
                     tip_cents = max(int(tip_amount * 100), 50)
-                    await asyncio.wait_for(
+                    tip_intent = await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(
                             None,
                             lambda: _stripe_mod.PaymentIntent.create(
@@ -1722,6 +1722,7 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
                         ),
                         timeout=10.0,
                     )
+                    trip.stripe_tip_payment_intent_id = tip_intent.id
             except Exception as e:
                 logging.error("[Tip] Stripe charge failed for trip %s: %s", trip_id, e)
 
@@ -1972,6 +1973,7 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
                     timeout=10.0,
                 )
                 stripe_status = intent.status
+                trip.stripe_tip_payment_intent_id = intent.id
         except Exception as e:
             logging.error("[Tip] Stripe charge failed for trip %s: %s", trip_id, e)
             stripe_status = "failed"

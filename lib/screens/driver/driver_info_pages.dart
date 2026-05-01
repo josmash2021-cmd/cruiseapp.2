@@ -968,38 +968,7 @@ class _NewDriverInstructionsScreenState
                 physics: const ClampingScrollPhysics(),
                 children: [
                   _buildPage0(context),
-                  _buildPage(
-                    icon: Icons.shield_rounded,
-                    iconColor: const Color(0xFF4CAF50),
-                    title: S.of(context).driveSafeAlways,
-                    subtitle: S.of(context).safetyPriority,
-                    items: [
-                      _InstructionItem(
-                        icon: Icons.speed_rounded,
-                        color: const Color(0xFF4CAF50),
-                        title: S.of(context).obeyTrafficLaws,
-                        body: S.of(context).obeyTrafficLawsBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.no_drinks_rounded,
-                        color: const Color(0xFFE53935),
-                        title: S.of(context).zeroTolerancePolicy,
-                        body: S.of(context).zeroToleranceBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.visibility_rounded,
-                        color: const Color(0xFFFF9800),
-                        title: S.of(context).stayFocused,
-                        body: S.of(context).stayFocusedBody,
-                      ),
-                      _InstructionItem(
-                        icon: Icons.health_and_safety_rounded,
-                        color: const Color(0xFF2196F3),
-                        title: S.of(context).seatbeltRequired,
-                        body: S.of(context).seatbeltRequiredBody,
-                      ),
-                    ],
-                  ),
+                  _buildPage1(context),
                   _buildPage(
                     icon: Icons.star_rounded,
                     iconColor: _gold,
@@ -1123,6 +1092,10 @@ class _NewDriverInstructionsScreenState
 
   Widget _buildPage0(BuildContext context) {
     return const _Page0();
+  }
+
+  Widget _buildPage1(BuildContext context) {
+    return const _Page1();
   }
 
   Widget _buildPage({
@@ -1573,6 +1546,306 @@ class _BounceTextState extends State<_BounceText>
           child: Text(widget.text, style: widget.style),
         );
       },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAGE 1 — "Drive Safe, Always" (full-bleed background redesign)
+// ═══════════════════════════════════════════════════════════════
+
+class _Page1 extends StatefulWidget {
+  const _Page1();
+
+  @override
+  State<_Page1> createState() => _Page1State();
+}
+
+class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin {
+  static const _gold = Color(0xFFD4AF37);
+  late final AnimationController _animCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _fade(double begin, double end) =>
+      Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Animation<Offset> _slideUp(double begin, double end) =>
+      Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _animCtrl,
+          curve: Interval(begin, end, curve: Curves.easeOut),
+        ),
+      );
+
+  Widget _animatedCard({
+    required double fadeBegin,
+    required double fadeEnd,
+    required double slideBegin,
+    required double slideEnd,
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return FadeTransition(
+      opacity: _fade(fadeBegin, fadeEnd),
+      child: SlideTransition(
+        position: _slideUp(slideBegin, slideEnd),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: _gold, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.5,
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Background image ──
+        Image.asset(
+          'assets/images/safety_rules_suburban.png',
+          fit: BoxFit.cover,
+        ),
+        // ── Dark gradient overlay ──
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.3),
+                Colors.black.withValues(alpha: 0.85),
+              ],
+            ),
+          ),
+        ),
+        // ── Content ──
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
+                // ── Header icon ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.2),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _animCtrl,
+                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                      ),
+                    ),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _gold, width: 2),
+                        color: Colors.black.withValues(alpha: 0.5),
+                      ),
+                      child: const Icon(
+                        Icons.shield_rounded,
+                        color: _gold,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // ── Title ──
+                FadeTransition(
+                  opacity: _fade(0.0, 0.2),
+                  child: Text(
+                    'DRIVE SAFE, ALWAYS',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _gold,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.0,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.8),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── Subtitle ──
+                FadeTransition(
+                  opacity: _fade(0.1, 0.3),
+                  child: Text(
+                    'SAFETY IS YOUR #1 PRIORITY',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 3.0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // ── Cards ──
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _animatedCard(
+                        fadeBegin: 0.2, fadeEnd: 0.5,
+                        slideBegin: 0.2, slideEnd: 0.5,
+                        icon: Icons.speed_rounded,
+                        title: 'OBEY TRAFFIC LAWS',
+                        description: 'FOLLOW SPEED LIMIT AND TRAFFIC SIGNS',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.35, fadeEnd: 0.65,
+                        slideBegin: 0.35, slideEnd: 0.65,
+                        icon: Icons.no_drinks_rounded,
+                        title: 'ZERO TOLERANCE POLICY',
+                        description: 'NEVER DRIVE UNDER THE INFLUENCE OF ALCOHOL OR DRUGS',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.5, fadeEnd: 0.8,
+                        slideBegin: 0.5, slideEnd: 0.8,
+                        icon: Icons.visibility_rounded,
+                        title: 'STAY FOCUSED',
+                        description: 'NO TEXTING WHILE DRIVING',
+                      ),
+                      _animatedCard(
+                        fadeBegin: 0.65, fadeEnd: 0.95,
+                        slideBegin: 0.65, slideEnd: 0.95,
+                        icon: Icons.health_and_safety_rounded,
+                        title: 'SEATBELT REQUIRED',
+                        description: 'ENSURE ALL PASSENGERS WEAR THEIR SEATBELT',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ── Dots + swipe hint ──
+                FadeTransition(
+                  opacity: _fade(0.8, 1.0),
+                  child: Column(
+                    children: [
+                      // 3 dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _dot(active: false),
+                          const SizedBox(width: 8),
+                          _dot(active: true),
+                          const SizedBox(width: 8),
+                          _dot(active: false),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Bouncing swipe text
+                      _BounceText(
+                        text: 'SWIPE TO CONTINUE',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dot({required bool active}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: active ? 24 : 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: active ? _gold : Colors.white.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(3),
+      ),
     );
   }
 }

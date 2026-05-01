@@ -1951,13 +1951,20 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
     except Exception as _off_err:
         logging.warning("[WebCancel] Failed to expire pending offers for trip %d: %s", trip.id, _off_err)
 
-    # Stripe refund (best-effort — fall back to pending_refund for manual review)
+    # Stripe release / refund (best-effort — fall back to pending_refund for manual review)
     refunded = False
     new_payment_status = trip.payment_status
-    if trip.stripe_payment_intent_id and trip.payment_status in ("held", "paid"):
+    if trip.stripe_payment_intent_id and _HAS_STRIPE:
         try:
             import stripe as _stripe_mod
-            if _HAS_STRIPE:
+            if trip.payment_status == "held":
+                # Uncaptured hold: cancel to release funds immediately
+                _stripe_mod.PaymentIntent.cancel(trip.stripe_payment_intent_id)
+                refunded = True
+                new_payment_status = "cancelled"
+                logging.info("[WebCancel] trip=%d hold cancelled via Stripe", trip.id)
+            elif trip.payment_status == "paid":
+                # Already captured: create a refund
                 _stripe_mod.Refund.create(
                     payment_intent=trip.stripe_payment_intent_id,
                     reason="requested_by_customer",
@@ -1967,7 +1974,7 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
                 logging.info("[WebCancel] trip=%d refunded via Stripe", trip.id)
         except Exception as _refund_err:
             new_payment_status = "pending_refund"
-            logging.warning("[WebCancel] trip=%d refund failed, marking pending_refund: %s", trip.id, _refund_err)
+            logging.warning("[WebCancel] trip=%d refund/cancel failed, marking pending_refund: %s", trip.id, _refund_err)
 
     trip.status = "cancelled"
     trip.cancel_reason = "rider_web_cancel"

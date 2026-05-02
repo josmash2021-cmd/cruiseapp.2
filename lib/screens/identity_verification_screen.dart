@@ -1393,7 +1393,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     while (_scanning) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
-    setState(() => _capturing = true);
+    if (mounted) setState(() => _capturing = true);
     HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();

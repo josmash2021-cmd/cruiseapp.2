@@ -252,10 +252,12 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       if (_pickupDetails != null) {
         await _confirmDropoffOnMap(details);
       } else {
-        setState(() {
-          _editingPickup = true;
-          _editingDropoff = false;
-        });
+        if (mounted) {
+          setState(() {
+            _editingPickup = true;
+            _editingDropoff = false;
+          });
+        }
         _pickupFocus.requestFocus();
       }
     } else {

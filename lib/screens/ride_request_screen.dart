@@ -921,7 +921,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
                       await ctrl.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
                     } catch (_) {}
-                    setState(() => _mapReady = true);
+                    if (mounted) setState(() => _mapReady = true);
                   },
                   onStyleLoadedListener: (_) async {
                     if (_mapCtrl != null) {

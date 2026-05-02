@@ -1196,7 +1196,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                         _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
                           below: 'road-label',
                         );
-                        setState(() => _mapReady = true);
+                        if (mounted) setState(() => _mapReady = true);
                         if (_pickupLatLng != null && _dropoffLatLng != null) {
                           _fitMap();
                         } else if (_pickupLatLng != null) {

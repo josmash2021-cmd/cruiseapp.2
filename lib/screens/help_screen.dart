@@ -1258,7 +1258,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       }
 
       if (msg.role == 'bot') {
-        setState(() => _isAgentTyping = true);
+        if (mounted) setState(() => _isAgentTyping = true);
         _scrollToBottom();
         final delay = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
         await Future.delayed(Duration(milliseconds: delay));
@@ -1270,10 +1270,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         _scrollToBottom();
         await Future.delayed(const Duration(milliseconds: 600));
       } else {
-        setState(() {
-          _isAgentTyping = false;
-          _messages.add(msg);
-        });
+        if (mounted) {
+          setState(() {
+            _isAgentTyping = false;
+            _messages.add(msg);
+          });
+        }
         _scrollToBottom();
       }
     }

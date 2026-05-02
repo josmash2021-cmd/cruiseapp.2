@@ -292,7 +292,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     final image = await picture.toImage(size.width.toInt(), size.height.toInt());
 
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData != null) {
+    if (byteData != null && mounted) {
       setState(() {
         _carImageBytes = byteData.buffer.asUint8List();
       });

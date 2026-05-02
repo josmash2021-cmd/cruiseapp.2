@@ -164,7 +164,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       // Reset zoom to 1.0 — no digital zoom
       try { await _cam!.setZoomLevel(1.0); } catch (_) {}
       await _cam!.startImageStream(_onFrame);
-      setState(() => _camReady = true);
+      if (mounted) setState(() => _camReady = true);
     } catch (_) {
       if (mounted) Navigator.of(context).pop();
     }

@@ -997,7 +997,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       await ApiService.deletePayoutMethod(
         id is int ? id : int.parse(id.toString()),
       );
-      setState(() => _methods.removeWhere((m) => m['id'] == id));
+      if (mounted) setState(() => _methods.removeWhere((m) => m['id'] == id));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

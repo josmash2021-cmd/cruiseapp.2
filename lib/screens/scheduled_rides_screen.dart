@@ -74,10 +74,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     try {
       final userId = await ApiService.getCurrentUserId();
       if (userId == null) {
-        setState(() {
-          _error = 'Not logged in';
-          _loading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _error = 'Not logged in';
+            _loading = false;
+          });
+        }
         return;
       }
       final trips = await ApiService.getScheduledTrips(userId);

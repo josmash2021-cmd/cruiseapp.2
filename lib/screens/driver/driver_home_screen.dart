@@ -665,6 +665,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (result['approved'] == true) {
         await LocalDataService.setDriverApprovalStatus('approved');
       }
+      if (!mounted) return;
 
       setState(() {
         _vehicleDocsApproved = canGo;

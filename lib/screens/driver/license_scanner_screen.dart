@@ -215,7 +215,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     while (_scanning) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
-    setState(() => _capturing = true);
+    if (mounted) setState(() => _capturing = true);
     HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();

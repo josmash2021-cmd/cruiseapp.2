@@ -1578,6 +1578,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       debugPrint('[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
       bool serverHasTrip = false;
+      bool verifyFailed = false;
       final verifyTripId = tripId ?? offerId;
       if (verifyTripId != null) {
         try {
@@ -1600,6 +1601,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
         } catch (verifyErr) {
           debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
+          verifyFailed = true;
         }
       }
       if (serverHasTrip) {
@@ -1607,6 +1609,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // happily running the trip. Swallow the error, stay on the
         // trip screen, let the driver continue.
         // Fall through to the normal result handling below.
+      } else if (verifyFailed) {
+        // getTrip itself failed (timeout/network). We cannot confirm the
+        // accept failed — the original timeout was likely just the response
+        // being slow. Be optimistic: assume the accept succeeded and let
+        // the driver continue to the trip screen. If the accept really
+        // failed, the trip screen will handle that gracefully.
+        debugPrint(
+          '[DriverOnline] verify failed — assuming accept succeeded optimistically',
+        );
+        serverHasTrip = true;
+        // Fall through to normal handling.
       } else {
         // Accept genuinely failed — offer is gone. Reset local state
         // but do NOT try to cancel the trip (the driver never owned it

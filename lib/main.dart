@@ -14,6 +14,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'config/smooth_transitions.dart';
 import 'config/page_transitions.dart';
 import 'config/api_keys.dart';
@@ -408,6 +409,27 @@ void main() async {
       WidgetsFlutterBinding.ensureInitialized();
       debugPrint('[Perf] Flutter binding: ${perfStopwatch.elapsedMilliseconds}ms');
 
+      // CRASH FIX: Clear potentially corrupted SharedPreferences on first run
+      // after app update. This prevents crashes caused by schema changes
+      // between versions (e.g., cached data from v470 incompatible with v471).
+      try {
+        final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+        final lastVersion = prefs.getString('app_last_version');
+        const currentVersion = '1.0.3+471';
+        if (lastVersion != currentVersion) {
+          debugPrint('[Startup] Version changed from $lastVersion to $currentVersion — clearing potentially stale caches');
+          // Only clear caches that might be schema-incompatible, NOT user data
+          await prefs.remove('cache_active_trip_v1');
+          await prefs.remove('cache_active_trip_id_v1');
+          await prefs.remove('sched_avail_cache');
+          await prefs.remove('sched_mine_cache');
+          await prefs.remove('pending_offers_cache');
+          await prefs.setString('app_last_version', currentVersion);
+        }
+      } catch (e) {
+        debugPrint('[Startup] Version check failed: $e');
+      }
+
       // M1: Catch platform-level errors (native threads, plugin exceptions)
       WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
         debugPrint('[PlatformError] $error\n$stack');
@@ -507,14 +529,15 @@ void main() async {
       // ── Parallel startup: independent inits run concurrently ──
       // FIX: Each init has its own try/catch so one failure doesn't crash the app
       // Group 1: no dependencies between these
+      debugPrint('[Perf] Starting Group 1 inits...');
       final group1Results = await Future.wait([
-        _safeInit('PrefsCache', PrefsCache.init()),
-        _safeInit('SecurityService', SecurityService.init()),
-        _safeInit('CacheService', CacheService.initialize()),
-        _safeInit('LocalDataService', LocalDataService.init()),
-        _safeInit('LocalCache', LocalCache.init()),
-        _safeInitBool('Firebase', _initFirebase()),
-        _safeInit('DNS', ApiService.preResolveDns()),
+        _safeInit('PrefsCache', PrefsCache.init().timeout(const Duration(seconds: 3))),
+        _safeInit('SecurityService', SecurityService.init().timeout(const Duration(seconds: 3))),
+        _safeInit('CacheService', CacheService.initialize().timeout(const Duration(seconds: 3))),
+        _safeInit('LocalDataService', LocalDataService.init().timeout(const Duration(seconds: 3))),
+        _safeInit('LocalCache', LocalCache.init().timeout(const Duration(seconds: 3))),
+        _safeInitBool('Firebase', _initFirebase().timeout(const Duration(seconds: 8))),
+        _safeInit('DNS', ApiService.preResolveDns().timeout(const Duration(seconds: 3))),
       ]);
       debugPrint('[Perf] Group 1 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group1Results)');
 
@@ -524,12 +547,13 @@ void main() async {
       if (!firebaseOk) {
         debugPrint('[Firebase] WARNING: Firebase auth failed — Firestore/FCM/Analytics will be unavailable');
       }
+      debugPrint('[Perf] Starting Group 2 inits...');
       final group2Results = await Future.wait([
-        _safeInit('ApiService', ApiService.init()),
-        if (firebaseOk) _safeInit('Analytics', AnalyticsService.instance.init()) else Future.value(true),
-        _safeInit('Socket', SocketService.init()),
-        if (firebaseOk) _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig()) else Future.value(true),
-        _safeInit('BackgroundService', DriverBackgroundService().initialize()),
+        _safeInit('ApiService', ApiService.init().timeout(const Duration(seconds: 5))),
+        if (firebaseOk) _safeInit('Analytics', AnalyticsService.instance.init().timeout(const Duration(seconds: 3))) else Future.value(true),
+        _safeInit('Socket', SocketService.init().timeout(const Duration(seconds: 5))),
+        if (firebaseOk) _safeInit('FeatureFlags', FeatureFlags.initRemoteConfig().timeout(const Duration(seconds: 5))) else Future.value(true),
+        _safeInit('BackgroundService', DriverBackgroundService().initialize().timeout(const Duration(seconds: 3))),
       ]);
       debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group2Results)');
 
@@ -570,9 +594,14 @@ void main() async {
 Future<bool> _safeInit(String name, Future<void> future) async {
   try {
     await future;
+    debugPrint('[InitOK] $name initialized');
     return true;
-  } catch (e) {
+  } on TimeoutException {
+    debugPrint('[InitError] $name timed out — continuing without it');
+    return false;
+  } catch (e, stack) {
     debugPrint('[InitError] $name failed: $e');
+    debugPrint(stack.toString());
     return false;
   }
 }
@@ -580,9 +609,15 @@ Future<bool> _safeInit(String name, Future<void> future) async {
 /// Same as _safeInit but for bool-returning futures (e.g. _initFirebase).
 Future<bool> _safeInitBool(String name, Future<bool> future) async {
   try {
-    return await future;
-  } catch (e) {
+    final result = await future;
+    debugPrint('[InitOK] $name initialized (result=$result)');
+    return result;
+  } on TimeoutException {
+    debugPrint('[InitError] $name timed out — continuing without it');
+    return false;
+  } catch (e, stack) {
     debugPrint('[InitError] $name failed: $e');
+    debugPrint(stack.toString());
     return false;
   }
 }

@@ -977,26 +977,34 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
               ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-              _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-                below: 'road-label',
-              );
-              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
               try {
+                _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
+                debugPrint('[TrackingMap] onMapCreated: Polyline manager created: ${_polylineAnnotMgr?.id}');
+              } catch (e) {
+                debugPrint('[TrackingMap] onMapCreated: FAILED to create polyline manager: $e');
+              }
+              try {
+                _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                debugPrint('[TrackingMap] onMapCreated: Point manager created: ${_pointAnnotMgr?.id}');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-              } catch (_) {}
-              // Separate annotation manager for car icon (icon-anchor: center, on top)
-              _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              } catch (e) {
+                debugPrint('[TrackingMap] onMapCreated: FAILED to create/config point manager: $e');
+              }
               try {
+                _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                debugPrint('[TrackingMap] onMapCreated: Car manager created: ${_carAnnotMgr?.id}');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
-              } catch (_) {}
+              } catch (e) {
+                debugPrint('[TrackingMap] onMapCreated: FAILED to create/config car manager: $e');
+              }
               _updateAnnotations();
               // Rider is identified by pickup pin — no location puck on tracking screen
 
@@ -1014,6 +1022,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               });
             },
             onStyleLoadedListener: (_) async {
+              debugPrint('[TrackingMap] onStyleLoadedListener fired, _map=${_map != null}');
               if (_map == null) return;
               await _applyDarkNavyGoldTheme(_map!);
 
@@ -1036,24 +1045,33 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
               // Recreate annotation managers
               try {
-                _polylineAnnotMgr = await _map!.annotations.createPolylineAnnotationManager(
-                  below: 'road-label',
-                );
+                _polylineAnnotMgr = await _map!.annotations.createPolylineAnnotationManager();
+                debugPrint('[TrackingMap] Polyline manager created: ${_polylineAnnotMgr?.id}');
+              } catch (e) {
+                debugPrint('[TrackingMap] FAILED to create polyline manager: $e');
+              }
+              try {
                 _pointAnnotMgr = await _map!.annotations.createPointAnnotationManager();
+                debugPrint('[TrackingMap] Point manager created: ${_pointAnnotMgr?.id}');
                 await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
                 await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
                 await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-              } catch (_) {}
+              } catch (e) {
+                debugPrint('[TrackingMap] FAILED to create/config point manager: $e');
+              }
               try {
                 _carAnnotMgr = await _map!.annotations.createPointAnnotationManager();
+                debugPrint('[TrackingMap] Car manager created: ${_carAnnotMgr?.id}');
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
-              } catch (_) {}
+              } catch (e) {
+                debugPrint('[TrackingMap] FAILED to create/config car manager: $e');
+              }
 
               // Redraw all annotations (pins, route, car)
               _updateAnnotations();
@@ -1850,6 +1868,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   Future<void> _updateAnnotations() async {
+    debugPrint('[TrackingMap] _updateAnnotations called — _map=${_map != null}, polyMgr=${_polylineAnnotMgr != null}, pointMgr=${_pointAnnotMgr != null}, carMgr=${_carAnnotMgr != null}');
     _updateCarSmooth();
     await _updateStaticAnnotationsOnce();
   }

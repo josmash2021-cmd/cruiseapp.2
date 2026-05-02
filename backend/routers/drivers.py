@@ -506,6 +506,57 @@ async def get_stripe_connect_status(
     except Exception as e:
         return {"connected": False, "error": str(e)[:100]}
 
+
+@router.post("/drivers/financial-connections", dependencies=[Depends(_verify_api_key)])
+async def create_driver_financial_connections_session(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a Stripe Financial Connections session linked to the driver's
+    Stripe Connect account so they can securely link a bank account for
+    weekly payouts (ACH). Returns a URL to open in an in-app WebView."""
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can link bank accounts")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+
+    # Ensure driver has a Connect account
+    if not user.stripe_connect_id:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            account = _stripe.Account.create(
+                type="express",
+                email=user.email or "",
+                capabilities={"transfers": {"requested": True}},
+            )
+            user.stripe_connect_id = account["id"]
+            await db.commit()
+        except Exception as e:
+            logging.error("[DriverFC] Auto-create Connect failed: %s", e)
+            raise HTTPException(500, f"Could not create Connect account: {str(e)[:120]}")
+
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        session = _stripe.financial_connections.Session.create(
+            account_holder={
+                "type": "account",
+                "account": user.stripe_connect_id,
+            },
+            permissions=["balances", "ownership", "payment_method"],
+            return_url=f"{PUBLIC_URL}/driver/bank-connected",
+        )
+        return {
+            "url": session.url,
+            "client_secret": session.client_secret,
+            "stripe_account_id": user.stripe_connect_id,
+        }
+    except _stripe.error.StripeError as e:
+        logging.error("[DriverFC] Session creation failed: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
 # Business rules for Instant Cashout (kept as constants so the
 # eligibility endpoint and the cashout endpoint stay in sync).
 INSTANT_FEE_RATE = 0.015         # 1.5% of amount
@@ -993,11 +1044,22 @@ async def add_debit_card_payout(
         raise HTTPException(403, "Only drivers can add payout methods")
     if not STRIPE_SECRET:
         raise HTTPException(503, "Stripe not configured on this server")
+    # Auto-create Stripe Connect account if it doesn't exist yet
     if not user.stripe_connect_id:
-        raise HTTPException(
-            400,
-            "Connect a bank account first so your Stripe Connect account exists",
-        )
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            account = _stripe.Account.create(
+                type="express",
+                email=user.email or "",
+                capabilities={"transfers": {"requested": True}},
+            )
+            user.stripe_connect_id = account["id"]
+            await db.commit()
+            logging.info("[StripeConnect] Auto-created account %s for driver %s", account["id"], user.id)
+        except Exception as e:
+            logging.error("[StripeConnect] Auto-create failed for driver %s: %s", user.id, e)
+            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:120]}")
 
     card_token = (body.get("card_token") or "").strip()
     set_default = bool(body.get("set_default", False))

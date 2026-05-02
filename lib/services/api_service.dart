@@ -1927,6 +1927,20 @@ class ApiService {
     return {'connected': false};
   }
 
+  /// Create a Stripe Financial Connections session for driver bank linking.
+  /// Returns {url, client_secret, stripe_account_id}.
+  static Future<Map<String, dynamic>> createDriverFinancialConnectionsSession() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/financial-connections'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
   /// Request a cashout of driver earnings.
   ///
   /// [method] is "standard" (free, 1-2 days) or "instant" (1.5% fee,

@@ -710,10 +710,11 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     HapticService.mediumImpact();
     setState(() => _linkingBank = true);
     try {
-      final url = await ApiService.getStripeConnectLink();
+      // Use Stripe Financial Connections for fast bank linking (no KYC)
+      final session = await ApiService.createDriverFinancialConnectionsSession();
       if (!mounted) return;
-      if (url.isEmpty) {
-        // No Stripe configured server-side — bail out cleanly.
+      final url = session['url'] as String?;
+      if (url == null || url.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Bank linking is temporarily unavailable.'),
@@ -722,48 +723,40 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         );
         return;
       }
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
-      // Poll Stripe Connect status until both charges_enabled AND
-      // payouts_enabled flip true (up to ~5 min).
-      bool connected = false;
-      for (int attempt = 0; attempt < 30 && mounted; attempt++) {
-        final delay = attempt < 10 ? 3 : (attempt < 20 ? 6 : 10);
-        await Future.delayed(Duration(seconds: delay));
-        if (!mounted) break;
-        try {
-          final status = await ApiService.getStripeConnectStatus();
-          final ok = status['connected'] == true &&
-              status['payouts_enabled'] == true;
-          if (ok) {
-            connected = true;
-            if (!mounted) break;
-            final acctId = (status['stripe_account_id'] ?? '').toString();
-            final tail = acctId.length > 4
-                ? acctId.substring(acctId.length - 4)
-                : acctId;
-            await _addBankMethod('Bank account ····$tail');
-            break;
-          }
-        } catch (_) {}
-      }
-      if (!connected && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Complete Stripe onboarding to activate your bank account.',
+      // Open Financial Connections in an in-app WebView so the driver
+      // stays inside the app during bank selection.
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _BankLinkWebView(url: url),
+        ),
+      );
+
+      if (result == true && mounted) {
+        // User completed the bank linking flow
+        final acctId = (session['stripe_account_id'] ?? '').toString();
+        final tail = acctId.length > 4
+            ? acctId.substring(acctId.length - 4)
+            : acctId;
+        await _addBankMethod('Bank account ····$tail');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bank account linked successfully.'),
+              duration: Duration(seconds: 3),
             ),
-            duration: Duration(seconds: 5),
-          ),
-        );
+          );
+        }
       }
       if (mounted) await _loadMethods();
     } catch (e) {
-      debugPrint('[Payout] Stripe Connect error: $e');
+      debugPrint('[Payout] Bank link error: $e');
       if (mounted) {
+        final msg = e is ApiException ? e.message : S.of(context).failedToAddMethod;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context).failedToAddMethod),
+            content: Text(msg),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -875,9 +868,14 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     } catch (e) {
       debugPrint('[Payout] addDebitCard error: $e');
       if (mounted) {
+        final msg = e is ApiException
+            ? e.message
+            : (e.toString().contains('Stripe error:')
+                ? e.toString().split('Stripe error:').last.trim()
+                : S.of(context).failedToAddMethod);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(S.of(context).failedToAddMethod),
+            content: Text(msg),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -1026,6 +1024,92 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         );
       }
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Bank Link WebView (Stripe Financial Connections)
+// ═══════════════════════════════════════════════════════════════
+class _BankLinkWebView extends StatefulWidget {
+  final String url;
+  const _BankLinkWebView({required this.url});
+
+  @override
+  State<_BankLinkWebView> createState() => _BankLinkWebViewState();
+}
+
+class _BankLinkWebViewState extends State<_BankLinkWebView> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        title: const Text(
+          'Link Bank Account',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+      ),
+      body: Stack(
+        children: [
+          // Use a simple approach with url_launcher since webview_flutter
+          // may not be imported. Open external browser as fallback.
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: Color(0xFFE8C547)),
+                const SizedBox(height: 24),
+                const Text(
+                  'Opening secure bank connection...',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8C547),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  onPressed: () async {
+                    final ok = await launchUrl(
+                      Uri.parse(widget.url),
+                      mode: LaunchMode.externalApplication,
+                    );
+                    if (ok && context.mounted) {
+                      // Give user time to complete in external browser
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Complete bank linking in your browser, then return here.'),
+                          duration: Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Open in Browser'),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

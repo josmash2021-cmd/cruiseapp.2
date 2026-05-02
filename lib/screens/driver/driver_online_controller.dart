@@ -1731,9 +1731,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           (_rejectSlideCtrl!.isAnimating || _rejectSlideCtrl!.isCompleted)) {
         try { _rejectSlideCtrl!.reset(); } catch (_) {}
       }
-      await _clearAllAnnotations();
+
+      // CRASH FIX: Defer annotation clearing to next frame so the widget
+      // tree has settled after setState. If the map was destroyed during
+      // the rebuild, _clearAllAnnotations would crash trying to access
+      // stale annotation managers.
+      await Future.delayed(Duration.zero);
+      if (!mounted) return;
+
+      try {
+        await _clearAllAnnotations();
+      } catch (e) {
+        debugPrint('[DriverOnline] _clearAllAnnotations failed on reject: $e');
+      }
+
       if (_pos != null && mounted) {
-        _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+        try {
+          _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+        } catch (e) {
+          debugPrint('[DriverOnline] _animateToPosition failed on reject: $e');
+        }
       }
 
       // Fire-and-forget API rejection — UI already updated

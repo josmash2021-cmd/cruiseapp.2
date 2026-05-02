@@ -542,6 +542,17 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
     except Exception as _socket_err:
         logging.warning("[Socket.io] driver_assigned emit failed on admin accept: %s", _socket_err)
 
+    # SSE: push update for riders on SSE channel
+    try:
+        from services.event_bus import event_bus as _ev_bus
+        _safe_create_task(_ev_bus.push_trip_update(trip.id, {
+            "status": "accepted",
+            "trip_id": trip.id,
+            "driver_id": driver_id,
+        }))
+    except Exception as _sse_err:
+        logging.warning("[SSE] trip update push failed on admin accept: %s", _sse_err)
+
     # Send push notification to rider: "Driver assigned!"
     try:
         rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
@@ -1375,17 +1386,37 @@ async def admin_assign_driver(
         db.add(new_offer)
         
         trip.driver_id = driver_id
-        trip.status = "requested"
+        trip.status = "accepted"
         await db.commit()
         await db.refresh(trip)
         
         logging.info("[Admin] Manually assigned trip %d to driver %d", trip_id, driver_id)
         
-        # ── Real-time sync: Socket.IO + FCM + SSE ──
+        # ── Real-time sync: Firestore + Socket.IO + SSE + FCM ──
+        if _HAS_FIRESTORE:
+            try:
+                rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_res.scalar_one_or_none()
+                firestore_sync.sync_trip(
+                    trip_id=trip.id, rider_id=trip.rider_id,
+                    rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
+                    rider_phone=rider.phone or "" if rider else "",
+                    pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
+                    dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
+                    status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
+                    created_at=trip.created_at, scheduled_at=trip.scheduled_at,
+                    driver_id=driver.id,
+                    driver_name=f"{driver.first_name} {driver.last_name}",
+                    driver_phone=driver.phone or "",
+                    pickup_zone=trip.pickup_zone, notes=trip.notes,
+                )
+            except Exception as e:
+                logging.warning("[Firestore] assign sync failed: %s", e)
+        
         try:
             _safe_create_task(emit_trip_status(
                 trip_id=trip.id,
-                status="requested",
+                status="accepted",
                 extra={"driver_id": driver_id},
             ))
         except Exception as _socket_err:
@@ -1398,7 +1429,7 @@ async def admin_assign_driver(
                 driver_info={
                     "driver_name": f"{driver.first_name or ''} {driver.last_name or ''}".strip() or "Your driver",
                     "driver_phone": driver.phone or "",
-                    "status": "requested",
+                    "status": "accepted",
                 },
             ))
         except Exception as _socket_err:
@@ -1407,7 +1438,7 @@ async def admin_assign_driver(
         try:
             from services.event_bus import event_bus as _ev_bus
             _safe_create_task(_ev_bus.push_trip_update(trip.id, {
-                "status": "requested",
+                "status": "accepted",
                 "trip_id": trip.id,
                 "driver_id": driver_id,
             }))

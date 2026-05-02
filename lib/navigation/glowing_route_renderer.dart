@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../models/lat_lng.dart';
+import '../utils/mapbox_safe.dart';
 
 /// Sistema de renderizado de rutas con efecto GLOW tipo juego
 /// Crea polilíneas gruesas con glow/bloom visual
@@ -25,13 +26,12 @@ class GlowingRouteRenderer {
   }) async {
     if (points.length < 2) return;
 
-    final coords = points.map((p) =>
-      mapbox.Position(p.longitude, p.latitude)
-    ).toList();
+    final routeGeo = safeLineString(points);
+    if (routeGeo == null) return;
 
     // Single 5px gold line
     await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -47,11 +47,10 @@ class GlowingRouteRenderer {
     double gapLength = 30,
   }) async {
     if (points.length < 2) return;
-    final coords = points.map((p) =>
-      mapbox.Position(p.longitude, p.latitude)
-    ).toList();
+    final routeGeo = safeLineString(points);
+    if (routeGeo == null) return;
     await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -65,11 +64,10 @@ class GlowingRouteRenderer {
     RouteGlowStyle style = RouteGlowStyle.purple,
   }) async {
     if (points.length < 2) return [];
-    final coords = points.map((p) =>
-      mapbox.Position(p.longitude, p.latitude)
-    ).toList();
+    final routeGeo = safeLineString(points);
+    if (routeGeo == null) return [];
     final annot = await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -84,11 +82,10 @@ class GlowingRouteRenderer {
     RouteGlowStyle style = RouteGlowStyle.cyan,
   }) async {
     if (points.length < 2) return;
-    final coords = points.map((p) =>
-      mapbox.Position(p.longitude, p.latitude)
-    ).toList();
+    final routeGeo = safeLineString(points);
+    if (routeGeo == null) return;
     await manager.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: coords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -107,10 +104,10 @@ class GlowingRouteRenderer {
     // Generar imagen de flecha
     final arrowBytes = await _generateArrowImage(palette);
 
+    final arrowPoint = safePoint(position.longitude, position.latitude);
+    if (arrowPoint == null) return;
     await manager.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(position.longitude, position.latitude),
-      ),
+      geometry: arrowPoint,
       image: arrowBytes,
       iconRotate: bearing,
       iconSize: 1.5,

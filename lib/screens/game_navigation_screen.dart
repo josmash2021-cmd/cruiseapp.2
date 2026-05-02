@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import '../models/lat_lng.dart';
+import '../utils/mapbox_safe.dart';
 
 /// Sistema de navegación tipo juego con estilo 3D isométrico
 /// Características:
@@ -207,10 +208,11 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     final mgr = _pointAnnotMgr;
     if (mgr == null || _carImageBytes == null) return;
 
+    final carPoint = safePoint(_currentPos.longitude, _currentPos.latitude);
+    if (carPoint == null) return;
+
     final opts = mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(_currentPos.longitude, _currentPos.latitude),
-      ),
+      geometry: carPoint,
       image: _carImageBytes,
       iconRotate: _currentBearing,
       iconSize: 1.2,
@@ -221,9 +223,7 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     if (_carAnnot == null) {
       _carAnnot = await mgr.create(opts);
     } else {
-      _carAnnot!.geometry = mapbox.Point(
-        coordinates: mapbox.Position(_currentPos.longitude, _currentPos.latitude),
-      );
+      _carAnnot!.geometry = carPoint;
       _carAnnot!.iconRotate = _currentBearing;
       await mgr.update(_carAnnot!);
     }
@@ -470,26 +470,26 @@ class _GameNavigationScreenState extends State<GameNavigationScreen>
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _route.length < 2) return;
 
-    final coords = _route.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
+    final routeGeo = safeLineString(_route);
+    if (routeGeo == null) return;
 
     // Layer 1: Outer glow — wide, diffused halo
     await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).withValues(alpha: 0.18).toARGB32(),
       lineWidth: 18.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
     // Layer 2: Inner glow — warm transition
     await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFE566).withValues(alpha: 0.28).toARGB32(),
       lineWidth: 10.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
     // Layer 3: Main gold line — sharp, crisp
     await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 4.0,
       lineJoin: mapbox.LineJoin.ROUND,

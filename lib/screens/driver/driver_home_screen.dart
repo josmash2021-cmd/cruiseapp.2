@@ -25,6 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
 import '../home_screen.dart';
 import '../welcome_screen.dart';
+import '../../utils/mapbox_safe.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_trip_history_screen.dart';
@@ -358,7 +359,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final lng = _goldDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;
 
-    final point = mapbox.Point(coordinates: mapbox.Position(lng, lat));
+    final point = safePoint(lng, lat);
+    if (point == null) return;
 
     // First-time creation must be guarded — without it the per-frame
     // ticker would parallel-create N annotations and stack dots.

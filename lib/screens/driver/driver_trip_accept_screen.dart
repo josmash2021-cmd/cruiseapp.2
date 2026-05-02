@@ -23,6 +23,7 @@ import '../../widgets/verified_avatar.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
+import '../../utils/mapbox_safe.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
 import '../../services/chat_service.dart';
@@ -1911,18 +1912,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 55.0,
       ));
       // Place pins + route instantly
-      final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-      final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+      final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+      final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
       _pinAnnots.clear();
-      if (_annotMgr != null) {
+      if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(coordinates: pickupPoint),
+            geometry: pickupPoint,
             image: pickupPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(coordinates: dropoffPoint),
+            geometry: dropoffPoint,
             image: dropoffPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
@@ -1930,20 +1931,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _pinAnnots.addAll(pins);
       }
       if (_polyMgr != null && _routePoints.length >= 2) {
-        try {
-          final coords = _routePoints
-              .where((p) => p.latitude.isFinite && p.longitude.isFinite)
-              .map((p) => mapbox.Position(p.longitude, p.latitude))
-              .toList();
-          if (coords.length >= 2) {
+        final safeGeom = safeLineString(_routePoints);
+        if (safeGeom != null) {
+          try {
             _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-              geometry: mapbox.LineString(coordinates: coords),
+              geometry: safeGeom,
               lineColor: const Color(0xFFFFD700).toARGB32(),
               lineWidth: 5.0,
               lineJoin: mapbox.LineJoin.ROUND,
             ));
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
       }
       return;
     }
@@ -1966,18 +1964,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ));
 
     // STEP 2: Pins pop in (scale 0 → 1.0 with spring)
-    final pickupPoint = mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-    final dropoffPoint = mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+    final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
     _pinAnnots.clear();
-    if (_annotMgr != null) {
+    if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
       final pins = await Future.wait([
         _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: pickupPoint),
+          geometry: pickupPoint,
           image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: const [0.0, 0.0],
         )),
         _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: dropoffPoint),
+          geometry: dropoffPoint,
           image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: const [0.0, 0.0],
         )),
@@ -2022,15 +2020,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       } catch (_) {
         // Fallback: draw full route instantly if animation fails/times out
         if (_polyMgr != null && _routePoints.length >= 2 && mounted) {
-          try {
-            final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-            _routeAnnot ??= await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-              geometry: mapbox.LineString(coordinates: coords),
-              lineColor: const Color(0xFFFFD700).toARGB32(),
-              lineWidth: 5.0,
-              lineJoin: mapbox.LineJoin.ROUND,
-            ));
-          } catch (_) {}
+          final safeGeom = safeLineString(_routePoints);
+          if (safeGeom != null) {
+            try {
+              _routeAnnot ??= await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
+                geometry: safeGeom,
+                lineColor: const Color(0xFFFFD700).toARGB32(),
+                lineWidth: 5.0,
+                lineJoin: mapbox.LineJoin.ROUND,
+              ));
+            } catch (_) {}
+          }
         }
       }
     }
@@ -2173,9 +2173,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Pre-create annotation before ticker to avoid async frame skipping
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final initSafe = safeLineString(points.sublist(0, 2));
+    if (initSafe == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: initSafe,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -2237,17 +2238,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // Interpolated tip point
       final tipLat = points[seg].latitude + frac * (points[seg + 1].latitude - points[seg].latitude);
       final tipLng = points[seg].longitude + frac * (points[seg + 1].longitude - points[seg].longitude);
+      if (!isValidLatLng(tipLat, tipLng)) return;
       coords.add(mapbox.Position(tipLng, tipLat));
 
-      _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-      updating = true;
-      polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      final safeCoords = coords.where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
+      if (safeCoords.length >= 2) {
+        _routeAnnot!.geometry = mapbox.LineString(coordinates: safeCoords);
+        updating = true;
+        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+      }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
-        if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
+        final fullSafe = safeLineString(points);
+        if (fullSafe != null) {
+          _routeAnnot?.geometry = fullSafe;
+          if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
+        }
         if (!completer.isCompleted) completer.complete();
       }
     });

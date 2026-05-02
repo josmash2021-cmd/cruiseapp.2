@@ -22,6 +22,7 @@ import 'package:permission_handler/permission_handler.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../utils/mapbox_safe.dart';
 import 'airport_terminal_sheet.dart';
 import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
@@ -300,8 +301,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _updatingMiniMapAnnot = true;
       try {
         final pos = _interpolatedLatLng;
+        final point = safePoint(pos.longitude, pos.latitude);
+        if (point == null) return;
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          geometry: point,
           image: firstBytes,
           iconSize: 1.05,
           iconAnchor: mapbox.IconAnchor.CENTER,

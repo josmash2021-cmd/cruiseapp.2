@@ -20,6 +20,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
+import '../../utils/mapbox_safe.dart';
 import '../../navigation/nav_state_machine.dart';
 import '../../navigation/route_service.dart';
 import '../../navigation/route_snapper.dart';
@@ -942,17 +943,20 @@ class _DriverNavScreenState extends State<DriverNavScreen>
 
   /// Create single 5px gold line on Mapbox.
   Future<void> _createRouteAnnotations(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
-    _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geom,
-      lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 5.0,
-    ));
+    try {
+      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+      ));
+    } catch (_) {}
   }
 
   Future<void> _updateCarAnnotation(LatLng pos, double bearing) async {
     final mgr   = _arrowMgr;
     final bytes = _arrowBytes;
     if (mgr == null || bytes == null) return;
+    if (!isValidLatLng(pos.latitude, pos.longitude)) return;
     final geom = mapbox.Point(
         coordinates: mapbox.Position(pos.longitude, pos.latitude));
     if (_driverAnnot == null) {
@@ -974,6 +978,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _updateDestPin(LatLng dest) async {
     final mgr = _pointMgr;
     if (mgr == null) return;
+    if (!isValidLatLng(dest.latitude, dest.longitude)) return;
     final geom = mapbox.Point(
         coordinates: mapbox.Position(dest.longitude, dest.latitude));
 
@@ -1014,6 +1019,7 @@ class _DriverNavScreenState extends State<DriverNavScreen>
   Future<void> _updatePickupPin(LatLng pickup) async {
     final mgr = _pointMgr;
     if (mgr == null) return;
+    if (!isValidLatLng(pickup.latitude, pickup.longitude)) return;
     _pickupPinBytes ??= await _buildPickupPin();
     final pinBytes = _pickupPinBytes;
     if (pinBytes == null || !mounted) return;

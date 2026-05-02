@@ -26,6 +26,7 @@ import '../services/trip_firestore_service.dart';
 import '../services/socket_service.dart';
 import '../config/feature_flags.dart';
 import '../widgets/offline_banner.dart';
+import '../utils/mapbox_safe.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:share_plus/share_plus.dart';

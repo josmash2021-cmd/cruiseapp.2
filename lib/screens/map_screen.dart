@@ -23,6 +23,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
+import '../utils/mapbox_safe.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
@@ -312,9 +313,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _setPickupAnnotation(LatLng position) async {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
+    final point = safePoint(position.longitude, position.latitude);
+    if (point == null) return;
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+      geometry: point,
       image: _goldPinIconBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
@@ -326,9 +329,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> _setDropoffAnnotation(LatLng position) async {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
+    final point = safePoint(position.longitude, position.latitude);
+    if (point == null) return;
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+      geometry: point,
       image: _dropoffPinIconBytes ?? _goldPinIconBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM, // pin tip sits on the coordinate
@@ -1426,9 +1431,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
 
     // Pre-create annotation before ticker to avoid async frame skipping
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final initSafe = safeLineString(points.sublist(0, 2));
+    if (initSafe == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: initSafe,
       lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
     ));
     if (!mounted || _routeAnnot == null) return;
@@ -1456,16 +1462,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (count != lastCount) {
         lastCount = count;
         final subset = points.sublist(0, count);
-        final coords = subset.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        updating = true;
-        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+        final safeSubset = safeLineString(subset);
+        if (safeSubset != null) {
+          _routeAnnot!.geometry = safeSubset;
+          updating = true;
+          polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+        }
       }
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        _routeAnnot?.geometry = mapbox.LineString(coordinates: fullCoords);
-        if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
+        final fullSafe = safeLineString(points);
+        if (fullSafe != null) {
+          _routeAnnot?.geometry = fullSafe;
+          if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
+        }
         if (!completer.isCompleted) completer.complete();
       }
     });

@@ -1099,8 +1099,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Pre-create the annotation with the first point duplicated so the
     // ticker never awaits create() — only fire-and-forget update() calls.
     final p0 = mapbox.Position(points[0].longitude, points[0].latitude);
+    final routeGeo = safeLineString(points.sublist(0, 1).followedBy(points.sublist(0, 1)));
+    if (routeGeo == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: [p0, p0]),
+      geometry: routeGeo,
       // Warm gold — averages the web's 3-stop gradient
       // (#D4AF37 → #FFD700 → #E8C547). Solid #F0CA3E reads close to
       // the middle-weighted visual of the CSS gradient on a dark map.
@@ -1304,8 +1306,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Create a smaller gold circle image for shimmer
     final shimmerImage = await _buildShimmerDotImage();
     
+    final shimmerPoint = safePoint(start.longitude, start.latitude);
+    if (shimmerPoint == null) return;
     _routeShimmerDot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(start.longitude, start.latitude)),
+      geometry: shimmerPoint,
       image: shimmerImage,
     ));
   }
@@ -1364,8 +1368,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     // Fallback: create new single-line route
     if (points.isEmpty) return;
+    final routeGeo = safeLineString(points);
+    if (routeGeo == null) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList()),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
     ));
@@ -1382,20 +1388,26 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (mgr == null || _goldPinIcon == null) return;
 
       // Only create if not already placed (synchronous check before any await)
-      _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
-        image: _goldPinIcon!,
-        iconSize: 0.85,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-      _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
-        image: _goldDropoffPinIcon ?? _goldPinIcon!,
-        iconSize: 0.85,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
+      final pickupPoint = safePoint(s.pickup!.lng, s.pickup!.lat);
+      if (pickupPoint != null) {
+        _pickupAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: pickupPoint,
+          image: _goldPinIcon!,
+          iconSize: 0.85,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
+      final dropoffPoint = safePoint(s.dropoff!.lng, s.dropoff!.lat);
+      if (dropoffPoint != null) {
+        _dropoffAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: dropoffPoint,
+          image: _goldDropoffPinIcon ?? _goldPinIcon!,
+          iconSize: 0.85,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
       // Fit camera to show both markers (preserve tilt if cinematic already ran)
       _fitRoute([
         LatLng(s.pickup!.lat, s.pickup!.lng),
@@ -1457,9 +1469,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (_pickupAnnot != null) { try { await mgr.delete(_pickupAnnot!); } catch (_) {} _pickupAnnot = null; }
     if (s.pickup != null) {
       Uint8List? bytes = _pickupPinOnly?.$1 ?? _goldPinIcon;
-      if (bytes != null) {
+      final pickupPoint = safePoint(s.pickup!.lng, s.pickup!.lat);
+      if (bytes != null && pickupPoint != null) {
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(s.pickup!.lng, s.pickup!.lat)),
+          geometry: pickupPoint,
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -1472,9 +1485,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (_dropoffAnnot != null) { try { await mgr.delete(_dropoffAnnot!); } catch (_) {} _dropoffAnnot = null; }
     if (s.dropoff != null) {
       Uint8List? bytes = _dropoffPinOnly?.$1 ?? _goldDropoffPinIcon ?? _goldPinIcon;
-      if (bytes != null) {
+      final dropoffPoint = safePoint(s.dropoff!.lng, s.dropoff!.lat);
+      if (bytes != null && dropoffPoint != null) {
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(s.dropoff!.lng, s.dropoff!.lat)),
+          geometry: dropoffPoint,
           image: bytes,
           iconSize: scale,
           iconAnchor: mapbox.IconAnchor.BOTTOM,

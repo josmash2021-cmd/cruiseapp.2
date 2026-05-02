@@ -462,6 +462,10 @@ extension _HomeScreenController on _HomeScreenState {
       }
       final bytes = _cachedCarBytes!;
 
+      if (!isValidLatLng(position.latitude, position.longitude)) {
+        debugPrint('[HomeScreen] Skipping driver marker — invalid position: $position');
+        return;
+      }
       if (_driverCarAnnot != null) {
         // Update existing annotation position
         _driverCarAnnot!.geometry = mapbox.Point(
@@ -512,14 +516,12 @@ extension _HomeScreenController on _HomeScreenState {
       if (mgr == null) return;
 
       // Build coordinate list
-      final coords = _routeLatLngs
-          .map((ll) => mapbox.Position(ll.longitude, ll.latitude))
-          .toList();
-      if (coords.length < 2) return;
+      final safeGeom = safeLineString(_routeLatLngs);
+      if (safeGeom == null) return;
 
       // Draw gold route line
       _tripRouteAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
+        geometry: safeGeom,
         lineColor: const Color(0xFFFFD700).toARGB32(),
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
@@ -543,6 +545,7 @@ extension _HomeScreenController on _HomeScreenState {
     final ctrl = _miniMapController;
     if (ctrl == null) return;
     if (ride.dropoffLat == 0 && ride.dropoffLng == 0) return;
+    if (!isValidLatLng(ride.dropoffLat, ride.dropoffLng)) return;
 
     try {
       final pinMgr = _miniMapAnnotMgr ??

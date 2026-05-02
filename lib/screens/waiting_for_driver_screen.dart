@@ -16,6 +16,7 @@ import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../widgets/gold_particles_background.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../utils/mapbox_safe.dart';
 
 /// Pantalla "Casi listo..." - Se muestra después del pago confirmado
 /// Muestra el mapa con la ruta, labels DESTINO/RECOGIDA, y detalles del viaje
@@ -299,17 +300,15 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
       isPickup: true, 
       radius: 32,
     );
-    await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(
-          widget.pickupLatLng.longitude,
-          widget.pickupLatLng.latitude,
-        ),
-      ),
-      image: pickupBytes,
-      iconSize: 0.5,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-    ));
+    final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+    if (pickupPoint != null) {
+      await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: pickupPoint,
+        image: pickupBytes,
+        iconSize: 0.5,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    }
     
     // Dropoff pin
     final dropoffBytes = await renderCircularPinBytes(
@@ -318,17 +317,15 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
       radius: 32,
     );
     if (!mounted) return;
-    await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(
-          widget.dropoffLatLng.longitude,
-          widget.dropoffLatLng.latitude,
-        ),
-      ),
-      image: dropoffBytes,
-      iconSize: 0.5,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-    ));
+    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+    if (dropoffPoint != null) {
+      await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: dropoffPoint,
+        image: dropoffBytes,
+        iconSize: 0.5,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    }
   }
 
   Future<void> _animateRouteDraw() async {
@@ -338,8 +335,10 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     final initCoords = _routePoints.sublist(0, 2)
         .map((p) => mapbox.Position(p.longitude, p.latitude))
         .toList();
+    final routeGeo = safeLineString(_routePoints.sublist(0, 2));
+    if (routeGeo == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,

@@ -16,6 +16,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../utils/mapbox_safe.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen "Viaje Aceptado" confirmation shown after driver accepts a trip.
@@ -247,9 +248,10 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
 
     // Pre-create annotation before ticker to avoid async-in-ticker frame skipping
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    final initCoords = _routePoints.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final routeGeo = safeLineString(_routePoints.sublist(0, 2));
+    if (routeGeo == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -328,10 +330,10 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   Future<void> _drawRouteInstant() async {
     final polyMgr = _polyMgr;
     if (polyMgr == null || _routePoints.length < 2) return;
-    final coords = _routePoints.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
+    final routeGeo = safeLineString(_routePoints);
+    if (routeGeo == null) return;
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: geo,
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
@@ -378,31 +380,27 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     if (mgr == null) return;
     // Pickup pin (person icon)
     final pickupBytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
-    await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(
-          widget.pickupLatLng.longitude,
-          widget.pickupLatLng.latitude,
-        ),
-      ),
-      image: pickupBytes,
-      iconSize: 0.5,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-    ));
+    final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+    if (pickupPoint != null) {
+      await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: pickupPoint,
+        image: pickupBytes,
+        iconSize: 0.5,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    }
     // Dropoff pin (location icon)
     final dropoffBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     if (!mounted) return;
-    await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(
-        coordinates: mapbox.Position(
-          widget.dropoffLatLng.longitude,
-          widget.dropoffLatLng.latitude,
-        ),
-      ),
-      image: dropoffBytes,
-      iconSize: 0.5,
-      iconAnchor: mapbox.IconAnchor.BOTTOM,
-    ));
+    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+    if (dropoffPoint != null) {
+      await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: dropoffPoint,
+        image: dropoffBytes,
+        iconSize: 0.5,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    }
   }
 
   void _goToTripScreen() {

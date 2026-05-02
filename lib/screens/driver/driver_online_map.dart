@@ -55,6 +55,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _annotCreateBusy = false;
       }
 
+      // Guard: skip update if GPS returned NaN (can happen briefly on iOS)
+      if (!isValidLatLng(_pos!.latitude, _pos!.longitude)) {
+        debugPrint('[DriverOnlineMap] Skipping gold dot — invalid GPS: $_pos');
+        return;
+      }
+
       // First-time creation: must guard so the per-frame ticker AND the
       // pop animation can't parallel-create N stacked dots.
       if (_goldDotAnnot == null) {
@@ -115,6 +121,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
       final Uint8List? navCarBytes = _navCarIconBytes ?? _vehicleIconBytes ?? _arrowIconBytes;
       if (navCarBytes == null) return;
+      if (!isValidLatLng(_pos!.latitude, _pos!.longitude)) return;
 
       // First-time creation: must guard.
       if (_carAnnot == null) {
@@ -249,15 +256,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _setRouteAnnotation(List<LatLng> pts, Color c) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || pts.length < 2) return;
-    final coords = pts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    final geo = mapbox.LineString(coordinates: coords);
+    final safeGeom = safeLineString(pts);
+    if (safeGeom == null) return;
     if (_routeAnnot != null) {
-      _routeAnnot!.geometry = geo;
+      _routeAnnot!.geometry = safeGeom;
       _routeAnnot!.lineColor = c.toARGB32();
       try { await polyMgr.update(_routeAnnot!); } catch (_) {}
     } else {
       _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geo,
+        geometry: safeGeom,
         lineColor: c.toARGB32(),
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
@@ -279,10 +286,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _setPickupAnnotation() async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
+    final pickupPoint = safePoint(_pickupLL.longitude, _pickupLL.latitude);
+    if (pickupPoint == null) return;
     await _clearPickupDropoffAnnotations();
     final bytes = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
+      geometry: pickupPoint,
       image: bytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -292,10 +301,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _setDropoffAnnotation() async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
+    final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
+    if (dropoffPoint == null) return;
     await _clearPickupDropoffAnnotations();
     final bytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
+      geometry: dropoffPoint,
       image: bytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -305,17 +316,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _setPickupDropoffAnnotations() async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;
+    final pickupPoint = safePoint(_pickupLL.longitude, _pickupLL.latitude);
+    final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
+    if (pickupPoint == null || dropoffPoint == null) return;
     await _clearPickupDropoffAnnotations();
     final pickupBytes  = await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32);
     final dropoffBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
     _pickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
+      geometry: pickupPoint,
       image: pickupBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
     ));
     _dropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
+      geometry: dropoffPoint,
       image: dropoffBytes,
       iconSize: 1.0,
       iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -688,11 +702,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (totalDist < 1e-9) return;
 
     // Pre-create annotation before ticker to avoid async frame skipping
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final initSafe = safeLineString(points.sublist(0, 2));
+    if (initSafe == null) return;
     mapbox.PolylineAnnotation? mainLine;
     try {
       mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: initCoords),
+        geometry: initSafe,
         lineColor: const Color(0xFFFFD700).toARGB32(),
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
@@ -732,6 +747,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final frac = segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
       final tipLat = points[segIdx].latitude + (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
       final tipLng = points[segIdx].longitude + (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
+      if (!isValidLatLng(tipLat, tipLng)) return;
 
       // Build coords: all points up to segIdx + interpolated tip
       final coords = <mapbox.Position>[];
@@ -741,17 +757,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       coords.add(mapbox.Position(tipLng, tipLat));
 
       final ml = mainLine;
-      if (coords.length >= 2 && ml != null) {
-        ml.geometry = mapbox.LineString(coordinates: coords);
+      final safeCoords = coords.where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
+      if (safeCoords.length >= 2 && ml != null) {
+        ml.geometry = mapbox.LineString(coordinates: safeCoords);
         updating = true;
         polyMgr.update(ml).then((_) => updating = false).catchError((_) => updating = false);
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        if (ml != null) {
-          ml.geometry = mapbox.LineString(coordinates: fullCoords);
+        final fullSafe = safeLineString(points);
+        if (fullSafe != null && ml != null) {
+          ml.geometry = fullSafe;
           polyMgr.update(ml);
         }
         _previewPickupAnnot = mainLine;
@@ -776,11 +793,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final totalDist = cumDist.last;
     if (totalDist < 1e-9) return;
 
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final initSafe = safeLineString(points.sublist(0, 2));
+    if (initSafe == null) return;
     mapbox.PolylineAnnotation? seg2Line;
     try {
       seg2Line = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: initCoords),
+        geometry: initSafe,
         lineColor: const Color(0xFFFFD700).toARGB32(),
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
@@ -818,6 +836,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final frac = segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
       final tipLat = points[segIdx].latitude + (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
       final tipLng = points[segIdx].longitude + (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
+      if (!isValidLatLng(tipLat, tipLng)) return;
 
       final coords = <mapbox.Position>[];
       for (int i = 0; i <= segIdx; i++) {
@@ -826,17 +845,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       coords.add(mapbox.Position(tipLng, tipLat));
 
       final sl = seg2Line;
-      if (coords.length >= 2 && sl != null) {
-        sl.geometry = mapbox.LineString(coordinates: coords);
+      final safeCoords = coords.where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
+      if (safeCoords.length >= 2 && sl != null) {
+        sl.geometry = mapbox.LineString(coordinates: safeCoords);
         updating = true;
         polyMgr.update(sl).then((_) => updating = false).catchError((_) => updating = false);
       }
 
       if (progress >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullCoords = points.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-        if (sl != null) {
-          sl.geometry = mapbox.LineString(coordinates: fullCoords);
+        final fullSafe = safeLineString(points);
+        if (fullSafe != null && sl != null) {
+          sl.geometry = fullSafe;
           polyMgr.update(sl);
         }
         _previewDropoffAnnot = seg2Line;

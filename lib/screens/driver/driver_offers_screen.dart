@@ -23,6 +23,7 @@ import '../../services/analytics_service.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
+import '../../utils/mapbox_safe.dart';
 
 /// Instacart-style driver offers screen.
 ///
@@ -141,13 +142,16 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
     if (_driverAnnot != null) {
       try { await mgr.delete(_driverAnnot!); } catch (_) {}
     }
-    _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-      geometry: mapbox.Point(coordinates: mapbox.Position(_driverPos!.longitude, _driverPos!.latitude)),
-      image: bytes,
-      iconSize: 0.5,
-      iconAnchor: mapbox.IconAnchor.CENTER,
-      iconOffset: [0, 0],
-    ));
+    final driverPoint = safePoint(_driverPos!.longitude, _driverPos!.latitude);
+    if (driverPoint != null) {
+      _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: driverPoint,
+        image: bytes,
+        iconSize: 0.5,
+        iconAnchor: mapbox.IconAnchor.CENTER,
+        iconOffset: [0, 0],
+      ));
+    }
   }
 
   Future<void> _initLocation() async {

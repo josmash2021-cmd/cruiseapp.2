@@ -48,6 +48,7 @@ import '../widgets/vehicle_tier_badge.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
+import '../utils/mapbox_safe.dart';
 import 'ride_booking_confirmed_screen.dart';
 import 'ride_payment_method_screen.dart';
 import 'tap_to_pay_screen.dart';

@@ -17,6 +17,7 @@ import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/tier_badge.dart';
+import '../utils/mapbox_safe.dart';
 import 'airport_terminal_sheet.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
@@ -610,26 +611,32 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     final dropBytes =
         await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
     if (!mounted) return;
-    try {
-      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
-        image: pickupBytes,
-        iconSize: 0.65,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-      _markerAnnots.add(a);
-    } catch (_) {}
-    try {
-      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude)),
-        image: dropBytes,
-        iconSize: 0.65,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-      _markerAnnots.add(a);
-    } catch (_) {}
+    final pickupPoint = safePoint(pickup.longitude, pickup.latitude);
+    if (pickupPoint != null) {
+      try {
+        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: pickupPoint,
+          image: pickupBytes,
+          iconSize: 0.65,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+        _markerAnnots.add(a);
+      } catch (_) {}
+    }
+    final dropoffPoint = safePoint(dropoff.longitude, dropoff.latitude);
+    if (dropoffPoint != null) {
+      try {
+        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: dropoffPoint,
+          image: dropBytes,
+          iconSize: 0.65,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+        _markerAnnots.add(a);
+      } catch (_) {}
+    }
   }
 
   Future<void> _animateRoute(List<LatLng> points) async {
@@ -637,9 +644,10 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
     // Pre-create annotation before animation to avoid async frame skipping
     if (_routeAnnot != null) { try { await _polyAnnotMgr!.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final routeGeo = safeLineString(points.sublist(0, 2));
+    if (routeGeo == null) return;
     try { _routeAnnot = await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(),
       lineWidth: 4.5,
       lineJoin: mapbox.LineJoin.ROUND,

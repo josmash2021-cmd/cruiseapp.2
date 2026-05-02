@@ -28,6 +28,7 @@ import '../../services/trip_firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/map_cache_service.dart';
+import '../../utils/mapbox_safe.dart';
 import '../../services/local_cache.dart';
 import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';

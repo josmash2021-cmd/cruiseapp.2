@@ -422,13 +422,16 @@ extension _MapScreenMap on _MapScreenState {
           scale: 2.0,
           isPickup: true,
         );
-        _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          image: carBytes,
-          iconSize: 0.7,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconRotate: bearing,
-        ));
+        final carPoint = safePoint(pos.longitude, pos.latitude);
+        if (carPoint != null) {
+          _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+            geometry: carPoint,
+            image: carBytes,
+            iconSize: 0.7,
+            iconAnchor: mapbox.IconAnchor.CENTER,
+            iconRotate: bearing,
+          ));
+        }
       } catch (_) {
         // Silently fail — marker will retry next frame
       }

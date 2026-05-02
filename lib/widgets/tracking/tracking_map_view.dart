@@ -1218,8 +1218,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final effectivePos = pos ?? _animPos;
     final effectiveBearing = bearing ?? _animBearing;
     
-    // Guard: never create at (0,0)
+    // Guard: never create at (0,0) or with NaN
     if (effectivePos.latitude == 0 && effectivePos.longitude == 0) {
+      _carAnnotCreating = false;
+      return null;
+    }
+    if (!isValidLatLng(effectivePos.latitude, effectivePos.longitude)) {
+      debugPrint('[TrackingMap] Skipping car annotation — invalid coords: $effectivePos');
       _carAnnotCreating = false;
       return null;
     }
@@ -1295,31 +1300,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // During arriving/arrived, this shows the rider where the trip will go.
     final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
     if (dimmedPts.length >= 2) {
-      final allCoords = dimmedPts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-      try {
-        _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: allCoords),
-          lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-          lineWidth: 5.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      } catch (e) {
-        debugPrint('[TrackingMap] Failed to create dimmed route: $e');
+      final safeGeom = safeLineString(dimmedPts);
+      if (safeGeom != null) {
+        try {
+          _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: safeGeom,
+            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+            lineWidth: 5.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (e) {
+          debugPrint('[TrackingMap] Failed to create dimmed route: $e');
+        }
       }
     }
 
     // Pickup pin — always visible
     if (_pickupPinBytes != null) {
-      try {
-        _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude)),
-          image: _pickupPinBytes!,
-          iconSize: 0.55,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
-        ));
-      } catch (e) {
-        debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+      final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+      if (pickupPoint != null) {
+        try {
+          _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+            geometry: pickupPoint,
+            image: _pickupPinBytes!,
+            iconSize: 0.55,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: [0, 0],
+          ));
+        } catch (e) {
+          debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+        }
       }
     } else {
       debugPrint('[TrackingMap] Pickup pin bytes not ready — will retry');
@@ -1358,9 +1368,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null || _dropoffPinBytes == null) return;
     _dropoffPinAdded = true;
+    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+    if (dropoffPoint == null) return;
     try {
       _dropoffAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude)),
+        geometry: dropoffPoint,
         image: _dropoffPinBytes!,
         iconSize: 0.01,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -1586,6 +1598,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final curLat = a.latitude + (b.latitude - a.latitude) * t;
     final curLng = a.longitude + (b.longitude - a.longitude) * t;
 
+    // Guard against NaN from interpolation
+    if (!isValidLatLng(curLat, curLng)) return;
+
     // Build remaining coords: interpolated current point + all points ahead
     final ahead = hi < _routePts.length ? _routePts.length - hi : 0;
     final remaining = <mapbox.Position>[
@@ -1595,9 +1610,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         (i) => mapbox.Position(_routePts[hi + i].longitude, _routePts[hi + i].latitude),
       ),
     ];
-    if (remaining.length < 2) return;
+    // Filter any NaN coords that may have slipped through
+    final validRemaining = remaining.where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
+    if (validRemaining.length < 2) return;
 
-    final geom = mapbox.LineString(coordinates: remaining);
+    final geom = mapbox.LineString(coordinates: validRemaining);
     try {
       if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
     } catch (_) {}
@@ -1637,21 +1654,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       return;
     }
 
-    final geom = mapbox.LineString(coordinates: [
-      mapbox.Position(_animPos.longitude, _animPos.latitude),
-      mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
+    final approachGeom = safeLineString([
+      _animPos,
+      widget.pickupLatLng,
     ]);
+    if (approachGeom == null) return;
 
     if (_approachAnnot == null) {
       // Gloss gold line (matches main route style) from driver → pickup
       mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
+        geometry: approachGeom,
         lineColor: const Color(0xFFFFD700).toARGB32(),
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
       )).then((annot) { _approachAnnot = annot; }).catchError((_) {});
     } else {
-      try { mgr.update(_approachAnnot!..geometry = geom); } catch (_) {}
+      try { mgr.update(_approachAnnot!..geometry = approachGeom); } catch (_) {}
     }
   }
 

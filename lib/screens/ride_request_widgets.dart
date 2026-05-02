@@ -2710,13 +2710,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               .map((p) =>
                                   mapbox.Position(p.longitude, p.latitude))
                               .toList();
-                          await polyMgr.create(mapbox.PolylineAnnotationOptions(
-                            geometry:
-                                mapbox.LineString(coordinates: coords),
-                            lineColor: const Color(0xFFFFD700).toARGB32(),
-                            lineWidth: 5.0,
-                            lineJoin: mapbox.LineJoin.ROUND,
-                          ));
+                          final routeGeo = safeLineString(routePts);
+                          if (routeGeo != null) {
+                            await polyMgr.create(mapbox.PolylineAnnotationOptions(
+                              geometry: routeGeo,
+                              lineColor: const Color(0xFFFFD700).toARGB32(),
+                              lineWidth: 5.0,
+                              lineJoin: mapbox.LineJoin.ROUND,
+                            ));
+                          }
                         }
 
                         // Add smart pins (pickup + dropoff)
@@ -2728,29 +2730,29 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-anchor', 'bottom'); } catch (_) {}
                         final pickupBytes =
                             await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 44);
-                        await pointMgr.create(mapbox.PointAnnotationOptions(
-                          geometry: mapbox.Point(
-                            coordinates:
-                                mapbox.Position(pickup.lng, pickup.lat),
-                          ),
-                          image: pickupBytes,
-                          iconSize: 0.65,
-                          iconAnchor: mapbox.IconAnchor.BOTTOM,
-                          iconOffset: [0, 0],
-                        ));
-                        if (dropoff != null) {
-                          final dropoffBytes =
-                              await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
+                        final pickupPoint = safePoint(pickup.lng, pickup.lat);
+                        if (pickupPoint != null) {
                           await pointMgr.create(mapbox.PointAnnotationOptions(
-                            geometry: mapbox.Point(
-                              coordinates:
-                                  mapbox.Position(dropoff.lng, dropoff.lat),
-                            ),
-                            image: dropoffBytes,
+                            geometry: pickupPoint,
+                            image: pickupBytes,
                             iconSize: 0.65,
                             iconAnchor: mapbox.IconAnchor.BOTTOM,
                             iconOffset: [0, 0],
                           ));
+                        }
+                        if (dropoff != null) {
+                          final dropoffBytes =
+                              await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
+                          final dropoffPoint = safePoint(dropoff.lng, dropoff.lat);
+                          if (dropoffPoint != null) {
+                            await pointMgr.create(mapbox.PointAnnotationOptions(
+                              geometry: dropoffPoint,
+                              image: dropoffBytes,
+                              iconSize: 0.65,
+                              iconAnchor: mapbox.IconAnchor.BOTTOM,
+                              iconOffset: [0, 0],
+                            ));
+                          }
                         }
                       },
                     ),

@@ -20,6 +20,7 @@ import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/tier_badge.dart';
+import '../../utils/mapbox_safe.dart';
 import 'scheduled_ride_details_screen.dart';
 
 /// Unified scheduled rides screen with two tabs:
@@ -1091,28 +1092,32 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     final dropBytes   = await renderCircularPinBytes(
         icon: CircularPinIcon.home,   isPickup: false, radius: 44);
     if (!mounted) return;
-    try {
-      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-            coordinates: mapbox.Position(pickup.longitude, pickup.latitude)),
-        image:       pickupBytes,
-        iconSize:    0.65,
-        iconAnchor:  mapbox.IconAnchor.BOTTOM,
-        iconOffset:  [0, 0],
-      ));
-      _markerAnnots.add(a);
-    } catch (_) {}
-    try {
-      final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-            coordinates: mapbox.Position(dropoff.longitude, dropoff.latitude)),
-        image:      dropBytes,
-        iconSize:   0.65,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-      _markerAnnots.add(a);
-    } catch (_) {}
+    final pickupPoint = safePoint(pickup.longitude, pickup.latitude);
+    if (pickupPoint != null) {
+      try {
+        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: pickupPoint,
+          image:       pickupBytes,
+          iconSize:    0.65,
+          iconAnchor:  mapbox.IconAnchor.BOTTOM,
+          iconOffset:  [0, 0],
+        ));
+        _markerAnnots.add(a);
+      } catch (_) {}
+    }
+    final dropoffPoint = safePoint(dropoff.longitude, dropoff.latitude);
+    if (dropoffPoint != null) {
+      try {
+        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+          geometry: dropoffPoint,
+          image:      dropBytes,
+          iconSize:   0.65,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+        _markerAnnots.add(a);
+      } catch (_) {}
+    }
   }
 
   Future<void> _animateRoute(List<LatLng> points) async {
@@ -1121,13 +1126,11 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       try { await _polyAnnotMgr!.delete(_routeAnnot!); } catch (_) {}
       _routeAnnot = null;
     }
-    final initCoords = points
-        .sublist(0, 2)
-        .map((p) => mapbox.Position(p.longitude, p.latitude))
-        .toList();
+    final routeGeo = safeLineString(points.sublist(0, 2));
+    if (routeGeo == null) return;
     try {
       _routeAnnot = await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-        geometry:  mapbox.LineString(coordinates: initCoords),
+        geometry:  routeGeo,
         lineColor: const Color(0xFFFFD700).toARGB32(),
         lineWidth: 4.5,
         lineJoin:  mapbox.LineJoin.ROUND,
@@ -1782,33 +1785,35 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
     final pickupBytes = await renderCircularPinBytes(
         icon: CircularPinIcon.person, isPickup: true, radius: 44);
     if (!mounted) return;
-    try {
-      await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-            coordinates:
-                mapbox.Position(widget.pickupLng, widget.pickupLat)),
-        image: pickupBytes,
-        iconSize: 0.55,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-    } catch (_) {}
-
-    if (_hasDropoff) {
-      final dropBytes = await renderCircularPinBytes(
-          icon: CircularPinIcon.flag, isPickup: false, radius: 44);
-      if (!mounted) return;
+    final pickupPoint = safePoint(widget.pickupLng, widget.pickupLat);
+    if (pickupPoint != null) {
       try {
         await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(
-              coordinates:
-                  mapbox.Position(widget.dropoffLng!, widget.dropoffLat!)),
-          image: dropBytes,
+          geometry: pickupPoint,
+          image: pickupBytes,
           iconSize: 0.55,
           iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: [0, 0],
         ));
       } catch (_) {}
+    }
+
+    if (_hasDropoff) {
+      final dropBytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 44);
+      if (!mounted) return;
+      final dropoffPoint = safePoint(widget.dropoffLng!, widget.dropoffLat!);
+      if (dropoffPoint != null) {
+        try {
+          await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
+            geometry: dropoffPoint,
+            image: dropBytes,
+            iconSize: 0.55,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: [0, 0],
+          ));
+        } catch (_) {}
+      }
 
       // Fetch real road-based route and draw golden polyline
       if (_polyAnnotMgr != null) {
@@ -1832,19 +1837,19 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
       }
       _routeLoaded = true;
       // Use road-snapped route points directly — do NOT cap with raw coords
-      final coords = route.points
-          .map((p) => mapbox.Position(p.longitude, p.latitude))
-          .toList();
-      try {
-        await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: coords),
-          lineColor: const Color(0xFFE8C547).toARGB32(),
-          lineWidth: 3.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      } catch (_) {}
-      // Fit bounds to route
-      if (_mapCtrl != null) await _fitBounds();
+      final routeGeo = safeLineString(route.points);
+      if (routeGeo != null) {
+        try {
+          await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
+            geometry: routeGeo,
+            lineColor: const Color(0xFFE8C547).toARGB32(),
+            lineWidth: 3.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (_) {}
+        // Fit bounds to route
+        if (_mapCtrl != null) await _fitBounds();
+      }
     } catch (_) {
       _drawStraightLine();
     } finally {
@@ -1854,12 +1859,14 @@ class _AvailableMiniMapState extends State<_AvailableMiniMap> {
 
   void _drawStraightLine() {
     if (_polyAnnotMgr == null || !_hasDropoff) return;
+    final straightGeo = safeLineString([
+      LatLng(widget.pickupLat, widget.pickupLng),
+      LatLng(widget.dropoffLat!, widget.dropoffLng!),
+    ]);
+    if (straightGeo == null) return;
     try {
       _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: [
-          mapbox.Position(widget.pickupLng, widget.pickupLat),
-          mapbox.Position(widget.dropoffLng!, widget.dropoffLat!),
-        ]),
+        geometry: straightGeo,
         lineColor: const Color(0xFFE8C547).toARGB32(),
         lineWidth: 3.0,
         lineJoin: mapbox.LineJoin.ROUND,

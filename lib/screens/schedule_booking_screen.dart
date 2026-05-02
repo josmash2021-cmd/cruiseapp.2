@@ -25,6 +25,7 @@ import '../services/places_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../utils/app_toast.dart';
+import '../utils/mapbox_safe.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
@@ -346,23 +347,29 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
     // Pickup marker — gold teardrop with person icon
     if (_pickupLatLng != null && _pickupPinBytes != null) {
-      final a = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_pickupLatLng!.longitude, _pickupLatLng!.latitude)),
-        image: _pickupPinBytes!,
-        iconSize: 1.0,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
-      _markerAnnots.add(a);
+      final pickupPoint = safePoint(_pickupLatLng!.longitude, _pickupLatLng!.latitude);
+      if (pickupPoint != null) {
+        final a = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: pickupPoint,
+          image: _pickupPinBytes!,
+          iconSize: 1.0,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ));
+        _markerAnnots.add(a);
+      }
     }
     // Dropoff marker — gold teardrop with destination icon
     if (_dropoffLatLng != null && _dropoffPinBytes != null) {
-      final a = await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: mapbox.Position(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude)),
-        image: _dropoffPinBytes!,
-        iconSize: 1.0,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-      ));
-      _markerAnnots.add(a);
+      final dropoffPoint = safePoint(_dropoffLatLng!.longitude, _dropoffLatLng!.latitude);
+      if (dropoffPoint != null) {
+        final a = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: dropoffPoint,
+          image: _dropoffPinBytes!,
+          iconSize: 1.0,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ));
+        _markerAnnots.add(a);
+      }
     }
   }
 
@@ -432,9 +439,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
     // Pre-create annotation before ticker to avoid async frame skipping
     if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    final initCoords = points.sublist(0, 2).map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
+    final routeGeo = safeLineString(points.sublist(0, 2));
+    if (routeGeo == null) return;
     try { _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: mapbox.LineString(coordinates: initCoords),
+      geometry: routeGeo,
       lineColor: const Color(0xFFFFD700).toARGB32(), lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
     )); } catch (_) {}
     if (!mounted || _routeAnnot == null) return;

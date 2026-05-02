@@ -6,6 +6,7 @@ import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import '../models/lat_lng.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../utils/mapbox_safe.dart';
 import 'home_screen.dart';
 
 /// Confirmation screen shown after rider books a scheduled ride.
@@ -393,12 +394,15 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
       final coords = routePts
           .map((p) => mapbox.Position(p.longitude, p.latitude))
           .toList();
-      await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: coords),
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
+      final routeGeo = safeLineString(routePts);
+      if (routeGeo != null) {
+        await polyMgr.create(mapbox.PolylineAnnotationOptions(
+          geometry: routeGeo,
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      }
     }
 
     // Add smart pins
@@ -425,32 +429,32 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     if (widget.pickupLat != null && widget.pickupLng != null) {
       final pickupBytes = await renderCircularPinBytes(
           icon: CircularPinIcon.person, isPickup: true, radius: 44);
-      await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-          coordinates:
-              mapbox.Position(widget.pickupLng!, widget.pickupLat!),
-        ),
-        image: pickupBytes,
-        iconSize: 0.65,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
+      final pickupPoint = safePoint(widget.pickupLng!, widget.pickupLat!);
+      if (pickupPoint != null) {
+        await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: pickupPoint,
+          image: pickupBytes,
+          iconSize: 0.65,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
     }
 
     // Dropoff pin
     if (widget.dropoffLat != null && widget.dropoffLng != null) {
       final dropoffBytes = await renderCircularPinBytes(
           icon: CircularPinIcon.home, isPickup: false, radius: 44);
-      await pointMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-          coordinates:
-              mapbox.Position(widget.dropoffLng!, widget.dropoffLat!),
-        ),
-        image: dropoffBytes,
-        iconSize: 0.65,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
+      final dropoffPoint = safePoint(widget.dropoffLng!, widget.dropoffLat!);
+      if (dropoffPoint != null) {
+        await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: dropoffPoint,
+          image: dropoffBytes,
+          iconSize: 0.65,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
     }
   }
 

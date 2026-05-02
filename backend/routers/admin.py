@@ -1230,7 +1230,7 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
                 } if vehicle else None,
                 "on_trip": active_trip is not None,
                 "trip_id": active_trip.id if active_trip else None,
-                "last_updated": user.updated_at.isoformat() if user.updated_at else None,
+                "last_updated": user.last_active_at.isoformat() if user.last_active_at else None,
             })
         
         return {"drivers": drivers}

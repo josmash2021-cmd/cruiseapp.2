@@ -162,6 +162,22 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             heading=getattr(body, 'heading', 0.0),
             speed=getattr(body, 'speed', 0.0),
         ))
+        # RTDB fallback — write driver location so riders on Firebase channel can see it
+        if _HAS_FIRESTORE:
+            try:
+                import firebase_admin
+                from firebase_admin import db
+                rtdb_ref = db.reference(f'driver_locations/{driver_id}')
+                rtdb_ref.set({
+                    'lat': body.lat,
+                    'lng': body.lng,
+                    'heading': getattr(body, 'heading', 0.0),
+                    'speed': getattr(body, 'speed', 0.0),
+                    'timestamp': int(time.time() * 1000),
+                    'is_online': body.is_online,
+                })
+            except Exception as _rtdb_err:
+                logger.debug("RTDB driver location write failed: %s", _rtdb_err)
 
     # Update Redis Geo for fast nearby queries
     try:

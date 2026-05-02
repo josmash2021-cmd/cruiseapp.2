@@ -136,11 +136,11 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
 
     try {
       final result = await ApiService.createFinancialConnectionsSession();
-      if (!mounted) {
-        Navigator.of(ctx, rootNavigator: true).pop();
-        return;
+      if (!mounted) return;
+      // dismiss loading using the State's context (guarded by mounted)
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
       }
-      Navigator.of(ctx, rootNavigator: true).pop(); // dismiss loading
 
       if (result != null && result['url'] != null) {
         final url = Uri.parse(result['url'] as String);
@@ -148,19 +148,18 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
           await launchUrl(url, mode: LaunchMode.externalApplication);
         } else {
           if (!mounted) return;
-          _showBankError(ctx, s.genericPaymentError);
+          _showBankError(context, s.genericPaymentError);
         }
       } else {
         if (!mounted) return;
-        _showBankError(ctx, s.genericPaymentError);
+        _showBankError(context, s.genericPaymentError);
       }
     } catch (e) {
-      if (!mounted) {
-        Navigator.of(ctx, rootNavigator: true).pop();
-        return;
+      if (!mounted) return;
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
       }
-      Navigator.of(ctx, rootNavigator: true).pop(); // dismiss loading
-      _showBankError(ctx, '${s.genericPaymentError} (${e.toString()})');
+      _showBankError(context, '${s.genericPaymentError} (${e.toString()})');
     }
   }
 

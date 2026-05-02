@@ -538,10 +538,15 @@ void main() async {
       PaintingBinding.instance.imageCache.maximumSize = 500;
 
       // Mapbox init with error handling — prevents crash on invalid token
-      try {
-        MapboxOptions.setAccessToken(MapboxConfig.accessToken);
-      } catch (e) {
-        debugPrint('[MapboxInit] Failed to set token: $e');
+      if (MapboxConfig.accessToken.isEmpty) {
+        debugPrint('[MapboxInit] CRITICAL: MAPBOX_TOKEN is empty — map will be black');
+      } else {
+        try {
+          MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+          debugPrint('[MapboxInit] Token set successfully (length=${MapboxConfig.accessToken.length})');
+        } catch (e) {
+          debugPrint('[MapboxInit] Failed to set token: $e');
+        }
       }
       
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);

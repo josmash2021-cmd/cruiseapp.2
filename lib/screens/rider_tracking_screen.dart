@@ -177,6 +177,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _dropoffPinAdded = false;
 
   _TrackPhase _phase = _TrackPhase.arriving;
+  bool _mapLoadError = false;
+  String _mapErrorMessage = '';
   bool _greetingSent = false;
   bool _arrivedNotifSent = false;
   // Initialize to pickup location so the car appears immediately on the map

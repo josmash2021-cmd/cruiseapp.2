@@ -1013,8 +1013,19 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 }
               });
             },
+            onMapLoadErrorListener: (err) {
+              debugPrint('[TrackingMap] Map load error: ${err.message} (type: ${err.type})');
+              _setState(() {
+                _mapLoadError = true;
+                _mapErrorMessage = err.message;
+              });
+            },
             onStyleLoadedListener: (_) async {
               if (_map == null) return;
+              _setState(() {
+                _mapLoadError = false;
+                _mapErrorMessage = '';
+              });
               await _applyDarkNavyGoldTheme(_map!);
 
               // Annotation managers are DESTROYED on style reload — Mapbox
@@ -1069,6 +1080,30 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             },
           ),
         ),
+        // Show error overlay when map fails to load
+        if (_mapLoadError)
+          Container(
+            color: Colors.black,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.map_outlined, color: Colors.white38, size: 48),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Map unavailable',
+                    style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _mapErrorMessage.isNotEmpty ? _mapErrorMessage : 'Check your connection and try again',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

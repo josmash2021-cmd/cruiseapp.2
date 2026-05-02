@@ -1014,28 +1014,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               });
             },
             onStyleLoadedListener: (_) async {
-              if (_map != null) {
-                await _applyDarkNavyGoldTheme(_map!);
-                // Re-apply annotation manager layer properties after style reload
-                if (_pointAnnotMgr != null) {
-                  try {
-                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
-                    await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-                  } catch (_) {}
-                }
-                if (_carAnnotMgr != null) {
-                  try {
-                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
-                    await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
-                  } catch (_) {}
-                }
-              }
+              if (_map == null) return;
+              await _applyDarkNavyGoldTheme(_map!);
+
               // Annotation managers are DESTROYED on style reload — Mapbox
               // clears all annotations AND managers when the style changes.
-              // We MUST null them out so they're recreated in onMapCreated.
+              // We MUST null them out AND recreate them, then redraw everything.
               _carAnnot = null;
               _carAnnotCreating = false;
               _carAnnotMgr = null;
@@ -1046,9 +1030,35 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _remainingRouteAnnot = null;
               _dimmedRouteAnnot = null;
               _approachAnnot = null;
+              // Reset flags so static annotations (pins + dimmed route) are recreated
+              _staticAnnotsDone = false;
+              _dropoffPinAdded = false;
 
-              // FIX: After style reload, re-fit bounds to ensure the route is
-              // still visible. Style reloads can reset the camera position.
+              // Recreate annotation managers
+              try {
+                _polylineAnnotMgr = await _map!.annotations.createPolylineAnnotationManager(
+                  below: 'road-label',
+                );
+                _pointAnnotMgr = await _map!.annotations.createPointAnnotationManager();
+                await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
+                await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+              } catch (_) {}
+              try {
+                _carAnnotMgr = await _map!.annotations.createPointAnnotationManager();
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
+              } catch (_) {}
+
+              // Redraw all annotations (pins, route, car)
+              _updateAnnotations();
+
+              // After style reload, re-fit bounds to ensure the route is visible
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted && _map != null) {
                   Future.delayed(const Duration(milliseconds: 200), () {

@@ -169,7 +169,10 @@ class CarIconLoader {
     } else {
       base = _bytesCache['black'] ?? await loadUberBytes(rideType: 'sedan');
     }
-    if (base == null) throw Exception('Failed to load car icon');
+    if (base == null) {
+      debugPrint('[CarIconLoader] Failed to load car icon for typeKey=$typeKey, returning empty bytes');
+      return Uint8List(0);
+    }
 
     if (q == 0) {
       cache[0] = base;
@@ -230,7 +233,17 @@ class CarIconLoader {
 
     // Load the appropriate PNG and decode to ui.Image
     final bytes = await loadUberBytes(rideType: rideType);
-    if (bytes == null) throw Exception('Failed to load car image');
+    if (bytes == null || bytes.isEmpty) {
+      debugPrint('[CarIconLoader] Failed to load car image for rideType=$rideType, creating placeholder');
+      // Create a 1x1 transparent placeholder image
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(const Rect.fromLTWH(0, 0, 1, 1), Paint()..color = Colors.transparent);
+      final picture = recorder.endRecording();
+      final img = await picture.toImage(1, 1);
+      _cardCache[cacheKey] = img;
+      return img;
+    }
 
     final codec = await ui.instantiateImageCodec(bytes);
     final frame = await codec.getNextFrame();

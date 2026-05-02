@@ -137,6 +137,14 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     );
 
     final cameras = await availableCameras();
+    if (cameras.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No camera available on this device')),
+        );
+      }
+      return;
+    }
     final front = cameras.firstWhere(
       (c) => c.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,

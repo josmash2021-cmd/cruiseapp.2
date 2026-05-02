@@ -2051,8 +2051,22 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         final dropoffPos = _dropoffPosition;
 
         // Guard: require both addresses before saving
-        if (riderId == null) throw Exception('Not logged in');
-        if (pickupPos == null) throw Exception('Pickup location not set');
+        if (riderId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please log in to request a ride')),
+            );
+          }
+          return;
+        }
+        if (pickupPos == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please set pickup location')),
+            );
+          }
+          return;
+        }
         if (dropoffPos == null || _dropoffAddress.isEmpty) {
           if (mounted) {
             _setStage(RideStage.plan);

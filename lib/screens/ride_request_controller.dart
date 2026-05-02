@@ -1107,7 +1107,9 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       bool nativePayFailed = false;
-      if (isNativePay) {
+      // Confirm payment for ALL non-test methods before creating the trip.
+      // This ensures the hold is placed and verified before dispatching drivers.
+      if (!isTestMode) {
         _setState(() => _isProcessingPayment = true);
         try {
           final ok = await _confirmNativePayment(option);
@@ -1118,14 +1120,10 @@ extension _RideRequestController on _RideRequestScreenState {
           }
         } catch (e) {
           if (!mounted) return;
-          debugPrint('Native payment error: $e');
+          debugPrint('Payment error: $e');
           
-          // NEW: Try smart retry with fallback options
+          // Try smart retry with fallback options
           _setState(() => _isProcessingPayment = false);
-          // Apply 10% promo to the charged amount when active so the
-          // backend / Stripe receive the discounted price the rider
-          // saw on the picked vehicle card. Otherwise we'd display the
-          // discount but still charge full price.
           final double effectivePrice = widget.applyPromo
               ? option.priceEstimate * 0.9
               : option.priceEstimate;
@@ -1144,9 +1142,6 @@ extension _RideRequestController on _RideRequestScreenState {
           _setState(() => _isProcessingPayment = true);
         }
         _setState(() => _isProcessingPayment = false);
-      } else {
-        // For non-native pay, use the new retry system inside the payment callback
-        // This is handled in the searching screen's paymentCallback
       }
 
       if (!mounted) return;
@@ -1173,30 +1168,7 @@ extension _RideRequestController on _RideRequestScreenState {
         cancelled = await nav.push<bool>(
               searchingDriverRoute(
                 onCancel: _cancelSearching,
-                paymentCallback: (isNativePay || isTestMode || isTapToPay)
-                    ? null 
-                    : () async {
-                        // Enhanced payment with smart retry
-                        try {
-                          return await _confirmNativePayment(option);
-                        } catch (e) {
-                          // Payment failed - try smart retry with fallback
-                          // Apply 10% promo to the charged amount when active so the
-          // backend / Stripe receive the discounted price the rider
-          // saw on the picked vehicle card. Otherwise we'd display the
-          // discount but still charge full price.
-          final double effectivePrice = widget.applyPromo
-              ? option.priceEstimate * 0.9
-              : option.priceEstimate;
-          final amountCents = (effectivePrice * 100).round();
-                          return await _handlePaymentFailure(
-                            error: e,
-                            amountCents: amountCents,
-                            originalMethod: _selectedPaymentMethod,
-                            option: option,
-                          );
-                        }
-                      },
+                paymentCallback: null, // Payment already confirmed before requestRide()
                 initiallyDeclined: nativePayFailed,
                 onPaymentDeclined: () => paymentDeclinedFlag = true,
                 driverFound: _driverMatchedNotifier,
@@ -1731,9 +1703,11 @@ extension _RideRequestController on _RideRequestScreenState {
 
       return true;
     } catch (e) {
-      debugPrint('[Card] Saved card failed: $e — falling back to card sheet');
-      // Fall back to card sheet on any failure
-      return _confirmCardSheet(amountCents, 'Cruise');
+      debugPrint('[Card] Saved card failed: $e');
+      // Do NOT fall back to card sheet on payment failures.
+      // The user already has a saved card; if it fails (insufficient funds,
+      // expired, etc.) we must stop and show the error.
+      rethrow;
     }
   }
 

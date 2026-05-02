@@ -849,6 +849,25 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         except ValueError:
             data["scheduled_at"] = None
 
+    # ── Validate PaymentIntent hold (production only) ──────────
+    # A valid hold is required before dispatching drivers to ensure
+    # the rider's card has funds. Skip for test/sandbox modes.
+    is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
+    pi_id = data.get("stripe_payment_intent_id")
+    if not is_sandbox and pi_id:
+        try:
+            import stripe as _stripe_mod
+            if _HAS_STRIPE:
+                intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
+                if intent.status not in ("requires_capture", "succeeded"):
+                    raise HTTPException(
+                        400,
+                        f"Payment hold is not valid (status: {intent.status}). Please retry payment."
+                    )
+        except _stripe_mod.error.StripeError as e:
+            logging.warning("[Dispatch] Invalid PaymentIntent %s: %s", pi_id, e)
+            raise HTTPException(400, "Payment verification failed. Please retry.")
+
     # ── Apply fare surcharges ──────────────────────────────────
     fare = float(data.get("fare") or 0)
     scheduled_surcharge = 0.0

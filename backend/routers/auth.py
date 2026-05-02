@@ -337,10 +337,12 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     # Apple App Store review bypass: skip OTP, return tokens directly.
     # These accounts must log in with email+password ONLY — no OTP screen,
     # no verification step. Apple reviewers cannot receive SMS/email codes.
-    # The domain is cruiseinride.com (the app's actual domain), NOT cruiseride.com.
+    # Supports both cruiseinride.com (app domain) and cruiseride.com (screenshot domain).
     _APPLE_REVIEW_EMAILS = {
         "applereview@cruiseinride.com",
         "applereviewdriver@cruiseinride.com",
+        "applereview@cruiseride.com",
+        "applereviewdriver@cruiseride.com",
     }
     if user.email and user.email.lower() in _APPLE_REVIEW_EMAILS:
         token = await _create_driver_aware_token_from_user(user, db)

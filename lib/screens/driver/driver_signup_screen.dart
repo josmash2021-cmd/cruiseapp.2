@@ -770,7 +770,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       );
 
       final user = result['user'] as Map<String, dynamic>;
-      final userId = user['id'] as int?;
+      final userId = (user['id'] is num) ? (user['id'] as num).toInt() : int.tryParse(user['id']?.toString() ?? '');
 
       await UserSession.saveUser(
         firstName: _firstNameCtrl.text.trim(),

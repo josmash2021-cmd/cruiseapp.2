@@ -1826,12 +1826,21 @@ class ApiService {
   static Map<String, dynamic>? _cachedUser;
 
   /// Get the current logged-in user's ID (from cache or API).
+  /// Handles int, double, and String-numeric values safely.
   static Future<int?> getCurrentUserId() async {
-    if (_cachedUser != null) return _cachedUser!['id'] as int?;
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
+    if (_cachedUser != null) return toInt(_cachedUser!['id']);
     final me = await getMe();
     if (me != null) {
       _cachedUser = me;
-      return me['id'] as int?;
+      return toInt(me['id']);
     }
     return null;
   }
@@ -2760,7 +2769,11 @@ class ApiService {
         final body = jsonDecode(res.body);
         if (body is List) return body.length;
         if (body is Map && body.containsKey('count')) {
-          return body['count'] as int;
+          final c = body['count'];
+          if (c is int) return c;
+          if (c is double) return c.toInt();
+          if (c is String) return int.tryParse(c) ?? 0;
+          return 0;
         }
         return 0;
       }

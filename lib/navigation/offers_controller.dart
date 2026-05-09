@@ -211,10 +211,18 @@ class OffersController {
   }
 
   Future<int?> _resolveDriverId() async {
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
     try {
       final me = await ApiService.getMe();
       if (me != null && me['id'] != null) {
-        _driverId = me['id'] as int;
+        _driverId = toInt(me['id']);
         return _driverId;
       }
     } catch (_) {}

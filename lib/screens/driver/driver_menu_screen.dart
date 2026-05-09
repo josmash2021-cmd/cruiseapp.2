@@ -163,7 +163,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         });
 
         // Fetch real driver stats for rating + tier from completed trips
-        final userId = me['id'] as int?;
+        final userId = (me['id'] is num) ? (me['id'] as num).toInt() : int.tryParse(me['id']?.toString() ?? '');
         if (userId != null) {
           final stats = await ApiService.getDriverStats(userId);
           if (mounted) {

@@ -108,7 +108,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
         email: user['email'] ?? '',
         phone: user['phone'] ?? '',
         photoUrl: user['photo_url'] as String?,
-        userId: user['id'] as int?,
+        userId: (user['id'] is num) ? (user['id'] as num).toInt() : int.tryParse(user['id']?.toString() ?? ''),
         role: 'driver',
       );
       await UserSession.saveMode('driver');
@@ -189,7 +189,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
             email: user['email'] ?? '',
             phone: user['phone'] ?? '',
             photoUrl: user['photo_url'] as String?,
-            userId: user['id'] as int?,
+            userId: (user['id'] is num) ? (user['id'] as num).toInt() : int.tryParse(user['id']?.toString() ?? ''),
             role: 'driver',
           );
           await UserSession.saveMode('driver');

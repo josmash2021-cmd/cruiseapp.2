@@ -1240,9 +1240,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
     // Filter out locally rejected AND already-accepted offers
     var filtered = offers.where((o) {
-      final oid = (o['offer_id'] as num?)?.toInt();
+      final oid = toInt(o['offer_id']);
       if (oid == null) return true;
       if (_rejectedOfferIds.contains(oid)) return false;
       if (_acceptedOfferIds.contains(oid)) {
@@ -1255,7 +1263,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Deduplicate by offer_id — SSE + polling can receive the same offer
     final seenIds = <int>{};
     filtered = filtered.where((o) {
-      final oid = (o['offer_id'] as num?)?.toInt();
+      final oid = toInt(o['offer_id']);
       if (oid == null) return true; // keep offers without id
       if (seenIds.contains(oid)) {
         debugPrint('[DriverOnline] duplicate offer dropped: $oid');
@@ -1383,8 +1391,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
 
-    final offerId = (r['offer_id'] as num?)?.toInt();
-    final tripId = (r['trip_id'] as num?)?.toInt() ?? (r['id'] as num?)?.toInt();
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
+    final offerId = toInt(r['offer_id']);
+    final tripId = toInt(r['trip_id']) ?? toInt(r['id']);
     debugPrint('[DriverOnline] parsed offerId=$offerId, tripId=$tripId');
 
     // Guard: driverId must be resolved before accepting
@@ -1515,9 +1531,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _nearPickupNotified = false;
       _nearDropoffNotified = false;
       debugPrint('[DriverOnline] ▶ STEP 4: clearing annotations');
-      await _clearAllAnnotations();
+      try {
+        await _clearAllAnnotations();
+      } catch (e) {
+        debugPrint('[DriverOnline] _clearAllAnnotations failed during accept: $e');
+      }
       if (_pos != null) {
-        _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+        try {
+          _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+        } catch (e) {
+          debugPrint('[DriverOnline] _animateToPosition failed during accept: $e');
+        }
       }
 
       // ── Reset offer state and navigate to full-screen accepted screen ──
@@ -1534,12 +1558,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Write accepted status to Firestore immediately — bypasses the 2-second
       // backend→Firestore sync delay so the rider's listener fires instantly.
       if (tripId != null) {
+        String? driverFirstName;
+        String? driverLastName;
+        String? driverPhone;
+        try {
+          final driverUser = await UserSession.getUser();
+          driverFirstName = driverUser?['firstName']?.toString();
+          driverLastName = driverUser?['lastName']?.toString();
+          driverPhone = driverUser?['phone']?.toString();
+        } catch (e) {
+          debugPrint('[DriverOnline] UserSession.getUser() failed during accept: $e');
+        }
+        final fullName = '${driverFirstName ?? ''} ${driverLastName ?? ''}'.trim();
         final fsDocId = 'sql_$tripId';
-        final driverUser = await UserSession.getUser();
-        final driverFirstName = driverUser?['firstName']?.toString() ?? '';
-        final driverLastName = driverUser?['lastName']?.toString() ?? '';
-        final driverPhone = driverUser?['phone']?.toString() ?? '';
-        final fullName = '$driverFirstName $driverLastName'.trim();
         unawaited(
           FirebaseFirestore.instance
               .collection('trips')
@@ -1550,8 +1581,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             'driverId': _driverId?.toString() ?? '',
             'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
             'driverName': fullName.isNotEmpty ? fullName : 'Driver',
-            'driver_phone': driverPhone,
-            'driverPhone': driverPhone,
+            'driver_phone': driverPhone ?? '',
+            'driverPhone': driverPhone ?? '',
             'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
             'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
             'acceptedAt': FieldValue.serverTimestamp(),
@@ -1751,15 +1782,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _offerAcceptState = _OfferAcceptState.normal;
           _acceptingCardId = null;
         });
-        _snack('Error accepting offer. Please try again.');
+        // Show a user-friendly message. If it looks like a network/server
+        // issue, say so; otherwise keep the generic message.
+        final errStr = e.toString().toLowerCase();
+        final isNetworkError = errStr.contains('socket') ||
+            errStr.contains('timeout') ||
+            errStr.contains('unreachable') ||
+            errStr.contains('connection') ||
+            errStr.contains('network');
+        final msg = isNetworkError
+            ? 'Network error. Please check your connection and try again.'
+            : 'Error accepting offer. Please try again.';
+        _snack(msg);
       }
     }
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
     try {
       HapticService.lightImpact();
-      final offerId = (r['offer_id'] as num?)?.toInt();
+      final offerId = toInt(r['offer_id']);
       if (offerId != null) _rejectedOfferIds.add(offerId);
 
       // INSTANT dismiss — remove card + clear map in the same frame
@@ -2035,9 +2085,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _decline() {
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
     // Reject all pending offers if any
     for (final offer in _pendingOffers) {
-      final oid = (offer['offer_id'] as num?)?.toInt();
+      final oid = toInt(offer['offer_id']);
       if (oid != null && _driverId != null) {
         ApiService.rejectRideOffer(
           offerId: oid,
@@ -2506,8 +2564,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             debugPrint('ðŸ—ºï¸ Google route OK: ${pts.length} points');
             _setState(() {
               _routePts = pts;
-              _navDist = (leg['distance']['value'] as int) / 1609.34;
-              _navEta = ((leg['duration']['value'] as int) / 60).ceil();
+              final distVal = leg['distance']['value'];
+              final durVal = leg['duration']['value'];
+              _navDist = (distVal is num ? distVal.toDouble() : 0.0) / 1609.34;
+              _navEta = ((durVal is num ? durVal.toDouble() : 0.0) / 60).ceil();
               _navInstruct = instr;
             });
             _setRouteAnnotation(pts, c);

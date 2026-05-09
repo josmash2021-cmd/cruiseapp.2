@@ -385,6 +385,7 @@ class TrackingMapAnnotations {
 
   // Getters
   bool get dropoffPinAdded => _dropoffPinAdded;
+  bool get hasPins => _pickupPinBytes != null && _dropoffPinBytes != null;
 }
 
 enum _PinIcon { house, store, airplane, person }

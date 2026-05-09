@@ -1058,7 +1058,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _mapRoute = TrackingMapRoute(map: ctrl, polylineAnnotMgr: _polylineAnnotMgr);
               _mapCamera = TrackingMapCamera(ctrl);
               _mapCar = TrackingMapCar(map: ctrl, carAnnotMgr: _carAnnotMgr);
-              // Load car icon into the modular component
+              // Load data into modular components
+              _mapAnnotations!.loadPins(
+                pickupLabel: widget.pickupLabel,
+                dropoffLabel: widget.dropoffLabel,
+              );
               _mapCar!.loadCarIcon(widget.rideName);
               try {
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
@@ -1374,7 +1378,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final pointMgr = _pointAnnotMgr;
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
-    if (_pickupPinBytes == null || _dropoffPinBytes == null) return;
+    // When using modular annotations, check modular state; otherwise check legacy state
+    final pinsReady = _mapAnnotations != null
+        ? _mapAnnotations!.hasPins
+        : (_pickupPinBytes != null && _dropoffPinBytes != null);
+    if (!pinsReady) return;
     // During arriving/arrived: allow pins even when route is minimal (trip route is dimmed background)
     if (_routePts.length < 2 && _tripRoutePts.length < 2 && _phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) return;
     _staticAnnotsDone = true; // mark before await to prevent double-creation

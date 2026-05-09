@@ -1374,9 +1374,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
+    debugPrint('[DriverOnline] _acceptOffer called — shellMode=${widget.isShellMode}, map=$_map, phase=$_phase');
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
-    if (_offerAcceptState != _OfferAcceptState.normal) return;
+    if (_offerAcceptState != _OfferAcceptState.normal) {
+      debugPrint('[DriverOnline] _acceptOffer blocked — state=$_offerAcceptState');
+      return;
+    }
 
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
@@ -1524,6 +1528,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
       return;
     }
+    debugPrint('[DriverOnline] _acceptOffer: navigating to TripAcceptedScreen — tripId=$tripId, offerId=$offerId');
     final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
     final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
     // Use the backend's rider_is_new flag as the source of truth — it now
@@ -1698,6 +1703,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } catch (e, stack) {
       debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
       debugPrint(stack.toString());
+      debugPrint('[DriverOnline] _acceptOffer FAILED — shellMode=${widget.isShellMode}, map=$_map');
       if (mounted) {
         _setState(() {
           _offerAcceptState = _OfferAcceptState.normal;

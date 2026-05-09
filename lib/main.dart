@@ -28,6 +28,7 @@ import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
 import 'services/api_service.dart';
+import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
@@ -415,7 +416,7 @@ void main() async {
       try {
         final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
         final lastVersion = prefs.getString('app_last_version');
-        const currentVersion = '1.0.3+471';
+        const currentVersion = '1.0.3+477';
         if (lastVersion != currentVersion) {
           debugPrint('[Startup] Version changed from $lastVersion to $currentVersion — clearing potentially stale caches');
           // Only clear caches that might be schema-incompatible, NOT user data
@@ -429,6 +430,12 @@ void main() async {
       } catch (e) {
         debugPrint('[Startup] Version check failed: $e');
       }
+
+      // Clear any stale MapControllerCache from previous session.
+      // A cached controller from a crashed session can cause native
+      // PlatformView errors on next launch.
+      MapControllerCache.instance.dispose();
+      debugPrint('[Startup] MapControllerCache cleared');
 
       // M1: Catch platform-level errors (native threads, plugin exceptions)
       WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {

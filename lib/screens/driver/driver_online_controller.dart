@@ -1242,7 +1242,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _applyOffers(List<Map<String, dynamic>> offers) {
     // Filter out locally rejected AND already-accepted offers
     var filtered = offers.where((o) {
-      final oid = o['offer_id'] as int?;
+      final oid = (o['offer_id'] as num?)?.toInt();
       if (oid == null) return true;
       if (_rejectedOfferIds.contains(oid)) return false;
       if (_acceptedOfferIds.contains(oid)) {
@@ -1255,7 +1255,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Deduplicate by offer_id — SSE + polling can receive the same offer
     final seenIds = <int>{};
     filtered = filtered.where((o) {
-      final oid = o['offer_id'] as int?;
+      final oid = (o['offer_id'] as num?)?.toInt();
       if (oid == null) return true; // keep offers without id
       if (seenIds.contains(oid)) {
         debugPrint('[DriverOnline] duplicate offer dropped: $oid');
@@ -1383,8 +1383,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
 
-    final offerId = r['offer_id'] as int?;
-    final tripId = r['trip_id'] as int? ?? r['id'] as int?;
+    final offerId = (r['offer_id'] as num?)?.toInt();
+    final tripId = (r['trip_id'] as num?)?.toInt() ?? (r['id'] as num?)?.toInt();
     debugPrint('[DriverOnline] parsed offerId=$offerId, tripId=$tripId');
 
     // Guard: driverId must be resolved before accepting
@@ -1456,7 +1456,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 2: rejecting other offers');
       // Reject all other pending offers silently
       for (final other in _pendingOffers) {
-        final otherId = other['offer_id'] as int?;
+        final otherId = (other['offer_id'] as num?)?.toInt();
         if (otherId != null && otherId != offerId && _driverId != null) {
           ApiService.rejectRideOffer(
             offerId: otherId,
@@ -1759,7 +1759,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
     try {
       HapticService.lightImpact();
-      final offerId = r['offer_id'] as int?;
+      final offerId = (r['offer_id'] as num?)?.toInt();
       if (offerId != null) _rejectedOfferIds.add(offerId);
 
       // INSTANT dismiss — remove card + clear map in the same frame
@@ -2037,7 +2037,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _decline() {
     // Reject all pending offers if any
     for (final offer in _pendingOffers) {
-      final oid = offer['offer_id'] as int?;
+      final oid = (offer['offer_id'] as num?)?.toInt();
       if (oid != null && _driverId != null) {
         ApiService.rejectRideOffer(
           offerId: oid,

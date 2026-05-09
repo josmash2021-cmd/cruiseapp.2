@@ -12,6 +12,7 @@ import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../widgets/verified_avatar.dart';
 import 'driver_online_screen.dart';
+import 'driver_navigation_helper.dart';
 import '../../utils/responsive.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -131,21 +132,8 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     // Smooth fade-out of this screen's content first
     await _fadeCtrl.reverse();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => DriverOnlineScreen(
-          initialPos: (widget.dropoffLat != null && widget.dropoffLng != null)
-              ? LatLng(widget.dropoffLat!, widget.dropoffLng!)
-              : null,
-        ),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-      (route) => false,
-    );
+    // Navigate to driver online flow (shell if available, new shell otherwise)
+    navigateToDriverOnline(context, keepUntilFirst: true);
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────

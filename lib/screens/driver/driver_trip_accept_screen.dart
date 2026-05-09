@@ -30,6 +30,7 @@ import '../help_screen.dart';
 import '../../services/chat_service.dart';
 import 'driver_home_screen.dart';
 import 'driver_online_screen.dart';
+import 'driver_navigation_helper.dart';
 import '../../services/user_session.dart';
 import '../home_screen.dart';
 import 'driver_rate_rider_screen.dart';
@@ -745,20 +746,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           await Future.delayed(const Duration(seconds: 3));
         }
 
-        // Navigate back to DriverOnlineScreen — this screen was pushReplacement'd
-        // from TripAcceptedScreen, so pop() would leave us with nowhere to go.
-        // pushAndRemoveUntil ensures we always land back in the driver flow.
+        // Navigate back to driver online flow. If a shell exists below,
+        // pop back to it (preserving the persistent map). Otherwise push
+        // a new shell and clear intermediate routes.
         if (!mounted) return;
         try {
-          Navigator.of(context).pushAndRemoveUntil(
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
-              transitionsBuilder: (_, anim, __, child) =>
-                  FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 400),
-            ),
-            (route) => route.isFirst, // keep only the very first route (usually home)
-          );
+          navigateToDriverOnline(context, keepUntilFirst: true);
         } catch (e) {
           debugPrint('[Driver] cancel-navigate failed: $e');
         }
@@ -839,15 +832,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
           if (!mounted) return;
           try {
-            Navigator.of(context).pushAndRemoveUntil(
-              PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
-                transitionsBuilder: (_, anim, __, child) =>
-                    FadeTransition(opacity: anim, child: child),
-                transitionDuration: const Duration(milliseconds: 400),
-              ),
-              (route) => route.isFirst,
-            );
+            navigateToDriverOnline(context, keepUntilFirst: true);
           } catch (e) {
             debugPrint('[Driver] poll-cancel-navigate failed: $e');
           }

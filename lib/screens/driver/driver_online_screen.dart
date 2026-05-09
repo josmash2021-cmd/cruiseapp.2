@@ -61,6 +61,8 @@ import '../../services/notification_service.dart';
 import '../../services/background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/tier_badge.dart';
+import '../../services/driver_map_provider.dart';
+import '../../services/map_controller_cache.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -76,12 +78,35 @@ class DriverOnlineScreen extends StatefulWidget {
   final LatLng? initialPos;
   final double initialHeading;
   final String? photoUrl;
+
+  /// When true, this screen runs inside [DriverMapShellScreen] and does NOT
+  /// create its own MapWidget. The shell provides the map controller and
+  /// annotation managers via [DriverMapProvider].
+  final bool isShellMode;
+
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
     this.initialHeading = 0,
     this.photoUrl,
+    this.isShellMode = false,
   });
+
+  /// Factory constructor for use inside [DriverMapShellScreen].
+  /// The shell owns the map lifecycle; this overlay only renders UI.
+  factory DriverOnlineScreen.shell({
+    Key? key,
+    LatLng? initialPos,
+    double initialHeading = 0,
+    String? photoUrl,
+  }) => DriverOnlineScreen(
+    key: key,
+    initialPos: initialPos,
+    initialHeading: initialHeading,
+    photoUrl: photoUrl,
+    isShellMode: true,
+  );
+
   @override
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
 }
@@ -409,6 +434,25 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _heading = widget.initialHeading;
     }
 
+    // ── Shell mode: connect to shared map controller ──
+    if (widget.isShellMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final provider = DriverMapProvider.maybeOf(context);
+        if (provider != null) {
+          _map = provider.mapController;
+          _pointAnnotMgr = provider.pointAnnotMgr;
+          _pinAnnotMgr = provider.pinAnnotMgr;
+          _polylineAnnotMgr = provider.polylineAnnotMgr;
+          _mapMounted = true;
+          if (_pos != null) {
+            _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
+            _updateDriverAnnotation();
+          }
+        }
+      });
+    }
+
     // ── Essential controllers needed for the first build frame ──
     _driverAnim = AnimationController(
       vsync: this,
@@ -585,7 +629,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerTiltCtrl?.dispose();
     _offerBearingCtrl?.dispose();
     _pauseTimer?.cancel();
-    _map?.dispose();
+    // NOTE: Intentionally do NOT dispose the map here.
+    // The MapControllerCache owns the map lifecycle for reuse across screens.
+    if (_map != null) MapControllerCache.instance.cache(_map!);
     super.dispose();
   }
 
@@ -873,24 +919,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ? Colors.black.withValues(alpha: 0.5)
         : Colors.black.withValues(alpha: 0.08);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goBack();
-      },
-      child: Scaffold(
-        backgroundColor: bg,
-        body: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Offline connectivity banner
-            const Positioned(
-              top: 0, left: 0, right: 0,
-              child: SafeArea(child: OfflineBanner()),
-            ),
+    // Shell mode: render only the UI overlay (no Scaffold, no MapWidget).
+    // The DriverMapShellScreen owns the Scaffold and the persistent map.
+    final bodyContent = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Offline connectivity banner
+        const Positioned(
+          top: 0, left: 0, right: 0,
+          child: SafeArea(child: OfflineBanner()),
+        ),
 
-            // â”€â”€ Map â”€â”€
-            _mapW(isDark),
+        // â”€â”€ Map â”€â”€
+        _mapW(isDark),
 
             // â”€â”€ Nav header (during navigation phases) â”€â”€
             if (isNav)
@@ -1256,8 +1297,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   shadowC,
                 ),
               ),
-          ],
-        ),
+      ],
+    );
+
+    if (widget.isShellMode) {
+      return bodyContent;
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBack();
+      },
+      child: Scaffold(
+        backgroundColor: bg,
+        body: bodyContent,
       ),
     );
   }

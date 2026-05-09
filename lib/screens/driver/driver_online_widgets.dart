@@ -7,6 +7,12 @@ part of 'driver_online_screen.dart';
 extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   Widget _mapW(bool isDark) {
+    // Shell mode: the map is owned by DriverMapShellScreen. This screen
+    // only renders UI overlays on top. Return a transparent placeholder.
+    if (widget.isShellMode) {
+      return const SizedBox.shrink();
+    }
+
     // Show a rich skeleton loader when position isn't ready yet.
     // Never show a blank dark blue screen — always have visible feedback.
     if (_pos == null) {

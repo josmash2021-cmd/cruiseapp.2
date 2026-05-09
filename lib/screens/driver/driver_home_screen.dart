@@ -32,6 +32,7 @@ import 'driver_earnings_screen.dart';
 import 'driver_trip_history_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
+import 'driver_map_shell_screen.dart';
 import 'driver_trip_accept_screen.dart';
 import 'driver_inbox_screen.dart';
 import 'driver_promos_screen.dart';
@@ -797,7 +798,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
+            DriverMapShellScreen(
+              photoUrl: _photoUrl,
+              initialPos: _currentLatLng,
+              initialHeading: 0,
+            ),
         transitionDuration: const Duration(milliseconds: 200),
         reverseTransitionDuration: const Duration(milliseconds: 150),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
@@ -926,7 +931,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng),
+            DriverMapShellScreen(
+              photoUrl: _photoUrl,
+              initialPos: _currentLatLng,
+            ),
         transitionDuration: const Duration(milliseconds: 400),
         reverseTransitionDuration: const Duration(milliseconds: 350),
         transitionsBuilder: (ctx2, anim, anim2b, child) {

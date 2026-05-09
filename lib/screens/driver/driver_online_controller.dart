@@ -1432,164 +1432,176 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
 
     try {
+      debugPrint('[DriverOnline] ▶ STEP 1: creating acceptFuture');
       final acceptFuture = (() async {
-      if (offerId != null && _driverId != null) {
-        await ApiService.acceptRideOffer(
-          offerId: offerId,
-          driverId: _driverId!,
-        );
-        return true;
+        if (offerId != null && _driverId != null) {
+          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId, driverId=$_driverId)');
+          await ApiService.acceptRideOffer(
+            offerId: offerId,
+            driverId: _driverId!,
+          );
+          debugPrint('[DriverOnline] ▶ STEP 1b: acceptRideOffer SUCCESS');
+          return true;
+        }
+        if (tripId != null && _driverId != null) {
+          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptTrip(tripId=$tripId, driverId=$_driverId)');
+          await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
+          debugPrint('[DriverOnline] ▶ STEP 1b: acceptTrip SUCCESS');
+          return true;
+        }
+        debugPrint('[DriverOnline] ▶ STEP 1a: NO offerId or tripId — returning false');
+        return false;
+      })();
+
+      debugPrint('[DriverOnline] ▶ STEP 2: rejecting other offers');
+      // Reject all other pending offers silently
+      for (final other in _pendingOffers) {
+        final otherId = other['offer_id'] as int?;
+        if (otherId != null && otherId != offerId && _driverId != null) {
+          ApiService.rejectRideOffer(
+            offerId: otherId,
+            driverId: _driverId!,
+          ).catchError((_) => <String, dynamic>{});
+        }
       }
-      if (tripId != null && _driverId != null) {
-        await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
-        return true;
-      }
-      return false;
-    })();
 
-    // Reject all other pending offers silently
-    for (final other in _pendingOffers) {
-      final otherId = other['offer_id'] as int?;
-      if (otherId != null && otherId != offerId && _driverId != null) {
-        ApiService.rejectRideOffer(
-          offerId: otherId,
-          driverId: _driverId!,
-        ).catchError((_) => <String, dynamic>{});
-      }
-    }
-
-    // Populate active trip data from the accepted offer
-    final name = (r['rider_name'] ?? 'Rider') as String;
-    _pickupLL = LatLng(
-      (r['pickup_lat'] as num?)?.toDouble() ?? 0.0,
-      (r['pickup_lng'] as num?)?.toDouble() ?? 0.0,
-    );
-    _dropoffLL = LatLng(
-      (r['dropoff_lat'] as num?)?.toDouble() ?? 0.0,
-      (r['dropoff_lng'] as num?)?.toDouble() ?? 0.0,
-    );
-
-    _currentOfferId = offerId;
-    _tripId = tripId;
-    // Start the top-level cancel watcher as soon as we know the trip id.
-    // Survives pushReplacement (TripAcceptedScreen -> DriverTripAcceptScreen)
-    // and any subsequent screen transitions — the only sources of truth for
-    // remote cancellation are Firestore and this watcher.
-    if (tripId != null) {
-      _startActiveTripCancelWatcher(tripId);
-    }
-    _riderName = name;
-    _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-    _riderPhone = (r['rider_phone'] ?? '') as String;
-    _riderId = (r['rider_id'] ?? '').toString();
-    _pickupAddr = r['pickup_address'] ?? 'Pickup';
-    _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
-    _fare = (r['fare'] as num?)?.toDouble() ?? 0;
-    _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
-    _distToPickup = _pos != null ? _hav(_pos!, _pickupLL) : 0.0;
-    _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-    _tripDist = _hav(_pickupLL, _dropoffLL);
-    _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-
-    // ── Extract cached route BEFORE clearing cache ──
-    final cachedRouteData = _routeCache[oid];
-    final preRoutePoints = cachedRouteData?.segOne;
-
-    _setState(() => _pendingOffers = []);
-    _routeCache.clear();
-    _expandedOfferIds.clear();
-    _pollT?.cancel();
-    _previewingOffer = null;
-    _offerRouteShown = false;
-    _fullSegOne = [];
-    _fullSegTwo = [];
-    _nearPickupNotified = false;
-    _nearDropoffNotified = false;
-    await _clearAllAnnotations();
-    if (_pos != null) {
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
-    }
-
-    // ── Reset offer state and navigate to full-screen accepted screen ──
-    _tappedCardIds.clear();
-    _lastAutoTriggeredOfferId = null;
-    if (mounted) {
-      _setState(() {
-        _offerAcceptState = _OfferAcceptState.normal;
-        _acceptingCardId = null;
-      });
-    }
-
-    // Write accepted status to Firestore immediately — bypasses the 2-second
-    // backend→Firestore sync delay so the rider's listener fires instantly.
-    if (tripId != null) {
-      final fsDocId = 'sql_$tripId';
-      final driverUser = await UserSession.getUser();
-      final driverFirstName = driverUser?['firstName']?.toString() ?? '';
-      final driverLastName = driverUser?['lastName']?.toString() ?? '';
-      final driverPhone = driverUser?['phone']?.toString() ?? '';
-      final fullName = '$driverFirstName $driverLastName'.trim();
-      unawaited(
-        FirebaseFirestore.instance
-            .collection('trips')
-            .doc(fsDocId)
-            .set({
-          'status': 'driver_en_route',
-          'driver_id': _driverId ?? 0,
-          'driverId': _driverId?.toString() ?? '',
-          'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
-          'driverName': fullName.isNotEmpty ? fullName : 'Driver',
-          'driver_phone': driverPhone,
-          'driverPhone': driverPhone,
-          'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
-          'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
-          'acceptedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true)).catchError((_) {}),
+      debugPrint('[DriverOnline] ▶ STEP 3: populating trip data');
+      // Populate active trip data from the accepted offer
+      final name = (r['rider_name'] ?? 'Rider') as String;
+      _pickupLL = LatLng(
+        (r['pickup_lat'] as num?)?.toDouble() ?? 0.0,
+        (r['pickup_lng'] as num?)?.toDouble() ?? 0.0,
       );
-    }
+      _dropoffLL = LatLng(
+        (r['dropoff_lat'] as num?)?.toDouble() ?? 0.0,
+        (r['dropoff_lng'] as num?)?.toDouble() ?? 0.0,
+      );
 
-    if (!mounted) {
-      debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
-      return;
-    }
-    debugPrint('[DriverOnline] _acceptOffer: navigating to TripAcceptedScreen — tripId=$tripId, offerId=$offerId');
-    final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-    final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
-    // Use the backend's rider_is_new flag as the source of truth — it now
-    // reflects rider_rides_count == 0 (first request ever), not just
-    // "has never been rated".
-    final riderIsNew = r['rider_is_new'] == true;
-    final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    // In shell mode, use rootNavigator to ensure we push on the app's root
-    // navigator instead of any nested navigator that might not exist.
-    final navFuture = Navigator.of(context).push<String>(
-      smoothFadeRoute(
-        TripAcceptedScreen(
-          tripId:         tripId ?? offerId ?? 0,
-          riderName:      name,
-          riderInitials:  riderInit,
-          riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
-          riderRating:    riderRating,
-          riderIsNew:     riderIsNew,
-          riderId:        int.tryParse(_riderId),
-          pickupLatLng:   _pickupLL,
-          dropoffLatLng:  _dropoffLL,
-          pickupAddress:  _pickupAddr,
-          dropoffAddress: _dropoffAddr,
-          fare:           _fare,
-          vehicleType:    _vehicleType,
-          driverPos:      _pos ?? _pickupLL,
-          distToPickupKm: _distToPickup,
-          etaMinutes:     _etaToPickup,
-          riderPhone:     _riderPhone,
-          routePoints:    preRoutePoints,
+      _currentOfferId = offerId;
+      _tripId = tripId;
+      // Start the top-level cancel watcher as soon as we know the trip id.
+      // Survives pushReplacement (TripAcceptedScreen -> DriverTripAcceptScreen)
+      // and any subsequent screen transitions — the only sources of truth for
+      // remote cancellation are Firestore and this watcher.
+      if (tripId != null) {
+        _startActiveTripCancelWatcher(tripId);
+      }
+      _riderName = name;
+      _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
+      _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
+      _riderPhone = (r['rider_phone'] ?? '') as String;
+      _riderId = (r['rider_id'] ?? '').toString();
+      _pickupAddr = r['pickup_address'] ?? 'Pickup';
+      _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
+      _fare = (r['fare'] as num?)?.toDouble() ?? 0;
+      _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
+      _distToPickup = _pos != null ? _hav(_pos!, _pickupLL) : 0.0;
+      _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      _tripDist = _hav(_pickupLL, _dropoffLL);
+      _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+
+      // ── Extract cached route BEFORE clearing cache ──
+      final cachedRouteData = _routeCache[oid];
+      final preRoutePoints = cachedRouteData?.segOne;
+
+      _setState(() => _pendingOffers = []);
+      _routeCache.clear();
+      _expandedOfferIds.clear();
+      _pollT?.cancel();
+      _previewingOffer = null;
+      _offerRouteShown = false;
+      _fullSegOne = [];
+      _fullSegTwo = [];
+      _nearPickupNotified = false;
+      _nearDropoffNotified = false;
+      debugPrint('[DriverOnline] ▶ STEP 4: clearing annotations');
+      await _clearAllAnnotations();
+      if (_pos != null) {
+        _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      }
+
+      // ── Reset offer state and navigate to full-screen accepted screen ──
+      _tappedCardIds.clear();
+      _lastAutoTriggeredOfferId = null;
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+      }
+
+      debugPrint('[DriverOnline] ▶ STEP 5: writing to Firestore');
+      // Write accepted status to Firestore immediately — bypasses the 2-second
+      // backend→Firestore sync delay so the rider's listener fires instantly.
+      if (tripId != null) {
+        final fsDocId = 'sql_$tripId';
+        final driverUser = await UserSession.getUser();
+        final driverFirstName = driverUser?['firstName']?.toString() ?? '';
+        final driverLastName = driverUser?['lastName']?.toString() ?? '';
+        final driverPhone = driverUser?['phone']?.toString() ?? '';
+        final fullName = '$driverFirstName $driverLastName'.trim();
+        unawaited(
+          FirebaseFirestore.instance
+              .collection('trips')
+              .doc(fsDocId)
+              .set({
+            'status': 'driver_en_route',
+            'driver_id': _driverId ?? 0,
+            'driverId': _driverId?.toString() ?? '',
+            'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
+            'driverName': fullName.isNotEmpty ? fullName : 'Driver',
+            'driver_phone': driverPhone,
+            'driverPhone': driverPhone,
+            'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
+            'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
+            'acceptedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)).catchError((_) {}),
+        );
+      }
+
+      if (!mounted) {
+        debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
+        return;
+      }
+      debugPrint('[DriverOnline] ▶ STEP 6: navigating to TripAcceptedScreen — tripId=$tripId, offerId=$offerId');
+      final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
+      final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
+      // Use the backend's rider_is_new flag as the source of truth — it now
+      // reflects rider_rides_count == 0 (first request ever), not just
+      // "has never been rated".
+      final riderIsNew = r['rider_is_new'] == true;
+      final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
+      // In shell mode, use rootNavigator to ensure we push on the app's root
+      // navigator instead of any nested navigator that might not exist.
+      final navFuture = Navigator.of(context).push<String>(
+        smoothFadeRoute(
+          TripAcceptedScreen(
+            tripId:         tripId ?? offerId ?? 0,
+            riderName:      name,
+            riderInitials:  riderInit,
+            riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
+            riderRating:    riderRating,
+            riderIsNew:     riderIsNew,
+            riderId:        int.tryParse(_riderId),
+            pickupLatLng:   _pickupLL,
+            dropoffLatLng:  _dropoffLL,
+            pickupAddress:  _pickupAddr,
+            dropoffAddress: _dropoffAddr,
+            fare:           _fare,
+            vehicleType:    _vehicleType,
+            driverPos:      _pos ?? _pickupLL,
+            distToPickupKm: _distToPickup,
+            etaMinutes:     _etaToPickup,
+            riderPhone:     _riderPhone,
+            routePoints:    preRoutePoints,
+          ),
         ),
-      ),
-    );
-    try {
-      await acceptFuture;
-    } catch (e) {
+      );
+      debugPrint('[DriverOnline] ▶ STEP 7: awaiting acceptFuture');
+      try {
+        await acceptFuture;
+        debugPrint('[DriverOnline] ▶ STEP 7a: acceptFuture completed successfully');
+      } catch (e) {
       // ⚠️ CRITICAL phantom-cancel fix:
       //
       // Previously this catch fired _cancel() unconditionally, which sent

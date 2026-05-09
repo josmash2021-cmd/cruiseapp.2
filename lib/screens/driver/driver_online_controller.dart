@@ -1536,7 +1536,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // "has never been rated".
     final riderIsNew = r['rider_is_new'] == true;
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final navFuture = Navigator.of(context).push<String>(
+    // In shell mode, use rootNavigator to ensure we push on the app's root
+    // navigator instead of any nested navigator that might not exist.
+    final navFuture = Navigator.of(context, rootNavigator: true).push<String>(
       smoothFadeRoute(
         TripAcceptedScreen(
           tripId:         tripId ?? offerId ?? 0,
@@ -2127,7 +2129,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       'hours': _online.inMinutes / 60.0,
       'stillOnline': false,
     };
-    final nav = Navigator.of(context);
+    final nav = Navigator.of(context, rootNavigator: true);
     if (nav.canPop()) {
       nav.pop<Map<String, dynamic>>(result);
       return;
@@ -2212,7 +2214,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       'hours': _online.inMinutes / 60.0,
       'stillOnline': true,
     };
-    final nav = Navigator.of(context);
+    final nav = Navigator.of(context, rootNavigator: true);
     if (nav.canPop()) {
       nav.pop<Map<String, dynamic>>(result);
       return;
@@ -2392,7 +2394,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final myRoute = ModalRoute.of(context);
     if (myRoute != null) {
       try {
-        Navigator.of(context).popUntil((r) => r == myRoute || r.isFirst);
+        Navigator.of(context, rootNavigator: true).popUntil((r) => r == myRoute || r.isFirst);
       } catch (e) {
         debugPrint('[DriverOnline] popUntil on cancel failed: $e');
       }

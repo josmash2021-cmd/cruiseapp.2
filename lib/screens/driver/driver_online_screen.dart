@@ -419,7 +419,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void _enforceDriverRole() {
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
           fadeThroughRoute(const HomeScreen()),
           (_) => false,
         );

@@ -2804,7 +2804,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 clipBehavior: Clip.none,
                 children: [
                   _actionBtn(Icons.chat_bubble_rounded, () {
-                    Navigator.of(context).push(
+                    Navigator.of(context, rootNavigator: true).push(
                       slideFromRightRoute(ChatScreen(
                         recipientName: _riderName,
                         recipientPhone: _riderPhone,

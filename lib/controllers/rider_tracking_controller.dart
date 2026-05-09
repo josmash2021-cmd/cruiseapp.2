@@ -236,7 +236,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _pollBackendTripStatus();
     });
     unawaited(_pollBackendTripStatus()); // first poll fires immediately
-    debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 2s, skips when Socket.io+Firestore healthy)');
+    debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 5s, skips when Socket.io+Firestore healthy)');
   }
 
   /// Start SSE trip status stream — PRIMARY channel for instant updates (<100ms).
@@ -1115,7 +1115,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // trip is already completed (a late RTDB event could otherwise
         // restart polling on a dead trip forever).
         if (mounted && _phase != _TrackPhase.completed) {
-          _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+          _statusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
             _pollBackendTripStatus();
           });
         }

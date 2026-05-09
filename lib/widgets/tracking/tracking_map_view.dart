@@ -955,6 +955,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             textureView: true,
             onMapCreated: (ctrl) async {
               _map = ctrl;
+              // Cache controller for reuse across rider screens
+              MapControllerCache.instance.cache(ctrl);
               // Reset car annotation — old one was destroyed with previous map instance.
               _carAnnot = null;
               _carAnnotCreating = false;
@@ -981,6 +983,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 below: 'road-label',
               );
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              
+              // Initialize new modular map components
+              _mapAnnotations = TrackingMapAnnotations(_pointAnnotMgr);
+              _mapRoute = TrackingMapRoute(_polylineAnnotMgr);
+              _mapCamera = TrackingMapCamera(_map);
+              _mapCar = TrackingMapCar(_carAnnotMgr);
               try {
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');

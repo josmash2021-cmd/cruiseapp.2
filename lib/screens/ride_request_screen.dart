@@ -29,6 +29,7 @@ import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
 import '../services/haptic_service.dart';
 import '../services/places_service.dart';
+import '../services/map_controller_cache.dart';
 import '../state/rider_trip_controller.dart';
 import 'credit_card_screen.dart';
 import 'payment_accounts_screen.dart';
@@ -892,6 +893,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   onMapCreated: (ctrl) async {
                     _mapCtrl = ctrl;
+                    // Cache controller for reuse across rider screens
+                    MapControllerCache.instance.cache(ctrl);
                     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
                     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

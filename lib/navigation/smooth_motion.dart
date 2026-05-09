@@ -3,10 +3,9 @@ import 'package:flutter/scheduler.dart';
 import '../models/lat_lng.dart';
 
 /// DEPRECATED — legacy exponential-decay smoother kept only for
-/// [map_screen.dart] and [driver_nav_screen.dart] which still use the
-/// old `onTick`-driven API. New code MUST use [SmoothMotion] from
-/// `lib/utils/smooth_motion.dart` (constant-velocity, no decay). See
-/// CLAUDE.md rule #13.
+/// [driver_nav_screen.dart] which still uses the old `onTick`-driven API.
+/// New code MUST use [SmoothMotion] from `lib/utils/smooth_motion.dart`
+/// (constant-velocity, no decay). See CLAUDE.md rule #13.
 class LegacySmoothMotion {
   LegacySmoothMotion({
     required this.onTick,

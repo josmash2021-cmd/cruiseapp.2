@@ -14,6 +14,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
+import '../services/map_controller_cache.dart';
 import '../widgets/gold_particles_background.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../utils/mapbox_safe.dart';
@@ -490,7 +491,11 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                   pitch: 45.0,
                   bearing: _calculateBearing(),
                 ),
-                onMapCreated: _onMapReady,
+                onMapCreated: (ctrl) async {
+                  // Cache controller for reuse across rider screens
+                  MapControllerCache.instance.cache(ctrl);
+                  await _onMapReady(ctrl);
+                },
               ),
             ),
             

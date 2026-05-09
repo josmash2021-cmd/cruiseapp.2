@@ -28,7 +28,6 @@ import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
 import 'schedule_ride_flow.dart';
 import 'map_picker_screen.dart';
-import 'map_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';

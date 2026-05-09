@@ -12,6 +12,7 @@ import '../config/mapbox_config.dart';
 import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/places_service.dart';
+import '../services/map_controller_cache.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
@@ -422,6 +423,8 @@ class _MapPickerScreenState extends State<MapPickerScreen>
               ),
               onMapCreated: (ctrl) async {
                 _mapCtrl = ctrl;
+                // Cache controller for reuse across rider screens
+                MapControllerCache.instance.cache(ctrl);
                 ctrl.scaleBar.updateSettings(
                     mapbox.ScaleBarSettings(enabled: false));
                 ctrl.compass

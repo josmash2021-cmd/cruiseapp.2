@@ -47,6 +47,11 @@ import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../services/user_session.dart';
 import '../services/network_service.dart';
+import '../services/map_controller_cache.dart';
+import '../map/tracking_map_annotations.dart';
+import '../map/tracking_map_route.dart';
+import '../map/tracking_map_camera.dart';
+import '../map/tracking_map_car.dart';
 
 part '../controllers/rider_tracking_controller.dart';
 part '../widgets/tracking/driver_info_card.dart';
@@ -137,6 +142,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
   mapbox.PointAnnotationManager? _carAnnotMgr;     // for car (icon-anchor: center)
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  
+  // New modular map components (gradual migration)
+  TrackingMapAnnotations? _mapAnnotations;
+  TrackingMapRoute? _mapRoute;
+  TrackingMapCamera? _mapCamera;
+  TrackingMapCar? _mapCar;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
   mapbox.PolylineAnnotation? _remainingRouteAnnot;  // single gloss gold line (5px)

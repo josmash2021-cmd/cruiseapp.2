@@ -9,6 +9,7 @@ import '../config/map_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
+import '../services/map_controller_cache.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/verified_avatar.dart';
 import 'home_screen.dart';
@@ -217,6 +218,8 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     pitch: 0,
                   ),
                   onMapCreated: (ctrl) async {
+                    // Cache controller for reuse across rider screens
+                    MapControllerCache.instance.cache(ctrl);
                     await MapTheme.applyNavyGold(ctrl);
                     await ctrl.gestures.updateSettings(
                       mapbox.GesturesSettings(

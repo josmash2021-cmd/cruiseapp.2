@@ -1374,7 +1374,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
-    debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
+    debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase, driverId=$_driverId');
+    debugPrint('[DriverOnline] offer data: ${r.keys.toList()}');
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
     if (_offerAcceptState != _OfferAcceptState.normal) {
@@ -1384,6 +1385,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     final offerId = r['offer_id'] as int?;
     final tripId = r['trip_id'] as int? ?? r['id'] as int?;
+    debugPrint('[DriverOnline] parsed offerId=$offerId, tripId=$tripId');
+
+    // Guard: driverId must be resolved before accepting
+    if (_driverId == null) {
+      debugPrint('[DriverOnline] _driverId is null — attempting recovery...');
+      try {
+        final id = await ApiService.getCurrentUserId();
+        if (id != null) {
+          _driverId = id;
+          debugPrint('[DriverOnline] Recovered driverId=$_driverId');
+        }
+      } catch (e) {
+        debugPrint('[DriverOnline] Failed to recover driverId: $e');
+      }
+      if (_driverId == null) {
+        debugPrint('[DriverOnline] _driverId still null after recovery — aborting accept');
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+        _snack('Unable to accept — please try again.');
+        return;
+      }
+    }
 
     // C5 fix: idempotent guard keyed on offerId. If the same offer is
     // delivered twice by the SSE layer (or re-emitted from a stale stream
@@ -1703,9 +1728,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _currentOfferId = null;
     }
     } catch (e, stack) {
+      debugPrint('[DriverOnline] ═══════════════════════════════════════');
       debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
+      debugPrint('[DriverOnline] _driverId=$_driverId, offerId=$offerId, tripId=$tripId');
+      debugPrint('[DriverOnline] mounted=$mounted, phase=$_phase');
       debugPrint(stack.toString());
-      debugPrint('[DriverOnline] _acceptOffer FAILED — map=$_map');
+      debugPrint('[DriverOnline] ═══════════════════════════════════════');
       if (mounted) {
         _setState(() {
           _offerAcceptState = _OfferAcceptState.normal;

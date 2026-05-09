@@ -35,8 +35,11 @@ class MapControllerCache {
 
   /// Store a controller for future reuse.
   void cache(mapbox.MapboxMap controller) {
-    _mapboxMap ??= controller;
-    debugPrint('[MapCache] Controller cached');
+    // Always update the cached controller to the latest one.
+    // The old controller will be garbage collected if no one holds it.
+    _mapboxMap = controller;
+    _isAcquired = false;  // Mark as available for reuse
+    debugPrint('[MapCache] Controller cached and released');
   }
 
   /// Release the controller so another screen can acquire it.

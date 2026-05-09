@@ -408,6 +408,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _prevWeeklyEarnings = 0;
   double _prevLastTripEarnings = 0;
 
+  // -- Health check timer (shell mode) --
+  // Ensures polling/SSE restarts after returning from a trip.
+  Timer? _healthCheckTimer;
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -532,6 +536,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _boot();
 
+    // Health check timer: ensures polling/SSE are active when they should be.
+    // This is critical in shell mode — when the driver returns from a trip
+    // (DriverTripAcceptScreen pops), the polling may have been cancelled
+    // during _acceptOffer() and needs to restart.
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || _phase != _Phase.searching || _isPaused) return;
+      final pollActive = _pollT != null && _pollT!.isActive;
+      final sseActive = _sseActive;
+      if (!pollActive && !sseActive) {
+        debugPrint('[DriverOnline] Health check: polling+SSE inactive, restarting');
+        _startPolling();
+      }
+    });
+
     // Mount the MapWidget immediately — the 150ms delay was causing a
     // blank dark blue screen. The map now renders tiles right away.
     // Heavy annotation manager creation is moved to Future.microtask
@@ -615,6 +633,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reFollowTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
+    _healthCheckTimer?.cancel();
     _panelAnimCtrl?.dispose();
     _offerPageCtrl.dispose();
     _routePulseCtrl?.dispose();

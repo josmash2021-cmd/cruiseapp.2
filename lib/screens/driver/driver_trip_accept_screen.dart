@@ -751,7 +751,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // a new shell and clear intermediate routes.
         if (!mounted) return;
         try {
-          navigateToDriverOnline(context, keepUntilFirst: true);
+          navigateToDriverOnline(context, clearStack: true);
         } catch (e) {
           debugPrint('[Driver] cancel-navigate failed: $e');
         }
@@ -832,7 +832,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
           if (!mounted) return;
           try {
-            navigateToDriverOnline(context, keepUntilFirst: true);
+            navigateToDriverOnline(context, clearStack: true);
           } catch (e) {
             debugPrint('[Driver] poll-cancel-navigate failed: $e');
           }

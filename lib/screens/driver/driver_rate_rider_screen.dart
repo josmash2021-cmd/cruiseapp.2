@@ -133,7 +133,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     await _fadeCtrl.reverse();
     if (!mounted) return;
     // Navigate to driver online flow (shell if available, new shell otherwise)
-    navigateToDriverOnline(context, keepUntilFirst: true);
+    navigateToDriverOnline(context, clearStack: true);
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────

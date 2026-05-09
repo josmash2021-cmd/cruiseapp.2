@@ -17,6 +17,7 @@ import '../../widgets/verified_avatar.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../services/map_controller_cache.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen "Viaje Aceptado" confirmation shown after driver accepts a trip.
@@ -343,6 +344,8 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
   /// Called when map is ready — apply theme, draw route + pins instantly.
   Future<void> _onMapReady(mapbox.MapboxMap ctrl) async {
     _mapCtrl = ctrl;
+    // Cache controller for reuse across driver screens
+    MapControllerCache.instance.cache(ctrl);
     await MapTheme.applyNavyGold(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));

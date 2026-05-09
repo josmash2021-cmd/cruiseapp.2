@@ -17,6 +17,7 @@ import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
+import '../../services/map_controller_cache.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
@@ -336,6 +337,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                     pitch: 0.0,
                   ),
                   onMapCreated: (ctrl) async {
+                    // Cache controller for reuse across driver screens
+                    MapControllerCache.instance.cache(ctrl);
                     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
                     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

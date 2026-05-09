@@ -21,6 +21,7 @@ import '../../services/directions_service.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/tier_badge.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../services/map_controller_cache.dart';
 import 'scheduled_ride_details_screen.dart';
 
 /// Unified scheduled rides screen with two tabs:
@@ -1004,6 +1005,8 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
     _mapCtrl = ctrl;
+    // Cache controller for reuse across driver screens
+    MapControllerCache.instance.cache(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

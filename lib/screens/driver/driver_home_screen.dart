@@ -26,6 +26,7 @@ import '../../services/prefs_cache.dart';
 import '../home_screen.dart';
 import '../welcome_screen.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../services/map_controller_cache.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_trip_history_screen.dart';
@@ -1120,6 +1121,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         onMapCreated: (ctrl) async {
           try {
             _mapController = ctrl;
+            // Cache controller for reuse across driver screens
+            MapControllerCache.instance.cache(ctrl);
             // Disable Mapbox native puck IMMEDIATELY before any annotation creation
             await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
             

@@ -24,6 +24,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
 import '../../services/chat_service.dart';
@@ -1807,6 +1808,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // onMapCreated — capture controller + disable all gestures for preview perf.
   void _onMapReady(mapbox.MapboxMap ctrl) {
     _map = ctrl;
+    // Cache controller for reuse across driver screens
+    MapControllerCache.instance.cache(ctrl);
     // Disable all interaction — this is a read-only preview map.
     ctrl.gestures.updateSettings(mapbox.GesturesSettings(
       scrollEnabled: false,

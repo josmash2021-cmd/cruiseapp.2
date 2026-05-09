@@ -24,6 +24,7 @@ import '../../widgets/gold_location_dot.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/mapbox_safe.dart';
+import '../../services/map_controller_cache.dart';
 
 /// Instacart-style driver offers screen.
 ///
@@ -128,6 +129,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
 
   Future<void> _onMapCreated(mapbox.MapboxMap controller) async {
     _map = controller;
+    // Cache controller for reuse across driver screens
+    MapControllerCache.instance.cache(controller);
     _pointAnnotMgr = await controller.annotations.createPointAnnotationManager();
     try { await controller.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
     _updateDriverAnnotation();

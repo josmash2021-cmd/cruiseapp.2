@@ -18,6 +18,7 @@ import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/tier_badge.dart';
 import '../utils/mapbox_safe.dart';
+import '../services/map_controller_cache.dart';
 import 'airport_terminal_sheet.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
@@ -521,6 +522,8 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
     _mapCtrl = ctrl;
+    // Cache controller for reuse across rider screens
+    MapControllerCache.instance.cache(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

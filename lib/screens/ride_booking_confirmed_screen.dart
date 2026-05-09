@@ -7,6 +7,7 @@ import '../config/map_theme.dart';
 import '../models/lat_lng.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../utils/mapbox_safe.dart';
+import '../services/map_controller_cache.dart';
 import 'home_screen.dart';
 
 /// Confirmation screen shown after rider books a scheduled ride.
@@ -369,6 +370,8 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
     _mapCtrl = ctrl;
+    // Cache controller for reuse across rider screens
+    MapControllerCache.instance.cache(ctrl);
     await MapTheme.applyNavyGold(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));

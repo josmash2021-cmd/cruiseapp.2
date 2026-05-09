@@ -26,6 +26,7 @@ import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../utils/app_toast.dart';
 import '../utils/mapbox_safe.dart';
+import '../services/map_controller_cache.dart';
 import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
@@ -1192,6 +1193,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                       ),
                       onMapCreated: (ctrl) async {
                         _mapCtrl = ctrl;
+                        // Cache controller for reuse across rider screens
+                        MapControllerCache.instance.cache(ctrl);
                         ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
                         ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                         ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

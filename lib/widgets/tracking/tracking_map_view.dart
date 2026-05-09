@@ -51,6 +51,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Removes all trip-related polyline and pin annotations from the map.
   Future<void> _cleanupMapAnnotations() async {
+    // Clean up modular components first
+    await _mapCar?.clear();
+    await _mapRoute?.clear();
+    await _mapAnnotations?.clear();
+
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_remainingRouteAnnot != null) {
@@ -170,6 +175,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         debugPrint('[CarIcon] Fallback car load failed: $e');
       }
     }
+
+    // Also load into modular component
+    if (_mapCar != null) {
+      await _mapCar!.loadCarIcon(widget.rideName);
+    }
+
     if (mounted) {
       _setState(() {});
       // Try to create the car annotation now that we have the icon bytes.
@@ -983,12 +994,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 below: 'road-label',
               );
               _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-              
-              // Initialize new modular map components
-              _mapAnnotations = TrackingMapAnnotations(_pointAnnotMgr);
-              _mapRoute = TrackingMapRoute(_polylineAnnotMgr);
-              _mapCamera = TrackingMapCamera(_map);
-              _mapCar = TrackingMapCar(_carAnnotMgr);
               try {
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
@@ -998,6 +1003,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               } catch (_) {}
               // Separate annotation manager for car icon (icon-anchor: center, on top)
               _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              
+              // Initialize new modular map components (AFTER managers are created)
+              _mapAnnotations = TrackingMapAnnotations(map: ctrl, pointAnnotMgr: _pointAnnotMgr);
+              _mapRoute = TrackingMapRoute(map: ctrl, polylineAnnotMgr: _polylineAnnotMgr);
+              _mapCamera = TrackingMapCamera(ctrl);
+              _mapCar = TrackingMapCar(map: ctrl, carAnnotMgr: _carAnnotMgr);
+              // Load car icon into the modular component
+              _mapCar!.loadCarIcon(widget.rideName);
               try {
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
@@ -1049,6 +1062,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _remainingRouteAnnot = null;
               _dimmedRouteAnnot = null;
               _approachAnnot = null;
+              // Reset modular components
+              _mapCar?.reset();
+              _mapAnnotations?.reset();
+              _mapRoute?.reset();
               // Reset flags so static annotations (pins + dimmed route) are recreated
               _staticAnnotsDone = false;
               _dropoffPinAdded = false;
@@ -1073,6 +1090,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-anchor', 'center');
               } catch (_) {}
+
+              // Re-initialize modular components with new managers
+              _mapAnnotations?.setAnnotManager(_pointAnnotMgr);
+              _mapRoute?.setAnnotManager(_polylineAnnotMgr);
+              _mapCar?.setAnnotManager(_carAnnotMgr);
 
               // Redraw all annotations (pins, route, car)
               _updateAnnotations();
@@ -1139,10 +1161,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
 
-  // ── Car update: single PointAnnotation, never duplicates ──
-  // CRITICAL: This method is called from many places (GPS callback, ticker,
-  // heartbeat, style reload). The _carAnnotCreating guard + _carAnnot null
-  // check prevent duplicate annotations. NEVER remove these guards.
+  // ── Car update: delegates to TrackingMapCar ──
   void _updateCarSmooth() {
     if (_map == null) return;
 
@@ -1164,6 +1183,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       }
     }
 
+    // Use the new modular TrackingMapCar if available
+    if (_mapCar != null) {
+      _mapCar!.updatePosition(effectivePos, bearing: effectiveBearing);
+      return;
+    }
+
+    // Fallback to legacy inline code if modular component not ready
     if (_carPngBytes == null) return;
     final mgr = _carAnnotMgr;
     if (mgr == null) return;

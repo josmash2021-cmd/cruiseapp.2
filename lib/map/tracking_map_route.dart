@@ -1,15 +1,22 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
+import '../utils/mapbox_safe.dart';
 
 /// ═══════════════════════════════════════════════════════════════════
 ///  TrackingMapRoute — Gestión de líneas de ruta en el mapa
 /// ═══════════════════════════════════════════════════════════════════
 class TrackingMapRoute {
-  TrackingMapRoute(this._polylineAnnotMgr);
+  TrackingMapRoute({
+    required this.map,
+    required mapbox.PolylineAnnotationManager? polylineAnnotMgr,
+  }) : _polylineAnnotMgr = polylineAnnotMgr;
 
-  final mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
+  final mapbox.MapboxMap map;
+  mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
 
   mapbox.PolylineAnnotation? _remainingRouteAnnot;
   mapbox.PolylineAnnotation? _dimmedRouteAnnot;
@@ -21,6 +28,19 @@ class TrackingMapRoute {
 
   double _traveledM = 0;
   double _tgtTraveledM = 0;
+
+  Ticker? _routeDrawTicker;
+  bool _routeDrawDone = false;
+
+  DateTime _lastRouteErase = DateTime(2000);
+
+  /// Actualiza el manager de anotaciones
+  void setAnnotManager(mapbox.PolylineAnnotationManager? mgr) {
+    _polylineAnnotMgr = mgr;
+    _remainingRouteAnnot = null;
+    _dimmedRouteAnnot = null;
+    _approachAnnot = null;
+  }
 
   /// Inicializa la ruta del viaje
   void initRoute({
@@ -40,31 +60,30 @@ class TrackingMapRoute {
     _buildSegDist();
     _traveledM = 0;
     _tgtTraveledM = 0;
+    _routeDrawDone = false;
   }
 
   /// Dibuja la ruta completa (dimmed) como fondo
-  Future<void> drawDimmedRoute() async {
+  Future<void> drawDimmedRoute({double opacity = 0.20, double width = 5.0}) async {
     final mgr = _polylineAnnotMgr;
-    if (mgr == null || _routePts.length < 2) return;
+    if (mgr == null) return;
 
-    // Eliminar ruta anterior si existe
-    if (_dimmedRouteAnnot != null) {
-      try { await mgr.delete(_dimmedRouteAnnot!); } catch (_) {}
+    final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
+    if (dimmedPts.length < 2) return;
+
+    final safeGeom = safeLineString(dimmedPts);
+    if (safeGeom == null) return;
+
+    try {
+      _dimmedRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: safeGeom,
+        lineColor: const Color(0xFFFFD700).withValues(alpha: opacity).toARGB32(),
+        lineWidth: width,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (e) {
+      debugPrint('[TrackingMapRoute] Failed to create dimmed route: $e');
     }
-
-    final line = mapbox.LineString(
-      coordinates: _routePts.map((p) =>
-        mapbox.Position(p.longitude, p.latitude)
-      ).toList(),
-    );
-
-    _dimmedRouteAnnot = await mgr.create(
-      mapbox.PolylineAnnotationOptions(
-        geometry: line,
-        lineColor: const Color(0x40E8C547).toARGB32(),
-        lineWidth: 4.0,
-      ),
-    );
   }
 
   /// Dibuja la ruta restante (brillante) desde la posición actual
@@ -91,13 +110,18 @@ class TrackingMapRoute {
       ).toList(),
     );
 
-    _remainingRouteAnnot = await mgr.create(
-      mapbox.PolylineAnnotationOptions(
-        geometry: line,
-        lineColor: const Color(0xFFE8C547).toARGB32(),
-        lineWidth: 5.0,
-      ),
-    );
+    try {
+      _remainingRouteAnnot = await mgr.create(
+        mapbox.PolylineAnnotationOptions(
+          geometry: line,
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[TrackingMapRoute] Failed to create remaining route: $e');
+    }
   }
 
   /// Dibuja línea de approach (conductor → pickup)
@@ -105,29 +129,214 @@ class TrackingMapRoute {
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
 
-    if (_approachAnnot != null) {
-      try { await mgr.delete(_approachAnnot!); } catch (_) {}
+    // Skip if driver hasn't reported position yet
+    if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
+
+    final approachGeom = safeLineString([driverPos, pickupPos]);
+    if (approachGeom == null) return;
+
+    if (_approachAnnot == null) {
+      try {
+        _approachAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+          geometry: approachGeom,
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      } catch (e) {
+        debugPrint('[TrackingMapRoute] Failed to create approach: $e');
+      }
+    } else {
+      try {
+        _approachAnnot!.geometry = approachGeom;
+        await mgr.update(_approachAnnot!);
+      } catch (_) {}
+    }
+  }
+
+  /// Borra la ruta detrás del carro (muestra solo lo que queda por recorrer)
+  Future<void> eraseRouteBehindCar(LatLng driverPos) async {
+    final now = DateTime.now();
+    if (now.difference(_lastRouteErase).inMilliseconds < 500) return;
+    _lastRouteErase = now;
+
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _segDist.isEmpty || _routePts.length < 2) return;
+    if (_remainingRouteAnnot == null) return;
+
+    final projectedM = _projectOntoRoute(driverPos);
+    if (projectedM <= 0) return;
+
+    // Binary search for the segment
+    int lo = 0, hi = _segDist.length - 1;
+    while (lo < hi - 1) {
+      final mid = (lo + hi) >> 1;
+      if (_segDist[mid] <= projectedM) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
     }
 
-    final line = mapbox.LineString(
-      coordinates: [
-        mapbox.Position(driverPos.longitude, driverPos.latitude),
-        mapbox.Position(pickupPos.longitude, pickupPos.latitude),
-      ],
-    );
+    final segLen = _segDist[hi] - _segDist[lo];
+    final t = segLen > 0.01 ? ((projectedM - _segDist[lo]) / segLen).clamp(0.0, 1.0) : 0.0;
+    final a = _routePts[lo];
+    final b = _routePts[hi];
+    final curLat = a.latitude + (b.latitude - a.latitude) * t;
+    final curLng = a.longitude + (b.longitude - a.longitude) * t;
 
-    _approachAnnot = await mgr.create(
-      mapbox.PolylineAnnotationOptions(
-        geometry: line,
-        lineColor: const Color(0xFFE8C547).toARGB32(),
-        lineWidth: 3.0,
-        // Note: dasharray not supported in this version of Mapbox SDK
+    if (!isValidLatLng(curLat, curLng)) return;
+
+    final ahead = hi < _routePts.length ? _routePts.length - hi : 0;
+    final remaining = <mapbox.Position>[
+      mapbox.Position(curLng, curLat),
+      ...List.generate(
+        ahead,
+        (i) => mapbox.Position(_routePts[hi + i].longitude, _routePts[hi + i].latitude),
       ),
-    );
+    ];
+
+    final validRemaining = remaining.where(
+      (p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())
+    ).toList();
+    if (validRemaining.length < 2) return;
+
+    final geom = mapbox.LineString(coordinates: validRemaining);
+    try {
+      _remainingRouteAnnot!.geometry = geom;
+      await mgr.update(_remainingRouteAnnot!);
+    } catch (_) {}
+  }
+
+  /// Animación de dibujo progresivo de la ruta
+  void startAnimatedRouteDraw(TickerProvider tickerProvider, {VoidCallback? onComplete}) {
+    if (_routeDrawDone || _routePts.length < 2) return;
+    _routeDrawDone = true;
+
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
+
+    final allCoords = _routePts.map((p) =>
+      mapbox.Position(p.longitude, p.latitude)
+    ).toList();
+    final totalPts = allCoords.length;
+
+    // Cumulative distances
+    final cumDist = <double>[0.0];
+    for (int i = 1; i < totalPts; i++) {
+      final prev = allCoords[i - 1];
+      final cur = allCoords[i];
+      final dx = cur.lng.toDouble() - prev.lng.toDouble();
+      final dy = cur.lat.toDouble() - prev.lat.toDouble();
+      cumDist.add(cumDist.last + math.sqrt(dx * dx + dy * dy));
+    }
+    final totalDist = cumDist.last;
+    if (totalDist < 0.00001) return;
+
+    final drawDurationMs = (totalPts * 10).clamp(1800, 3500);
+
+    // Pre-create with first 2 points
+    final initGeom = mapbox.LineString(coordinates: allCoords.sublist(0, 2));
+    _createRouteLayer(mgr, initGeom).then((_) {
+      if (_remainingRouteAnnot == null) return;
+
+      final stopwatch = Stopwatch()..start();
+      bool updating = false;
+      double lastFrac = 0.0;
+
+      _routeDrawTicker?.stop();
+      _routeDrawTicker?.dispose();
+      _routeDrawTicker = tickerProvider.createTicker((_) {
+        if (updating) return;
+        final elapsed = stopwatch.elapsedMilliseconds;
+        final t = (elapsed / drawDurationMs).clamp(0.0, 1.0);
+
+        // Smooth S-curve
+        final eased = t < 0.5
+            ? 4 * t * t * t
+            : 1 - math.pow(-2 * t + 2, 3) / 2;
+        final targetDist = eased * totalDist;
+
+        if ((eased - lastFrac).abs() < 0.003 && t < 1.0) return;
+        lastFrac = eased;
+
+        // Find interpolated position
+        int seg = 0;
+        for (int i = 1; i < totalPts; i++) {
+          if (cumDist[i] >= targetDist) { seg = i - 1; break; }
+          if (i == totalPts - 1) seg = i - 1;
+        }
+
+        final segLen = cumDist[seg + 1] - cumDist[seg];
+        final frac = segLen > 0.00001 ? (targetDist - cumDist[seg]) / segLen : 1.0;
+
+        final a = allCoords[seg];
+        final b = allCoords[seg + 1];
+        final tipLng = a.lng.toDouble() + (b.lng.toDouble() - a.lng.toDouble()) * frac;
+        final tipLat = a.lat.toDouble() + (b.lat.toDouble() - a.lat.toDouble()) * frac;
+
+        final coords = <mapbox.Position>[
+          ...allCoords.sublist(0, seg + 1),
+          mapbox.Position(tipLng, tipLat),
+        ];
+
+        if (coords.length < 2) return;
+        final geom = mapbox.LineString(coordinates: coords);
+
+        updating = true;
+        try {
+          _remainingRouteAnnot!.geometry = geom;
+          mgr.update(_remainingRouteAnnot!).then((_) => updating = false).catchError((_) => updating = false);
+        } catch (_) { updating = false; }
+
+        if (t >= 1.0) {
+          final fullGeom = mapbox.LineString(coordinates: allCoords);
+          _remainingRouteAnnot!.geometry = fullGeom;
+          mgr.update(_remainingRouteAnnot!).catchError((_) {});
+          _routeDrawTicker?.stop();
+          onComplete?.call();
+        }
+      })..start();
+    });
+  }
+
+  Future<void> _createRouteLayer(mapbox.PolylineAnnotationManager mgr, mapbox.LineString geom) async {
+    try {
+      _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+    } catch (_) {}
+  }
+
+  /// Elimina la ruta dimmed
+  Future<void> removeDimmedRoute() async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _dimmedRouteAnnot == null) return;
+    try {
+      await mgr.delete(_dimmedRouteAnnot!);
+      _dimmedRouteAnnot = null;
+    } catch (_) {}
+  }
+
+  /// Elimina la línea de approach
+  Future<void> removeApproach() async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || _approachAnnot == null) return;
+    try {
+      await mgr.delete(_approachAnnot!);
+      _approachAnnot = null;
+    } catch (_) {}
   }
 
   /// Limpia todas las rutas
   Future<void> clear() async {
+    _routeDrawTicker?.stop();
+    _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
+
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
 
@@ -143,9 +352,19 @@ class TrackingMapRoute {
       try { await mgr.delete(_approachAnnot!); } catch (_) {}
       _approachAnnot = null;
     }
+    _routeDrawDone = false;
   }
 
-  /// Obtiene los puntos restantes de la ruta desde una distancia dada
+  /// Reset para recreación del mapa
+  void reset() {
+    _remainingRouteAnnot = null;
+    _dimmedRouteAnnot = null;
+    _approachAnnot = null;
+    _routeDrawDone = false;
+  }
+
+  // ── Helpers privados ──
+
   List<LatLng> _getRemainingPoints(double fromMeters) {
     if (_routePts.isEmpty || _segDist.isEmpty) return [];
 
@@ -164,7 +383,6 @@ class TrackingMapRoute {
     return result;
   }
 
-  /// Proyecta un punto sobre la ruta y devuelve la distancia acumulada
   double _projectOntoRoute(LatLng p) {
     if (_routePts.length < 2) return 0;
 
@@ -204,7 +422,6 @@ class TrackingMapRoute {
     return bestM;
   }
 
-  /// Construye las distancias acumuladas por segmento
   void _buildSegDist() {
     _segDist = [0.0];
     double acc = 0;
@@ -214,9 +431,8 @@ class TrackingMapRoute {
     }
   }
 
-  /// Distancia haversine en millas
   double _haversine(LatLng a, LatLng b) {
-    const R = 3958.8; // Radio de la Tierra en millas
+    const R = 3958.8;
     final dLat = (b.latitude - a.latitude) * math.pi / 180;
     final dLng = (b.longitude - a.longitude) * math.pi / 180;
     final lat1 = a.latitude * math.pi / 180;
@@ -231,4 +447,5 @@ class TrackingMapRoute {
   List<LatLng> get routePoints => _routePts;
   List<LatLng> get tripRoutePoints => _tripRoutePts;
   double get traveledMeters => _traveledM;
+  bool get routeDrawDone => _routeDrawDone;
 }

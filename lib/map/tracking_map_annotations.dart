@@ -6,14 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../utils/mapbox_safe.dart';
 
 /// ═══════════════════════════════════════════════════════════════════
 ///  TrackingMapAnnotations — Gestión de pins (pickup/dropoff) en el mapa
 /// ═══════════════════════════════════════════════════════════════════
 class TrackingMapAnnotations {
-  TrackingMapAnnotations(this._pointAnnotMgr);
+  TrackingMapAnnotations({
+    required this.map,
+    required mapbox.PointAnnotationManager? pointAnnotMgr,
+  }) : _pointAnnotMgr = pointAnnotMgr;
 
-  final mapbox.PointAnnotationManager? _pointAnnotMgr;
+  final mapbox.MapboxMap map;
+  mapbox.PointAnnotationManager? _pointAnnotMgr;
 
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
@@ -25,81 +30,133 @@ class TrackingMapAnnotations {
 
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
+  bool _dropoffPinAdded = false;
+
+  /// Actualiza el manager de anotaciones
+  void setAnnotManager(mapbox.PointAnnotationManager? mgr) {
+    _pointAnnotMgr = mgr;
+    _pickupAnnot = null;
+    _dropoffAnnot = null;
+  }
 
   /// Carga los iconos de pins (pickup y dropoff)
   Future<void> loadPins({
     required String pickupLabel,
     required String dropoffLabel,
   }) async {
-    _pickupPinBytes = await _renderGoldPin(isPickup: true, label: pickupLabel);
-    _dropoffPinBytes = await _renderGoldPin(isPickup: false, label: dropoffLabel);
+    try {
+      _pickupPinBytes = await _renderGoldPin(isPickup: true, label: pickupLabel);
+    } catch (e) {
+      debugPrint('[TrackingMapAnnotations] Failed to render pickup pin: $e');
+    }
+    try {
+      _dropoffPinBytes = await _renderGoldPin(isPickup: false, label: dropoffLabel);
+    } catch (e) {
+      debugPrint('[TrackingMapAnnotations] Failed to render dropoff pin: $e');
+    }
 
     if (pickupLabel.trim().isNotEmpty) {
-      _pickupPinWithLabelBytes = await _renderGoldPinWithLabel(
-        isPickup: true,
-        label: pickupLabel,
-      );
+      try {
+        _pickupPinWithLabelBytes = await _renderGoldPinWithLabel(
+          isPickup: true,
+          label: pickupLabel,
+        );
+      } catch (e) {
+        debugPrint('[TrackingMapAnnotations] Failed to render pickup pin with label: $e');
+      }
     }
     if (dropoffLabel.trim().isNotEmpty) {
-      _dropoffPinWithLabelBytes = await _renderGoldPinWithLabel(
-        isPickup: false,
-        label: dropoffLabel,
-      );
+      try {
+        _dropoffPinWithLabelBytes = await _renderGoldPinWithLabel(
+          isPickup: false,
+          label: dropoffLabel,
+        );
+      } catch (e) {
+        debugPrint('[TrackingMapAnnotations] Failed to render dropoff pin with label: $e');
+      }
     }
   }
 
-  /// Actualiza las anotaciones en el mapa
-  Future<void> updateAnnotations({
+  /// Crea las anotaciones de pickup y dropoff en el mapa
+  Future<void> createAnnotations({
     required LatLng pickupLatLng,
     required LatLng dropoffLatLng,
+    bool animateDropoff = false,
   }) async {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
     // Pickup pin
-    if (_pickupPinBytes != null) {
-      if (_pickupAnnot == null) {
-        _pickupAnnot = await mgr.create(
-          mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(
-              coordinates: mapbox.Position(pickupLatLng.longitude, pickupLatLng.latitude),
-            ),
-            image: _pickupPinBytes,
-            iconSize: 1.0,
+    if (_pickupPinBytes != null && _pickupAnnot == null) {
+      final pickupPoint = safePoint(pickupLatLng.longitude, pickupLatLng.latitude);
+      if (pickupPoint != null) {
+        try {
+          _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+            geometry: pickupPoint,
+            image: _pickupPinBytes!,
+            iconSize: 0.55,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: [0, 0],
-          ),
-        );
-      } else {
-        _pickupAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(pickupLatLng.longitude, pickupLatLng.latitude),
-        );
-        await mgr.update(_pickupAnnot!);
+          ));
+        } catch (e) {
+          debugPrint('[TrackingMapAnnotations] Failed to create pickup pin: $e');
+        }
       }
     }
 
     // Dropoff pin
-    if (_dropoffPinBytes != null) {
-      if (_dropoffAnnot == null) {
-        _dropoffAnnot = await mgr.create(
-          mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(
-              coordinates: mapbox.Position(dropoffLatLng.longitude, dropoffLatLng.latitude),
-            ),
-            image: _dropoffPinBytes,
-            iconSize: 1.0,
+    if (_dropoffPinBytes != null && !_dropoffPinAdded) {
+      _dropoffPinAdded = true;
+      final dropoffPoint = safePoint(dropoffLatLng.longitude, dropoffLatLng.latitude);
+      if (dropoffPoint != null) {
+        try {
+          final initialSize = animateDropoff ? 0.01 : 0.55;
+          _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+            geometry: dropoffPoint,
+            image: _dropoffPinBytes!,
+            iconSize: initialSize,
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: [0, 0],
-          ),
-        );
-      } else {
-        _dropoffAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(dropoffLatLng.longitude, dropoffLatLng.latitude),
-        );
-        await mgr.update(_dropoffAnnot!);
+          ));
+          if (animateDropoff) {
+            _animateDropoffPinPop(mgr);
+          }
+        } catch (e) {
+          debugPrint('[TrackingMapAnnotations] Failed to create dropoff pin: $e');
+        }
       }
     }
   }
 
-  /// Revela el label del pickup con animación spring
+  /// Animación pop-in para el pin de dropoff
+  void _animateDropoffPinPop(mapbox.PointAnnotationManager mgr) {
+    if (_dropoffAnnot == null) return;
+
+    final startTime = DateTime.now();
+    const durationMs = 500;
+
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / durationMs).clamp(0.0, 1.0);
+
+      double scale;
+      if (t < 0.4) {
+        scale = 0.01 + (0.62 - 0.01) * (t / 0.4);
+      } else if (t < 0.7) {
+        scale = 0.62 + (0.50 - 0.62) * ((t - 0.4) / 0.3);
+      } else {
+        scale = 0.50 + (0.55 - 0.50) * ((t - 0.7) / 0.3);
+      }
+
+      try {
+        mgr.update(_dropoffAnnot!..iconSize = scale);
+      } catch (_) {}
+
+      if (t >= 1.0) timer.cancel();
+    });
+  }
+
+  /// Revela el label del pickup
   Future<void> revealPickupLabel() async {
     if (_pickupLabelRevealed || _pickupAnnot == null || _pickupPinWithLabelBytes == null) return;
     _pickupLabelRevealed = true;
@@ -113,7 +170,7 @@ class TrackingMapAnnotations {
     }
   }
 
-  /// Revela el label del dropoff con animación spring
+  /// Revela el label del dropoff
   Future<void> revealDropoffLabel() async {
     if (_dropoffLabelRevealed || _dropoffAnnot == null || _dropoffPinWithLabelBytes == null) return;
     _dropoffLabelRevealed = true;
@@ -125,6 +182,43 @@ class TrackingMapAnnotations {
     } catch (e) {
       debugPrint('[TrackingMapAnnotations] Failed to reveal dropoff label: $e');
     }
+  }
+
+  /// Pop-out animation para el pin de pickup (cuando el conductor llega)
+  Future<void> popOutPickupPin() async {
+    if (_pickupAnnot == null || _pointAnnotMgr == null) return;
+
+    final mgr = _pointAnnotMgr!;
+    final startTime = DateTime.now();
+    const durationMs = 600;
+
+    final completer = Completer<void>();
+
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / durationMs).clamp(0.0, 1.0);
+
+      double scale;
+      if (t < 0.35) {
+        scale = 0.80 + (1.25 - 0.80) * (t / 0.35);
+      } else {
+        final st = (t - 0.35) / 0.65;
+        scale = 1.25 * (1.0 - st * st);
+      }
+
+      try {
+        mgr.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));
+      } catch (_) {}
+
+      if (t >= 1.0) {
+        timer.cancel();
+        try { mgr.delete(_pickupAnnot!); } catch (_) {}
+        _pickupAnnot = null;
+        completer.complete();
+      }
+    });
+
+    return completer.future;
   }
 
   /// Limpia todas las anotaciones
@@ -139,6 +233,16 @@ class TrackingMapAnnotations {
       try { await mgr.delete(_dropoffAnnot!); } catch (_) {}
       _dropoffAnnot = null;
     }
+    _dropoffPinAdded = false;
+    _pickupLabelRevealed = false;
+    _dropoffLabelRevealed = false;
+  }
+
+  /// Reset para recreación del mapa
+  void reset() {
+    _pickupAnnot = null;
+    _dropoffAnnot = null;
+    _dropoffPinAdded = false;
   }
 
   // ── Helpers privados ──
@@ -278,6 +382,9 @@ class TrackingMapAnnotations {
     }
     return _PinIcon.person;
   }
+
+  // Getters
+  bool get dropoffPinAdded => _dropoffPinAdded;
 }
 
 enum _PinIcon { house, store, airplane, person }

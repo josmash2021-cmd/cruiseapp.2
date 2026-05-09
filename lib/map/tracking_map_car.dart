@@ -1,26 +1,35 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 
+
 /// ═══════════════════════════════════════════════════════════════════
-///  TrackingMapCar — Gestión del icono del carro en el mapa
+///  TrackingMapCar — Gestión del icono del carro del conductor
 /// ═══════════════════════════════════════════════════════════════════
 class TrackingMapCar {
-  TrackingMapCar(this._carAnnotMgr);
+  TrackingMapCar({
+    required this.map,
+    required mapbox.PointAnnotationManager? carAnnotMgr,
+  }) : _carAnnotMgr = carAnnotMgr;
 
-  final mapbox.PointAnnotationManager? _carAnnotMgr;
+  final mapbox.MapboxMap map;
+  mapbox.PointAnnotationManager? _carAnnotMgr;
 
   mapbox.PointAnnotation? _carAnnot;
   Uint8List? _carPngBytes;
   bool _carAnnotCreating = false;
+  bool _carPopDone = false;
 
   LatLng _driverPos = const LatLng(0, 0);
-  LatLng _animPos = const LatLng(0, 0);
+  final LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
+
+  final _kCarAnnotScale = 0.55;
 
   /// Carga el icono del carro según el tipo de viaje
   Future<void> loadCarIcon(String rideName) async {
@@ -37,10 +46,14 @@ class TrackingMapCar {
       carAsset = 'assets/images/car_economy.png';
     }
 
+    debugPrint('[TrackingMapCar] rideName="$rideNameLower" → asset=$carAsset');
+
     try {
       final raw = await rootBundle.load(carAsset);
       _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
+      debugPrint('[TrackingMapCar] loaded ${_carPngBytes!.length} PNG bytes');
     } catch (e) {
+      debugPrint('[TrackingMapCar] FAILED to load $carAsset: $e');
       try {
         final raw = await rootBundle.load('assets/images/car_economy.png');
         _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
@@ -50,10 +63,21 @@ class TrackingMapCar {
     }
   }
 
+  /// Actualiza el manager de anotaciones (útil cuando se recrea el mapa)
+  void setAnnotManager(mapbox.PointAnnotationManager? mgr) {
+    _carAnnotMgr = mgr;
+    // Reset annotation since manager changed
+    _carAnnot = null;
+    _carAnnotCreating = false;
+  }
+
   /// Actualiza la posición del carro en el mapa
   Future<void> updatePosition(LatLng pos, {double bearing = 0}) async {
     _driverPos = pos;
     _driverBearing = bearing;
+
+    // Skip if no valid position
+    if (pos.latitude == 0 && pos.longitude == 0) return;
 
     if (_carAnnotCreating) return;
     if (_carPngBytes == null) return;
@@ -70,10 +94,17 @@ class TrackingMapCar {
               coordinates: mapbox.Position(pos.longitude, pos.latitude),
             ),
             image: _carPngBytes,
-            iconSize: 1.0,
+            iconSize: _carPopDone ? _kCarAnnotScale : 0.01,
+            iconAnchor: mapbox.IconAnchor.CENTER,
             iconRotate: bearing,
+            iconOffset: [0, 0],
           ),
         );
+        // Pop-in animation on first creation
+        if (!_carPopDone) {
+          _carPopDone = true;
+          _animateCarPopIn(mgr);
+        }
       } catch (e) {
         debugPrint('[TrackingMapCar] Failed to create car annotation: $e');
       } finally {
@@ -88,14 +119,38 @@ class TrackingMapCar {
         await mgr.update(_carAnnot!);
       } catch (e) {
         debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
+        // Annotation may have been destroyed — reset and retry next frame
+        _carAnnot = null;
       }
     }
   }
 
-  /// Actualiza la posición animada (interpolación suave)
-  Future<void> updateAnimatedPosition(LatLng pos, double progress) async {
-    _animPos = pos;
-    await updatePosition(pos);
+  /// Pop-in animation for the car marker: 0.01 → 0.77 → 0.50 → 0.55 over 400ms
+  void _animateCarPopIn(mapbox.PointAnnotationManager mgr) {
+    if (_carAnnot == null) return;
+
+    final startTime = DateTime.now();
+    const durationMs = 400;
+
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final t = (elapsed / durationMs).clamp(0.0, 1.0);
+
+      double scale;
+      if (t < 0.35) {
+        scale = 0.01 + (_kCarAnnotScale * 1.4 - 0.01) * (t / 0.35);
+      } else if (t < 0.65) {
+        scale = _kCarAnnotScale * 1.4 + (_kCarAnnotScale * 0.9 - _kCarAnnotScale * 1.4) * ((t - 0.35) / 0.3);
+      } else {
+        scale = _kCarAnnotScale * 0.9 + (_kCarAnnotScale - _kCarAnnotScale * 0.9) * ((t - 0.65) / 0.35);
+      }
+
+      try {
+        mgr.update(_carAnnot!..iconSize = scale);
+      } catch (_) {}
+
+      if (t >= 1.0) timer.cancel();
+    });
   }
 
   /// Limpia la anotación del carro
@@ -105,9 +160,17 @@ class TrackingMapCar {
     try {
       await mgr.delete(_carAnnot!);
       _carAnnot = null;
+      _carPopDone = false;
     } catch (e) {
       debugPrint('[TrackingMapCar] Failed to delete car annotation: $e');
     }
+  }
+
+  /// Reset para cuando se destruye y recrea el mapa
+  void reset() {
+    _carAnnot = null;
+    _carAnnotCreating = false;
+    _carPopDone = false;
   }
 
   /// Redimensiona un PNG para usar como icono de mapa
@@ -142,4 +205,5 @@ class TrackingMapCar {
   LatLng get animPos => _animPos;
   double get driverBearing => _driverBearing;
   bool get hasIcon => _carPngBytes != null;
+  bool get hasAnnotation => _carAnnot != null;
 }

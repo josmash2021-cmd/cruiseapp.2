@@ -330,6 +330,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
+    // Also load into modular component when ready
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _mapCar != null) {
+        _mapCar!.loadCarIcon(widget.rideName);
+      }
+    });
     // Await persistence before starting real-time tracking to prevent
     // race condition where backend poll resets phase/traveledM to 0.
     _initFromPersistence().then((_) {

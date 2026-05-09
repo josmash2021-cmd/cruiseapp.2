@@ -1374,7 +1374,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
-    debugPrint('[DriverOnline] _acceptOffer called — shellMode=${widget.isShellMode}, map=$_map, phase=$_phase');
+    debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
     if (_offerAcceptState != _OfferAcceptState.normal) {
@@ -1538,7 +1538,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
     // In shell mode, use rootNavigator to ensure we push on the app's root
     // navigator instead of any nested navigator that might not exist.
-    final navFuture = Navigator.of(context, rootNavigator: true).push<String>(
+    final navFuture = Navigator.of(context).push<String>(
       smoothFadeRoute(
         TripAcceptedScreen(
           tripId:         tripId ?? offerId ?? 0,
@@ -1705,7 +1705,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } catch (e, stack) {
       debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
       debugPrint(stack.toString());
-      debugPrint('[DriverOnline] _acceptOffer FAILED — shellMode=${widget.isShellMode}, map=$_map');
+      debugPrint('[DriverOnline] _acceptOffer FAILED — map=$_map');
       if (mounted) {
         _setState(() {
           _offerAcceptState = _OfferAcceptState.normal;
@@ -2129,7 +2129,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       'hours': _online.inMinutes / 60.0,
       'stillOnline': false,
     };
-    final nav = Navigator.of(context, rootNavigator: true);
+    final nav = Navigator.of(context);
     if (nav.canPop()) {
       nav.pop<Map<String, dynamic>>(result);
       return;
@@ -2214,7 +2214,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       'hours': _online.inMinutes / 60.0,
       'stillOnline': true,
     };
-    final nav = Navigator.of(context, rootNavigator: true);
+    final nav = Navigator.of(context);
     if (nav.canPop()) {
       nav.pop<Map<String, dynamic>>(result);
       return;
@@ -2394,7 +2394,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final myRoute = ModalRoute.of(context);
     if (myRoute != null) {
       try {
-        Navigator.of(context, rootNavigator: true).popUntil((r) => r == myRoute || r.isFirst);
+        Navigator.of(context).popUntil((r) => r == myRoute || r.isFirst);
       } catch (e) {
         debugPrint('[DriverOnline] popUntil on cancel failed: $e');
       }

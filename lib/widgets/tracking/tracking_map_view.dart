@@ -103,6 +103,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
 
   Future<void> _loadPins() async {
+    // Load into modular component
+    if (_mapAnnotations != null) {
+      await _mapAnnotations!.loadPins(
+        pickupLabel: widget.pickupLabel,
+        dropoffLabel: widget.dropoffLabel,
+      );
+    }
+    // Also load legacy inline pins for fallback
     try {
       _pickupPinBytes = await _renderGoldPin(
         isPickup: true,
@@ -397,8 +405,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Reveal pickup label: swap bitmap + spring scale animation.
   void _revealPickupLabel() {
-    if (_pickupLabelRevealed || _pickupAnnot == null || _pickupPinWithLabelBytes == null) return;
+    if (_pickupLabelRevealed || _pickupPinWithLabelBytes == null) return;
     _pickupLabelRevealed = true;
+    // Use modular component if available
+    if (_mapAnnotations != null) {
+      _mapAnnotations!.revealPickupLabel();
+      return;
+    }
+    // Legacy fallback
+    if (_pickupAnnot == null) return;
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     try {
@@ -412,8 +427,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Reveal dropoff label: swap bitmap + spring scale animation.
   void _revealDropoffLabel() {
-    if (_dropoffLabelRevealed || _dropoffAnnot == null || _dropoffPinWithLabelBytes == null) return;
+    if (_dropoffLabelRevealed || _dropoffPinWithLabelBytes == null) return;
     _dropoffLabelRevealed = true;
+    // Use modular component if available
+    if (_mapAnnotations != null) {
+      _mapAnnotations!.revealDropoffLabel();
+      return;
+    }
+    // Legacy fallback
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     try {
@@ -468,13 +489,18 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
 
     // Snap the polyline endpoints to the EXACT pickup/dropoff coordinates.
-    // Mapbox Directions returns the route snapped to the nearest road, which
-    // can be a few meters off the actual pin. Replacing the first/last
-    // points guarantees the gold line visually touches both pins instead of
-    // leaving a small gap at the start or end.
     if (tripRoute.length >= 2) {
       tripRoute[0] = widget.pickupLatLng;
       tripRoute[tripRoute.length - 1] = widget.dropoffLatLng;
+    }
+
+    // Initialize modular route component
+    if (_mapRoute != null) {
+      _mapRoute!.initRoute(
+        routePoints: tripRoute,
+        pickupLatLng: widget.pickupLatLng,
+        dropoffLatLng: widget.dropoffLatLng,
+      );
     }
 
     // Always store trip route for later use when trip starts (pickup→dropoff)
@@ -537,17 +563,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_map == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
     // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
     if (_phase == _TrackPhase.arrived) return;
-    // Skip if another camera animation is still running
-    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-
-    // During onTrip: use chase camera (navigation-style) instead of bounds fit.
-    // This keeps the driver at a fixed position on screen and the route
-    // centered in the visible gap between cards — no zoom jitter.
-    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-    if (isOnTrip && _animPos.latitude != 0) {
-      _chaseCamera();
-      return;
-    }
 
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -555,20 +570,64 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     // Safe-area insets + card offsets from rider_tracking_screen build()
     final mq = MediaQuery.of(context).padding;
-    final topPad = mq.top;   // safe area top
-    final bottomPad = mq.bottom; // safe area bottom
+    final topPad = mq.top;
+    final bottomPad = mq.bottom;
+
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+
+    // Use modular camera component if available
+    if (_mapCamera != null) {
+      if (isOnTrip && _animPos.latitude != 0) {
+        // Chase camera mode
+        _mapCamera!.chaseCamera(
+          driverPos: _animPos,
+          dropoffPos: widget.dropoffLatLng,
+          topPadding: topPad + 10 + topHeight + 32,
+          bottomPadding: bottomPad + 16 + bottomHeight + 32,
+        );
+      } else {
+        // Bounds fit mode
+        final pts = <LatLng>[];
+        if (_phase == _TrackPhase.arriving) {
+          pts.add(widget.pickupLatLng);
+          pts.add(widget.dropoffLatLng);
+          if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
+          if (_routePts.isNotEmpty) pts.addAll(_routePts);
+          if (_tripRoutePts.isNotEmpty) pts.addAll(_tripRoutePts);
+        } else {
+          pts.add(widget.pickupLatLng);
+          pts.add(widget.dropoffLatLng);
+          if (_animPos.latitude != 0) pts.add(_animPos);
+          pts.addAll(_routePts);
+        }
+        if (pts.isNotEmpty) {
+          _mapCamera!.fitBounds(
+            points: pts,
+            topPadding: topPad + 10 + topHeight + 64,
+            bottomPadding: bottomPad + 16 + bottomHeight + 64,
+          );
+        }
+      }
+      return;
+    }
+
+    // Legacy fallback
+    // Skip if another camera animation is still running
+    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
+
+    if (isOnTrip && _animPos.latitude != 0) {
+      _chaseCamera();
+      return;
+    }
 
     final pts = <LatLng>[];
-
     if (_phase == _TrackPhase.arriving) {
-      // Arriving: show driver + pickup + dropoff so rider sees full trip plan
       pts.add(widget.pickupLatLng);
       pts.add(widget.dropoffLatLng);
       if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
       if (_routePts.isNotEmpty) pts.addAll(_routePts);
       if (_tripRoutePts.isNotEmpty) pts.addAll(_tripRoutePts);
     } else {
-      // Arrived / overview: show full route
       pts.add(widget.pickupLatLng);
       pts.add(widget.dropoffLatLng);
       if (_animPos.latitude != 0) pts.add(_animPos);
@@ -586,11 +645,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       maxLng = math.max(maxLng, p.longitude);
     }
 
-    // Padding = safe area + card offset + card height + generous breathing room
-    // Increased from +48 to +64 so the route is centered in the visible gap
-    // between cards, not squeezed against the edges.
-    // Top card: positioned at topPad + 10, height = topHeight
-    // Bottom card: positioned at bottomPad + 16, height = bottomHeight
     _map?.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
@@ -604,9 +658,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       null, null,
     ).then((cam) {
       if (!mounted || _map == null) return;
-      // FIX: Consistent zoom clamp 11-16 across all phases. Previously arriving
-      // phase allowed zoom up to 16 but chaseCamera allowed 17, causing a jarring
-      // zoom jump when transitioning from arriving → onTrip.
       final zoom = (cam.zoom ?? 14.0).clamp(11.0, 16.0);
       final clampedCam = mapbox.CameraOptions(
         center: cam.center,
@@ -616,9 +667,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         padding: cam.padding,
         anchor: cam.anchor,
       );
-      // Lock camera during animation to prevent overlapping animations
       _cameraAnimating = true;
-      // Longer flyTo (1200ms) for smoother transitions — matches 1500ms follow interval
       const dur = 1200;
       _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
       _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
@@ -1331,46 +1380,58 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _staticAnnotsDone = true; // mark before await to prevent double-creation
 
     // ── Draw dimmed trip route (pickup→dropoff) — visible in all phases ──
-    // During arriving/arrived, this shows the rider where the trip will go.
-    final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
-    if (dimmedPts.length >= 2) {
-      final safeGeom = safeLineString(dimmedPts);
-      if (safeGeom != null) {
-        try {
-          _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: safeGeom,
-            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-            lineWidth: 5.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (e) {
-          debugPrint('[TrackingMap] Failed to create dimmed route: $e');
-        }
-      }
-    }
-
-    // Pickup pin — always visible
-    if (_pickupPinBytes != null) {
-      final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-      if (pickupPoint != null) {
-        try {
-          _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
-            geometry: pickupPoint,
-            image: _pickupPinBytes!,
-            iconSize: 0.55,
-            iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: [0, 0],
-          ));
-        } catch (e) {
-          debugPrint('[TrackingMap] Failed to create pickup pin: $e');
-        }
-      }
+    // Use modular route component if available, fallback to legacy
+    if (_mapRoute != null) {
+      await _mapRoute!.drawDimmedRoute(opacity: 0.20, width: 5.0);
     } else {
-      debugPrint('[TrackingMap] Pickup pin bytes not ready — will retry');
+      final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
+      if (dimmedPts.length >= 2) {
+        final safeGeom = safeLineString(dimmedPts);
+        if (safeGeom != null) {
+          try {
+            _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+              geometry: safeGeom,
+              lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
+              lineWidth: 5.0,
+              lineJoin: mapbox.LineJoin.ROUND,
+            ));
+          } catch (e) {
+            debugPrint('[TrackingMap] Failed to create dimmed route: $e');
+          }
+        }
+      }
     }
 
-    // Dropoff pin — always show so rider can see full trip plan
-    _addDropoffPin();
+    // Use modular annotations component if available
+    if (_mapAnnotations != null) {
+      await _mapAnnotations!.createAnnotations(
+        pickupLatLng: widget.pickupLatLng,
+        dropoffLatLng: widget.dropoffLatLng,
+      );
+    } else {
+      // Pickup pin — always visible (legacy)
+      if (_pickupPinBytes != null) {
+        final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
+        if (pickupPoint != null) {
+          try {
+            _pickupAnnot ??= await pointMgr.create(mapbox.PointAnnotationOptions(
+              geometry: pickupPoint,
+              image: _pickupPinBytes!,
+              iconSize: 0.55,
+              iconAnchor: mapbox.IconAnchor.BOTTOM,
+              iconOffset: [0, 0],
+            ));
+          } catch (e) {
+            debugPrint('[TrackingMap] Failed to create pickup pin: $e');
+          }
+        }
+      } else {
+        debugPrint('[TrackingMap] Pickup pin bytes not ready — will retry');
+      }
+
+      // Dropoff pin — always show so rider can see full trip plan
+      _addDropoffPin();
+    }
 
     // Cinematic intro: fit camera
     _startCinematicIntro();
@@ -1464,8 +1525,21 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Pop-out animation for the pickup pin when driver picks up rider.
   /// Grows to 1.6x then shrinks to 0 and removes the annotation.
   void _popOutPickupPin() {
-    if (_pickupPopping || _pickupAnnot == null || _pointAnnotMgr == null) return;
+    if (_pickupPopping) return;
     _pickupPopping = true;
+    // Use modular component if available
+    if (_mapAnnotations != null) {
+      _mapAnnotations!.popOutPickupPin().then((_) {
+        _showPickupPin = false;
+        _pickupPopping = false;
+      });
+      return;
+    }
+    // Legacy fallback
+    if (_pickupAnnot == null || _pointAnnotMgr == null) {
+      _pickupPopping = false;
+      return;
+    }
     _pickupPopOutJob?.cancel();
     _pickupPopOutJob = _animScheduler.schedule(
       durationMs: 600,
@@ -1493,6 +1567,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Future<void> _startAnimatedRouteDraw() async {
     if (_routeDrawDone || _routePts.length < 2) return;
     _routeDrawDone = true;
+
+    // Use modular route component if available
+    if (_mapRoute != null) {
+      _mapRoute!.startAnimatedRouteDraw(this, onComplete: () {
+        // Route draw complete
+      });
+      return;
+    }
+
+    // Legacy fallback
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
 
@@ -1606,6 +1690,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (now.difference(_lastRouteErase).inMilliseconds < 500) return;
     _lastRouteErase = now;
 
+    // Use modular route component if available
+    if (_mapRoute != null) {
+      _mapRoute!.eraseRouteBehindCar(_animPos);
+      return;
+    }
+
+    // Legacy fallback
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _segDist.isEmpty || _routePts.length < 2) return;
     if (_remainingRouteAnnot == null) return;
@@ -1656,6 +1747,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Remove the dimmed route (called when transitioning to onTrip gloss route)
   void _removeDimmedRoute() {
+    // Use modular route component if available
+    if (_mapRoute != null) {
+      _mapRoute!.removeDimmedRoute();
+      return;
+    }
+    // Legacy fallback
     final mgr = _polylineAnnotMgr;
     if (mgr == null || _dimmedRouteAnnot == null) return;
     try { mgr.delete(_dimmedRouteAnnot!); } catch (_) {}
@@ -1672,21 +1769,33 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
     _lastApproachUpdate = now;
 
-    final mgr = _polylineAnnotMgr;
-    if (mgr == null) return;
-
     // Only show during arriving phase
     final shouldShow = _phase == _TrackPhase.arriving;
 
     if (!shouldShow) {
       // Remove existing approach line
-      if (_approachAnnot != null && !_approachLineRemoved) {
-        _approachLineRemoved = true;
-        try { mgr.delete(_approachAnnot!); } catch (_) {}
-        _approachAnnot = null;
+      if (_mapRoute != null) {
+        _mapRoute!.removeApproach();
+      } else {
+        final mgr = _polylineAnnotMgr;
+        if (mgr != null && _approachAnnot != null && !_approachLineRemoved) {
+          _approachLineRemoved = true;
+          try { mgr.delete(_approachAnnot!); } catch (_) {}
+          _approachAnnot = null;
+        }
       }
       return;
     }
+
+    // Use modular route component if available
+    if (_mapRoute != null) {
+      _mapRoute!.drawApproach(_animPos, widget.pickupLatLng);
+      return;
+    }
+
+    // Legacy fallback
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
 
     final approachGeom = safeLineString([
       _animPos,
@@ -1795,12 +1904,23 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topPad = mq.top;
     final bottomPad = mq.bottom;
 
-    // Only include pickup, dropoff, and the trip route points between them.
+    // Use modular camera component if available
+    if (_mapCamera != null) {
+      _mapCamera!.fitArrivedBounds(
+        pickupPos: widget.pickupLatLng,
+        dropoffPos: widget.dropoffLatLng,
+        routePoints: _tripRoutePts,
+        topPadding: topPad + 10 + _topCardHeight + 48,
+        bottomPadding: bottomPad + 16 + _bottomCardHeight + 48,
+      );
+      return;
+    }
+
+    // Legacy fallback
     final pts = <LatLng>[
       widget.pickupLatLng,
       widget.dropoffLatLng,
     ];
-    // Add trip route points so the camera fits the actual route path.
     if (_tripRoutePts.isNotEmpty) {
       pts.addAll(_tripRoutePts);
     }
@@ -1836,20 +1956,30 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         padding: cam.padding,
         anchor: cam.anchor,
       );
-      // Single flyTo — no further camera animations after this.
-      // 800 → 1300 ms so the cinematic fit never snaps into place.
       _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: 1300));
     });
   }
 
   Future<void> _centerDriverOnArrival() async {
     if (_map == null) return;
-    final point = mapbox.Point(
-      coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
-    );
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
+    // Use modular camera component if available
+    if (_mapCamera != null) {
+      await _mapCamera!.centerOnDriver(
+        driverPos: _animPos,
+        topPadding: topInset,
+        bottomPadding: bottomInset,
+        zoom: 16.4,
+        durationMs: 1100,
+      );
+      return;
+    }
+    // Legacy fallback
+    final point = mapbox.Point(
+      coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
+    );
     try {
       final cam = await _map!.cameraForCoordinatesPadding(
         [point],
@@ -1863,7 +1993,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         null,
         null,
       );
-      // 650 → 1100 ms so the arrival recenter glides instead of snaps.
       await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
     } catch (_) {
       await _map!.flyTo(
@@ -1885,6 +2014,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
     final bottomInset = mq.bottom + 16 + _bottomCardHeight + 48;
+    // Use modular camera component if available
+    if (_mapCamera != null) {
+      _mapCamera!.flyToDriverStart(
+        driverPos: _animPos,
+        topPadding: topInset,
+        bottomPadding: bottomInset,
+        durationMs: 1500,
+      );
+      return;
+    }
+    // Legacy fallback
     _map!.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(

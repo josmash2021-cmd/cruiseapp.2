@@ -36,17 +36,17 @@ class SocketService {
   // ── Heartbeat ───────────────────────────────────────────────────────
   static Timer? _heartbeatTimer;
   static DateTime? _lastPongTime;
-  static final _connectionHealthController = StreamController<bool>.broadcast();
+  static var _connectionHealthController = StreamController<bool>.broadcast();
   static Stream<bool> get connectionHealthStream => _connectionHealthController.stream;
 
   // ── Event streams ───────────────────────────────────────────────────
-  static final _driverLocationController =
+  static var _driverLocationController =
       StreamController<Map<String, dynamic>>.broadcast();
-  static final _tripStatusController =
+  static var _tripStatusController =
       StreamController<Map<String, dynamic>>.broadcast();
-  static final _driverAssignedController =
+  static var _driverAssignedController =
       StreamController<Map<String, dynamic>>.broadcast();
-  static final _chatMessageController =
+  static var _chatMessageController =
       StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
@@ -257,11 +257,14 @@ class SocketService {
 
   /// Join a trip room to receive real-time updates.
   static void joinTrip(int tripId) {
+    // FIX: set _currentTripRoom BEFORE checking connection so that
+    // onReconnect can rejoin even if the first call happened while
+    // the socket was still connecting.
+    _currentTripRoom = tripId.toString();
     if (_socket == null || !_connected) {
-      debugPrint('[Socket.io] Cannot join trip — not connected');
+      debugPrint('[Socket.io] Cannot join trip — not connected (will auto-join on reconnect)');
       return;
     }
-    _currentTripRoom = tripId.toString();
     _socket!.emit('join_trip', {'trip_id': tripId});
     debugPrint('[Socket.io] Joining trip room: $tripId');
   }
@@ -342,11 +345,24 @@ class SocketService {
     if (_disposed) {
       debugPrint('[Socket.io] Reconnect called after dispose — re-initializing');
       _disposed = false;
-      // Recreate stream controllers if they were closed
-      _driverLocationController.isClosed;
-      _tripStatusController.isClosed;
-      _driverAssignedController.isClosed;
-      _connectionHealthController.isClosed;
+      // FIX: actually recreate stream controllers if they were closed.
+      // Previously .isClosed was read but never acted upon, leaving
+      // dead controllers after dispose() → reconnect().
+      if (_driverLocationController.isClosed) {
+        _driverLocationController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_tripStatusController.isClosed) {
+        _tripStatusController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_driverAssignedController.isClosed) {
+        _driverAssignedController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_chatMessageController.isClosed) {
+        _chatMessageController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_connectionHealthController.isClosed) {
+        _connectionHealthController = StreamController<bool>.broadcast();
+      }
     }
     if (_socket == null) {
       init();

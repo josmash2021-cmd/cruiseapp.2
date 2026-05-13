@@ -5,6 +5,13 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import 'api_service.dart';
 
+bool _isPermissionDenied(Object e) {
+  if (e is FirebaseException) {
+    return e.code == 'permission-denied';
+  }
+  return e.toString().contains('permission-denied');
+}
+
 /// Singleton service for real-time chat between driver and rider using
 /// Firebase Realtime Database. Messages are delivered in < 100ms.
 ///
@@ -58,7 +65,7 @@ class ChatService {
       // Stop typing indicator after send
       setTyping(rideId: rideId, role: senderRole, isTyping: false);
     } catch (e) {
-      if (e.toString().contains('permission-denied')) {
+      if (_isPermissionDenied(e)) {
         debugPrint('[ChatService] sendMessage permission denied for $rideId');
       } else {
         rethrow;
@@ -193,7 +200,7 @@ class ChatService {
       await _db.ref('chats/$rideId/typing/$role').set(isTyping);
     } catch (e) {
       // Silently ignore permission-denied errors — chat still works without typing indicator
-      if (e.toString().contains('permission-denied')) {
+      if (_isPermissionDenied(e)) {
         debugPrint('[ChatService] setTyping permission denied for $rideId/$role');
       } else {
         rethrow;
@@ -247,7 +254,7 @@ class ChatService {
         await _db.ref().update(updates);
       }
     } catch (e) {
-      if (e.toString().contains('permission-denied')) {
+      if (_isPermissionDenied(e)) {
         debugPrint('[ChatService] markAsRead permission denied for $rideId');
       } else {
         rethrow;

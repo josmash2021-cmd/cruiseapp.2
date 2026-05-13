@@ -34,13 +34,13 @@
     },
     "driver_locations": {
       "$driverId": {
-        ".read": "auth != null",
+        ".read": true,
         ".write": "auth != null"
       }
     },
     "drivers": {
       "$driverId": {
-        ".read": "auth != null",
+        ".read": true,
         ".write": "auth != null"
       }
     }

@@ -81,7 +81,14 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       if (ok) {
         _goHome();
       } else {
-        setState(() { _socialLoading = false; });
+        // FIX: Show an error when Apple Sign-In returns false (e.g. user
+        // object missing from backend response, or account doesn't exist
+        // when loginOnly=true). Previously the spinner just stopped with
+        // no feedback, leaving users confused.
+        setState(() {
+          _socialLoading = false;
+          _errorText = S.of(context).appleSignInFailed;
+        });
       }
     } catch (e) {
       if (!mounted) return;

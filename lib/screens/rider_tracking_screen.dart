@@ -454,6 +454,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _gpsFallbackTimer?.cancel();
+    _approachRouteTimer?.cancel();
     _trafficRefreshTimer?.cancel();
     _labelAnimJob?.cancel();
     _dropoffPopJob?.cancel();
@@ -541,6 +542,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // Fallback: fetch approach route from backend if no RTDB GPS in 5s
   Timer? _gpsFallbackTimer;
+  Timer? _approachRouteTimer;  // FIX: separate from _gpsFallbackTimer to avoid overwriting RTDB fallback
   Timer? _trafficRefreshTimer; // recalc route with live traffic every 2 min
 
   @override

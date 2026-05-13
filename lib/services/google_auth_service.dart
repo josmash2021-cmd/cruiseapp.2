@@ -65,6 +65,12 @@ class GoogleAuthService {
           role: user['role'] as String?,
         );
         await UserSession.initPhotoNotifier();
+      } else {
+        // FIX: If the backend returns a token but no user object, the session
+        // is incomplete. Without a saved user, SplashScreen will redirect back
+        // to the welcome screen because isLoggedInLocal() returns false.
+        debugPrint('[GoogleAuth] socialAuth succeeded but user object is missing — treating as failure');
+        return false;
       }
 
       AnalyticsService.instance.logLogin('google');

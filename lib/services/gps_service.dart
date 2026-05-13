@@ -1,12 +1,20 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/lat_lng.dart';
 import '../config/feature_flags.dart';
 import 'socket_service.dart';
+
+bool _isPermissionDenied(Object e) {
+  if (e is FirebaseException) {
+    return e.code == 'permission-denied';
+  }
+  return e.toString().contains('permission-denied');
+}
 
 /// Singleton service that uploads driver GPS via Socket.io (primary)
 /// and Firebase RTDB (backup), managing online/offline presence.
@@ -150,7 +158,9 @@ class GpsService {
     try {
       await _database.ref('driver_locations/$id').remove();
     } catch (e) {
-      debugPrint('GPS clear trip location error: $e');
+      if (!_isPermissionDenied(e)) {
+        debugPrint('GPS clear trip location error: $e');
+      }
     } finally {
       _activeTripId = null;
       _lastSocketIOAt = null;
@@ -192,7 +202,13 @@ class GpsService {
     }
 
     final tripId = int.tryParse(_activeTripId ?? '');
-    if (tripId == null) return;
+    if (tripId == null) {
+      // FIX: Loggear en lugar de fallar silenciosamente. Si el tripId no es
+      // parseable a int, el backend debería aceptar strings. Por ahora al
+      // menos loggeamos para facilitar debugging.
+      debugPrint('[GPS] WARNING: activeTripId=$_activeTripId is not parseable as int — skipping Socket.io upload');
+      return;
+    }
 
     SocketService.sendDriverLocation(
       tripId: tripId,
@@ -235,7 +251,11 @@ class GpsService {
       await _database.ref('drivers/$_activeDriverId/location').set(payload);
       _lastRTDBAt = now;
     } catch (e) {
-      debugPrint('GPS RTDB upload error: $e');
+      if (_isPermissionDenied(e)) {
+        debugPrint('[GPS] RTDB permission denied — driver not authenticated');
+      } else {
+        debugPrint('GPS RTDB upload error: $e');
+      }
     }
   }
 

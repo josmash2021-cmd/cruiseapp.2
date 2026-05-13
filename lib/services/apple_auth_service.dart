@@ -101,6 +101,15 @@ class AppleAuthService {
           role: user['role'] as String?,
         );
         await UserSession.initPhotoNotifier();
+      } else {
+        // FIX: If the backend returns a token but no user object, the session
+        // is incomplete. Without a saved user, SplashScreen will redirect back
+        // to the welcome screen because isLoggedInLocal() returns false.
+        // This was the root cause of the Apple Sign-In loop reported by App
+        // Store Review: user tapped Sign in with Apple, appeared to succeed,
+        // but was immediately returned to the sign-in screen.
+        debugPrint('[AppleAuth] socialAuth succeeded but user object is missing — treating as failure');
+        return false;
       }
 
       AnalyticsService.instance.logLogin('apple');

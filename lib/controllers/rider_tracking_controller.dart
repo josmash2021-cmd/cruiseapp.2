@@ -40,7 +40,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
         // permission-denied → Firebase Auth session expired. Re-auth
         // and the listener will auto-reconnect on the next server push.
-        if (error.toString().contains('permission-denied')) {
+        final isPermDenied = error is FirebaseException && error.code == 'permission-denied';
+        if (isPermDenied || error.toString().contains('permission-denied')) {
           FirebaseAuth.instance.signInAnonymously().ignore();
         }
       },
@@ -199,8 +200,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Fallback: if no GPS arrives within 5s during arriving phase,
     // fetch approach route using the driver's last known position.
     if (_phase == _TrackPhase.arriving && !_approachRouteFetched) {
-      _gpsFallbackTimer?.cancel();
-      _gpsFallbackTimer = Timer(const Duration(seconds: 5), () {
+      _approachRouteTimer?.cancel();
+      _approachRouteTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted || _phase != _TrackPhase.arriving) return;
         if (_approachRouteFetched || _approachRouteFetching) return;
         // Use persisted driver position if available
@@ -236,7 +237,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _pollBackendTripStatus();
     });
     unawaited(_pollBackendTripStatus()); // first poll fires immediately
-    debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 5s, skips when Socket.io+Firestore healthy)');
+    debugPrint('[RiderTracking] 🟢 Adaptive poll started (every 2s, skips when Socket.io+Firestore healthy)');
   }
 
   /// Start SSE trip status stream — PRIMARY channel for instant updates (<100ms).
@@ -276,13 +277,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Start Socket.io listeners for trip status and driver GPS.
-  void _startSocketIOTracking(int tripId) {
-    // Ensure Socket.io is initialized
-    SocketService.init().then((_) {
-      if (!mounted) return;
-      // Join trip room
-      SocketService.joinTrip(tripId);
-    });
+  void _startSocketIOTracking(int tripId) async {
+    // FIX: await init() BEFORE subscribing so the socket is actually ready.
+    // Previously subscriptions were created immediately while init() ran in
+    // the background, causing events to be lost if the socket wasn't already
+    // connected.
+    await SocketService.init();
+    if (!mounted) return;
+    // Join trip room
+    SocketService.joinTrip(tripId);
 
     // Listen for driver location updates
     _socketLocationSub?.cancel();
@@ -1128,7 +1131,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _rtdbFailCount++;
       // permission-denied → session expired. Re-auth so the reconnect
       // attempt (below) succeeds with a fresh token.
-      if (e.toString().contains('permission-denied')) {
+      final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
+      if (isPermDenied || e.toString().contains('permission-denied')) {
         FirebaseAuth.instance.signInAnonymously().ignore();
       }
       if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {

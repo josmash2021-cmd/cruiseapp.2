@@ -28,6 +28,7 @@ import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
 import '../../services/chat_service.dart';
+import '../../services/socket_service.dart';
 import 'driver_home_screen.dart';
 import 'driver_online_screen.dart';
 import '../../services/user_session.dart';
@@ -462,6 +463,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (driverId != null) {
         _gpsService.startTracking(driverId.toString());
         _gpsService.setActiveTrip(widget.tripId.toString());
+
+        // FIX CRÍTICO: El driver DEBE unirse a la room del trip en Socket.io
+        // para que el servidor reenvíe sus driver_location events al rider.
+        // Antes el driver nunca hacía joinTrip, así que el rider no recibía
+        // las actualizaciones de GPS aunque el driver las enviara.
+        final tid = int.tryParse(widget.tripId.toString());
+        if (tid != null) {
+          await SocketService.init();
+          if (mounted) SocketService.joinTrip(tid);
+        }
+
         // Eager-upload the latest known position so the rider sees the car
         // immediately instead of waiting for the next Geolocator tick.
         final lastPos = await Geolocator.getLastKnownPosition();
@@ -776,7 +788,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       debugPrint('[Driver] trip listener error: $e');
       // permission-denied → Firebase Auth expired. Re-auth silently
       // so the snapshot listener recovers on the next server push.
-      if (e.toString().contains('permission-denied')) {
+      final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
+      if (isPermDenied || e.toString().contains('permission-denied')) {
         FirebaseAuth.instance.signInAnonymously().ignore();
       }
     });

@@ -58,6 +58,7 @@ import 'trip_accepted_screen.dart';
 import 'scheduled_rides_screen.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/socket_service.dart';
 import '../../services/background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/tier_badge.dart';

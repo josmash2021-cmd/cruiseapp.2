@@ -824,6 +824,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _posStream?.cancel();
     _posStream = null;
 
+    // FIX: Ensure Socket.io is initialized so the driver can send GPS
+    // via Socket.io (primary channel). Previously init() was only called
+    // in main.dart or by the rider — if it failed or the socket got
+    // disposed, the driver had no way to reconnect.
+    if (!SocketService.isConnected && !SocketService.isConnecting) {
+      unawaited(SocketService.init());
+    }
+
     // Start GpsService for Firebase RTDB uploads + presence
     if (_driverId != null) {
       _gpsService.startTracking(_driverId.toString());
@@ -1519,6 +1527,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // ── Extract cached route BEFORE clearing cache ──
       final cachedRouteData = _routeCache[oid];
       final preRoutePoints = cachedRouteData?.segOne;
+
+      // FIX: Cancelar el stream de GPS de DriverOnlineScreen antes de navegar
+      // para evitar doble stream cuando DriverTripAcceptScreen cree el suyo.
+      _posStream?.cancel();
+      _posStream = null;
 
       _setState(() => _pendingOffers = []);
       _routeCache.clear();
@@ -2463,7 +2476,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
       onError: (e) {
         debugPrint('[DriverOnline] cancel watcher error for $tripId: $e');
-        if (e.toString().contains('permission-denied')) {
+        final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
+        if (isPermDenied || e.toString().contains('permission-denied')) {
           FirebaseAuth.instance.signInAnonymously().ignore();
         }
       },

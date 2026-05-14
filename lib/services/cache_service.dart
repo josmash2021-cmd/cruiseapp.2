@@ -68,7 +68,9 @@ class CacheService {
     final raw = prefs.getString(_prefsKeyUser);
     if (raw == null || raw.isEmpty) return null;
     try {
-      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return Map<String, dynamic>.from(decoded);
     } catch (_) {
       return null;
     }
@@ -103,7 +105,9 @@ class CacheService {
     final raw = prefs.getString(_prefsKeyActiveTrip);
     if (raw == null || raw.isEmpty) return null;
     try {
-      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return Map<String, dynamic>.from(decoded);
     } catch (_) {
       return null;
     }
@@ -186,10 +190,18 @@ class CacheService {
     final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return null;
     try {
-      final list = jsonDecode(raw) as List;
-      return list
-          .map((item) => List<double>.from(item as List))
-          .toList();
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      final result = <List<double>>[];
+      for (final item in decoded) {
+        if (item is! List) continue;
+        final coords = <double>[];
+        for (final v in item) {
+          if (v is num) coords.add(v.toDouble());
+        }
+        if (coords.length >= 2) result.add(coords);
+      }
+      return result;
     } catch (_) {
       return null;
     }
@@ -215,11 +227,13 @@ class CacheService {
     final raw = prefs.getString(_prefsKeyLastDriverPosition);
     if (raw == null || raw.isEmpty) return null;
     try {
-      return Map<String, double>.from(
-        (jsonDecode(raw) as Map).map(
-          (k, v) => MapEntry(k, (v as num).toDouble()),
-        ),
-      );
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final result = <String, double>{};
+      decoded.forEach((k, v) {
+        if (v is num) result[k.toString()] = v.toDouble();
+      });
+      return result.isEmpty ? null : result;
     } catch (_) {
       return null;
     }
@@ -250,7 +264,9 @@ class CacheService {
     final raw = prefs.getString(_prefsKeyDriver);
     if (raw == null || raw.isEmpty) return null;
     try {
-      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return Map<String, dynamic>.from(decoded);
     } catch (_) {
       return null;
     }

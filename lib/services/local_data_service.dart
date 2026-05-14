@@ -95,6 +95,42 @@ class FrequentDestination {
   const FrequentDestination({required this.address, required this.count});
 }
 
+// ── Safe type helpers (prevent crash on corrupted/legacy persisted data) ──
+
+double? _toDouble(dynamic v) {
+  if (v == null) return null;
+  if (v is double) return v;
+  if (v is int) return v.toDouble();
+  if (v is String) return double.tryParse(v);
+  if (v is num) return v.toDouble();
+  return null;
+}
+
+int? _toInt(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  if (v is String) return int.tryParse(v);
+  if (v is num) return v.toInt();
+  return null;
+}
+
+List<List<double>> _parseRoutePoints(dynamic raw) {
+  if (raw == null) return const [];
+  if (raw is! List) return const [];
+  final result = <List<double>>[];
+  for (final p in raw) {
+    if (p is! List) continue;
+    final coords = <double>[];
+    for (final v in p) {
+      final d = _toDouble(v);
+      if (d != null) coords.add(d);
+    }
+    if (coords.length >= 2) result.add(coords);
+  }
+  return result;
+}
+
 class AppNotificationItem {
   final String id;
   final String title;
@@ -229,7 +265,9 @@ class LocalDataService {
     final raw = _p.getString(_recentSearchesKey);
     if (raw == null || raw.isEmpty) return const [];
     try {
-      final list = (jsonDecode(raw) as List).cast<String>();
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final list = decoded.whereType<String>().toList();
       return list.take(limit).toList();
     } catch (_) {
       return const [];
@@ -293,12 +331,15 @@ class LocalDataService {
 
     if (raw != null && raw.isNotEmpty) {
       try {
-        usage = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          usage = Map<String, dynamic>.from(decoded);
+        }
       } catch (_) {}
     }
 
     final key = clean.toLowerCase();
-    final current = (usage[key] as num?)?.toInt() ?? 0;
+    final current = _toInt(usage[key]) ?? 0;
     usage[key] = current + 1;
     usage['__address__$key'] = clean;
 
@@ -313,12 +354,14 @@ class LocalDataService {
     if (raw == null || raw.isEmpty) return [];
 
     try {
-      final usage = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return [];
+      final usage = Map<String, dynamic>.from(decoded);
       final entries = <FrequentDestination>[];
 
       usage.forEach((key, value) {
         if (key.startsWith('__address__')) return;
-        final count = (value as num?)?.toInt() ?? 0;
+        final count = _toInt(value) ?? 0;
         if (count <= 0) return;
         final address = usage['__address__$key']?.toString() ?? key;
         entries.add(FrequentDestination(address: address, count: count));
@@ -833,35 +876,33 @@ class ActiveRideInfo {
   };
 
   static ActiveRideInfo fromJson(Map<String, dynamic> j) => ActiveRideInfo(
-    pickupLat: (j['pickupLat'] as num).toDouble(),
-    pickupLng: (j['pickupLng'] as num).toDouble(),
-    dropoffLat: (j['dropoffLat'] as num).toDouble(),
-    dropoffLng: (j['dropoffLng'] as num).toDouble(),
-    pickupLabel: j['pickupLabel'] ?? '',
-    dropoffLabel: j['dropoffLabel'] ?? '',
-    driverName: j['driverName'] ?? '',
-    driverRating: (j['driverRating'] as num?)?.toDouble() ?? 4.9,
-    vehicleMake: j['vehicleMake'] ?? '',
-    vehicleModel: j['vehicleModel'] ?? '',
-    vehicleColor: j['vehicleColor'] ?? '',
-    vehiclePlate: j['vehiclePlate'] ?? '',
-    vehicleYear: j['vehicleYear'] ?? '',
-    rideName: j['rideName'] ?? '',
-    price: (j['price'] as num?)?.toDouble() ?? 0,
-    routePoints:
-        (j['routePoints'] as List?)
-            ?.map((p) => (p as List).map((v) => (v as num).toDouble()).toList())
-            .toList() ??
-        [],
-    tripId: j['tripId'] as int?,
-    firestoreTripId: j['firestoreTripId'] as String?,
-    phase: j['phase'] as String?,
-    driverLat: (j['driverLat'] as num?)?.toDouble(),
-    driverLng: (j['driverLng'] as num?)?.toDouble(),
-    traveledMeters: (j['traveledMeters'] as num?)?.toDouble(),
-    driverPhotoUrl: j['driverPhotoUrl'] as String?,
-    driverId: j['driverId'] as String?,
-    etaMinutes: j['etaMinutes'] as int?,
-    routeDurationSec: j['routeDurationSec'] as int?,
+    // FIX: Use safe numeric parsing to prevent crash when persisted data
+    // has wrong types (e.g. String instead of num) or null after app update.
+    pickupLat: _toDouble(j['pickupLat']) ?? 0.0,
+    pickupLng: _toDouble(j['pickupLng']) ?? 0.0,
+    dropoffLat: _toDouble(j['dropoffLat']) ?? 0.0,
+    dropoffLng: _toDouble(j['dropoffLng']) ?? 0.0,
+    pickupLabel: j['pickupLabel']?.toString() ?? '',
+    dropoffLabel: j['dropoffLabel']?.toString() ?? '',
+    driverName: j['driverName']?.toString() ?? '',
+    driverRating: _toDouble(j['driverRating']) ?? 4.9,
+    vehicleMake: j['vehicleMake']?.toString() ?? '',
+    vehicleModel: j['vehicleModel']?.toString() ?? '',
+    vehicleColor: j['vehicleColor']?.toString() ?? '',
+    vehiclePlate: j['vehiclePlate']?.toString() ?? '',
+    vehicleYear: j['vehicleYear']?.toString() ?? '',
+    rideName: j['rideName']?.toString() ?? '',
+    price: _toDouble(j['price']) ?? 0.0,
+    routePoints: _parseRoutePoints(j['routePoints']),
+    tripId: _toInt(j['tripId']),
+    firestoreTripId: j['firestoreTripId']?.toString(),
+    phase: j['phase']?.toString(),
+    driverLat: _toDouble(j['driverLat']),
+    driverLng: _toDouble(j['driverLng']),
+    traveledMeters: _toDouble(j['traveledMeters']),
+    driverPhotoUrl: j['driverPhotoUrl']?.toString(),
+    driverId: j['driverId']?.toString(),
+    etaMinutes: _toInt(j['etaMinutes']),
+    routeDurationSec: _toInt(j['routeDurationSec']),
   );
 }

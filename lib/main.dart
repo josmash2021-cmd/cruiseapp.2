@@ -15,6 +15,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'config/smooth_transitions.dart';
 import 'config/page_transitions.dart';
 import 'config/api_keys.dart';
@@ -416,7 +417,13 @@ void main() async {
       try {
         final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
         final lastVersion = prefs.getString('app_last_version');
-        const currentVersion = '1.0.3+477';
+        // FIX: Use PackageInfo to get the real build number instead of a
+        // hardcoded string that gets forgotten on every version bump. This
+        // was causing crashes because builds 478-479 never triggered cache
+        // cleanup — stale data from previous builds accumulated and corrupted
+        // the app state on launch.
+        final packageInfo = await PackageInfo.fromPlatform().timeout(const Duration(seconds: 2));
+        final currentVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
         if (lastVersion != currentVersion) {
           debugPrint('[Startup] Version changed from $lastVersion to $currentVersion — clearing potentially stale caches');
           // Only clear caches that might be schema-incompatible, NOT user data
@@ -425,6 +432,11 @@ void main() async {
           await prefs.remove('sched_avail_cache');
           await prefs.remove('sched_mine_cache');
           await prefs.remove('pending_offers_cache');
+          await prefs.remove('cache_user_v1');
+          await prefs.remove('cache_driver_v1');
+          await prefs.remove('cache_route_coords_v1');
+          await prefs.remove('cache_last_driver_pos_v1');
+          await prefs.remove('cache_last_eta_v1');
           await prefs.setString('app_last_version', currentVersion);
         }
       } catch (e) {

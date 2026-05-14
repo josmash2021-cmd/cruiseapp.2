@@ -1715,13 +1715,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // mounted guard required: previous await (getTrip) means context
         // may be defunct if the driver navigated away mid-verify.
         if (mounted) {
+          _setState(() {
+            _offerAcceptState = _OfferAcceptState.normal;
+            _acceptingCardId = null;
+          });
           _snack(S.of(context).tripNoLongerAvailable);
         }
         _resetToSearchingOnRemoteCancel();
         return;
       }
     }
-    final result = await navFuture;
+    // FIX: Add timeout to navFuture so the driver isn't stuck forever
+    // if TripAcceptedScreen crashes or fails to complete. If timeout fires,
+    // reset the accept state so the driver can try again.
+    String? result;
+    try {
+      result = await navFuture.timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      debugPrint('[DriverOnline] navFuture timed out after 30s — TripAcceptedScreen may have crashed');
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+        _snack('Trip screen timed out — please try again');
+      }
+      return;
+    }
     if (!mounted) return;
     if (result == 'completed') {
       // Show the earnings / completed overlay (mirrors _complete())
@@ -1795,8 +1815,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _offerAcceptState = _OfferAcceptState.normal;
           _acceptingCardId = null;
         });
-        // Show a user-friendly message. If it looks like a network/server
-        // issue, say so; otherwise keep the generic message.
         final errStr = e.toString().toLowerCase();
         final isNetworkError = errStr.contains('socket') ||
             errStr.contains('timeout') ||
@@ -1830,7 +1848,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _setState(() {
           _rejectingOfferId = null;
           _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
-          if (_pendingOffers.isEmpty) _hideFindingBar = false;
+          if (_pendingOffers.isEmpty) {
+            _hideFindingBar = false;
+            // FIX: Reset PageController to index 0 when no offers remain.
+            // Without this, PageView keeps a stale index and crashes on
+            // rebuild when new offers arrive.
+            if (_offerPageCtrl.hasClients) {
+              _offerPageCtrl.jumpTo(0);
+            }
+          }
           _previewingOffer = null;
           _offerRouteShown = false;
           _fullSegOne = [];
@@ -2389,12 +2415,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navState = null;
     _currentNavRoute = null;
     _navTimer?.cancel();
+    // FIX: Clear _acceptedOfferIds so the driver can accept future offers
+    // with the same ID. Previously this was never cleared, causing the
+    // idempotent guard in _acceptOffer to permanently block re-acceptance.
+    _acceptedOfferIds.clear();
     _setState(() {
       _phase = _Phase.searching;
       _tripId = null;
       _currentOfferId = null;
       _routePts = [];
       _pendingOffers = [];
+      _offerAcceptState = _OfferAcceptState.normal;
+      _acceptingCardId = null;
     });
     if (!mounted) return;
     _syncSearchPulse();

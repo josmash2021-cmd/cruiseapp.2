@@ -105,7 +105,9 @@ class UserSession {
     if (raw == null || raw.isEmpty) return null;
 
     try {
-      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final map = Map<String, dynamic>.from(decoded);
       final result = map.map((k, v) => MapEntry(k, v?.toString() ?? ''));
 
       // Decrypt encrypted fields if marker present

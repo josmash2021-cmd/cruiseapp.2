@@ -385,9 +385,11 @@ class SecurityService {
     final sessionRaw = prefs.getString('user_session_v1');
     if (sessionRaw != null) {
       try {
-        final data = jsonDecode(sessionRaw) as Map<String, dynamic>;
+        final decoded = jsonDecode(sessionRaw);
+        if (decoded is! Map<String, dynamic>) return;
+        final data = decoded;
         if (data.containsKey('password') &&
-            (data['password'] as String).isNotEmpty) {
+            (data['password'] as String?)?.isNotEmpty == true) {
           // Remove password from the session cache
           data.remove('password');
           await prefs.setString('user_session_v1', jsonEncode(data));

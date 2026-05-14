@@ -86,6 +86,7 @@ String _riderNotifTitle(String type) {
     // ── Driver notifications ──
     'trip_offer' || 'new_offer' => isEs ? 'Nueva Oferta de Viaje' : 'New Ride Offer',
     'rider_cancelled'    => isEs ? 'Viaje Cancelado' : 'Ride Cancelled',
+    'trip_canceled' || 'trip_cancelled' => isEs ? 'Viaje Cancelado por Dispatch' : 'Trip Cancelled by Dispatch',
     'scheduled_cancelled' => isEs ? 'Viaje Programado Cancelado' : 'Scheduled Ride Cancelled',
     'tip_received'       => isEs ? '¡Recibiste una Propina!' : 'You Got a Tip!',
     'level_up'           => isEs ? '¡Subiste de Nivel!' : 'Level Up!',
@@ -117,6 +118,7 @@ String _riderNotifBody(String type) {
     // ── Driver notifications ──
     'trip_offer' || 'new_offer' => isEs ? 'Un pasajero necesita un viaje — abre Cruise para aceptar.' : 'A rider needs a ride — open Cruise to accept.',
     'rider_cancelled'    => isEs ? 'El pasajero canceló el viaje.' : 'The rider has cancelled the ride.',
+    'trip_canceled' || 'trip_cancelled' => isEs ? 'El viaje fue cancelado por dispatch.' : 'The trip has been cancelled by dispatch.',
     'scheduled_cancelled' => isEs ? 'Un viaje programado ha sido cancelado por el pasajero.' : 'A scheduled ride has been cancelled by the rider.',
     'tip_received'       => isEs ? 'Un pasajero te dejó una propina. ¡Sigue así!' : 'A rider left you a tip. Keep up the great work!',
     'level_up'           => isEs ? '¡Felicidades! Subiste de nivel en Cruise.' : 'Congratulations! You leveled up in Cruise.',
@@ -283,6 +285,16 @@ void _handleNotificationTap(RemoteMessage message) {
     if (tripId != null) {
       _navigateToChat(tripId);
     }
+    return;
+  }
+
+  // ── Trip cancelled by dispatch ──
+  // Backend sends 'trip_canceled' (1 l) when dispatch cancels a trip.
+  // The Firestore watcher on each screen handles the actual UI update,
+  // but the notification tap should refresh the home screen so the user
+  // sees the trip is gone if they open the app from the notification.
+  if (type == 'trip_canceled' || type == 'trip_cancelled') {
+    HomeScreen.scheduledRideRefresh.value++;
     return;
   }
 
@@ -804,12 +816,16 @@ Future<void> heavyInit() async {
               // Verification decision — rider must see their account was
               // approved/rejected the second dispatch acts on it.
               'rider_approved', 'rider_rejected',
+              // FIX: dispatch cancellation uses 'trip_canceled' (1 l)
+              'trip_canceled', 'trip_cancelled',
             };
             const driverInAppTypes = {
               'trip_offer', 'new_offer',
               'rider_cancelled', 'scheduled_cancelled', 'scheduled_available',
               // Driver verification decision from dispatch.
               'driver_approved', 'driver_rejected',
+              // FIX: dispatch cancellation uses 'trip_canceled' (1 l)
+              'trip_canceled', 'trip_cancelled',
             };
 
             // Chat messages: suppress in-app notification — the OS already shows

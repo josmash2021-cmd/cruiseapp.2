@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../utils/mapbox_safe.dart';
+import '../utils/smooth_motion.dart';
 import 'airport_terminal_sheet.dart';
 import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';

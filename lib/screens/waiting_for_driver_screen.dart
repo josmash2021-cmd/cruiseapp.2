@@ -630,7 +630,6 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                         ),
                       ],
                     ),
-                    ),
                   ),
                 ),
               ),

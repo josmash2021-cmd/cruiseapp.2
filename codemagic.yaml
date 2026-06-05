@@ -358,24 +358,6 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
-      - name: Fix Xcode 15 SPM signing propagation
-        script: |
-          cd ios
-          # Resolve SPM packages so they exist on disk for patching
-          xcodebuild -resolvePackageDependencies \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release 2>/dev/null || true
-
-          # Clear provisioning profiles from Flutter ephemeral packages
-          find "$PWD/Flutter/ephemeral/Packages" -name "project.pbxproj" \
-            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
-
-          # Clear provisioning profiles from SPM source packages
-          find "$PWD/../build/ios/SourcePackages/checkouts" -name "project.pbxproj" \
-            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
-
-          echo "✅ SPM signing cleaned"
       - name: Set up code signing (Ad Hoc)
         script: |
           if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
@@ -412,21 +394,19 @@ workflows:
           echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
 
           # ── Patch pbxproj ──
-          # NOTE: We do NOT inject PROVISIONING_PROFILE into the pbxproj.
-          # Doing so causes Xcode 15 to propagate the profile to SPM packages,
-          # which fail because they don't support provisioning profiles.
-          # Instead, we rely on FLUTTER_XCODE_* env vars (set below) which
-          # xcodebuild applies only to the Runner target.
+          # Inject PROVISIONING_PROFILE directly into Runner's pbxproj.
+          # We do NOT use FLUTTER_XCODE_* env vars for CODE_SIGN_STYLE or
+          # PROVISIONING_PROFILE because Xcode 15 passes them as global
+          # xcodebuild settings, which forces manual signing on SPM packages
+          # and causes "does not support provisioning profiles" failures.
+          # The pbxproj injection is local to the Runner target only.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
           perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
 
-          # ── FLUTTER_XCODE env vars ──
-          echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV
+          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
           echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
-          echo "FLUTTER_XCODE_CODE_SIGN_IDENTITY=Apple Distribution" >> $CM_ENV
-          echo "FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME}" >> $CM_ENV
-          echo "FLUTTER_XCODE_PROVISIONING_PROFILE=${PROFILE_UUID}" >> $CM_ENV
 
           # ── Generate export_options.plist ──
           export PROFILE_NAME
@@ -488,24 +468,6 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
-      - name: Fix Xcode 15 SPM signing propagation
-        script: |
-          cd ios
-          # Resolve SPM packages so they exist on disk for patching
-          xcodebuild -resolvePackageDependencies \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release 2>/dev/null || true
-
-          # Clear provisioning profiles from Flutter ephemeral packages
-          find "$PWD/Flutter/ephemeral/Packages" -name "project.pbxproj" \
-            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
-
-          # Clear provisioning profiles from SPM source packages
-          find "$PWD/../build/ios/SourcePackages/checkouts" -name "project.pbxproj" \
-            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
-
-          echo "✅ SPM signing cleaned"
       - name: Set up iOS code signing
         script: |
           # ── Decode CERTIFICATE_PRIVATE_KEY from base64 → raw PEM ──────────
@@ -591,11 +553,11 @@ workflows:
             | grep -o '"[^"]*"' | head -1 | tr -d '"')
           echo "✅ Identity: '$IDENTITY'"
 
-          # ── Patch pbxproj: clean signing fields ───────────────────────────
-          # NOTE: We do NOT inject PROVISIONING_PROFILE into the pbxproj.
-          # Xcode 15 propagates pbxproj provisioning profiles to SPM packages,
-          # causing "does not support provisioning profiles" build failures.
-          # FLUTTER_XCODE_* env vars (set below) handle signing for Runner only.
+          # ── Patch pbxproj: inject signing fields into Runner target only ──
+          # NOTE: FLUTTER_XCODE_* env vars for CODE_SIGN_STYLE/PROVISIONING_PROFILE
+          # are intentionally OMITTED because Xcode 15 passes them as global
+          # xcodebuild settings, forcing manual signing on SPM packages.
+          # The pbxproj injection is local to the Runner target only.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
 
           # 1) Strip any stale PROVISIONING_PROFILE* lines
@@ -604,12 +566,12 @@ workflows:
           # 2) Ensure CODE_SIGN_IDENTITY matches the actual certificate
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
 
-          # ── Set FLUTTER_XCODE_* env vars (override at xcodebuild level) ───
-          echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV
+          # 3) Inject fresh PROVISIONING_PROFILE_SPECIFIER + PROVISIONING_PROFILE
+          #    after every CODE_SIGN_STYLE = Manual; (covers Debug, Profile, Release)
+          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
+
+          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
           echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
-          echo "FLUTTER_XCODE_CODE_SIGN_IDENTITY=Apple Distribution" >> $CM_ENV
-          echo "FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME}" >> $CM_ENV
-          echo "FLUTTER_XCODE_PROVISIONING_PROFILE=${PROFILE_UUID}" >> $CM_ENV
 
           # ── Generate export_options.plist ──────────────────────────────────
           export PROFILE_NAME

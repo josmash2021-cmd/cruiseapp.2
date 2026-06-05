@@ -358,6 +358,24 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
+      - name: Fix Xcode 15 SPM signing propagation
+        script: |
+          cd ios
+          # Resolve SPM packages so they exist on disk for patching
+          xcodebuild -resolvePackageDependencies \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release 2>/dev/null || true
+
+          # Clear provisioning profiles from Flutter ephemeral packages
+          find "$PWD/Flutter/ephemeral/Packages" -name "project.pbxproj" \
+            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
+
+          # Clear provisioning profiles from SPM source packages
+          find "$PWD/../build/ios/SourcePackages/checkouts" -name "project.pbxproj" \
+            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
+
+          echo "✅ SPM signing cleaned"
       - name: Set up code signing (Ad Hoc)
         script: |
           if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
@@ -470,6 +488,24 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
+      - name: Fix Xcode 15 SPM signing propagation
+        script: |
+          cd ios
+          # Resolve SPM packages so they exist on disk for patching
+          xcodebuild -resolvePackageDependencies \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release 2>/dev/null || true
+
+          # Clear provisioning profiles from Flutter ephemeral packages
+          find "$PWD/Flutter/ephemeral/Packages" -name "project.pbxproj" \
+            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
+
+          # Clear provisioning profiles from SPM source packages
+          find "$PWD/../build/ios/SourcePackages/checkouts" -name "project.pbxproj" \
+            -exec perl -i -pe 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";\n\t\t\t\tPROVISIONING_PROFILE = "";/g' {} + 2>/dev/null || true
+
+          echo "✅ SPM signing cleaned"
       - name: Set up iOS code signing
         script: |
           # ── Decode CERTIFICATE_PRIVATE_KEY from base64 → raw PEM ──────────

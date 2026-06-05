@@ -394,10 +394,14 @@ workflows:
           echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
 
           # ── Patch pbxproj ──
+          # NOTE: We do NOT inject PROVISIONING_PROFILE into the pbxproj.
+          # Doing so causes Xcode 15 to propagate the profile to SPM packages,
+          # which fail because they don't support provisioning profiles.
+          # Instead, we rely on FLUTTER_XCODE_* env vars (set below) which
+          # xcodebuild applies only to the Runner target.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
           perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
-          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
 
           # ── FLUTTER_XCODE env vars ──
           echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV
@@ -551,7 +555,11 @@ workflows:
             | grep -o '"[^"]*"' | head -1 | tr -d '"')
           echo "✅ Identity: '$IDENTITY'"
 
-          # ── Patch pbxproj: clean + reinject all signing fields ────────────
+          # ── Patch pbxproj: clean signing fields ───────────────────────────
+          # NOTE: We do NOT inject PROVISIONING_PROFILE into the pbxproj.
+          # Xcode 15 propagates pbxproj provisioning profiles to SPM packages,
+          # causing "does not support provisioning profiles" build failures.
+          # FLUTTER_XCODE_* env vars (set below) handle signing for Runner only.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
 
           # 1) Strip any stale PROVISIONING_PROFILE* lines
@@ -559,10 +567,6 @@ workflows:
 
           # 2) Ensure CODE_SIGN_IDENTITY matches the actual certificate
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
-
-          # 3) Inject fresh PROVISIONING_PROFILE_SPECIFIER + PROVISIONING_PROFILE
-          #    after every CODE_SIGN_STYLE = Manual; (covers Debug, Profile, Release)
-          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
 
           # ── Set FLUTTER_XCODE_* env vars (override at xcodebuild level) ───
           echo "FLUTTER_XCODE_CODE_SIGN_STYLE=Manual" >> $CM_ENV

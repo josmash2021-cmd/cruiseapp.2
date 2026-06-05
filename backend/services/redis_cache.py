@@ -11,7 +11,8 @@ import asyncio
 import json
 import logging
 import os
-import pickle
+# NOTE: pickle was removed for security. All cached values must be JSON-serializable.
+# If you need to cache complex objects, convert them to dicts before caching.
 import time
 from functools import wraps
 from typing import Any, Callable, Optional
@@ -51,17 +52,32 @@ def _is_json_serializable(value: Any) -> bool:
 
 
 def _serialize(value: Any) -> tuple[bytes, str]:
-    """Serialize value. Returns (payload, encoding_hint)."""
+    """Serialize value. Returns (payload, encoding_hint).
+
+    SECURITY: Only JSON serialization is used. pickle was removed to prevent
+    remote code execution if Redis is compromised. Ensure cached values are
+    JSON-serializable (dict, list, str, int, float, bool, None).
+    """
     if _is_json_serializable(value):
         return json.dumps(value).encode("utf-8"), "json"
-    return pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL), "pickle"
+    raise TypeError(
+        f"Value of type {type(value).__name__} is not JSON-serializable. "
+        "Convert it to a dict/list before caching, or implement custom serialization."
+    )
 
 
 def _deserialize(payload: bytes, encoding: str) -> Any:
     """Deserialize payload based on encoding hint."""
     if encoding == "json":
         return json.loads(payload.decode("utf-8"))
-    return pickle.loads(payload)
+    # Fallback for legacy "pickle" encoding: log and return None so stale
+    # pickle-encoded entries self-purge instead of crashing.
+    _log.warning(
+        "Ignoring legacy pickle-encoded cache entry (encoding=%s). "
+        "Run cache.clear() to purge old entries.",
+        encoding,
+    )
+    return None
 
 
 async def _get_redis() -> Any:

@@ -1337,11 +1337,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
           child: Stack(
             children: [
-              // ── Animated gold particle background (home screen parity) ──
-              GoldParticlesBackground(
-                particleCount: isVIP ? 30 : 20,
-                child: const SizedBox.expand(),
-              ),
               // ── Content: 3D car + name + tier badge ──
               Padding(
                 padding: const EdgeInsets.all(12),

@@ -15,7 +15,6 @@ import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/map_controller_cache.dart';
-import '../widgets/gold_particles_background.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../utils/mapbox_safe.dart';
 
@@ -558,15 +557,8 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                         width: 1,
                       ),
                     ),
-                    // clipBehavior so the GoldParticlesBackground field
-                    // can't bleed past the sheet's rounded corners.
-                    // Matches the look used on SearchingDriverScreen —
-                    // the only other place in the app that renders
-                    // gold particles (per the 2026-04-27 visual spec).
                     clipBehavior: Clip.antiAlias,
-                    child: GoldParticlesBackground(
-                      particleCount: 18,
-                      child: Column(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Handle — web: width:38px height:4px rgba(255,255,255,.13)
@@ -638,7 +630,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
                         ),
                       ],
                     ),
-                    ),  // close GoldParticlesBackground
+                    ),
                   ),
                 ),
               ),

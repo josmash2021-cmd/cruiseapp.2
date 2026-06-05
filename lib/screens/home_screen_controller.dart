@@ -267,7 +267,7 @@ extension _HomeScreenController on _HomeScreenState {
     ).then((pos) {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _animateToLocation(_currentLatLng!);
+      _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
     }).catchError((_) {});
     // Start continuous location stream
     _locationSub?.cancel();
@@ -280,7 +280,7 @@ extension _HomeScreenController on _HomeScreenState {
       if (!mounted) return;
       final ll = LatLng(p.latitude, p.longitude);
       _currentLatLng = ll;
-      _animateToLocation(ll);
+      _miniDot.setTarget(ll.latitude, ll.longitude);
     });
   }
 
@@ -392,49 +392,44 @@ extension _HomeScreenController on _HomeScreenState {
   }
 
   void _animateDriverCar(LatLng target, double bearing) {
-    // Start from current interpolated position
-    _driverAnimFrom = _interpolatedDriverLoc;
-    _driverAnimTo = target;
-    _driverAnimProgress = 0.0;
+    _driverMotion.setTarget(target.latitude, target.longitude, bearing: bearing);
+    _ensureDriverMotionTicker();
 
-    // Restart ticker if needed
-    if (_driverTicker != null && _driverTicker!.isActive) {
-      _driverAnimNeedsRestart = true;
-    } else {
-      _driverAnimNeedsRestart = true;
-      _driverTicker?.dispose();
-      _driverTicker = createTicker(_onDriverAnimTickWrapper);
-      _driverTicker!.start();
+    // Create marker only if missing; continuous position updates are
+    // driven by the driver-motion Ticker at vsync (60-120 Hz).
+    if (_driverCarAnnot == null) {
+      _updateDriverMarker(target, bearing);
     }
-
-    // Update map annotation
-    _updateDriverMarker(target, bearing);
   }
 
-  void _onDriverAnimTickWrapper(Duration elapsed) {
-    if (_driverAnimNeedsRestart) {
-      _driverAnimStart = elapsed;
-      _driverAnimNeedsRestart = false;
-    }
-    _onDriverAnimTick(elapsed);
-  }
+  void _ensureDriverMotionTicker() {
+    if (_driverMotionTicker != null && _driverMotionTicker!.isActive) return;
+    _lastDriverMotionElapsed = Duration.zero;
+    _driverMotionTicker?.dispose();
+    _driverMotionTicker = createTicker((elapsed) {
+      final dtSec = _lastDriverMotionElapsed == Duration.zero
+          ? 0.0
+          : (elapsed - _lastDriverMotionElapsed).inMicroseconds / 1e6;
+      _lastDriverMotionElapsed = elapsed;
 
-  void _onDriverAnimTick(Duration elapsed) {
-    if (_driverAnimFrom == null || _driverAnimTo == null) return;
-    final dt = (elapsed - _driverAnimStart).inMilliseconds;
-    _driverAnimProgress = (dt / 500.0).clamp(0.0, 1.0); // 500ms interpolation
-    
-    if (!mounted) return;
-    // Update map annotation directly — no full widget rebuild needed
-    final pos = _interpolatedDriverLoc;
-    final annot = _driverCarAnnot;
-    final mgr = _miniMapCarMgr;
-    if (annot != null && mgr != null) {
-      annot.geometry = mapbox.Point(
-        coordinates: mapbox.Position(pos.longitude, pos.latitude),
-      );
-      mgr.update(annot);
-    }
+      final changed = _driverMotion.tick(dtSec);
+      if (!changed || !mounted) return;
+
+      final annot = _driverCarAnnot;
+      final mgr = _miniMapCarMgr;
+      if (annot != null && mgr != null && _driverMotion.hasPosition) {
+        annot.geometry = mapbox.Point(
+          coordinates: mapbox.Position(_driverMotion.lng!, _driverMotion.lat!),
+        );
+        mgr.update(annot);
+      }
+
+      // Update route progress with the interpolated position
+      if (_driverMotion.hasPosition) {
+        _updateRouteProgress(LatLng(_driverMotion.lat!, _driverMotion.lng!));
+      }
+    })
+      ..start();
   }
 
   Future<void> _updateDriverMarker(LatLng position, double bearing) async {
@@ -466,17 +461,25 @@ extension _HomeScreenController on _HomeScreenState {
         debugPrint('[HomeScreen] Skipping driver marker — invalid position: $position');
         return;
       }
+      // Use interpolated position from SmoothMotion if available; fallback to raw GPS.
+      final displayPos = (_driverMotion.hasPosition)
+          ? LatLng(_driverMotion.lat!, _driverMotion.lng!)
+          : position;
+
       if (_driverCarAnnot != null) {
-        // Update existing annotation position
-        _driverCarAnnot!.geometry = mapbox.Point(
-          coordinates: mapbox.Position(position.longitude, position.latitude),
-        );
-        mgr.update(_driverCarAnnot!);
+        // Position updates are driven by the driver-motion Ticker at vsync.
+        // Only sync here if the ticker hasn't started yet (safety net).
+        if (_driverMotionTicker == null || !_driverMotionTicker!.isActive) {
+          _driverCarAnnot!.geometry = mapbox.Point(
+            coordinates: mapbox.Position(displayPos.longitude, displayPos.latitude),
+          );
+          mgr.update(_driverCarAnnot!);
+        }
       } else {
         // Create new annotation
         _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(
-            coordinates: mapbox.Position(position.longitude, position.latitude),
+            coordinates: mapbox.Position(displayPos.longitude, displayPos.latitude),
           ),
           image: bytes,
           iconSize: 0.55,
@@ -484,9 +487,6 @@ extension _HomeScreenController on _HomeScreenState {
           iconAnchor: mapbox.IconAnchor.CENTER,
         ));
       }
-
-      // Update route progress based on driver position
-      _updateRouteProgress(position);
     } catch (e) {
       debugPrint('Error updating driver marker: $e');
     }
@@ -715,8 +715,9 @@ extension _HomeScreenController on _HomeScreenState {
     _tripStatusSub?.cancel();
     _tripStatusSub = null;
     _trackedDriverId = null;
-    _driverTicker?.dispose();
-    _driverTicker = null;
+    _driverMotionTicker?.stop();
+    _driverMotionTicker = null;
+    _driverMotion.reset();
     _countdownTimer?.cancel();
     _countdownTimer = null;
 

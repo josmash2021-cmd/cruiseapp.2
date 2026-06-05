@@ -478,13 +478,19 @@ app.include_router(worker_router)
 # -- LAYER 1: CORS — Allow mobile-app + known web origins ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
 # protect native traffic.  Real security is in L5-L10 (API key, HMAC, JWT).
-_CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
-    "https://www.cruiseinride.com",
-    "https://cruiseinride.com",
-    "https://cruiseapp2-production.up.railway.app",
-    "http://localhost:3000",
-    "http://localhost:8000",
-]
+# SECURITY FIX: localhost origins are ONLY included when DEBUG=1 is set,
+# preventing accidental exposure in production if CORS_ORIGINS is unset.
+_is_debug_cors = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+if os.getenv("CORS_ORIGINS"):
+    _CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+else:
+    _CORS_ORIGINS = [
+        "https://www.cruiseinride.com",
+        "https://cruiseinride.com",
+        "https://cruiseapp2-production.up.railway.app",
+    ]
+    if _is_debug_cors:
+        _CORS_ORIGINS.extend(["http://localhost:3000", "http://localhost:8000"])
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 app.add_middleware(
     CORSMiddleware,

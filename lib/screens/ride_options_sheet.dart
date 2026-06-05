@@ -7,7 +7,6 @@ import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/vehicle_tier_badge.dart';
-import '../widgets/gold_particles_background.dart';
 
 /// Premium ride options bottom sheet with card-based layout.
 class RideOptionsSheet extends StatelessWidget {
@@ -332,11 +331,6 @@ class RideOptionsSheet extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // Animated gold particle background
-              GoldParticlesBackground(
-                particleCount: isSelected ? 35 : 20,
-                child: const SizedBox.expand(),
-              ),
               // Content
               Padding(
                 padding: const EdgeInsets.all(12),

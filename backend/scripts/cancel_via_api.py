@@ -1,14 +1,24 @@
 import hmac
 import hashlib
+import os
 import time
 import uuid
 import requests
 import json
 
-# Config
-DISPATCH_API_KEY = "8ni63svMNeTUuQ4ZTTmtuEQkPvor0EvhmVy54Supnvg"
-HMAC_SECRET = "8kQ3Ouh1wwnF398fP3GtY6JW7rYhTMbo7A3CXCUVg4s="
-BASE_URL = "https://cruiseapp2-production.up.railway.app"
+# Config — read from environment to avoid hardcoding secrets.
+# Set these before running the script:
+#   export CRUISE_DISPATCH_API_KEY="your-key"
+#   export CRUISE_HMAC_SECRET="your-secret"
+#   export CRUISE_BASE_URL="https://cruiseapp2-production.up.railway.app"
+DISPATCH_API_KEY = os.getenv("CRUISE_DISPATCH_API_KEY", "")
+HMAC_SECRET = os.getenv("CRUISE_HMAC_SECRET", "")
+BASE_URL = os.getenv("CRUISE_BASE_URL", "https://cruiseapp2-production.up.railway.app")
+
+if not DISPATCH_API_KEY or not HMAC_SECRET:
+    raise RuntimeError(
+        "CRUISE_DISPATCH_API_KEY and CRUISE_HMAC_SECRET must be set as environment variables."
+    )
 
 def generate_headers():
     timestamp = str(int(time.time()))

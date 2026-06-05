@@ -2063,11 +2063,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     ),
                     child: Stack(
                       children: [
-                        // Animated gold particle background
-                        GoldParticlesBackground(
-                          particleCount: isVIP ? 30 : 20,
-                          child: const SizedBox.expand(),
-                        ),
                         // Content
                         Padding(
                           padding: const EdgeInsets.all(12),

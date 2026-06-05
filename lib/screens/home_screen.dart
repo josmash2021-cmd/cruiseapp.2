@@ -50,7 +50,6 @@ import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
-import '../widgets/gold_particles_background.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/vehicle_tier_badge.dart';
 import '../widgets/searching_border_painter.dart';
@@ -201,19 +200,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   final GoldLocationDot _miniDot = GoldLocationDot();
   bool _updatingMiniMapAnnot = false; // guard: prevents concurrent annotation updates
 
-  // ── Smooth location interpolation ──
-  Ticker? _locTicker;
-  LatLng? _locAnimFrom;      // start of interpolation
-  LatLng? _locAnimTo;        // target (latest GPS)
-  // True while the rider is actively panning/pinching the home minimap.
-  // The per-frame camera-follow loop in _onLocAnimTick respects this so
-  // we don't fight the user's gesture. Today the home minimap doesn't
-  // expose pan gestures (the bottom sheet sits on top), so this stays
-  // false in practice, but the flag is here for when we do.
-  final bool _userPanningMap = false;
-  double _locAnimProgress = 1.0; // 0→1
-  Duration _locAnimStart = Duration.zero;
-  bool _locAnimNeedsRestart = false;
+  // ── Rider location dot (GoldLocationDot owns SmoothMotion + prediction) ──
+  // The dot's internal Ticker drives position interpolation at vsync.
+  // Camera follow is handled inside the dot's onTick callback.
 
   // ── Active trip driver tracking ──
   LatLng? _driverLocation;
@@ -222,12 +211,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.PolylineAnnotation? _tripRouteAnnot;
   StreamSubscription<DatabaseEvent>? _driverLocationSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripDocSub;
-  Ticker? _driverTicker;
-  LatLng? _driverAnimFrom;
-  LatLng? _driverAnimTo;
-  double _driverAnimProgress = 1.0;
-  Duration _driverAnimStart = Duration.zero;
-  bool _driverAnimNeedsRestart = false;
+  final SmoothMotion _driverMotion = SmoothMotion();
+  Ticker? _driverMotionTicker;
+  Duration _lastDriverMotionElapsed = Duration.zero;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripStatusSub;
   String? _trackedDriverId;
   int _driverLocationGeneration = 0;
@@ -250,28 +236,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _openingRideFlow = false; // re-entry guard for _openSearchThenRide so back+retry doesn't double-push or skip dropoff
   bool _openingScheduleFlow = false; // re-entry guard for _showScheduleSheet (Schedule + Later switch + Airport via Schedule)
 
-  /// Interpolated position for the current animation frame.
-  LatLng get _interpolatedLatLng {
-    if (_locAnimFrom == null || _locAnimTo == null) return _currentLatLng ?? const LatLng(0, 0);
-    final t = _easedProgress(_locAnimProgress);
-    return LatLng(
-      _locAnimFrom!.latitude + (_locAnimTo!.latitude - _locAnimFrom!.latitude) * t,
-      _locAnimFrom!.longitude + (_locAnimTo!.longitude - _locAnimFrom!.longitude) * t,
-    );
-  }
 
-  /// Interpolated driver car position.
-  LatLng get _interpolatedDriverLoc {
-    if (_driverAnimFrom == null || _driverAnimTo == null) return _driverLocation ?? const LatLng(0, 0);
-    final t = _easedProgress(_driverAnimProgress);
-    return LatLng(
-      _driverAnimFrom!.latitude + (_driverAnimTo!.latitude - _driverAnimFrom!.latitude) * t,
-      _driverAnimFrom!.longitude + (_driverAnimTo!.longitude - _driverAnimFrom!.longitude) * t,
-    );
-  }
 
-  /// Called by the Ticker on every vsync frame during location animation.
-  int _lastAnnotUpdateMs = 0;
+
 
   Future<void> _updateMiniMapAnnotation() async {
     final mgr = _miniMapAnnotMgr;
@@ -299,7 +266,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (firstBytes == null) return;
       _updatingMiniMapAnnot = true;
       try {
-        final pos = _interpolatedLatLng;
+        final pos = (_miniDot.lat != null && _miniDot.lng != null)
+            ? LatLng(_miniDot.lat!, _miniDot.lng!)
+            : _currentLatLng ?? const LatLng(0, 0);
         final point = safePoint(pos.longitude, pos.latitude);
         if (point == null) return;
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
@@ -318,18 +287,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
 
     // Subsequent updates: skip-if-busy pattern.
-    // The ticker runs at vsync (60-120 Hz) and calls into Mapbox via the
-    // platform channel which can take longer than 16 ms to round-trip on
-    // the home minimap. The previous full-await guard meant any frame
-    // that landed mid-IPC was DROPPED entirely, so the dot effectively
-    // updated ~1×/sec and looked like jumps.
+    // The GoldLocationDot Ticker runs at vsync (60-120 Hz) and calls into
+    // Mapbox via the platform channel which can take longer than 16 ms to
+    // round-trip. The previous full-await guard meant any frame that landed
+    // mid-IPC was DROPPED entirely, so the dot effectively updated ~1×/sec
+    // and looked like jumps.
     //
     // New pattern: update the in-memory geometry every frame so the
     // next sent IPC always carries the freshest interpolated position;
     // only fire mgr.update() when the previous one finished. End result
     // is glass-smooth motion at the IPC's natural cadence (still 10-20
     // updates per second) without the artificial stall.
-    final pos = _interpolatedLatLng;
+    final pos = (_miniDot.lat != null && _miniDot.lng != null)
+        ? LatLng(_miniDot.lat!, _miniDot.lng!)
+        : _currentLatLng ?? const LatLng(0, 0);
     final bytes = _miniDot.currentBytes;
     if (bytes == null) return;
     try {
@@ -408,7 +379,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
     });
     _miniDot.build(this, () {
-      if (mounted) _updateMiniMapAnnotation();
+      if (!mounted) return;
+      _updateMiniMapAnnotation();
+      // Camera glides with the dot at vsync (no separate Ticker needed)
+      if (_miniMapController != null && _miniDot.lat != null && _miniDot.lng != null) {
+        try {
+          _miniMapController!.setCamera(
+            mapbox.CameraOptions(
+              center: mapbox.Point(
+                coordinates: mapbox.Position(_miniDot.lng!, _miniDot.lat!),
+              ),
+            ),
+          );
+        } catch (_) {}
+      }
     });
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -522,8 +506,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
     _sheetController.dispose();
     _miniDot.dispose();
-    _locTicker?.dispose();
-    _driverTicker?.dispose();
+    _driverMotionTicker?.dispose();
+    _driverMotion.reset();
     _shimmerController.dispose();
     _collapsedGlowCtrl.dispose();
     _boltFlashCtrl.dispose();
@@ -608,9 +592,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           _currentLatLng = LatLng(preloaded.latitude, preloaded.longitude);
           _locationError = null;
         });
-        _locAnimFrom = _currentLatLng;
-        _locAnimTo = _currentLatLng;
-        _locAnimProgress = 1.0;
+        _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
         _miniMapController?.flyTo(
           mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
           mapbox.MapAnimationOptions(duration: 400),
@@ -694,9 +676,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _locationError = null;
       });
       // Set initial position without animation (first fix)
-      _locAnimFrom = _currentLatLng;
-      _locAnimTo = _currentLatLng;
-      _locAnimProgress = 1.0;
+      _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
       _miniMapController?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
         mapbox.MapAnimationOptions(duration: 800),
@@ -725,7 +705,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
             _miniDot.setTarget(ll.latitude, ll.longitude);
-            _animateToLocation(ll);
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {

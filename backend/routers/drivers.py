@@ -1724,6 +1724,8 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             ext, ct = "pdf", "application/pdf"
         else:
             raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
+        if ct.startswith("image/"):
+            validate_image_bytes(decoded)
         fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
         # Upload to Firebase Storage (persistent)
         fb_url = None
@@ -1791,6 +1793,8 @@ async def upload_document_multipart(
         ext, ct = "pdf", "application/pdf"
     else:
         raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
+    if ct.startswith("image/"):
+        validate_image_bytes(data)
 
     fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
     file_path = None

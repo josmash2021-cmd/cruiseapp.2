@@ -25,6 +25,7 @@ from utils.security import (
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating
+from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
@@ -1707,7 +1708,8 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
         content_type = "image/png"
     else:
         raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
-    
+    validate_image_bytes(photo_bytes)
+
     # Upload to Firebase Storage
     storage_path = f"photos/user_{user.id}/profile.{ext}"
     firebase_url = firestore_sync.upload_to_firebase_storage(
@@ -1990,6 +1992,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             ext = "png"
         else:
             continue
+        validate_image_bytes(decoded)
         content_type = "image/jpeg" if ext == "jpg" else "image/png"
         fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
         # Upload to Firebase Storage (persistent)

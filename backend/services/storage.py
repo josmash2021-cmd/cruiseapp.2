@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from pathlib import Path
 
+from utils.image_validation import validate_image_bytes
+
 logger = logging.getLogger(__name__)
 
 # ── Environment ──
@@ -91,6 +93,9 @@ def _validate_upload(data: bytes, content_type: str) -> str:
 
     if content_type not in _ALLOWED_CONTENT_TYPES:
         raise ValueError(f"Unsupported file type: {content_type}")
+
+    if content_type.startswith("image/"):
+        validate_image_bytes(data)
 
     return content_type
 

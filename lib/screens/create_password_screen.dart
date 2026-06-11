@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import '../services/analytics_service.dart';
+import '../services/screen_security_service.dart';
 import 'name_screen.dart';
 
 /// Screen shown during registration — after verifying the code.

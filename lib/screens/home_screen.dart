@@ -40,6 +40,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/screen_security_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/map_controller_cache.dart';

@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/screen_security_service.dart';
 import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';

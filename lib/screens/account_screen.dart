@@ -13,6 +13,7 @@ import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/screen_security_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
 import '../services/user_session.dart';

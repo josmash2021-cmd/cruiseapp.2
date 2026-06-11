@@ -5,6 +5,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/screen_security_service.dart';
 import 'payment_accounts_screen.dart';
 import 'referral_screen.dart';
 

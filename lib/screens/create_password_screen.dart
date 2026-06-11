@@ -22,7 +22,7 @@ class CreatePasswordScreen extends StatefulWidget {
   State<CreatePasswordScreen> createState() => _CreatePasswordScreenState();
 }
 
-class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
+class _CreatePasswordScreenState extends State<CreatePasswordScreen> with SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 

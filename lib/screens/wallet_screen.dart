@@ -16,7 +16,7 @@ class WalletScreen extends StatefulWidget {
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
-class _WalletScreenState extends State<WalletScreen> {
+class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
 
   bool _loading = true;

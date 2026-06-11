@@ -40,7 +40,7 @@ class AccountScreen extends StatefulWidget {
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends State<AccountScreen> {
+class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
 
   Map<String, String>? _user;

@@ -22,6 +22,7 @@ import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
+import '../services/screen_security_service.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/user_session.dart';
 import '../utils/app_toast.dart';
@@ -42,7 +43,7 @@ class ScheduleBookingScreen extends StatefulWidget {
 }
 
 class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
   // Map center — starts at rider GPS, falls back to Birmingham
   LatLng _mapCenter = const LatLng(33.5186, -86.8104);

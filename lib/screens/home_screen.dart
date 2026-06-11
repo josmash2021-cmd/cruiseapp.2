@@ -89,7 +89,7 @@ const double _kMinSheet = 0.17;
 const double _kMaxSheet = 1.0; // Full screen when expanded
 const int _locAnimDurationMs = 1200; // smooth glide between updates
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver, SecureScreenMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 

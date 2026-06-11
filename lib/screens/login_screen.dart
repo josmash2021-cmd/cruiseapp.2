@@ -441,7 +441,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       // Backend OTP failed — generate local code and show it to user
       final fallbackCode = _generateCode();
-      debugPrint('📱 FALLBACK CODE for $normalizedPhone: $fallbackCode');
       _showSnack(
         'SMS unavailable. Use code: $fallbackCode',
         const Color(0xFFE8C547),

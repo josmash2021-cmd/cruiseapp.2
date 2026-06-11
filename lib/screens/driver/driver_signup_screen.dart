@@ -302,8 +302,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     super.initState();
     _emailCtrl.addListener(_onEmailChanged);
     _phoneCtrl.addListener(_onPhoneChanged);
-    _passwordCtrl.addListener(() => setState(() {}));
+    _passwordCtrl.addListener(_onPasswordChanged);
   }
+
+  void _onPasswordChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -314,6 +316,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _lastNameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _passwordCtrl.removeListener(_onPasswordChanged);
     _passwordCtrl.dispose();
     _makeCtrl.dispose();
     _modelCtrl.dispose();

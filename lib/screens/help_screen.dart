@@ -961,7 +961,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   void initState() {
     super.initState();
     _queueDuration = AiSupportService.randomQueueWait();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initChat());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initChat();
+    });
   }
 
   @override
@@ -1445,6 +1448,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
           _scrollCtrl.position.maxScrollExtent + 80,

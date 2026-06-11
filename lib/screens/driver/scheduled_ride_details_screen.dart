@@ -57,7 +57,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     _secondsRemaining = (widget.minutesUntil * 60).round().clamp(0, 999999);
     // If already <= 15 min, auto-redirect immediately
     if (_secondsRemaining <= 900) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _autoStartRide());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _autoStartRide();
+      });
     }
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;

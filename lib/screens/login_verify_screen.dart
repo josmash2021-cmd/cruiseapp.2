@@ -65,6 +65,7 @@ class _LoginVerifyScreenState extends State<LoginVerifyScreen>
     ).animate(CurvedAnimation(parent: _shakeCtrl, curve: Curves.elasticIn));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _codeFocus.requestFocus();
     });
   }

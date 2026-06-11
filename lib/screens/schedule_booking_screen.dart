@@ -116,8 +116,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     super.initState();
     _loadPayments();
     _rides = _defaultRides();
-    _pickupFocus.addListener(() => setState(() {}));
-    _dropoffFocus.addListener(() => setState(() {}));
+    _pickupFocus.addListener(_onPickupFocusChanged);
+    _dropoffFocus.addListener(_onDropoffFocusChanged);
     _buildPinBytes();
     _resolveGpsCenter();
   }
@@ -162,9 +162,14 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     _dropoffPinBytes = await renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32);
   }
 
+  void _onPickupFocusChanged() => setState(() {});
+  void _onDropoffFocusChanged() => setState(() {});
+
   @override
   void dispose() {
     _debounce?.cancel();
+    _pickupFocus.removeListener(_onPickupFocusChanged);
+    _dropoffFocus.removeListener(_onDropoffFocusChanged);
     _pickupCtrl.dispose();
     _dropoffCtrl.dispose();
     _pickupFocus.dispose();

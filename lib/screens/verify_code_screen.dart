@@ -64,6 +64,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
 
     // Auto-focus the code field
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _codeFocus.requestFocus();
     });
   }

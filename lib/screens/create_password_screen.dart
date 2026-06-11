@@ -26,6 +26,10 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
+  static final _digitRe = RegExp(r'[0-9]');
+  static final _upperRe = RegExp(r'[A-Z]');
+  static final _specialRe = RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]');
+
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _obscurePass = true;
@@ -236,21 +240,19 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
                     _strengthRow(
                       c,
                       S.of(context).containsNumber,
-                      _passCtrl.text.contains(RegExp(r'[0-9]')),
+                      _passCtrl.text.contains(_digitRe),
                     ),
                     const SizedBox(height: 6),
                     _strengthRow(
                       c,
                       S.of(context).anUppercase,
-                      _passCtrl.text.contains(RegExp(r'[A-Z]')),
+                      _passCtrl.text.contains(_upperRe),
                     ),
                     const SizedBox(height: 6),
                     _strengthRow(
                       c,
                       S.of(context).aSpecialChar,
-                      _passCtrl.text.contains(
-                        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
-                      ),
+                      _passCtrl.text.contains(_specialRe),
                     ),
                     const SizedBox(height: 6),
                     _strengthRow(

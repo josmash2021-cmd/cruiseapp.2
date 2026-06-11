@@ -68,7 +68,7 @@ async def _get_driver_rating(driver_id: int, db: AsyncSession) -> float:
 @router.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
-    limit: int = 200, offset: int = 0,
+    limit: int = 200, offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
     """List all users with optional role/status filter. For dispatch admin panel."""
@@ -107,7 +107,7 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
 @router.get("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_trips(
     status: Optional[str] = None,
-    limit: int = 100, offset: int = 0,
+    limit: int = 100, offset: int = Query(0, ge=0, le=10000),
     include_auto_cancelled: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
@@ -735,7 +735,7 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
 @router.get("/admin/verifications", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_verifications(
     status: Optional[str] = None,
-    limit: int = 100, offset: int = 0,
+    limit: int = 100, offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
     """List verification requests. Optionally filter by status (pending/approved/rejected)."""
@@ -1644,7 +1644,7 @@ async def admin_update_pricing(request: Request):
 async def admin_get_audit_logs(
     action: Optional[str] = Query(None, description="Filter by event/action type"),
     limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
     """Query audit/security logs from the database."""

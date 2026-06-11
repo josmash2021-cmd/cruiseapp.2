@@ -1695,7 +1695,7 @@ async def get_user_photo(user_id: int, user: User = Depends(_get_current_user), 
 @router.get("/api/dispatch/action-requests", dependencies=[Depends(_require_dispatch_auth)])
 async def list_action_requests(
     status: Optional[str] = None,
-    limit: int = 50, offset: int = 0,
+    limit: int = 50, offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
     """List pending action requests for admin review."""

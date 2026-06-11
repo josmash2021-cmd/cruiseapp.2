@@ -1223,7 +1223,7 @@ async def get_wallet_transactions(
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = 50,
-    offset: int = 0
+    offset: int = Query(0, ge=0, le=10000)
 ):
     """Get user's wallet transactions (most recent first)."""
     wallet = await _get_or_create_wallet(user.id, db)

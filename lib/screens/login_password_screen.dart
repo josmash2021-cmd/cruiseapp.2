@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../widgets/dismiss_keyboard.dart';
 import '../services/sms_service.dart';
 import '../services/analytics_service.dart';
 import '../services/google_auth_service.dart';
@@ -527,12 +528,13 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 8),
 
               // ── Back button ──
@@ -844,6 +846,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

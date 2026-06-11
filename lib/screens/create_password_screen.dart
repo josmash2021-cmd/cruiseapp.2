@@ -5,6 +5,7 @@ import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import '../services/analytics_service.dart';
 import '../services/screen_security_service.dart';
+import '../widgets/dismiss_keyboard.dart';
 import 'name_screen.dart';
 
 /// Screen shown during registration — after verifying the code.
@@ -129,12 +130,13 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 8),
 
               // ── Back button ──
@@ -308,6 +310,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
             ],
           ),
         ),
+      ),
       ),
     );
   }

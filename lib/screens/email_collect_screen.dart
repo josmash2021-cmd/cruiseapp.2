@@ -133,10 +133,11 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 8),
@@ -253,6 +254,7 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

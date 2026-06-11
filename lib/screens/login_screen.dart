@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/screen_security_service.dart';
+import '../widgets/dismiss_keyboard.dart';
 import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
@@ -552,10 +553,11 @@ class _LoginScreenState extends State<LoginScreen> with SecureScreenMixin {
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 8),
@@ -931,6 +933,7 @@ class _LoginScreenState extends State<LoginScreen> with SecureScreenMixin {
             ],
           ),
         ),
+      ),
       ),
     );
   }

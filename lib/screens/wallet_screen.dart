@@ -32,6 +32,11 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
     _loadCruiseCash();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   Future<void> _loadCruiseCash() async {
     try {
       final res = await ApiService.getMyReferralInfo();

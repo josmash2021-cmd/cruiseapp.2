@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb, debugPrint;
 import 'package:flutter/painting.dart' show PaintingBinding;
 import 'local_data_service.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'security_service.dart';
@@ -392,6 +393,10 @@ class UserSession {
     return SecurityService.decryptFromPrefs(raw, 'pending_pw') ?? raw;
   }
 
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   // ── Pending social auth (used during onboarding after Google/Apple OTP) ──
   static Future<void> savePendingSocialAuth({
     required String provider,
@@ -402,7 +407,11 @@ class UserSession {
   }) async {
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
     await prefs.setString('pending_social_provider', provider);
-    await prefs.setString('pending_social_id_token', idToken);
+    if (kIsWeb) {
+      await prefs.setString('pending_social_id_token', idToken);
+    } else {
+      await _secureStorage.write(key: 'pending_social_id_token', value: idToken);
+    }
     if (firstName != null) await prefs.setString('pending_social_first_name', firstName);
     if (lastName != null) await prefs.setString('pending_social_last_name', lastName);
     if (photoUrl != null) await prefs.setString('pending_social_photo_url', photoUrl);
@@ -411,7 +420,9 @@ class UserSession {
   static Future<Map<String, String?>?> getPendingSocialAuth() async {
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
     final provider = prefs.getString('pending_social_provider');
-    final idToken = prefs.getString('pending_social_id_token');
+    final idToken = kIsWeb
+        ? prefs.getString('pending_social_id_token')
+        : await _secureStorage.read(key: 'pending_social_id_token');
     if (provider == null || idToken == null) return null;
     return {
       'provider': provider,
@@ -425,7 +436,11 @@ class UserSession {
   static Future<void> clearPendingSocialAuth() async {
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
     await prefs.remove('pending_social_provider');
-    await prefs.remove('pending_social_id_token');
+    if (kIsWeb) {
+      await prefs.remove('pending_social_id_token');
+    } else {
+      await _secureStorage.delete(key: 'pending_social_id_token');
+    }
     await prefs.remove('pending_social_first_name');
     await prefs.remove('pending_social_last_name');
     await prefs.remove('pending_social_photo_url');

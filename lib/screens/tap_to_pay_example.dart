@@ -92,7 +92,7 @@ class TapToPayExample {
       final shouldProceed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Confirm Payment'),
+          title: Text(S.of(context).confirmPayment),
           content: Text('Pay \$${amount.toStringAsFixed(2)} using Tap to Pay?'),
           actions: [
             TextButton(
@@ -104,7 +104,7 @@ class TapToPayExample {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE8C547),
               ),
-              child: const Text('Pay Now'),
+              child: Text(S.of(context).payNow),
             ),
           ],
         ),

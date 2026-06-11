@@ -34,6 +34,9 @@ class S {
   String get yes => _es ? 'Sí' : 'Yes';
   String get no => _es ? 'No' : 'No';
   String get ok => 'OK';
+  String get noCameraAvailable => _es
+      ? 'No hay cámara disponible en este dispositivo'
+      : 'No camera available on this device';
   String get retry => _es ? 'Reintentar' : 'Retry';
   String get close => _es ? 'Cerrar' : 'Close';
 

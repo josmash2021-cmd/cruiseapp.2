@@ -139,7 +139,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     if (cameras.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No camera available on this device')),
+          SnackBar(content: Text(S.of(context).noCameraAvailable)),
         );
       }
       return;

@@ -1460,7 +1460,7 @@ extension _RideRequestController on _RideRequestScreenState {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('OK'),
+                  child: Text(S.of(context).ok),
                 ),
               ],
             ),

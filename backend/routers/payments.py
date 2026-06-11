@@ -1,4 +1,4 @@
-import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
+import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
@@ -10,6 +10,8 @@ from models.database import (
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn
 from utils.security import (
+    HMAC_SECRET,
+
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     pwd, _create_token, _create_refresh_token, _create_login_token,
     _check_login_throttle, _record_login_failure, _clear_login_failures,
@@ -526,12 +528,7 @@ async def create_web_checkout(request: Request):
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):
         raise HTTPException(429, "Too many requests — try again in a minute")
-    # Auth: simple bearer token check
-    auth = request.headers.get("authorization", "")
-    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
-        raise HTTPException(401, "Unauthorized")
-    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
-        raise HTTPException(401, "Invalid web checkout key")
+    _web_key_check(request)
 
     if not _HAS_STRIPE or not STRIPE_SECRET:
         raise HTTPException(503, "Stripe not configured")
@@ -593,11 +590,7 @@ async def create_web_payment_intent(request: Request):
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):
         raise HTTPException(429, "Too many requests — try again in a minute")
-    auth = request.headers.get("authorization", "")
-    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
-        raise HTTPException(401, "Unauthorized")
-    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
-        raise HTTPException(401, "Invalid web checkout key")
+    _web_key_check(request)
 
     if not _HAS_STRIPE or not STRIPE_SECRET:
         raise HTTPException(503, "Stripe not configured")
@@ -638,11 +631,7 @@ async def create_web_payment_intent(request: Request):
 async def capture_web_hold(intent_id: str, request: Request):
     """Capture a held PaymentIntent — charge the customer after trip completion."""
     _verify_web_origin(request)
-    auth = request.headers.get("authorization", "")
-    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
-        raise HTTPException(401, "Unauthorized")
-    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
-        raise HTTPException(401, "Invalid key")
+    _web_key_check(request)
     if not _HAS_STRIPE:
         raise HTTPException(503, "Stripe not configured")
     try:
@@ -665,11 +654,7 @@ async def capture_web_hold(intent_id: str, request: Request):
 async def cancel_web_hold(intent_id: str, request: Request):
     """Cancel a held PaymentIntent — release the hold if trip is cancelled."""
     _verify_web_origin(request)
-    auth = request.headers.get("authorization", "")
-    if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
-        raise HTTPException(401, "Unauthorized")
-    if auth.split(" ", 1)[1] != WEB_CHECKOUT_KEY:
-        raise HTTPException(401, "Invalid key")
+    _web_key_check(request)
     if not _HAS_STRIPE:
         raise HTTPException(503, "Stripe not configured")
     try:
@@ -695,6 +680,8 @@ async def cancel_web_hold(intent_id: str, request: Request):
 def _verify_web_key(request: Request):
     """Shared auth helper for /payments/web/paypal/* endpoints."""
     _verify_web_origin(request)
+    if _verify_web_hmac(request):
+        return
     auth = request.headers.get("authorization", "")
     if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):
         raise HTTPException(401, "Unauthorized")
@@ -1308,7 +1295,31 @@ async def create_paypal_order(body: PayPalOrderIn):
 WEB_SYSTEM_USER_ID = int(os.getenv("WEB_SYSTEM_USER_ID", "0"))
 
 
+def _verify_web_hmac(request: Request) -> bool:
+    """Validate HMAC-SHA256 signed request for web checkout.
+    Expected headers: x-api-key, x-timestamp, x-signature
+    """
+    x_api_key = request.headers.get("x-api-key", "")
+    x_timestamp = request.headers.get("x-timestamp", "")
+    x_signature = request.headers.get("x-signature", "")
+    if not x_api_key or not x_timestamp or not x_signature:
+        return False
+    if x_api_key != WEB_CHECKOUT_KEY:
+        return False
+    try:
+        ts = int(x_timestamp)
+        if abs(int(time.time()) - ts) > 300:
+            return False
+    except ValueError:
+        return False
+    msg = f"{x_api_key}:{x_timestamp}"
+    expected = hmac.new(HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, x_signature)
+
+
 def _web_key_check(request: Request):
+    if _verify_web_hmac(request):
+        return
     auth = request.headers.get("authorization", "")
     logging.debug("[WebKeyCheck] auth_header=%r key_set=%s", auth[:40] if auth else "", bool(WEB_CHECKOUT_KEY))
     if not WEB_CHECKOUT_KEY or not auth.startswith("Bearer "):

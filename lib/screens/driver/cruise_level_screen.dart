@@ -14,7 +14,7 @@ class CruiseLevelScreen extends StatefulWidget {
 }
 
 class _CruiseLevelScreenState extends State<CruiseLevelScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _card = Color(0xFF1C1C1E);
 
@@ -108,6 +108,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _celebrationCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),
@@ -120,7 +121,17 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _celebrationCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (_showLevelUp) _celebrationCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _celebrationCtrl.dispose();
     super.dispose();
   }

@@ -17,13 +17,14 @@ class ChooseRideTypeScreen extends StatefulWidget {
 }
 
 class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _entryCtl;
   late final AnimationController _floatCtl;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _entryCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 650),
@@ -32,11 +33,22 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat();
-    
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _entryCtl.stop();
+      _floatCtl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_entryCtl.isCompleted) _entryCtl.forward();
+      _floatCtl.repeat();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _entryCtl.dispose();
     _floatCtl.dispose();
     super.dispose();

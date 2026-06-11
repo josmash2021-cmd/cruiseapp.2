@@ -1992,21 +1992,15 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             continue
         content_type = "image/jpeg" if ext == "jpg" else "image/png"
         fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
-        # Upload to Firebase Storage (persistent), fallback to local
+        # Upload to Firebase Storage (persistent)
         fb_url = None
         if firestore_sync:
             fb_path = f"documents/user_{db_user.id}/{fname}"
             fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, content_type)
         if fb_url:
             saved_urls[label] = fb_url
-        elif docs_dir:
-            try:
-                fpath = os.path.join(docs_dir, fname)
-                with open(fpath, "wb") as f:
-                    f.write(decoded)
-                saved_urls[label] = f"{PUBLIC_URL}/uploads/documents/{fname}"
-            except Exception as e:
-                logging.warning("[Verify] Could not save photo %s: %s", label, e)
+        else:
+            raise HTTPException(503, "Document storage unavailable. Please try again later.")
 
     # Handle verification video (MP4)
     video_b64 = body.get("verification_video")
@@ -2017,18 +2011,15 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                 video_decoded = base64.b64decode(video_b64, validate=True)
                 if len(video_decoded) <= 15 * 1024 * 1024:
                     vname = f"verify_{db_user.id}_liveness_{int(time.time())}.mp4"
-                    # Upload to Firebase Storage (persistent), fallback to local
+                    # Upload to Firebase Storage (persistent)
                     fb_url = None
                     if firestore_sync:
                         fb_path = f"documents/user_{db_user.id}/{vname}"
                         fb_url = firestore_sync.upload_to_firebase_storage(video_decoded, fb_path, "video/mp4")
                     if fb_url:
                         video_url = fb_url
-                    elif docs_dir:
-                        vpath = os.path.join(docs_dir, vname)
-                        with open(vpath, "wb") as f:
-                            f.write(video_decoded)
-                        video_url = f"{PUBLIC_URL}/uploads/documents/{vname}"
+                    else:
+                        raise HTTPException(503, "Video storage unavailable. Please try again later.")
                     if video_url:
                         saved_urls["video"] = video_url
             except Exception:

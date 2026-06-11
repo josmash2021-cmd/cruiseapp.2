@@ -1725,7 +1725,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         else:
             raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
         fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
-        # Upload to Firebase Storage (persistent), fallback to local
+        # Upload to Firebase Storage (persistent)
         fb_url = None
         if _HAS_FIRESTORE and firestore_sync:
             fb_path = f"documents/user_{user.id}/{fname}"
@@ -1733,13 +1733,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         if fb_url:
             file_path = fb_url
         else:
-            import os as _os
-            docs_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "uploads", "documents")
-            _os.makedirs(docs_dir, exist_ok=True)
-            fpath = _os.path.join(docs_dir, fname)
-            with open(fpath, "wb") as f:
-                f.write(decoded)
-            file_path = f"/uploads/documents/{fname}"
+            raise HTTPException(503, "Document storage unavailable. Please try again later.")
 
     # Check if doc of this type already exists ï¿½ update it
     result = await db.execute(
@@ -1809,13 +1803,7 @@ async def upload_document_multipart(
     if fb_url:
         file_path = fb_url
     else:
-        import os as _os
-        docs_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "uploads", "documents")
-        _os.makedirs(docs_dir, exist_ok=True)
-        fpath = _os.path.join(docs_dir, fname)
-        with open(fpath, "wb") as f:
-            f.write(data)
-        file_path = f"/uploads/documents/{fname}"
+        raise HTTPException(503, "Document storage unavailable. Please try again later.")
 
     # Upsert document record
     result = await db.execute(

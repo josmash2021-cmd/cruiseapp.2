@@ -283,7 +283,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() => ctrl.dispose);
   }
 
 

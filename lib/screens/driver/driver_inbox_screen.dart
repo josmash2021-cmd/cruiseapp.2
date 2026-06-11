@@ -309,6 +309,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                   return ListView.builder(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemExtent: 88,
                     itemCount: items.length,
                     itemBuilder: (_, i) => TweenAnimationBuilder<double>(
                       tween: Tween(begin: 0, end: 1),

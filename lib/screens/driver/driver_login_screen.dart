@@ -20,7 +20,7 @@ class DriverLoginScreen extends StatefulWidget {
 }
 
 class _DriverLoginScreenState extends State<DriverLoginScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
@@ -38,6 +38,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _emailCtrl.addListener(_validate);
     _passCtrl.addListener(_validate);
 
@@ -53,7 +54,17 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _entranceCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_entranceCtrl.isCompleted) _entranceCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _entranceCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();

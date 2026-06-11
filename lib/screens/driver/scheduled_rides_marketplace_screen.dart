@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../utils/debounced.dart';
 
 /// Marketplace screen where drivers browse and claim available scheduled rides.
 class ScheduledRidesMarketplaceScreen extends StatefulWidget {
@@ -108,7 +109,7 @@ class _ScheduledRidesMarketplaceScreenState
                       const SizedBox(height: 12),
                       Text(_error!, style: const TextStyle(color: Colors.white70)),
                       const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _load, child: Text(s.retry)),
+                      ElevatedButton(onPressed: debounce(_load), child: Text(s.retry)),
                     ],
                   ),
                 )

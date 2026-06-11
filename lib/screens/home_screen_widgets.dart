@@ -1478,7 +1478,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               S.of(context).driverLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 11,
+                fontSize: 12,
               ),
             ),
             Text(
@@ -1495,7 +1495,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   : 'Pickup',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 11,
+                fontSize: 12,
               ),
             ),
           ],
@@ -1574,7 +1574,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               S.of(context).driverLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 11,
+                fontSize: 12,
               ),
             ),
             Text(
@@ -1589,7 +1589,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               S.of(context).pickupLabel,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 11,
+                fontSize: 12,
               ),
             ),
           ],
@@ -2284,7 +2284,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               '${d.count} ${S.of(context).tripsLabel}',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.45),
-                                fontSize: 11,
+                                fontSize: 12,
                               ),
                             ),
                           ],
@@ -2348,7 +2348,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               subtitle,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 11,
+                fontSize: 12,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

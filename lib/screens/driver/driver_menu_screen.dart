@@ -39,7 +39,7 @@ class DriverMenuScreen extends StatefulWidget {
 }
 
 class _DriverMenuScreenState extends State<DriverMenuScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   static const _bg = Color(0xFF0A0A0A);
@@ -77,6 +77,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _enforceDriverRole();
     _entranceCtrl = AnimationController(
       vsync: this,
@@ -126,7 +127,17 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _entranceCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_entranceCtrl.isCompleted) _entranceCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     _entranceCtrl.dispose();

@@ -57,7 +57,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
       // Guard: skip update if GPS returned NaN (can happen briefly on iOS)
       if (!isValidLatLng(_pos!.latitude, _pos!.longitude)) {
-        debugPrint('[DriverOnlineMap] Skipping gold dot — invalid GPS: $_pos');
+        if (kDebugMode) debugPrint('[DriverOnlineMap] Skipping gold dot — invalid GPS: $_pos');
         return;
       }
 

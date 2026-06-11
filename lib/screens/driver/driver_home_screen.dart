@@ -411,7 +411,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Future<void> _checkAccountStatus() async {
     try {
-      final status = await ApiService.getAccountStatus();
+      final status = await ApiService.getAccountStatus().timeout(const Duration(seconds: 15));
       if (!mounted) return;
       if (status == 'blocked' || status == 'deleted') {
         _accountStatusTimer?.cancel();
@@ -563,7 +563,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final cachedEarnings = prefs.getDouble('driver_cached_earnings');
     final cachedTrips = prefs.getInt('driver_cached_trips');
     final cachedUserId = prefs.getString('driver_cached_user_id');
-    final currentUserId = (await ApiService.getCurrentUserId())?.toString();
+    final currentUserId = (await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15)))?.toString();
     // Only use cache if it belongs to the current driver (prevents
     // showing another driver's earnings after logout/login).
     final cacheValid = currentUserId != null && currentUserId == cachedUserId;
@@ -659,7 +659,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
-      final result = await ApiService.canGoOnline();
+      final result = await ApiService.canGoOnline().timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
       final canGo = result['can_go_online'] == true;

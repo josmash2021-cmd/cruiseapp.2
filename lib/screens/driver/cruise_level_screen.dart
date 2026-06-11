@@ -169,9 +169,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       final prefs = await _getPrefs();
       _previousTierIndex = prefs.getInt('cruise_tier_index') ?? -1;
 
-      final userId = await ApiService.getCurrentUserId();
+      final userId = await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15));
       if (userId != null) {
-        final stats = await ApiService.getDriverStats(userId);
+        final stats = await ApiService.getDriverStats(userId).timeout(const Duration(seconds: 15));
         final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
         final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;

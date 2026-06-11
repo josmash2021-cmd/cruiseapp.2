@@ -280,7 +280,7 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
                                   final codeResentMsg = S.of(context).codeResent;
                                   final failedMsg = S.of(context).failedToResendCode;
                                   try {
-                                    final res = await ApiService.resendEmailVerification();
+                                    final res = await ApiService.resendEmailVerification().timeout(const Duration(seconds: 15));
                                     if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; sending = false; });
                                     } else {
@@ -1242,7 +1242,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
   Future<void> _save() async {
     final url = _ctrl.text.trim();
     if (url.isEmpty) return;
-    await ApiService.setServerUrl(url);
+    await ApiService.setServerUrl(url).timeout(const Duration(seconds: 10));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1259,7 +1259,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
       _probeResult = null;
     });
     final url = _ctrl.text.trim();
-    final reached = await ApiService.probeAndSetBestUrl(candidates: [url]);
+    final reached = await ApiService.probeAndSetBestUrl(candidates: [url]).timeout(const Duration(seconds: 10));
     if (!mounted) return;
     setState(() {
       _probing = false;
@@ -1275,7 +1275,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
       _probing = true;
       _probeResult = null;
     });
-    final reached = await ApiService.probeAndSetBestUrl();
+    final reached = await ApiService.probeAndSetBestUrl().timeout(const Duration(seconds: 10));
     if (!mounted) return;
     setState(() {
       _probing = false;

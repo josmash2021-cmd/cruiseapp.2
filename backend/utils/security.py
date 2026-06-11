@@ -442,8 +442,8 @@ async def _get_current_user(
     token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token for authentication")
+        if payload.get("type") != "access":
+            raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")
         user_id = int(payload["sub"])
     except (JWTError, ValueError):
@@ -509,8 +509,8 @@ async def _require_admin(
     token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") == "refresh":
-            raise HTTPException(401, "Cannot use refresh token")
+        if payload.get("type") != "access":
+            raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")
         user_id = int(payload["sub"])
     except (JWTError, ValueError):

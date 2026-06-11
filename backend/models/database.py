@@ -730,8 +730,14 @@ class EmailLog(Base):
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
 
+def _safe_ident(name: str) -> str:
+    """Validate SQL identifier to prevent injection. Only alphanumerics and underscores allowed."""
+    if not name or not all(c.isalnum() or c == '_' for c in name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
 async def column_missing(conn, table: str, column: str) -> bool:
-    result = await conn.execute(text(f"PRAGMA table_info({table})"))
+    result = await conn.execute(text(f"PRAGMA table_info({_safe_ident(table)})"))
     cols = [row[1] for row in result.fetchall()]
     return column not in cols
 
@@ -806,7 +812,9 @@ async def migrate_add_columns(conn):
     ]
     for table, col, col_type in new_columns:
         try:
-            await conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+            await conn.execute(sa.text(
+                f"ALTER TABLE {_safe_ident(table)} ADD COLUMN {_safe_ident(col)} {col_type}"
+            ))
         except Exception:
             pass
     await conn.execute(sa.text("""
@@ -937,7 +945,7 @@ async def migrate_postgres(conn):
                 continue  # Column already exists — skip DDL entirely
             async with conn.begin_nested():
                 await conn.execute(text(
-                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                    f"ALTER TABLE {_safe_ident(table)} ADD COLUMN IF NOT EXISTS {_safe_ident(col)} {col_type}"
                 ))
                 logging.info("Added column %s.%s", table, col)
         except Exception as _e:

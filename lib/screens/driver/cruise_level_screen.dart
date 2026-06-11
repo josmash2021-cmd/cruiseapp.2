@@ -128,6 +128,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   Future<SharedPreferences> _getPrefs() => SharedPreferences.getInstance();
 
   void _triggerLevelUp() {
+    if (!mounted) return;
     final rng = math.Random();
     _particles.clear();
     for (int i = 0; i < 60; i++) {

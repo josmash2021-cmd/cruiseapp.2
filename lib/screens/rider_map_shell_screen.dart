@@ -61,6 +61,7 @@ class _RiderMapShellScreenState extends State<RiderMapShellScreen> {
   }
 
   void _switchOverlay(RiderOverlay overlay, {Map<String, dynamic>? args}) {
+    if (!mounted) return;
     setState(() => _currentOverlay = overlay);
   }
 

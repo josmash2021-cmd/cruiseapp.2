@@ -1,0 +1,1284 @@
+--- lib/screens\airport_terminal_sheet.dart:194 ---
+    Future.delayed(const Duration(milliseconds: 220), () {
+      _advancePending = false;
+      if (mounted) _advance();
+    });
+  }
+
+  void _selectArrivalDoor(String door) {
+    if (_advancePending) return;
+    setState(() => _selectedArrivalDoor = door);
+    _advancePending = true;
+
+--- lib/screens\airport_terminal_sheet.dart:204 ---
+    Future.delayed(const Duration(milliseconds: 220), () {
+      _advancePending = false;
+      if (mounted) _advance();
+    });
+  }
+
+  void _confirm() {
+    if (_direction == AirportDirection.fromAirport &&
+        _flightCtrl.text.trim().isEmpty) {
+      setState(() => _flightError = true);
+
+--- lib/screens\credit_card_screen.dart:150 ---
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) Navigator.of(context).pop('$brand:$last4');
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _saveCardLocally(String brand, String last4) async {
+    await LocalDataService.linkPaymentMethod('credit_card');
+
+--- lib/screens\driver_arrived_screen.dart:116 ---
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+
+    _fadeController.forward();
+    _ringController.repeat();
+
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (mounted) _checkController.forward();
+
+    await Future.delayed(const Duration(milliseconds: 700));
+
+--- lib/screens\driver_arrived_screen.dart:122 ---
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (mounted) _checkController.forward();
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (mounted) _countdownPulseController.repeat(reverse: true);
+  }
+
+  void _startCountdown() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+
+--- lib/screens\driver_arrived_screen.dart:125 ---
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (mounted) _countdownPulseController.repeat(reverse: true);
+  }
+
+  void _startCountdown() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+--- lib/screens\face_liveness_screen.dart:303 ---
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Stop image stream before capture
+    try { await _cam?.stopImageStream(); } catch (_) {}
+
+    // Smart flash: only enable torch if scene is dark (< 80/255 ≈ 0.31)
+    final isDark = _lastBrightness < 0.31;
+    if (isDark) {
+      try { await _cam?.setFlashMode(FlashMode.torch); } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 200));
+
+--- lib/screens\face_liveness_screen.dart:312 ---
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    String? photoPath;
+    String? videoPath;
+
+    // Take still photo
+    try {
+      final photo = await _cam?.takePicture();
+      photoPath = photo?.path;
+
+--- lib/screens\face_liveness_screen.dart:340 ---
+        await Future.delayed(const Duration(seconds: 2));
+        final video = await _cam?.stopVideoRecording();
+        videoPath = video?.path;
+      } catch (_) {}
+    }
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+
+--- lib/screens\face_liveness_screen.dart:346 ---
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Brightness detection (smart flash)
+  // ─────────────────────────────────────────────────────────────────────────
+  void _updateBrightness(CameraImage img) {
+
+--- lib/screens\face_liveness_screen_new.dart:285 ---
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Stop image stream before taking picture
+    try { await _cam?.stopImageStream(); } catch (_) {}
+
+    String? photoPath;
+    String? videoPath;
+
+    // Take still photo
+    try {
+
+--- lib/screens\face_liveness_screen_new.dart:302 ---
+      await Future.delayed(const Duration(seconds: 2));
+      final video = await _cam?.stopVideoRecording();
+      videoPath = video?.path;
+    } catch (_) {}
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+  }
+
+--- lib/screens\face_liveness_screen_new.dart:307 ---
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    Navigator.of(context).pop({'photo': photoPath, 'video': videoPath});
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // InputImage helper
+  // ─────────────────────────────────────────────────────────────────────────
+  InputImage? _toInputImage(CameraImage img) {
+
+--- lib/screens\help_screen.dart:1022 ---
+          await Future.delayed(const Duration(milliseconds: 600));
+          if (mounted) await _initChat();
+          return;
+        }
+
+        _initAttemptCount = 0; // successful init
+        _pollTimer = Timer.periodic(
+          const Duration(seconds: 3),
+          (_) => _loadMessages(),
+        );
+
+--- lib/screens\help_screen.dart:1150 ---
+            await Future.delayed(const Duration(seconds: 2));
+            if (mounted) {
+              setState(() {
+                _phase = _ChatPhase.queue;
+                _subtitle = _isSpanish
+                    ? 'Conectando con un agente...'
+                    : 'Connecting to an agent...';
+              });
+            }
+            return;
+
+--- lib/screens\help_screen.dart:1188 ---
+          await Future.delayed(Duration(milliseconds: typingMs.clamp(2000, 8000)));
+
+          if (!mounted) return;
+          setState(() {
+            _isAgentTyping = false;
+            _messages.clear();
+            _messages.addAll(newMessages);
+            if (_chatClosed) {
+              _subtitle = S.of(context).chatClosed;
+            } else if (_agentName != null) {
+
+--- lib/screens\help_screen.dart:1242 ---
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+
+    // Reveal buffered messages one at a time with typing delays
+    final toReveal = List<_ChatMsg>.from(_bufferedMessages);
+    _bufferedMessages.clear();
+
+    for (final msg in toReveal) {
+      if (!mounted) return;
+
+
+--- lib/screens\help_screen.dart:1259 ---
+        await Future.delayed(const Duration(milliseconds: 800));
+        continue;
+      }
+
+      if (msg.role == 'bot') {
+        if (mounted) setState(() => _isAgentTyping = true);
+        _scrollToBottom();
+        final delay = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
+        await Future.delayed(Duration(milliseconds: delay));
+        if (!mounted) return;
+
+--- lib/screens\help_screen.dart:1267 ---
+        await Future.delayed(Duration(milliseconds: delay));
+        if (!mounted) return;
+        setState(() {
+          _isAgentTyping = false;
+          _messages.add(msg);
+        });
+        _scrollToBottom();
+        await Future.delayed(const Duration(milliseconds: 600));
+      } else {
+        if (mounted) {
+
+--- lib/screens\help_screen.dart:1274 ---
+        await Future.delayed(const Duration(milliseconds: 600));
+      } else {
+        if (mounted) {
+          setState(() {
+            _isAgentTyping = false;
+            _messages.add(msg);
+          });
+        }
+        _scrollToBottom();
+      }
+
+--- lib/screens\help_screen.dart:1361 ---
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        setState(() {
+          _messages.add(_ChatMsg(
+            text: _isSpanish
+                ? 'Tu mensaje fue recibido. El agente lo verá cuando se conecte.'
+                : 'Your message was received. The agent will see it when they connect.',
+            role: 'system',
+            time: DateTime.now(),
+          ));
+
+--- lib/screens\help_screen.dart:1418 ---
+      await Future.delayed(const Duration(seconds: 2));
+      await _loadMessages();
+    } catch (e) {
+      debugPrint('[SupportChat] send error: $e');
+      if (mounted) {
+        final failedText = text;
+        setState(() {
+          if (_messages.isNotEmpty && _messages.last.role == _userRole) {
+            _messages.removeLast();
+          }
+
+--- lib/screens\home_screen.dart:1040 ---
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) break;
+      _boltFlashCtrl.forward().then((_) {
+        if (mounted) _boltFlashCtrl.reverse();
+      });
+    }
+  }
+
+  Future<void> _loadSavedData() async {
+    // Promo generation must finish first (it writes data read below)
+
+--- lib/screens\identity_verification_screen.dart:1321 ---
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        _ctrl?.dispose();
+        _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
+        await _ctrl!.initialize().timeout(const Duration(seconds: 5));
+        await _ctrl!.setFlashMode(FlashMode.off);
+        if (mounted) {
+          setState(() => _initialized = true);
+          _startDocumentDetection();
+        }
+
+--- lib/screens\identity_verification_screen.dart:1394 ---
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (mounted) setState(() => _capturing = true);
+    HapticService.mediumImpact();
+    try {
+      final xFile = await _ctrl!.takePicture();
+      final inputImage = InputImage.fromFilePath(xFile.path);
+      final result = await _textRecognizer.processImage(inputImage);
+      final text = result.text.toLowerCase();
+      final isDoc =
+
+--- lib/screens\map_picker_screen.dart:127 ---
+      if (attempt > 0) await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted || gen != _geocodeGen) return;
+      try {
+        addr = await _places.reverseGeocode(
+          lat: snap.latitude,
+          lng: snap.longitude,
+        );
+        if (addr != null && addr.isNotEmpty) break;
+      } catch (_) {}
+    }
+
+--- lib/screens\map_picker_screen.dart:206 ---
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      _startMapRipple();
+    });
+
+    // 3. Capture the current camera state so the next screen can boot
+    //    its own map at exactly the same view → no teleport on handoff.
+    () async {
+      double? zoom, bearing, pitch;
+      try {
+
+--- lib/screens\map_picker_screen.dart:224 ---
+      await Future.delayed(const Duration(milliseconds: 1400));
+      if (!mounted) return;
+      Navigator.of(context).pop({
+        'address': _address,
+        'lat': _center.latitude,
+        'lng': _center.longitude,
+        if (zoom != null) 'zoom': zoom,
+        if (bearing != null) 'bearing': bearing,
+        if (pitch != null) 'pitch': pitch,
+      });
+
+--- lib/screens\map_picker_screen.dart:435 ---
+                Future.delayed(
+                    const Duration(milliseconds: 800), _onCameraIdle);
+              },
+              onStyleLoadedListener: (_) async {
+                if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
+              },
+              onCameraChangeListener: _onCameraChanged,
+              onMapIdleListener: _onMapIdle,
+            ),
+          ),
+
+--- lib/screens\pickup_dropoff_search_screen.dart:1386 ---
+    Future.delayed(delay, () {
+      if (mounted) _entryCtl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entryCtl.dispose();
+    super.dispose();
+  }
+
+--- lib/screens\rider_confirm_pickup_screen.dart:182 ---
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted && !_pressed && !_driverStarted) _ripple2Ctrl.repeat();
+    });
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted && !_pressed && !_driverStarted) _ripple3Ctrl.repeat();
+    });
+
+    // Hand tap animation — realistic press-down gesture
+    _handCtrl = AnimationController(
+      vsync: this,
+
+--- lib/screens\rider_confirm_pickup_screen.dart:185 ---
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted && !_pressed && !_driverStarted) _ripple3Ctrl.repeat();
+    });
+
+    // Hand tap animation — realistic press-down gesture
+    _handCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+    // Finger presses down then lifts with a natural bounce
+
+--- lib/screens\rider_confirm_pickup_screen.dart:299 ---
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      if (widget.onCancelled != null) {
+        widget.onCancelled!();
+      } else {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+
+--- lib/screens\rider_confirm_pickup_screen.dart:323 ---
+    await Future.delayed(const Duration(milliseconds: 2000));
+    if (!mounted) return;
+    await _fadeOutCtrl.forward();
+    if (mounted) widget.onConfirmed();
+  }
+
+  /// Visual badge shown under the gold confirm circle. Counts down the
+  /// free wait time in green, then switches to a red count-up + accrued
+  /// fee once the rider passes the per-tier threshold. Pure UI — no
+  /// charge happens client-side; the backend will compute the final
+
+--- lib/screens\rider_confirm_pickup_screen.dart:535 ---
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    await _fadeOutCtrl.forward();
+    if (mounted) widget.onConfirmed();
+  }
+
+  /// Builds a single expanding + fading golden ripple ring.
+  Widget _buildRippleRing(double progress) {
+    final size = 200 + (80 * progress); // expands from 200 to 280
+    final opacity = (1.0 - progress).clamp(0.0, 0.35); // fades out as it expands
+
+--- lib/screens\rider_map_shell_screen.dart:366 ---
+    Future.delayed(const Duration(seconds: 3), onDriverFound);
+
+    return SafeArea(
+      child: Column(
+        children: [
+          const Spacer(),
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+
+--- lib/screens\rider_tracking_screen.dart:336 ---
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _mapCar != null) {
+        _mapCar!.loadCarIcon(widget.rideName);
+      }
+    });
+    // Await persistence before starting real-time tracking to prevent
+    // race condition where backend poll resets phase/traveledM to 0.
+    _initFromPersistence().then((_) {
+      if (mounted) _startRealTimeTracking();
+    }).catchError((e) {
+
+--- lib/screens\rider_tracking_screen.dart:358 ---
+      Future.delayed(const Duration(seconds: 3), _sendDriverGreeting);
+      // Driver assigned notification is sent via FCM push from backend.
+      // No local notification needed — rider is already on tracking screen.
+      // Save to inbox for history only.
+      LocalDataService.addNotification(
+        title: 'Driver Assigned',
+        message: '${widget.driverName.split(' ').first} is on the way in a ${widget.vehicleColor} ${widget.vehicleModel}',
+        type: 'ride',
+      );
+    }
+
+--- lib/screens\ride_booking_confirmed_screen.dart:119 ---
+    Future.delayed(const Duration(milliseconds: 3500), () {
+      if (!mounted) return;
+      _fadeOutCtrl.forward().then((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomeScreen(),
+            transitionDuration: Duration.zero,
+          ),
+          (_) => false,
+
+--- lib/screens\ride_payment_method_screen.dart:117 ---
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (mounted) Navigator.of(context).pop(id);
+    });
+  }
+
+  /// Open Stripe Financial Connections to link a bank account.
+  Future<void> _openBankConnection(BuildContext ctx) async {
+    HapticService.selectionClick();
+    final s = S.of(ctx);
+
+
+--- lib/screens\ride_request_controller.dart:1244 ---
+        Future.delayed(const Duration(milliseconds: 2500), () {
+          if (!mounted) return;
+          // Abort if the user cancelled or the phase moved on during the wait.
+          final p = _ctrl.state.phase;
+          if (p != RiderPhase.driverAssigned &&
+              p != RiderPhase.driverArriving) {
+            return;
+          }
+          if (_navigatingToTracking) return;
+          // Force driverAssigned so _onStateChange shows the overlay
+
+--- lib/screens\ride_request_controller.dart:1394 ---
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (!mounted) return;
+          // Translate via cancelCodeMessage to honour the phone language.
+          final localizedBody = S.of(context).cancelCodeMessage(
+                cancelCode,
+                rawReason: rawReason,
+              );
+          showDialog(
+            context: Navigator.of(context, rootNavigator: true).context,
+            barrierDismissible: true,
+
+--- lib/screens\ride_request_controller.dart:1442 ---
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (!navRoot.mounted) return;
+          showDialog(
+            context: navRoot.context,
+            barrierDismissible: true,
+            builder: (dialogCtx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(isNoDrivers ? Icons.search_off_rounded : Icons.info_outline,
+
+--- lib/screens\ride_request_controller.dart:1498 ---
+      await Future.delayed(const Duration(milliseconds: 800));
+      return true;
+    }
+
+    switch (_selectedPaymentMethod) {
+      case 'apple_pay':
+        return _confirmApplePay(amountCents, label);
+      case 'google_pay':
+        return _confirmGooglePay(amountCents, label);
+      case 'paypal':
+
+--- lib/screens\ride_request_map.dart:757 ---
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted || _mapCtrl == null) {
+      _cinematicRunning = false;
+      return;
+    }
+
+    // ── Pin pop (concurrent) ──
+    _startPinPop();
+
+    // ── UNIFIED tilt + zoom + center animation ──
+
+--- lib/screens\ride_request_map.dart:810 ---
+    Future.delayed(const Duration(milliseconds: 1800), () {
+      if (mounted) _unrollLabels();
+    });
+
+    // ── Route draws starting at 25% of the tilt animation ──
+    await Future.delayed(const Duration(milliseconds: 550));
+    if (!mounted) { _cinematicRunning = false; return; }
+    // SKIP route draw while the route is still the 2-point "estimated"
+    // placeholder (origin → destination straight line). Drawing it would
+    // put a diagonal gold line through buildings. The controller will
+
+--- lib/screens\ride_request_map.dart:815 ---
+    await Future.delayed(const Duration(milliseconds: 550));
+    if (!mounted) { _cinematicRunning = false; return; }
+    // SKIP route draw while the route is still the 2-point "estimated"
+    // placeholder (origin → destination straight line). Drawing it would
+    // put a diagonal gold line through buildings. The controller will
+    // refresh state with the real road-snapped route once Directions
+    // resolves; _onStateChange → _drawRoute will redraw it properly.
+    // ≥3 points means Mapbox/Google/OSRM returned the polyline.
+    final Future<void> routeFuture = pts.length < 3
+        ? Future.value()
+
+--- lib/screens\ride_request_map.dart:958 ---
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (!mounted) return;
+      _setState(() => _pickupLabelRevealed = true);
+    });
+    // Dropoff shortly after — matches web's 300 ms setTimeout.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _setState(() => _dropoffLabelRevealed = true);
+    });
+
+
+--- lib/screens\ride_request_map.dart:963 ---
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _setState(() => _dropoffLabelRevealed = true);
+    });
+
+    // Keep pins at their final display size (no label-bitmap swap now;
+    // labels live as overlay widgets positioned via pixelForCoordinate).
+    _labelPopCtrl?.dispose();
+    _labelPopCtrl = AnimationController(
+      vsync: this,
+
+--- lib/screens\ride_request_map.dart:1073 ---
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+    if (_dropoffAnnot != null && _showPinLabels && _dropoffPinWithLabel != null) {
+      _dropoffAnnot!.image = _dropoffPinWithLabel!.$1;
+      mgr.update(_dropoffAnnot!);
+    }
+  }
+
+  /// Animate the gold route line as a liquid ribbon — every frame extends
+  /// the head to the exact metre along the polyline, interpolating WITHIN
+
+--- lib/screens\ride_request_map.dart:1728 ---
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+      if (!mounted || gen != _pickerGeocodeGen) return;
+      try {
+        addr = await _pickerPlaces.reverseGeocode(
+          lat: snap.latitude,
+          lng: snap.longitude,
+        );
+        if (addr != null && addr.isNotEmpty) break;
+      } catch (_) {}
+
+--- lib/screens\ride_request_map.dart:1788 ---
+    Future.delayed(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      _pickerStartRipple();
+    });
+
+    // 3. After the settle, read the camera + commit the picked place.
+    Future.delayed(const Duration(milliseconds: 1000), () async {
+      if (!mounted || _mapCtrl == null) return;
+      LatLng? center;
+      try {
+
+--- lib/screens\ride_request_map.dart:1794 ---
+    Future.delayed(const Duration(milliseconds: 1000), () async {
+      if (!mounted || _mapCtrl == null) return;
+      LatLng? center;
+      try {
+        final cam = await _mapCtrl!.getCameraState();
+        final c = cam.center.coordinates;
+        center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      } catch (_) {}
+      if (!mounted || center == null) return;
+
+
+--- lib/screens\ride_request_screen.dart:767 ---
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) _pickerOnCameraIdle();
+        });
+      });
+    }
+  }
+
+
+  /// Fetch the rider's Cruise Cash balance so the picked vehicle card
+  /// can show "-$X.XX Cruise Cash" preview. Silent on failure — the
+
+--- lib/screens\ride_request_widgets.dart:461 ---
+                                              Future.delayed(
+                                                  const Duration(milliseconds: 350),
+                                                  () {
+                                                if (mounted && !_cinematicRunning) {
+                                                  _fitRoute(pts, preserveCamera: true);
+                                                }
+                                              });
+                                            }
+                                          }
+                                        },
+
+--- lib/screens\ride_request_widgets.dart:3291 ---
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _ctl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+--- lib/screens\schedule_booking_screen.dart:400 ---
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    // 2. Tilt 0° → 30° + random bearing (1200ms)
+    final rng = math.Random();
+    final degrees = 5.0 + rng.nextDouble() * 10.0;
+    final randomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
+
+    _tiltCtrl?.dispose();
+    _tiltCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+
+--- lib/screens\schedule_booking_screen.dart:423 ---
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    await _animateGoldRoute(routePoints);
+    if (!mounted) return;
+
+    // 4. Save camera state
+    _cinematicPitch = 30.0;
+    _cinematicBearing = randomBearing;
+    _cinematicDone = true;
+  }
+
+--- lib/screens\tap_to_pay_screen.dart:148 ---
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        widget.onPaymentSuccess?.call();
+        Navigator.of(context).pop(true);
+      }
+    });
+  }
+
+  void _onCancel() async {
+    HapticService.lightImpact();
+
+--- lib/screens\transfer_cruise_cash_screen.dart:95 ---
+      await Future.delayed(const Duration(milliseconds: 1600));
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = e.toString().replaceFirst('ApiException: ', '');
+      });
+      HapticService.heavyImpact();
+    }
+
+--- lib/screens\verify_code_screen.dart:176 ---
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() => _resendSeconds--);
+      if (_resendSeconds > 0) _startResendTimer();
+    });
+  }
+
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+
+--- lib/screens\waiting_for_driver_screen.dart:121 ---
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _slideCtrl.forward();
+    });
+
+    _prefetchRoute();
+  }
+
+  @override
+  void dispose() {
+    _shimmerCtrl.dispose();
+
+--- lib/screens\waiting_for_driver_screen.dart:188 ---
+    Future.delayed(const Duration(milliseconds: 400), () async {
+      if (!mounted || _mapCtrl == null) return;
+      try {
+        final cam = await _mapCtrl!.cameraForCoordinatesPadding(
+          [
+            mapbox.Point(coordinates: mapbox.Position(
+              widget.pickupLatLng.longitude,
+              widget.pickupLatLng.latitude,
+            )),
+            mapbox.Point(coordinates: mapbox.Position(
+
+--- lib/screens\waiting_for_driver_screen.dart:242 ---
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    if (_routePoints.length >= 2) {
+      await _animateRouteDraw();
+    }
+  }
+
+  /// Project the pickup + dropoff lat/lng to the current screen
+  /// coordinates so the floating labels can sit beside them. Returns
+
+--- lib/screens\waiting_for_driver_screen.dart:936 ---
+    Future.delayed(Duration(milliseconds: (widget.delay * 1000).round()), () {
+      if (mounted) _ctrl.repeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+--- lib/screens\welcome_back_screen.dart:119 ---
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (_disposed || !mounted) return;
+
+    // Glow appears
+    _glowCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_disposed || !mounted) return;
+
+    // Title fades in
+    _titleCtrl.forward();
+
+--- lib/screens\welcome_back_screen.dart:124 ---
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (_disposed || !mounted) return;
+
+    // Title fades in
+    _titleCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (_disposed || !mounted) return;
+
+    // Deco lines expand
+    _decoCtrl.forward();
+
+--- lib/screens\welcome_back_screen.dart:129 ---
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (_disposed || !mounted) return;
+
+    // Deco lines expand
+    _decoCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (_disposed || !mounted) return;
+
+    // Name slides up
+    await _nameCtrl.forward().orCancel.catchError((_) {});
+
+--- lib/screens\welcome_back_screen.dart:134 ---
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (_disposed || !mounted) return;
+
+    // Name slides up
+    await _nameCtrl.forward().orCancel.catchError((_) {});
+    if (_disposed || !mounted) return;
+
+    // Hold
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (_disposed || !mounted) return;
+
+--- lib/screens\welcome_back_screen.dart:142 ---
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (_disposed || !mounted) return;
+
+    // Fade out + navigate simultaneously — the destination fades IN
+    // while this screen fades OUT, preventing a black-screen gap.
+    _exitCtrl.forward().orCancel.catchError((_) {});
+    if (_disposed || !mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+
+--- lib/screens\driver\cruise_level_screen.dart:206 ---
+        Future.delayed(const Duration(milliseconds: 400), _triggerLevelUp);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+
+--- lib/screens\driver\driver_approved_screen.dart:88 ---
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+
+    // Ring glow appears
+    _ringCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+
+    // Logo scales in
+    _logoCtrl.forward();
+
+--- lib/screens\driver\driver_approved_screen.dart:93 ---
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+
+    // Logo scales in
+    _logoCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    // Text fades in
+    _textCtrl.forward();
+
+--- lib/screens\driver\driver_approved_screen.dart:98 ---
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    // Text fades in
+    _textCtrl.forward();
+
+    // Auto-navigate after total ~4s
+    _navTimer = Timer(const Duration(milliseconds: 3500), () {
+      if (mounted) _goNext();
+    });
+
+--- lib/screens\driver\driver_earnings_screen.dart:1033 ---
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onCashedOut();
+      _pushSuccessScreen(
+        net: _selected == 'instant' ? _net : widget.available,
+        instant: _selected == 'instant',
+        cardBrand: _selected == 'instant' ? 'Visa' : null,
+        cardLast4: _selected == 'instant' ? '1084' : null,
+      );
+
+--- lib/screens\driver\driver_earnings_screen.dart:1746 ---
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _sparkleCtrl.repeat();
+    });
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) _textCtrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+
+--- lib/screens\driver\driver_earnings_screen.dart:1749 ---
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) _textCtrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _iconCtrl.dispose();
+    _sparkleCtrl.dispose();
+    _textCtrl.dispose();
+
+--- lib/screens\driver\driver_online_controller.dart:108 ---
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
+        try {
+          final id = await ApiService.getCurrentUserId();
+          if (!mounted) return;
+          if (id != null) {
+            _driverId = id;
+            debugPrint('✅ Got driverId=$_driverId on retry $attempt');
+            // Reconnect SSE now that we have an ID
+            _connectSse();
+
+--- lib/screens\driver\driver_online_controller.dart:733 ---
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && _phase == _Phase.searching) _goOnlineBackend();
+      });
+      return;
+    }
+    // _isGoingOnline is already true from _verifyAndGoOnline; keep it true
+    // Save last known location for startup pre-caching
+    LocalCache.set('last_driver_lat', _pos!.latitude);
+    LocalCache.set('last_driver_lng', _pos!.longitude);
+    ApiService.updateDriverLocation(
+
+--- lib/screens\driver\driver_online_controller.dart:764 ---
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted && _phase == _Phase.searching) {
+              debugPrint('[DriverOnline] Retrying _goOnlineBackend after failure');
+              _goOnlineBackend();
+            }
+          });
+        });
+  }
+
+  void _goOfflineBackend() {
+
+--- lib/screens\driver\driver_online_controller.dart:1026 ---
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !(_smoothTicker?.isTicking ?? false)) {
+          _smoothTicker?.start();
+        }
+      });
+    }
+  }
+
+  /// Trim the route polyline behind the driver so only upcoming road is shown.
+  /// Google Maps navigation style — route "disappears" behind the car.
+
+--- lib/screens\driver\driver_online_controller.dart:1189 ---
+          Future.delayed(const Duration(seconds: 4), () {
+            if (mounted) _setState(() => _showScheduledToast = false);
+          });
+        }
+      }
+      _prevScheduledCount = newCount;
+    } catch (_) {}
+  }
+
+  /// Connect (or reconnect) the SSE offer stream.
+
+--- lib/screens\driver\driver_online_controller.dart:1300 ---
+      Future.delayed(const Duration(milliseconds: 160), () {
+        if (!mounted) return;
+        HapticService.heavyImpact();
+      });
+      Future.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted) return;
+        HapticService.heavyImpact();
+      });
+      final firstOffer = filtered.first;
+      if (_appInForeground) {
+
+--- lib/screens\driver\driver_online_controller.dart:1304 ---
+      Future.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted) return;
+        HapticService.heavyImpact();
+      });
+      final firstOffer = filtered.first;
+      if (_appInForeground) {
+        // Foreground: in-app sound + haptic is sufficient. The offer card
+        // UI is already visible. Don't show a local OS notification — the
+        // backend sends FCM push which the OS shows when backgrounded.
+        NotificationService.playOfferSound();
+
+--- lib/screens\driver\driver_online_controller.dart:1927 ---
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    // Phase 2: Tilt to 55
+    _map?.flyTo(
+      mapbox.CameraOptions(pitch: 55),
+      mapbox.MapAnimationOptions(duration: 800),
+    );
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+--- lib/screens\driver\driver_online_controller.dart:1935 ---
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    // Phase 3: Rotate 20
+    _map?.flyTo(
+      mapbox.CameraOptions(bearing: 20),
+      mapbox.MapAnimationOptions(duration: 600),
+    );
+  }
+
+
+--- lib/screens\driver\driver_online_controller.dart:2042 ---
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+    }
+
+    if (_tripId != null) {
+      try {
+        await ApiService.updateTripStatus(tripId: _tripId!, status: 'in_trip');
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+--- lib/screens\driver\driver_online_map.dart:179 ---
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+      _dotPopScale = (i / riseSteps) * 1.15;
+      await _updateDriverAnnotation(); // await so frames don't pile up
+    }
+    // Phase 2: bounce back 1.15 → 1.0 over ~150 ms (9 frames × 16 ms)
+    const bounceSteps = 9;
+    for (int i = 1; i <= bounceSteps; i++) {
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+
+--- lib/screens\driver\driver_online_map.dart:187 ---
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+      _dotPopScale = 1.15 - (0.15 * (i / bounceSteps));
+      await _updateDriverAnnotation(); // await so frames don't pile up
+    }
+    _dotPopScale = 1.0;
+    if (mounted) await _updateDriverAnnotation();
+  }
+
+  /// Snap a raw GPS coordinate to the nearest point on the active route polyline.
+
+--- lib/screens\driver\driver_online_map.dart:552 ---
+    await Future.delayed(const Duration(milliseconds: 1100));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // ── PHASE 4: Draw segment 1 (driver → pickup) ──
+    if (_fullSegOne.length >= 2) {
+      try {
+        await _drawGoldGlossRoute(_fullSegOne).timeout(const Duration(seconds: 8));
+      } catch (_) {}
+    }
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+--- lib/screens\driver\driver_online_map.dart:565 ---
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+    // ── PHASE 6: Draw segment 2 (pickup → dropoff) ──
+    if (_fullSegTwo.length >= 2) {
+      try {
+        await _drawGoldGlossRouteAppend(_fullSegTwo).timeout(const Duration(seconds: 8));
+      } catch (_) {}
+    }
+    if (!mounted || _previewingOffer == null) { _isCardAnimating = false; return; }
+
+--- lib/screens\driver\driver_online_screen.dart:539 ---
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        _clearAllAnnotations().then((_) {
+          if (mounted) _updateDriverAnnotation();
+        });
+      });
+    }
+  }
+
+  @override
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:657 ---
+        if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (!apiOk) {
+      debugPrint('[Driver] arrived API FAILED after 3 attempts');
+      // H2 fix: previously the UI stayed in "arrived" state even when all
+      // 3 backend attempts failed — the driver thought they were at pickup
+      // but neither the backend nor the rider ever knew. Roll back the
+      // local state and surface the failure so the driver can retry.
+      if (mounted) {
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:757 ---
+          await Future.delayed(const Duration(seconds: 3));
+        }
+
+        // Navigate back to DriverOnlineScreen — this screen was pushReplacement'd
+        // from TripAcceptedScreen, so pop() would leave us with nowhere to go.
+        // pushAndRemoveUntil ensures we always land back in the driver flow.
+        if (!mounted) return;
+        try {
+          Navigator.of(context).pushAndRemoveUntil(
+            PageRouteBuilder(
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:850 ---
+            await Future.delayed(const Duration(seconds: 3));
+          }
+
+          if (!mounted) return;
+          try {
+            Navigator.of(context).pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:936 ---
+        if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (!apiOk) {
+      debugPrint('[Driver] in_trip API FAILED after 3 attempts');
+    }
+    // Fire-and-forget Firestore sync as backup (backend already syncs on success)
+    FirebaseFirestore.instance
+        .collection('trips')
+        .doc(_fsDocId)
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:978 ---
+          if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+      if (!apiOk) {
+        debugPrint('[Driver] completeTrip API FAILED after 3 attempts — trip may be stuck');
+      }
+      try {
+        await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(_fsDocId)
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:2005 ---
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return false;
+      final t = (pinSw.elapsedMilliseconds / pinMs).clamp(0.0, 1.0);
+      double scale;
+      if (t < 0.6) {
+        scale = Curves.easeOutCubic.transform(t / 0.6) * 0.98;
+      } else if (t < 0.85) {
+        scale = 0.98 - 0.12 * Curves.easeInOut.transform((t - 0.6) / 0.25);
+      } else {
+        scale = 0.86;
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:2056 ---
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted) _tiltCtrl.forward(from: 0);
+
+    _miniMapAnimDone = true;
+    _startCameraCycle();
+  }
+
+  void _startCameraCycle() {
+    _camCycleTimer?.cancel();
+    _camCycleIdx = 0;
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:2920 ---
+          Future.delayed(const Duration(milliseconds: 400), () {
+            if (!mounted) return;
+            setState(() => _tripStarted = true);
+            _openNativeMaps(widget.pickupLatLng);
+          });
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          foregroundColor: Colors.black,
+          disabledBackgroundColor: _gold.withValues(alpha: 0.6),
+
+--- lib/screens\driver\driver_trip_accept_screen.dart:3124 ---
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (!mounted) return;
+            setState(() => _rideStarted = true);
+            _startDropoffProximityDetection();
+            _updateTripInTrip();
+            // Navigate immediately — route fetch runs in background
+            _openNativeMaps(widget.dropoffLatLng);
+          });
+        },
+        style: ElevatedButton.styleFrom(
+
+--- lib/screens\driver\driver_vehicle_screen.dart:249 ---
+        await Future.delayed(const Duration(seconds: 2));
+        await ApiService.uploadDocument(
+          docType: docType,
+          filePath: xFile.path,
+        );
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+--- lib/screens\driver\license_scanner_screen.dart:121 ---
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        _ctrl?.dispose();
+        _ctrl = CameraController(
+          rear,
+          ResolutionPreset.high,
+          enableAudio: false,
+        );
+        await _ctrl!.initialize().timeout(const Duration(seconds: 5));
+        await _ctrl!.setFlashMode(FlashMode.off);
+
+--- lib/screens\driver\license_scanner_screen.dart:216 ---
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (mounted) setState(() => _capturing = true);
+    HapticService.mediumImpact();
+    try {
+      final xFile = await _ctrl!.takePicture();
+      // Run OCR on captured image to verify it's a document
+      final inputImage = InputImage.fromFilePath(xFile.path);
+      final result = await _textRecognizer.processImage(inputImage);
+      final text = result.text.toLowerCase();
+
+--- lib/screens\driver\scheduled_ride_details_screen.dart:153 ---
+          await Future.delayed(const Duration(seconds: 2));
+          if (!mounted) return;
+          continue;
+        }
+        _autoStarted = false; // allow retry
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).connectionError),
+            backgroundColor: Colors.red,
+          ),
+
+--- lib/screens\driver\trip_accepted_screen.dart:125 ---
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) _slideCtrl.forward();
+    });
+
+    // Tilt controller (kept for disposal, but not animated)
+    _tiltCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _tiltAnim = Tween<double>(begin: 20.0, end: 20.0).animate(
+
+--- lib/screens\driver\trip_accepted_screen.dart:368 ---
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    if (_routePoints.length >= 2) {
+      await _animateRouteDraw();
+    }
+  }
+
+  void _applyMapTilt() {
+    if (_mapCtrl == null || !mounted) return;
+

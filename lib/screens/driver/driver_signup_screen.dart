@@ -40,6 +40,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
+  static final _digitRe = RegExp(r'[0-9]');
+  static final _upperRe = RegExp(r'[A-Z]');
+  static final _specialRe = RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]');
+  static final _nonDigitRe = RegExp(r'\D');
+  static final _phoneCleanRe = RegExp(r'[\s\-\(\)]');
+
   // ── Vehicle autocomplete data ─────────────────────────────────────────────
   static const _carMakes = [
     'Acura',
@@ -334,16 +341,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       case 0:
         return _firstNameCtrl.text.trim().length >= 2 &&
             _lastNameCtrl.text.trim().length >= 2 &&
-            RegExp(
-              r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$',
-            ).hasMatch(_emailCtrl.text.trim()) &&
-            _phoneCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 10 &&
+            _emailRe.hasMatch(_emailCtrl.text.trim()) &&
+            _phoneCtrl.text.replaceAll(_nonDigitRe, '').length >= 10 &&
             _passwordCtrl.text.length >= 8 &&
-            _passwordCtrl.text.contains(RegExp(r'[0-9]')) &&
-            _passwordCtrl.text.contains(RegExp(r'[A-Z]')) &&
-            _passwordCtrl.text.contains(
-              RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
-            ) &&
+            _passwordCtrl.text.contains(_digitRe) &&
+            _passwordCtrl.text.contains(_upperRe) &&
+            _passwordCtrl.text.contains(_specialRe) &&
             _emailError == null &&
             _phoneError == null &&
             !_checkingEmail &&
@@ -362,7 +365,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _insurancePath != null &&
             _registrationPath != null &&
             _biometricDone &&
-            _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9;
+            _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
       case 3:
         return _agreedTerms;
       default:
@@ -374,9 +377,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     // On Step 0: force-validate email & phone if debounce hasn't fired yet
     if (_step == 0) {
       final email = _emailCtrl.text.trim();
-      final phone = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+      final phone = _phoneCtrl.text.replaceAll(_nonDigitRe, '');
       if (email.isNotEmpty &&
-          RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email) &&
+          _emailRe.hasMatch(email) &&
           !_checkingEmail &&
           _emailError == null) {
         // Trigger immediate check if not yet validated
@@ -452,7 +455,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _emailDebounce?.cancel();
     final email = _emailCtrl.text.trim();
     if (email.isEmpty ||
-        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email)) {
+        !_emailRe.hasMatch(email)) {
       if (_emailError != null || _checkingEmail) {
         setState(() {
           _emailError = null;
@@ -478,7 +481,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   void _onPhoneChanged() {
     _phoneDebounce?.cancel();
-    final raw = _phoneCtrl.text.replaceAll(RegExp(r'\D'), '');
+    final raw = _phoneCtrl.text.replaceAll(_nonDigitRe, '');
     if (raw.length < 10) {
       if (_phoneError != null || _checkingPhone) {
         setState(() {
@@ -760,7 +763,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
     try {
       var phone = _phoneCtrl.text.trim();
-      final cleaned = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+      final cleaned = phone.replaceAll(_phoneCleanRe, '');
       phone = cleaned.startsWith('+') ? cleaned : '+1$cleaned';
 
       final result = await ApiService.register(
@@ -836,7 +839,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     final body = <String, dynamic>{'id_document_type': 'driver_license'};
 
     // Include SSN
-    final ssnDigits = _ssnCtrl.text.replaceAll(RegExp(r'\D'), '');
+    final ssnDigits = _ssnCtrl.text.replaceAll(_nonDigitRe, '');
     if (ssnDigits.length == 9) body['ssn'] = ssnDigits;
 
     Future<void> enc(String key, String? p) async {
@@ -1049,7 +1052,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     ? const Icon(Icons.error_outline_rounded,
                         color: Colors.redAccent, size: 20)
                     : _emailCtrl.text.trim().isNotEmpty &&
-                            RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$')
+                            _emailRe
                                 .hasMatch(_emailCtrl.text.trim())
                         ? const Icon(Icons.check_circle_rounded,
                             color: Colors.green, size: 20)
@@ -1079,7 +1082,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     ? const Icon(Icons.error_outline_rounded,
                         color: Colors.redAccent, size: 20)
                     : _phoneCtrl.text
-                                .replaceAll(RegExp(r'\D'), '')
+                                .replaceAll(_nonDigitRe, '')
                                 .length >=
                             10
                         ? const Icon(Icons.check_circle_rounded,
@@ -1116,16 +1119,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 const SizedBox(height: 6),
                 _driverStrengthRow(
                     'Contains a number',
-                    _passwordCtrl.text.contains(RegExp(r'[0-9]'))),
+                    _passwordCtrl.text.contains(_digitRe)),
                 const SizedBox(height: 6),
                 _driverStrengthRow(
                     'An uppercase letter',
-                    _passwordCtrl.text.contains(RegExp(r'[A-Z]'))),
+                    _passwordCtrl.text.contains(_upperRe)),
                 const SizedBox(height: 6),
                 _driverStrengthRow(
                     r'A special character (!@#$' "'" r's etc.)',
                     _passwordCtrl.text.contains(
-                        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'))),
+                        _specialRe)),
               ],
             ),
           ),
@@ -1306,7 +1309,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _buildSsnSection() {
-    final ssnFilled = _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9;
+    final ssnFilled = _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1535,7 +1538,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       ('Registration', _registrationPath != null),
       (
         S.of(context).ssnShortLabel,
-        _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9,
+        _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9,
       ),
       (S.of(context).faceCheckLabel, _biometricDone),
     ];
@@ -1636,7 +1639,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           ),
           _reviewItem(
             S.of(context).ssnShortLabel,
-            _ssnCtrl.text.replaceAll(RegExp(r'\D'), '').length == 9
+            _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9
                 ? S.of(context).providedStatus
                 : S.of(context).missingStatus,
           ),
@@ -2025,7 +2028,7 @@ class _SsnFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final digits = newValue.text.replaceAll(_nonDigitRe, '');
     final buf = StringBuffer();
     for (var i = 0; i < digits.length && i < 9; i++) {
       if (i == 3 || i == 5) buf.write('-');

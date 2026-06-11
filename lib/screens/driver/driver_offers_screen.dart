@@ -41,7 +41,7 @@ class DriverOffersScreen extends StatefulWidget {
 }
 
 class _DriverOffersScreenState extends State<DriverOffersScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _dark = Color(0xFF111116);
   static const _card = Color(0xFF1C1C24);
@@ -66,6 +66,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -81,7 +82,17 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pulseCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _pulseCtrl.repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     _goldDot.dispose();
     _pulseCtrl.dispose();

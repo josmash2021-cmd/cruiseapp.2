@@ -2672,7 +2672,7 @@ class ApiService {
         return url.isNotEmpty ? url : null;
       }
     } catch (e) {
-      debugPrint('[ApiService] getUserPhotoUrl($userId) failed: $e');
+      debugPrint('[ApiService] getUserPhotoUrl failed: $e');
     }
     return null;
   }

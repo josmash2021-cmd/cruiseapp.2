@@ -34,7 +34,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final id = await ApiService.getCurrentUserId();
         if (id != null) {
           _driverId = id;
-          debugPrint('Got driverId=$_driverId');
+          debugPrint('Got driverId');
         }
       } catch (e) {
         debugPrint('getCurrentUserId failed: $e');
@@ -112,7 +112,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           if (!mounted) return;
           if (id != null) {
             _driverId = id;
-            debugPrint('✅ Got driverId=$_driverId on retry $attempt');
+            debugPrint('✅ Got driverId on retry $attempt');
             // Reconnect SSE now that we have an ID
             _connectSse();
             _startPosStream();
@@ -721,7 +721,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     debugPrint(
-      '🟢 Going online: driverId=$_driverId lat=${_pos?.latitude} lng=${_pos?.longitude}',
+      '🟢 Going online: lat=${_pos?.latitude} lng=${_pos?.longitude}',
     );
     if (!_approvalGatePassed) {
       debugPrint('_goOnlineBackend: approval gate not passed, skipping');
@@ -1352,7 +1352,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final id = await ApiService.getCurrentUserId();
         if (id != null) {
           _driverId = id;
-          debugPrint('âœ… Recovered driverId=$_driverId during polling');
+          debugPrint('âœ… Recovered driverId during polling');
           _goOnlineBackend(); // Re-establish online status
         }
       } catch (_) {}
@@ -1390,7 +1390,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _acceptOffer(Map<String, dynamic> r) async {
-    debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase, driverId=$_driverId');
+    debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
     debugPrint('[DriverOnline] offer data: ${r.keys.toList()}');
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
@@ -1418,7 +1418,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final id = await ApiService.getCurrentUserId();
         if (id != null) {
           _driverId = id;
-          debugPrint('[DriverOnline] Recovered driverId=$_driverId');
+          debugPrint('[DriverOnline] Recovered driverId');
         }
       } catch (e) {
         debugPrint('[DriverOnline] Failed to recover driverId: $e');
@@ -1459,7 +1459,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 1: creating acceptFuture');
       final acceptFuture = (() async {
         if (offerId != null && _driverId != null) {
-          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId, driverId=$_driverId)');
+          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId)');
           await ApiService.acceptRideOffer(
             offerId: offerId,
             driverId: _driverId!,
@@ -1468,7 +1468,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           return true;
         }
         if (tripId != null && _driverId != null) {
-          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptTrip(tripId=$tripId, driverId=$_driverId)');
+          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptTrip(tripId=$tripId)');
           await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
           debugPrint('[DriverOnline] ▶ STEP 1b: acceptTrip SUCCESS');
           return true;
@@ -1806,7 +1806,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } catch (e, stack) {
       debugPrint('[DriverOnline] ═══════════════════════════════════════');
       debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
-      debugPrint('[DriverOnline] _driverId=$_driverId, offerId=$offerId, tripId=$tripId');
+      debugPrint('[DriverOnline] offerId=$offerId, tripId=$tripId');
       debugPrint('[DriverOnline] mounted=$mounted, phase=$_phase');
       debugPrint(stack.toString());
       debugPrint('[DriverOnline] ═══════════════════════════════════════');

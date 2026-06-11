@@ -73,7 +73,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         );
         final user = result['user'] as Map<String, dynamic>;
         userId = user['id'] as int?;
-        debugPrint('✅ Social auth userId=$userId');
+        debugPrint('✅ Social auth successful');
 
         // Update additional profile fields (phone, etc.)
         final updates = <String, dynamic>{};
@@ -139,7 +139,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         );
         final user = result['user'] as Map<String, dynamic>;
         userId = user['id'] as int?;
-        debugPrint('✅ Registered userId=$userId');
+        debugPrint('✅ Registered successfully');
       } on ApiException catch (e) {
         // ── Handle duplicate email/phone (409) by logging in instead ──
         if (e.statusCode == 409) {
@@ -159,7 +159,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
             );
             final user = completeResult['user'] as Map<String, dynamic>;
             userId = user['id'] as int?;
-            debugPrint('✅ Auto-login successful userId=$userId');
+            debugPrint('✅ Auto-login successful');
           } catch (loginErr) {
             debugPrint('❌ Auto-login also failed: $loginErr');
             if (!mounted) return;

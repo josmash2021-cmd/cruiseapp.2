@@ -125,7 +125,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     final userIdStr = user?['userId'] ?? '';
     final userIdInt = int.tryParse(userIdStr) ?? 0;
 
-    debugPrint('[PendingReview] userId=$userIdStr userIdInt=$userIdInt');
+    debugPrint('[PendingReview] loading user data');
 
     // 3. Attach real-time listeners on ALL collections × doc ID formats
     if (userIdInt > 0) {

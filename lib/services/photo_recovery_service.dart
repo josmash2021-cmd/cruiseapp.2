@@ -34,7 +34,7 @@ class PhotoRecoveryService {
   static Future<String?> resolvePhotoUrl(String uid, String role) async {
     if (uid.isEmpty || role.isEmpty) return null;
 
-    debugPrint('[PhotoRecovery] Starting resolution for uid=$uid, role=$role');
+    debugPrint('[PhotoRecovery] Starting resolution for role=$role');
 
     // ─── SOURCE 1: Local SharedPreferences (fastest) ────────────────────────
     try {
@@ -116,7 +116,7 @@ class PhotoRecoveryService {
     }
 
     // ─── NO PHOTO FOUND ──────────────────────────────────────────────────────
-    debugPrint('[PhotoRecovery] ❌ No photo found for uid=$uid, role=$role from any source');
+    debugPrint('[PhotoRecovery] ❌ No photo found for role=$role from any source');
     return null;
   }
 
@@ -172,7 +172,7 @@ class PhotoRecoveryService {
   static Future<void> savePhotoEveryWhere(String uid, String role, String photoUrl) async {
     if (uid.isEmpty || role.isEmpty || photoUrl.isEmpty) return;
 
-    debugPrint('[PhotoRecovery] Saving photo URL to ALL tiers for uid=$uid, role=$role');
+    debugPrint('[PhotoRecovery] Saving photo URL to ALL tiers for role=$role');
 
     // Tier 1: SharedPreferences
     await _cachePhotoUrl(uid, role, photoUrl);
@@ -196,7 +196,7 @@ class PhotoRecoveryService {
     try {
       final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       await prefs.remove(_photoUrlKeyForUid(uid, role));
-      debugPrint('[PhotoRecovery] Cleared photo URL cache for uid=$uid, role=$role (Firestore copy preserved)');
+      debugPrint('[PhotoRecovery] Cleared photo URL cache for role=$role (Firestore copy preserved)');
     } catch (e) {
       debugPrint('[PhotoRecovery] Failed to clear cache: $e');
     }

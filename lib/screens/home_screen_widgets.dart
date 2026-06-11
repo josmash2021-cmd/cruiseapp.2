@@ -2601,40 +2601,41 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               )
             else
-              mapbox.MapWidget(
-                styleUri: MapboxConfig.styleDark,
-                cameraOptions: mapbox.CameraOptions(
-                  center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-                  zoom: 15.0,
-                ),
-                onMapCreated: (ctrl) async {
-                  _miniMapController = ctrl;
-                  ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                  ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                  ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                  ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                  _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                  // GoldLocationDot removed — LocationPuck via onStyleLoadedListener
-                },
-                onStyleLoadedListener: (_) async {
-                  if (_miniMapController != null) {
-                    await _applyDarkNavyGoldTheme(_miniMapController!);
-                    try {
-                      final puckImg = await _buildGoldPuckImage();
-                      await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
-                        enabled: true,
-                        pulsingEnabled: true,
-                        pulsingColor: const Color(0xFFE8C547).toARGB32(),
-                        pulsingMaxRadius: 20.0,
-                        locationPuck: mapbox.LocationPuck(
-                          locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
-                        ),
-                      ));
-                    } catch (_) {}
-                  }
-                },
-                gestureRecognizers: const {},
-              ),
+              _cachedMiniMapWidget != null && _cachedMiniMapLatLng == _currentLatLng
+                  ? _cachedMiniMapWidget!
+                  : (_cachedMiniMapLatLng = _currentLatLng, _cachedMiniMapWidget = mapbox.MapWidget(
+                      styleUri: MapboxConfig.styleDark,
+                      cameraOptions: mapbox.CameraOptions(
+                        center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
+                        zoom: 15.0,
+                      ),
+                      onMapCreated: (ctrl) async {
+                        _miniMapController = ctrl;
+                        ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                        ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                        ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                        ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                        _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                      },
+                      onStyleLoadedListener: (_) async {
+                        if (_miniMapController != null) {
+                          await _applyDarkNavyGoldTheme(_miniMapController!);
+                          try {
+                            final puckImg = await _buildGoldPuckImage();
+                            await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
+                              enabled: true,
+                              pulsingEnabled: true,
+                              pulsingColor: const Color(0xFFE8C547).toARGB32(),
+                              pulsingMaxRadius: 20.0,
+                              locationPuck: mapbox.LocationPuck(
+                                locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
+                              ),
+                            ));
+                          } catch (_) {}
+                        }
+                      },
+                      gestureRecognizers: const {},
+                    )),
             // Badge
             Positioned(
               bottom: 12,

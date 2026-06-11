@@ -188,6 +188,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   LatLng? _cachedMapLatLng;
   int _cachedMapEpoch = -1;
 
+  // Cache mini map widget (driver tracking card)
+  Widget? _cachedMiniMapWidget;
+  LatLng? _cachedMiniMapLatLng;
+
   // User profile data
   String _firstName = '';
   String _lastName = '';

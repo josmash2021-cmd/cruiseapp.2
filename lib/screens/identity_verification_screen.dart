@@ -32,7 +32,7 @@ class IdentityVerificationScreen extends StatefulWidget {
 }
 
 class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _goldDark = Color(0xFFB8972E);
 
@@ -64,6 +64,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -75,6 +76,15 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     _preloadUser();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pulseCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _pulseCtrl.repeat(reverse: true);
+    }
+  }
+
   Future<void> _preloadUser() async {
     final u = await UserSession.getUser();
     if (mounted) setState(() => _cachedUser = u);
@@ -82,6 +92,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _firestoreSubscription?.cancel();
     _pulseCtrl.dispose();

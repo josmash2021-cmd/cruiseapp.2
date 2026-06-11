@@ -140,7 +140,7 @@ class _ReferralScreenState extends State<ReferralScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Code copied'),
+        content: Text(S.of(context).codeCopied),
         backgroundColor: const Color(0xFF22C55E),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

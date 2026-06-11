@@ -97,7 +97,7 @@ class TapToPayExample {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(S.of(context).cancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),

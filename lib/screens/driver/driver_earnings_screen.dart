@@ -1325,7 +1325,7 @@ class _CashOutSheetState extends State<_CashOutSheet>
             child: TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(
-                'Cancel',
+                S.of(context).cancel,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.4),
                   fontWeight: FontWeight.w600,

@@ -1445,7 +1445,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                       ),
                     ),
                     child: const Text(
-                      'Save',
+                      S.of(context).save,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,

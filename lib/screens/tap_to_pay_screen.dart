@@ -357,7 +357,7 @@ class _TapToPayScreenState extends State<TapToPayScreen>
                             backgroundColor: Colors.white.withValues(alpha: 0.2),
                             foregroundColor: Colors.white,
                           ),
-                          child: const Text('Retry'),
+                          child: Text(S.of(context).retry),
                         ),
                       ],
                     ],

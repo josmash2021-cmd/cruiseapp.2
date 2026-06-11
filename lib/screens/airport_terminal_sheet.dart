@@ -1488,12 +1488,13 @@ class _AnimatedPlaneIcon extends StatefulWidget {
 }
 
 class _AnimatedPlaneIconState extends State<_AnimatedPlaneIcon>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 3.6s animation like web's vrAptPlaneTo/vrAptPlaneFrom
     _controller = AnimationController(
       vsync: this,
@@ -1502,7 +1503,17 @@ class _AnimatedPlaneIconState extends State<_AnimatedPlaneIcon>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _controller.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _controller.repeat();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }

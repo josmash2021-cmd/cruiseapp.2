@@ -50,7 +50,8 @@
     <div class="spinner"></div>
   </div>
 
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyALnqq4-_jJLUCLxSJaWZGZHgw27RVE78Y&libraries=places"></script>
+  <!-- GOOGLE_MAPS_API_KEY is injected at build time. For local dev, replace __GOOGLE_MAPS_API_KEY__ with your key or run the generate_env script. -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=places"></script>
   <script src="flutter_bootstrap.js" async></script>
   <script>
     // Hide loading screen once Flutter renders first frame

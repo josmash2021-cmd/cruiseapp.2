@@ -150,6 +150,15 @@ definitions:
         XCEOF
         echo "iOS Secrets.xcconfig generated"
 
+        # Web: inject Google Maps API key into web/index.html
+        if [ -n "${GOOGLE_MAPS_API_KEY}" ]; then
+          sed -i.bak "s|__GOOGLE_MAPS_API_KEY__|${GOOGLE_MAPS_API_KEY}|g" web/index.html
+          rm -f web/index.html.bak
+          echo "Web: Google Maps API key injected into web/index.html"
+        else
+          echo "⚠️  GOOGLE_MAPS_API_KEY not set — web/index.html will contain placeholder"
+        fi
+
     - &generate_firebase_configs
       name: Generate Firebase config files
       script: |

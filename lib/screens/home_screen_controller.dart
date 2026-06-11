@@ -737,6 +737,27 @@ extension _HomeScreenController on _HomeScreenState {
         await LocalDataService.clearActiveRide();
       } catch (_) {}
 
+      // Reset map back to the home default frame BEFORE nulling the controller.
+      // The controller is still valid here; after setState rebuilds the MapWidget
+      // with a new ValueKey it will be destroyed.
+      final mapCtrl = _miniMapController;
+      if (mapCtrl != null && _currentLatLng != null) {
+        mapCtrl.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(
+                _currentLatLng!.longitude,
+                _currentLatLng!.latitude,
+              ),
+            ),
+            zoom: 15.0,
+            pitch: 0,
+            bearing: 0,
+          ),
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
+
       _setState(() {
         _activeRide = null;
         _driverLocation = null;
@@ -753,25 +774,6 @@ extension _HomeScreenController on _HomeScreenState {
         _miniMapController = null;
         _miniMapAnnotMgr = null;
       });
-
-      // Reset map back to the home default frame (pitch 0, north up,
-      // zoom 15) on the rider's current GPS so the canvas is clean.
-      if (_miniMapController != null && _currentLatLng != null) {
-        _miniMapController!.flyTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-              coordinates: mapbox.Position(
-                _currentLatLng!.longitude,
-                _currentLatLng!.latitude,
-              ),
-            ),
-            zoom: 15.0,
-            pitch: 0,
-            bearing: 0,
-          ),
-          mapbox.MapAnimationOptions(duration: 800),
-        );
-      }
 
       // Fade in normal content
       _rideFadeCtrl.forward();

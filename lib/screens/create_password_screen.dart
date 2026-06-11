@@ -54,11 +54,9 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
   void _validate() {
     final pass = _passCtrl.text;
     final confirm = _confirmCtrl.text;
-    final hasNumber = pass.contains(RegExp(r'[0-9]'));
-    final hasUpper = pass.contains(RegExp(r'[A-Z]'));
-    final hasSpecial = pass.contains(
-      RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'),
-    );
+    final hasNumber = pass.contains(_digitRe);
+    final hasUpper = pass.contains(_upperRe);
+    final hasSpecial = pass.contains(_specialRe);
     final ok =
         pass.length >= 8 &&
         hasNumber &&
@@ -81,17 +79,17 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
       setState(() => _errorText = 'Password must be at least 8 characters');
       return;
     }
-    if (!pass.contains(RegExp(r'[0-9]'))) {
+    if (!pass.contains(_digitRe)) {
       setState(() => _errorText = 'Password must contain at least 1 number');
       return;
     }
-    if (!pass.contains(RegExp(r'[A-Z]'))) {
+    if (!pass.contains(_upperRe)) {
       setState(
         () => _errorText = 'Password must contain at least 1 uppercase letter',
       );
       return;
     }
-    if (!pass.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]'))) {
+    if (!pass.contains(_specialRe)) {
       setState(
         () => _errorText = 'Password must contain at least 1 special character',
       );

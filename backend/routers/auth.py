@@ -2,7 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
-from jose import jwt, JWTError
+import jwt
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.exc import IntegrityError
@@ -110,7 +110,7 @@ async def logout(
         exp = payload.get("exp", 0)
         if jti:
             await revoke_token(jti, user.id, float(exp))
-    except (JWTError, Exception):
+    except (jwt.InvalidTokenError, Exception):
         pass  # Best-effort - don't fail logout
     client_ip = request.client.host if request.client else "unknown"
     _security_audit_log("logout", client_ip, f"user_id={user.id}", user_id=user.id)
@@ -704,7 +704,7 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
         if payload.get("type") != "login":
             raise HTTPException(401, "Invalid login token")
         user_id = int(payload["sub"])
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid or expired login token")
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -915,7 +915,7 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
         if payload.get("type") != "refresh":
             raise HTTPException(401, "Not a refresh token")
         user_id = int(payload["sub"])
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         _security_audit_log("REFRESH_FAILED", request.client.host if request.client else "unknown", "invalid_token")
         raise HTTPException(401, "Invalid or expired refresh token")
     result = await db.execute(select(User).where(User.id == user_id))
@@ -1329,7 +1329,7 @@ async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid or expired token")
     if not user_id:
         raise HTTPException(401, "Invalid token")
@@ -1420,7 +1420,7 @@ async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired token")
     r = await db.execute(select(User).where(User.id == user_id))
     user = r.scalar_one_or_none()
@@ -1452,7 +1452,7 @@ async def web_get_trips(request: Request, db: AsyncSession = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired token")
     result = await db.execute(
         select(Trip).where(Trip.rider_id == user_id).order_by(Trip.created_at.desc()).limit(100)
@@ -1484,7 +1484,7 @@ async def web_send_chat(trip_id: int, request: Request, db: AsyncSession = Depen
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired token")
 
     body = await request.json()
@@ -1543,7 +1543,7 @@ async def web_get_chat(trip_id: int, request: Request, db: AsyncSession = Depend
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired token")
 
     r = await db.execute(select(Trip).where(Trip.id == trip_id))

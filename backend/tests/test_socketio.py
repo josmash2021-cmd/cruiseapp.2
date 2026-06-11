@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 import socketio
-from jose import jwt
+import jwt
 
 # JWT secret must match utils.security
 _JWT_SECRET = "test-secret-for-ci"

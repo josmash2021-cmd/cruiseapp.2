@@ -70,7 +70,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator, model_validator
-from jose import jwt, JWTError
+import jwt
 import bcrypt as _bcrypt
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, select, func, and_, text, UniqueConstraint

@@ -82,7 +82,7 @@ async def client():
 async def test_rider(db):
     """Create a test rider user and return (user, jwt_token)."""
     import bcrypt as _bcrypt
-    from jose import jwt as _jwt
+    import jwt as _jwt
 
     pw_hash = _bcrypt.hashpw("TestPass1!".encode(), _bcrypt.gensalt()).decode()
     user = User(
@@ -111,7 +111,7 @@ async def test_rider(db):
 async def test_driver(db):
     """Create a test driver user and return (user, jwt_token)."""
     import bcrypt as _bcrypt
-    from jose import jwt as _jwt
+    import jwt as _jwt
 
     pw_hash = _bcrypt.hashpw("TestPass1!".encode(), _bcrypt.gensalt()).decode()
     user = User(

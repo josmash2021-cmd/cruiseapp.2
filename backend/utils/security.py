@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt as _bcrypt
-from jose import jwt, JWTError
+import jwt
 from fastapi import Depends, HTTPException, Header, Request
 from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -446,7 +446,7 @@ async def _get_current_user(
             raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")
         user_id = int(payload["sub"])
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid token")
 
     # Check JWT revocation (fast memory check first)
@@ -513,7 +513,7 @@ async def _require_admin(
             raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")
         user_id = int(payload["sub"])
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid token")
     if jti and _is_jti_revoked_memory(jti):
         raise HTTPException(401, "Token has been revoked")
@@ -653,7 +653,7 @@ async def _require_dispatch_auth(
         jti = payload.get("jti", "")
         if jti and _is_jti_revoked_memory(jti):
             raise HTTPException(401, "Token has been revoked")
-    except JWTError:
+    except jwt.InvalidTokenError:
         _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
         raise HTTPException(401, "Invalid token")
 

@@ -58,7 +58,7 @@ try:
         _security_audit_log, _audit_chain,
         _create_token, JWT_SECRET, JWT_ALGORITHM,
     )
-    from jose import jwt
+    import jwt
     print(f"  {PASS}  Security module loaded")
     passed += 1
 except Exception as e:

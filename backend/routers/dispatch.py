@@ -10,7 +10,7 @@ from models.database import (
     SupportChat, SupportMessage, ActionRequest, Rating, Notification,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
-from jose import jwt, JWTError
+import jwt
 from utils.security import (
     pwd, _get_current_user, _verify_api_key, _require_dispatch_auth,
     _dispatch_sessions, _security_audit_log,
@@ -642,7 +642,7 @@ async def dispatch_interface(
         if payload.get("ip") != client_ip:
             _security_audit_log("dispatch_ip_mismatch", client_ip, f"expected={payload.get('ip')}")
             raise HTTPException(403, "IP address changed - please login again")
-    except JWTError:
+    except jwt.InvalidTokenError:
         _security_audit_log("dispatch_jwt_error", client_ip, "invalid token")
         raise HTTPException(401, "Invalid token")
     

@@ -233,7 +233,7 @@ async def test_driver_upload_without_s3_returns_503(client, monkeypatch, dummy_j
     monkeypatch.setattr(storage, "_HAS_S3", False)
 
     # Create a test user first (we need auth)
-    from jose import jwt
+    import jwt
     from models.database import User, SessionLocal
     from datetime import datetime, timezone
     import bcrypt
@@ -293,7 +293,7 @@ async def test_driver_upload_with_mocked_s3(client, monkeypatch, mock_s3_env, du
     monkeypatch.setattr(uploads_module, "_storage_has_s3", True)
 
     # Create test driver
-    from jose import jwt
+    import jwt
     from models.database import User, SessionLocal
     from datetime import datetime, timezone
     import bcrypt
@@ -349,7 +349,7 @@ async def test_upload_file_too_large(client, monkeypatch, mock_s3_env):
     monkeypatch.setattr(storage, "_HAS_S3", True)
     monkeypatch.setattr(storage, "_get_session", lambda: MagicMock())
 
-    from jose import jwt
+    import jwt
     from models.database import User, SessionLocal
     from datetime import datetime, timezone
     import bcrypt
@@ -403,7 +403,7 @@ async def test_upload_invalid_mime_type(client, monkeypatch, mock_s3_env):
     from routers import uploads as uploads_module
     monkeypatch.setattr(uploads_module, "_storage_has_s3", True)
 
-    from jose import jwt
+    import jwt
     from models.database import User, SessionLocal
     from datetime import datetime, timezone
     import bcrypt
@@ -454,7 +454,7 @@ async def test_rider_profile_photo_rejects_pdf(client, monkeypatch, mock_s3_env)
     from routers import uploads as uploads_module
     monkeypatch.setattr(uploads_module, "_storage_has_s3", True)
 
-    from jose import jwt
+    import jwt
     from models.database import User, SessionLocal
     from datetime import datetime, timezone
     import bcrypt

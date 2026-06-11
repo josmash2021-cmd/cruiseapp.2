@@ -17,7 +17,7 @@ from utils.security import (
     _security_audit_log, _audit_chain,
     _create_token, JWT_SECRET, JWT_ALGORITHM,
 )
-from jose import jwt
+import jwt
 from fastapi import HTTPException
 
 passed = 0

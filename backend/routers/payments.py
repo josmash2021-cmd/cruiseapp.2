@@ -23,7 +23,7 @@ from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
 from routers.vip import generate_vip_menu_token
 from sqlalchemy.exc import IntegrityError
-from jose import jwt, JWTError
+import jwt
 from config import (
     STRIPE_SECRET, _HAS_STRIPE, _stripe_mod, STRIPE_WEBHOOK_SECRET,
     PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_SANDBOX,
@@ -2275,7 +2275,7 @@ async def web_complete_login(request: Request, db: AsyncSession = Depends(get_db
         if payload.get("type") != "login":
             raise HTTPException(401, "Invalid token type")
         user_id = int(payload.get("sub", 0))
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired login token")
 
     r = await db.execute(select(User).where(User.id == user_id))
@@ -2336,8 +2336,8 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
             key_data = next((k for k in apple_keys.get("keys", []) if k["kid"] == kid), None)
             if not key_data:
                 raise HTTPException(401, "Apple key not found")
-            from jose import jwk
-            public_key = jwk.construct(key_data, algorithm="RS256")
+            from jwt import PyJWK
+            public_key = PyJWK(key_data).key
             decoded = jwt.decode(id_token_str, public_key, algorithms=["RS256"], audience=body.get("client_id", ""))
             email = decoded.get("email", "").lower()
         except HTTPException:

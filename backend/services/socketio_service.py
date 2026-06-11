@@ -19,7 +19,7 @@ import os
 from typing import Dict, Set, Optional
 
 import socketio
-from jose import jwt, JWTError
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
     try:
         payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
         user_id = int(payload["sub"])
-    except (JWTError, ValueError, KeyError) as e:
+    except (jwt.InvalidTokenError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
         await sio.emit("auth_error", {"message": "Invalid or expired token"}, to=sid)
         return False
@@ -201,7 +201,7 @@ async def authenticate(sid: str, data: dict):
     try:
         payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
         user_id = int(payload["sub"])
-    except (JWTError, ValueError, KeyError) as e:
+    except (jwt.InvalidTokenError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
         await sio.emit("auth_error", {"reason": "invalid_token"}, to=sid)
         # Do NOT force disconnect — let the client handle the auth_error

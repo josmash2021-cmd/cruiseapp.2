@@ -48,20 +48,8 @@ class EmailService {
     required String code,
     String toName = 'Cruise User',
   }) async {
-    if (kDebugMode) {
-      debugPrint('📧 EmailService.sendVerificationCode called for: $toEmail');
-      debugPrint('🔧 isConfigured: $isConfigured');
-      debugPrint('🔧 serviceId: ${_serviceId.substring(0, _serviceId.length > 8 ? 8 : _serviceId.length)}...');
-      debugPrint('🔧 templateId: ${_templateId.substring(0, _templateId.length > 8 ? 8 : _templateId.length)}...');
-      debugPrint('🔧 publicKey: ${_publicKey.substring(0, _publicKey.length > 8 ? 8 : _publicKey.length)}...');
-    }
-
-    // If not configured, fall back to debug-only mode
-    if (!isConfigured) {
-      debugPrint('⚠️ EmailJS NOT configured — code only in console.');
-      debugPrint('🔑 Verification code for $toEmail: $code');
-      return false;
-    }
+    // If not configured, silently fail — never log secrets or codes
+    if (!isConfigured) return false;
 
     try {
       final payload = {
@@ -80,29 +68,15 @@ class EmailService {
         },
       };
 
-      if (kDebugMode) {
-        debugPrint('📧 EmailJS payload: ${jsonEncode(payload)}');
-      }
-
       final response = await http.post(
         Uri.parse(_apiUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        debugPrint('✅ Verification code sent to $toEmail');
-        return true;
-      } else {
-        debugPrint('❌ EmailJS error ${response.statusCode}: ${response.body}');
-        debugPrint('❌ EmailJS request: service=$_serviceId, template=$_templateId');
-        debugPrint('🔑 Fallback — code for $toEmail: $code');
-        return false;
-      }
-    } catch (e, stackTrace) {
-      debugPrint('❌ Email send failed: $e');
-      debugPrint('❌ Stack trace: $stackTrace');
-      debugPrint('🔑 Fallback — code for $toEmail: $code');
+      return response.statusCode == 200;
+    } catch (e) {
+      // Do not log the email address, code, or full payload
       return false;
     }
   }

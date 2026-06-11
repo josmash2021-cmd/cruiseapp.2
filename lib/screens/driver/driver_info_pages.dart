@@ -1199,13 +1199,14 @@ class _Page0 extends StatefulWidget {
   State<_Page0> createState() => _Page0State();
 }
 
-class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin {
+class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   late final AnimationController _animCtrl;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -1213,7 +1214,17 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _animCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_animCtrl.isCompleted) _animCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _animCtrl.dispose();
     super.dispose();
   }
@@ -1551,13 +1562,14 @@ class _Page1 extends StatefulWidget {
   State<_Page1> createState() => _Page1State();
 }
 
-class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin {
+class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   late final AnimationController _animCtrl;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -1565,7 +1577,17 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _animCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_animCtrl.isCompleted) _animCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _animCtrl.dispose();
     super.dispose();
   }
@@ -1857,7 +1879,7 @@ class _Page2 extends StatefulWidget {
   State<_Page2> createState() => _Page2State();
 }
 
-class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin {
+class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   static const _goldDark = Color(0xFFB8960C);
   late final AnimationController _animCtrl;
@@ -1865,6 +1887,7 @@ class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -1872,7 +1895,17 @@ class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _animCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_animCtrl.isCompleted) _animCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _animCtrl.dispose();
     super.dispose();
   }

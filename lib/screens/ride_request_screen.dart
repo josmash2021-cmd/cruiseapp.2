@@ -360,7 +360,7 @@ class _PaymentRetryDialog extends StatelessWidget {
 }
 
 class _RideRequestScreenState extends State<RideRequestScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // ── Map ──
   mapbox.MapboxMap? _mapCtrl;
@@ -785,7 +785,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pulseCtrl.stop();
+      _radarCtrl.stop();
+      _shimmerCtrl.stop();
+      _priceShimmerCtrl.stop();
+      _badgePremiumCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      if (_searching) _pulseCtrl.repeat();
+      if (_searching) _radarCtrl.repeat();
+      _shimmerCtrl.repeat();
+      _priceShimmerCtrl.repeat();
+      _badgePremiumCtrl.repeat();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _shimmerTimeoutTimer?.cancel();
     _stuckPaymentFuse?.cancel();
     _searchMapTimer?.cancel();

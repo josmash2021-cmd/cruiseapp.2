@@ -17,7 +17,7 @@ class DriverApprovedScreen extends StatefulWidget {
 }
 
 class _DriverApprovedScreenState extends State<DriverApprovedScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _bg = Color(0xFF080604);
   static const _gold = Color(0xFFD4AF37);
   static const _goldLight = Color(0xFFE8C547);
@@ -41,6 +41,7 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -108,7 +109,19 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _shimmerCtrl.stop();
+      _particleCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _shimmerCtrl.repeat();
+      _particleCtrl.repeat();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ringCtrl.dispose();
     _logoCtrl.dispose();
     _textCtrl.dispose();

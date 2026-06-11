@@ -315,7 +315,7 @@ class _AccountScreenState extends State<AccountScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() => codeCtrl.dispose);
   }
 
   Widget _buildAvatar(String photoPath, AppColors c) {

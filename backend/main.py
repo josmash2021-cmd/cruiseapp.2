@@ -22,7 +22,7 @@ _backend_dir = Path(__file__).parent.resolve()
 if str(_backend_dir) not in sys.path:
     sys.path.insert(0, str(_backend_dir))
 
-import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib, traceback
+import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, smtplib, traceback, inspect
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
@@ -543,18 +543,14 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
-_rate_buckets: dict[str, collections.deque] = {}
 _RATE_LIMIT = 3000        # max requests per IP per window (1500+ users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
-_rate_cleanup_ts = 0.0    # last bucket cleanup timestamp
-_MAX_RATE_BUCKETS = 10000  # cap bucket dict to prevent memory leak
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     # Let CORS middleware handle OPTIONS preflight requests
     if request.method == "OPTIONS":
         return await call_next(request)
-    global _rate_cleanup_ts
     client_ip = request.client.host if request.client else "unknown"
     # IP blacklist check (merged — avoid extra middleware hop)
     if client_ip in _ip_blacklist:
@@ -569,7 +565,6 @@ async def rate_limit_middleware(request: Request, call_next):
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
-            import inspect
             if "/auth/" in _path:
                 # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
                 _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
@@ -586,31 +581,19 @@ async def rate_limit_middleware(request: Request, call_next):
             # Re-raise 429 from tiered limiter as a JSONResponse
             return JSONResponse({"detail": "Too many requests. Please try again later."}, status_code=429)
     # ── Global DDoS cap (Layer 3 — all endpoints, high ceiling) ──
-    now = time.monotonic()
-    bucket = _rate_buckets.setdefault(client_ip, collections.deque())
-    while bucket and bucket[0] < now - _RATE_WINDOW:
-        bucket.popleft()
-    if len(bucket) >= _RATE_LIMIT:
+    # Uses the same limiter backend as tiered limits so Redis is enforced
+    # in multi-instance deployments when REDIS_URL is configured.
+    try:
+        _check = _tiered_rate_limiter.check(
+            f"ddos:{client_ip}", max_requests=_RATE_LIMIT, window_seconds=_RATE_WINDOW
+        )
+        if inspect.isawaitable(_check):
+            await _check
+    except HTTPException:
         return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
-    bucket.append(now)
-    # Periodic cleanup of stale buckets (every 2 min) — fire-and-forget to avoid blocking request
-    if now - _rate_cleanup_ts > 120:
-        _rate_cleanup_ts = now
-        asyncio.create_task(_cleanup_rate_buckets())
     return await call_next(request)
 
 
-async def _cleanup_rate_buckets():
-    """Background cleanup of stale rate limiter buckets."""
-    now = time.monotonic()
-    stale = [ip for ip, dq in _rate_buckets.items() if not dq or dq[-1] < now - _RATE_WINDOW]
-    for ip in stale:
-        del _rate_buckets[ip]
-    # Cap total buckets to prevent memory leak
-    if len(_rate_buckets) > _MAX_RATE_BUCKETS:
-        _sorted = sorted(_rate_buckets, key=lambda k: _rate_buckets[k][-1] if _rate_buckets[k] else 0)
-        for ip in _sorted[:len(_rate_buckets) - _MAX_RATE_BUCKETS]:
-            del _rate_buckets[ip]
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
 _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)

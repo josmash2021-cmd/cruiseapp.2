@@ -1,4 +1,5 @@
-﻿import 'dart:io';
+﻿import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
@@ -36,6 +37,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   String? _photoUrl;
   String? _dispatchPassword;
   bool _showPassword = false;
+  Timer? _clipboardTimer;
 
   // Stats - computed from backend trip data
   double _satisfactionRate = 0;
@@ -90,6 +92,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
 
   @override
   void dispose() {
+    _clipboardTimer?.cancel();
     UserSession.photoNotifier.removeListener(_onPhotoChanged);
     UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     super.dispose();
@@ -435,10 +438,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    'Dispatch password copied',
+                                    'Dispatch password copied (clipboard clears in 30s)',
                                   ),
-                                  // Uses global snackBarTheme
                                 ),
+                              );
+                              _clipboardTimer?.cancel();
+                              _clipboardTimer = Timer(
+                                const Duration(seconds: 30),
+                                () => Clipboard.setData(const ClipboardData(text: '')),
                               );
                             },
                             child: Container(

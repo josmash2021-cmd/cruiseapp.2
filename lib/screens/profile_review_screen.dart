@@ -283,12 +283,13 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 8),
 
               // ── Back button ──
@@ -602,6 +603,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

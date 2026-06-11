@@ -83,12 +83,13 @@ class _NameScreenState extends State<NameScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 8),
 
               // ── Back button ──
@@ -198,6 +199,7 @@ class _NameScreenState extends State<NameScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

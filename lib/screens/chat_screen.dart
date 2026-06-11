@@ -508,8 +508,9 @@ class _ChatScreenState extends State<ChatScreen> {
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Column(
-          children: [
+        body: DismissKeyboard(
+          child: Column(
+            children: [
             // ── App bar ──
             _buildAppBar(s, topPad),
 
@@ -527,6 +528,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _buildInputBar(s, bottomPad, safePad),
           ],
         ),
+      ),
       ),
     );
   }

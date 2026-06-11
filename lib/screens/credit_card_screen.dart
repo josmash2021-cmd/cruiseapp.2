@@ -208,12 +208,13 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: DismissKeyboard(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 8),
 
               // ── Back button ──
@@ -392,6 +393,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -1599,16 +1599,13 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
         raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
     filename = f"user_{user.id}.{ext}"
     content_type = "image/jpeg" if ext == "jpg" else "image/png"
-    # Upload to Firebase Storage (persistent), fallback to local
+    # Upload to Firebase Storage (persistent)
     full_photo_url = None
     if firestore_sync:
         fb_path = f"photos/user_{user.id}/profile.{ext}"
         full_photo_url = firestore_sync.upload_to_firebase_storage(photo_bytes, fb_path, content_type)
     if not full_photo_url:
-        filepath = os.path.join(PHOTOS_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(photo_bytes)
-        full_photo_url = f"{PUBLIC_URL}/photos/{filename}"
+        raise HTTPException(503, "Photo storage unavailable. Please try again later.")
     # Update user photo_url in DB
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
@@ -1717,15 +1714,9 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
         path=storage_path,
         content_type=content_type
     )
-    
+
     if not firebase_url:
-        # Fallback to local storage if Firebase fails
-        filename = f"user_{user.id}.{ext}"
-        filepath = os.path.join(PHOTOS_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(photo_bytes)
-        photo_url = f"{PUBLIC_URL}/photos/{filename}"
-        logging.warning("Firebase Storage upload failed, using local storage: %s", photo_url)
+        raise HTTPException(503, "Photo storage unavailable. Please try again later.")
     else:
         photo_url = firebase_url
     

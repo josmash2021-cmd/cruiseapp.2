@@ -311,6 +311,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   void dispose() {
     _emailDebounce?.cancel();
     _phoneDebounce?.cancel();
+    _emailCtrl.removeListener(_onEmailChanged);
+    _phoneCtrl.removeListener(_onPhoneChanged);
     _pageCtrl.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();

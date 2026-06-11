@@ -16,10 +16,21 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildFullMap() {
     // Default to NYC if no GPS yet — map shows immediately, camera moves later
     final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
-    
+
+    // Only rebuild the map widget when the epoch or center changes.
+    // This prevents setState on unrelated UI (sheets, buttons, etc.)
+    // from tearing down and rebuilding the expensive native MapWidget.
+    if (_cachedMapWidget != null &&
+        _cachedMapLatLng == _currentLatLng &&
+        _cachedMapEpoch == _mapEpoch) {
+      return _cachedMapWidget!;
+    }
+    _cachedMapLatLng = _currentLatLng;
+    _cachedMapEpoch = _mapEpoch;
+
     // CRITICAL FIX: Use MapWidget with explicit widget options for compatibility
     // Some devices fail with default renderer. Using textureView + fallback.
-    return mapbox.MapWidget(
+    _cachedMapWidget = mapbox.MapWidget(
       key: _mapKey,
       styleUri: MapboxConfig.styleDark,
       cameraOptions: mapbox.CameraOptions(
@@ -105,6 +116,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         debugPrint('[Map] Load error: ${err.message} (type: ${err.type})');
       },
     );
+    return _cachedMapWidget!;
   }
 
   Future<Uint8List> _buildGoldPuckImage() async {

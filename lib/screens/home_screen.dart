@@ -182,6 +182,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _mapEpoch = 0;
   Key get _mapKey => ValueKey('home_map_$_mapEpoch');
 
+  // Cache the map widget so setState on unrelated fields doesn't rebuild it
+  Widget? _cachedMapWidget;
+  LatLng? _cachedMapLatLng;
+  int _cachedMapEpoch = -1;
+
   // User profile data
   String _firstName = '';
   String _lastName = '';

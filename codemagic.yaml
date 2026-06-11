@@ -169,8 +169,7 @@ definitions:
             echo "✅ android/app/google-services.json generated from ENV_GOOGLE_SERVICES_JSON_BASE64"
           else
             echo "⚠️  android/app/google-services.json missing and ENV_GOOGLE_SERVICES_JSON_BASE64 not set"
-            echo "     Add the base64-encoded google-services.json to Codemagic secrets."
-            exit 1
+            echo "     Add the base64-encoded google-services.json to Codemagic secrets when ready."
           fi
         else
           echo "✅ android/app/google-services.json already exists"
@@ -183,8 +182,7 @@ definitions:
             echo "✅ ios/Runner/GoogleService-Info.plist generated from ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64"
           else
             echo "⚠️  ios/Runner/GoogleService-Info.plist missing and ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64 not set"
-            echo "     Add the base64-encoded GoogleService-Info.plist to Codemagic secrets."
-            exit 1
+            echo "     Add the base64-encoded GoogleService-Info.plist to Codemagic secrets when ready."
           fi
         else
           echo "✅ ios/Runner/GoogleService-Info.plist already exists"

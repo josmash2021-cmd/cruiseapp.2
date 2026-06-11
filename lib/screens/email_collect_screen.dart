@@ -49,18 +49,22 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
     if (ok != _canContinue) setState(() => _canContinue = ok);
   }
 
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+  static final _phoneCleanRe = RegExp(r'[\s\-\(\)]');
+  static final _phoneDigitsRe = RegExp(r'^\+?\d{7,15}$');
+
   bool _isValidEmail(String text) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text.trim());
+    return _emailRe.hasMatch(text.trim());
   }
 
   bool _isValidPhone(String text) {
-    final cleaned = text.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-    return RegExp(r'^\+?\d{7,15}$').hasMatch(cleaned);
+    final cleaned = text.replaceAll(_phoneCleanRe, '');
+    return _phoneDigitsRe.hasMatch(cleaned);
   }
 
   /// Normalize phone to E.164 format
   String _normalizePhone(String text) {
-    var cleaned = text.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    var cleaned = text.replaceAll(_phoneCleanRe, '');
     if (!cleaned.startsWith('+')) {
       cleaned = '+1$cleaned'; // Default to US
     }

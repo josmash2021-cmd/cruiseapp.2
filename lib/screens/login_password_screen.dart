@@ -144,9 +144,11 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     return List.generate(6, (_) => r.nextInt(10)).join();
   }
 
+  static final _phoneCleanRe = RegExp(r'[\s\-\(\)]');
+
   /// Normalize phone to E.164 format (safety net)
   String _normalizePhone(String text) {
-    var cleaned = text.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    var cleaned = text.replaceAll(_phoneCleanRe, '');
     if (!cleaned.startsWith('+')) {
       cleaned = '+1$cleaned'; // Default to US
     }
@@ -346,10 +348,13 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     );
   }
 
+  static final _phoneCleanPlusRe = RegExp(r'[\s\-\(\)\+]');
+  static final _digitsOnlyRe = RegExp(r'^\d+$');
+
   /// Check if identity looks like a phone number (digits, spaces, dashes, parens, +)
   bool _looksLikePhone(String text) {
-    final cleaned = text.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
-    return cleaned.length >= 7 && RegExp(r'^\d+$').hasMatch(cleaned);
+    final cleaned = text.replaceAll(_phoneCleanPlusRe, '');
+    return cleaned.length >= 7 && _digitsOnlyRe.hasMatch(cleaned);
   }
 
   void _login() async {

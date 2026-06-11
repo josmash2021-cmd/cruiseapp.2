@@ -288,16 +288,21 @@ class _LoginScreenState extends State<LoginScreen> with SecureScreenMixin {
   }
 
 
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+  static final _phoneCleanRe = RegExp(r'[\s\-\(\)]');
+  static final _phonePrefixRe = RegExp(r'^\+?1(?=\d{10})');
+  static final _phoneDigitsRe = RegExp(r'^\d{10}$');
+
   bool _isValidEmail(String text) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text.trim());
+    return _emailRe.hasMatch(text.trim());
   }
 
   bool _isValidPhone(String text) {
     // US only: exactly 10 digits (area code + number)
-    final cleaned = text.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    final cleaned = text.replaceAll(_phoneCleanRe, '');
     // Strip leading +1 or 1 if user typed it
-    final digits = cleaned.replaceFirst(RegExp(r'^\+?1(?=\d{10})'), '');
-    return RegExp(r'^\d{10}$').hasMatch(digits);
+    final digits = cleaned.replaceFirst(_phonePrefixRe, '');
+    return _phoneDigitsRe.hasMatch(digits);
   }
 
   /// Normalize phone to E.164 format (+1XXXXXXXXXX)

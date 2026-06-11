@@ -23,7 +23,7 @@ class FaceLivenessScreen extends StatefulWidget {
 }
 
 class _FaceLivenessScreenState extends State<FaceLivenessScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── Camera / ML ──────────────────────────────────────────────────────────
   CameraController? _cam;
   FaceDetector? _detector;
@@ -85,6 +85,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rotateCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -105,7 +106,19 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _rotateCtrl.stop();
+      _pulseCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _rotateCtrl.repeat();
+      _pulseCtrl.repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _rotateCtrl.dispose();
     _pulseCtrl.dispose();
     _stepCtrl.dispose();

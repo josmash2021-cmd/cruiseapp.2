@@ -913,6 +913,13 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             "driver" if is_driver_update else "dispatch",
             trip_id, canonical_current, canonical_new, user.id, user_role,
         )
+        client_ip = request.client.host if request.client else "unknown"
+        _security_audit_log(
+            "TRIP_RESURRECTED",
+            client_ip,
+            f"trip_id={trip_id} from={canonical_current} to={canonical_new} user_id={user.id} role={user_role}",
+            user_id=user.id,
+        )
         # Clear any stale terminal metadata so the rating/payout flow works.
         if canonical_current == "cancelled":
             trip.cancel_reason = None

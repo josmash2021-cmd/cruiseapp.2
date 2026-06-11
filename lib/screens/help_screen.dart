@@ -1592,6 +1592,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       backgroundColor: const Color(0xFF0D0D0F),
       elevation: 0,
       leading: IconButton(
+        tooltip: S.of(context).back,
         icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
         onPressed: () => Navigator.of(context).pop(),
       ),

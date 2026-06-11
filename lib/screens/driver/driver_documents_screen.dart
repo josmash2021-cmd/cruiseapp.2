@@ -231,7 +231,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       if (xFile == null || !mounted) return;
 
       setState(() => _uploading = true);
-      await ApiService.uploadDocument(docType: docType, filePath: xFile.path);
+      await ApiService.uploadDocument(docType: docType, filePath: xFile.path).timeout(const Duration(seconds: 60));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1267,7 +1267,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     try {
       // Upload to Firebase Storage for permanent URL visible in Dispatch
       try {
-        final me = await ApiService.getMe();
+        final me = await ApiService.getMe().timeout(const Duration(seconds: 15));
         final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
         final url = await FirebaseStorageService.uploadDocumentPhoto(
           path,

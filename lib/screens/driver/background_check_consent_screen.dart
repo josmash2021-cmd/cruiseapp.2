@@ -90,7 +90,7 @@ class _BackgroundCheckConsentScreenState
         ssnLast4: _ssnLast4Ctrl.text.trim(),
         licenseNumber: _licenseNumberCtrl.text.trim(),
         licenseState: _licenseStateCtrl.text.trim(),
-      );
+      ).timeout(const Duration(seconds: 30));
       AnalyticsService.instance.logEvent('background_check_initiated');
       if (!mounted) return;
       Navigator.pop(context, result);

@@ -101,7 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
       _myUserId = widget.currentUserId!;
     } else {
-      final id = await ApiService.getCurrentUserId();
+      final id = await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15));
       _myUserId = (id ?? 0).toString();
     }
     _myRole = widget.currentRole ?? 'rider';
@@ -138,7 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initSupportChat() async {
     try {
       final locale = Localizations.localeOf(context).languageCode;
-      final result = await ApiService.createSupportChat(locale: locale);
+      final result = await ApiService.createSupportChat(locale: locale).timeout(const Duration(seconds: 15));
       _supportChatId = (result['id'] as num?)?.toInt();
       _agentName = (result['agent_name'] as String?) ?? 'Support';
       if (_supportChatId != null) {
@@ -162,7 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final chatId = _supportChatId;
     if (chatId == null) return;
     try {
-      final msgs = await ApiService.getSupportMessages(chatId);
+      final msgs = await ApiService.getSupportMessages(chatId).timeout(const Duration(seconds: 15));
       if (!mounted) return;
       final parsed = msgs.map((m) {
         final role = (m['sender_role'] as String?) ?? 'bot';
@@ -210,7 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final tripId = widget.tripId;
     if (tripId == null) return;
     try {
-      final status = await ApiService.getDispatchStatus(tripId);
+      final status = await ApiService.getDispatchStatus(tripId).timeout(const Duration(seconds: 15));
       final trip = (status['trip'] is Map)
           ? Map<String, dynamic>.from((status['trip'] as Map).cast<String, dynamic>())
           : <String, dynamic>{};
@@ -255,7 +255,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _fetchRestMessages() async {
     if (widget.tripId == null) return;
     try {
-      final msgs = await ApiService.getChatMessages(widget.tripId!);
+      final msgs = await ApiService.getChatMessages(widget.tripId!).timeout(const Duration(seconds: 15));
       if (!mounted) return;
       final parsed = msgs.map((m) {
         return ChatMessage(
@@ -362,7 +362,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // REST-only mode: send via API and poll for updates
         if (widget.tripId != null) {
           try {
-            await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
+            await ApiService.sendChatMessage(tripId: widget.tripId!, message: text).timeout(const Duration(seconds: 15));
             await _fetchRestMessages(); // refresh immediately
           } catch (e) {
             debugPrint('[Chat] REST send failed: $e');
@@ -421,7 +421,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       _scrollToBottom();
       try {
-        await ApiService.sendSupportMessage(chatId, text);
+        await ApiService.sendSupportMessage(chatId, text).timeout(const Duration(seconds: 15));
         // Poll immediately to get bot response faster
         await _pollSupportMessages();
       } catch (_) {
@@ -551,6 +551,7 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         children: [
           IconButton(
+            tooltip: S.of(context).back,
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             splashRadius: 22,

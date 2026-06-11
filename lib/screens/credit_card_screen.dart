@@ -65,7 +65,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
 
     try {
       // Step 1: Get SetupIntent client_secret from backend
-      final clientSecret = await ApiService.createSetupIntent();
+      final clientSecret = await ApiService.createSetupIntent().timeout(const Duration(seconds: 15));
       if (clientSecret == null || !mounted) {
         // Backend unavailable — save card locally as "pending" and continue.
         // SetupIntent will be retried when the user actually takes a ride.
@@ -101,7 +101,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
           last4: last4,
           brand: brand,
           setDefault: true,
-        );
+        ).timeout(const Duration(seconds: 15));
       } catch (syncErr) {
         debugPrint('[CreditCardScreen] backend sync failed (non-fatal): $syncErr');
         // Non-fatal: card is still saved locally and will be retried on next ride

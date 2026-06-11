@@ -131,7 +131,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       _earningsError = null;
     });
     try {
-      final data = await ApiService.getDriverEarnings(period: period);
+      final data = await ApiService.getDriverEarnings(period: period).timeout(const Duration(seconds: 15));
       if (!mounted) return;
       _applyEarningsData(data);
       _chartCtrl.forward(from: 0);
@@ -213,7 +213,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   Future<void> _fetchPayoutMethods() async {
     try {
-      final methods = await ApiService.getPayoutMethods();
+      final methods = await ApiService.getPayoutMethods().timeout(const Duration(seconds: 15));
       if (!mounted) return;
       setState(() {
         _hasPayoutMethod = methods.isNotEmpty;
@@ -997,7 +997,7 @@ class _CashOutSheetState extends State<_CashOutSheet>
   }
 
   Future<void> _loadEligibility() async {
-    final e = await ApiService.getCashoutEligibility();
+    final e = await ApiService.getCashoutEligibility().timeout(const Duration(seconds: 15));
     if (!mounted) return;
     setState(() {
       _loadingEligibility = false;

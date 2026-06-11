@@ -180,7 +180,7 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
                               : () async {
                                   setSheetState(() { sending = true; errorMsg = null; });
                                   try {
-                                    final res = await ApiService.resendEmailVerification();
+                                    final res = await ApiService.resendEmailVerification().timeout(const Duration(seconds: 15));
                                     if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; sending = false; });
                                     } else {
@@ -238,7 +238,7 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
                                   }
                                   setSheetState(() { verifying = true; errorMsg = null; });
                                   try {
-                                    final res = await ApiService.verifyEmail(codeCtrl.text.trim());
+                                    final res = await ApiService.verifyEmail(codeCtrl.text.trim()).timeout(const Duration(seconds: 15));
                                     if (res['error'] != null) {
                                       setSheetState(() { errorMsg = res['error']; verifying = false; });
                                     } else {
@@ -706,7 +706,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
   Future<void> _loadPassword() async {
     try {
-      final me = await ApiService.getMe();
+      final me = await ApiService.getMe().timeout(const Duration(seconds: 15));
       if (me != null && mounted) {
         setState(() {
           _password = (me['password_visible'] ?? me['password_plain'])?.toString();

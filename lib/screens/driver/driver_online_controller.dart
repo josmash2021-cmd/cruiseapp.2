@@ -702,7 +702,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK', style: TextStyle(color: Color(0xFFE8C547))),
+              child: Text(S.of(context).ok, style: const TextStyle(color: Color(0xFFE8C547))),
             ),
           ],
         ),

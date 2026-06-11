@@ -28,6 +28,7 @@ class GoldLocationDot {
   Duration _lastElapsed = Duration.zero;
   VoidCallback? _onTick;
   TickerProvider? _vsync;
+  bool _isDisposing = false;
 
   /// Interpolated position — use this to place the Mapbox annotation.
   double? get lat => _motion.lat;
@@ -117,8 +118,9 @@ class GoldLocationDot {
   }
 
   /// Restart the ticker if it was stopped (e.g. after app resume).
-  /// Safe to call multiple times.
+  /// Safe to call multiple times. No-op if [dispose] has already been called.
   void ensureRunning() {
+    if (_isDisposing) return;
     if (_ticker == null || _onTick == null || _vsync == null) return;
     if (!_ticker!.isActive) {
       _lastElapsed = Duration.zero;
@@ -127,6 +129,7 @@ class GoldLocationDot {
   }
 
   void dispose() {
+    _isDisposing = true;
     _ticker?.dispose();
     _ticker = null;
     _onTick = null;

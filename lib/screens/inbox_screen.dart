@@ -693,6 +693,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, color: c.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
+          tooltip: 'Back',
         ),
         title: Text(
           driverName,

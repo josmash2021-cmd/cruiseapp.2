@@ -395,6 +395,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           Icons.notifications_rounded,
           badge: _unreadNotifications > 0 ? _unreadNotifications : 0,
           onTap: _openNotificationsSheet,
+          semanticLabel: 'Notifications',
         ),
       ],
     );
@@ -755,6 +756,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           Icons.notifications_none_rounded,
           onTap: _openNotificationsSheet,
           badge: _unreadNotifications,
+          semanticLabel: 'Notifications',
         ),
         const SizedBox(width: 12),
 
@@ -884,7 +886,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  Widget _glassIconButton(IconData icon, {VoidCallback? onTap, int badge = 0}) {
+  Widget _glassIconButton(IconData icon, {VoidCallback? onTap, int badge = 0, String? semanticLabel}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
@@ -913,6 +915,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               icon,
               color: Colors.white.withValues(alpha: 0.4),
               size: Responsive.sp(22),
+              semanticLabel: semanticLabel,
             ),
           ),
           if (badge > 0)

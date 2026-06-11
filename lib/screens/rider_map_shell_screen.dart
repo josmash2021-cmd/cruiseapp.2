@@ -226,6 +226,7 @@ class _MapPickerOverlay extends StatelessWidget {
                 IconButton(
                   onPressed: onCancel,
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  tooltip: 'Back',
                 ),
                 const Spacer(),
                 const Text(
@@ -303,6 +304,7 @@ class _RideRequestOverlay extends StatelessWidget {
                 IconButton(
                   onPressed: onCancel,
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  tooltip: 'Back',
                 ),
                 const Expanded(
                   child: Text(
@@ -439,6 +441,7 @@ class _TrackingOverlay extends StatelessWidget {
                 IconButton(
                   onPressed: () {},
                   icon: const Icon(Icons.phone, color: Color(0xFFE8C547)),
+                  tooltip: 'Call driver',
                 ),
               ],
             ),
@@ -495,6 +498,7 @@ class _RatingOverlay extends StatelessWidget {
                     return IconButton(
                       onPressed: onDone,
                       icon: const Icon(Icons.star_border, color: Color(0xFFE8C547)),
+                      tooltip: 'Rate ${i + 1} star',
                     );
                   }),
                 ),

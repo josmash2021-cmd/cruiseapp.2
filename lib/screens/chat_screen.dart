@@ -635,6 +635,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onPressed: _callRecipient,
               icon: Icon(Icons.phone_rounded, color: _gold, size: 22),
               splashRadius: 22,
+              tooltip: 'Call',
             ),
         ],
       ),

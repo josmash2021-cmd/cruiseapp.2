@@ -125,7 +125,6 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
           ElevatedButton(
             onPressed: () {
               setState(() => _anonymousFeedback = controller.text.trim());
-              controller.dispose();
               Navigator.of(ctx).pop();
             },
             style: ElevatedButton.styleFrom(backgroundColor: _gold),
@@ -133,7 +132,7 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
           ),
         ],
       ),
-    );
+    ).whenComplete(() => controller.dispose());
   }
 
   Future<void> _submit() async {

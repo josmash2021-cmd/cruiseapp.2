@@ -31,11 +31,16 @@ if _SSN_KEY_RAW:
         logger.info("[SSN] Encryption initialized")
     except Exception as e:
         logger.error("[SSN] Invalid SSN_ENCRYPTION_KEY: %s", e)
+        raise RuntimeError(
+            "SSN_ENCRYPTION_KEY is invalid. Generate a valid key with: "
+            'python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())"'
+        ) from e
 else:
-    logger.warning(
-        "[SSN] SSN_ENCRYPTION_KEY not set — SSNs will be stored in plaintext. "
-        "Generate a key with: python -c \"from cryptography.fernet import Fernet; "
-        "print(Fernet.generate_key().decode())\""
+    raise RuntimeError(
+        "SSN_ENCRYPTION_KEY is not set. SSN encryption is mandatory. "
+        'Generate a key with: python -c "from cryptography.fernet import Fernet; '
+        'print(Fernet.generate_key().decode())"'
     )
 
 
@@ -56,8 +61,9 @@ def encrypt_ssn(raw_ssn: str) -> str:
         return ""
 
     if _fernet is None:
-        # Not configured — mark as plaintext for later migration
-        return f"[PLAINTEXT:]{digits}"
+        raise RuntimeError(
+            "SSN_ENCRYPTION_KEY is not configured. Cannot encrypt SSN."
+        )
 
     try:
         ciphertext = _fernet.encrypt(digits.encode("utf-8"))
@@ -81,8 +87,9 @@ def decrypt_ssn(ciphertext: str) -> str:
         return ciphertext[len("[PLAINTEXT:]"):]
 
     if _fernet is None:
-        logger.error("[SSN] Cannot decrypt — SSN_ENCRYPTION_KEY not configured")
-        return ""
+        raise RuntimeError(
+            "SSN_ENCRYPTION_KEY is not configured. Cannot decrypt SSN."
+        )
 
     try:
         plaintext = _fernet.decrypt(ciphertext.encode("utf-8"))

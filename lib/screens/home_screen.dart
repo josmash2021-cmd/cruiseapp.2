@@ -163,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   String _verificationStatus = LocalDataService.isVerifiedSync ? 'approved' : '';
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _verificationSub;
   int _verificationRetryCount = 0;
+  Timer? _verificationRetryTimer;
 
   // Service zone state
   Set<String> _activeServiceStates = {};
@@ -532,6 +533,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _driverLocationSub?.cancel();
     _tripDocSub?.cancel();
     _tripStatusSub?.cancel();
+    _verificationRetryTimer?.cancel();
     _verificationSub?.cancel();
     for (final player in _soundPlayers.values) {
       player.dispose();

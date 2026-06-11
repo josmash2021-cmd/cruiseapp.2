@@ -23,6 +23,7 @@ class OffersController {
   int? _driverId;
   final Set<String> _acceptingOffers = {}; // Fix H6: anti-double-accept guard
   StreamSubscription? _sseSub;
+  Timer? _sseReconnectTimer;
   bool _sseActive = false;
 
   /// Start SSE stream + polling fallback for offers.
@@ -55,7 +56,8 @@ class OffersController {
         _sseActive = false;
         debugPrint('[SSE] Stream closed — reconnecting in 3s');
         // Auto-reconnect SSE after brief delay
-        Future.delayed(const Duration(seconds: 3), () {
+        _sseReconnectTimer?.cancel();
+        _sseReconnectTimer = Timer(const Duration(seconds: 3), () {
           if (_pollTimer != null) _startSSE();
         });
       },
@@ -230,6 +232,7 @@ class OffersController {
   }
 
   void dispose() {
+    _sseReconnectTimer?.cancel();
     _pollTimer?.cancel();
     _pollTimer = null;
     _sseSub?.cancel();

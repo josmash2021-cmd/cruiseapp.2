@@ -123,7 +123,8 @@ extension _HomeScreenController on _HomeScreenState {
       _verificationRetryCount++;
       final delay = Duration(seconds: math.min(30, 2 << _verificationRetryCount));
       debugPrint('[Verification] Retrying in ${delay.inSeconds}s (attempt $_verificationRetryCount)');
-      Future.delayed(delay, () {
+      _verificationRetryTimer?.cancel();
+      _verificationRetryTimer = Timer(delay, () {
         if (mounted) _listenVerificationStatus();
       });
     });

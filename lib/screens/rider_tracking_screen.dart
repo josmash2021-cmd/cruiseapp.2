@@ -277,6 +277,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   StreamSubscription<Map<String, dynamic>>? _socketLocationSub;
   StreamSubscription<Map<String, dynamic>>? _socketStatusSub;
   StreamSubscription<Map<String, dynamic>>? _sseTripSub;  // SSE primary channel
+  StreamSubscription<bool>? _socketHealthSub;
+  Timer? _rtdbNullRetryTimer;
   bool _sseActive = false;
   String? _rtdbDriverId;
   Timer? _statusPollTimer;
@@ -451,6 +453,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _cameraFollowTimer?.cancel();
     _tripStartedTimer?.cancel();
     _ratingNavTimer?.cancel();
+    _socketHealthSub?.cancel();
+    _rtdbNullRetryTimer?.cancel();
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _gpsFallbackTimer?.cancel();

@@ -331,7 +331,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
 
     // Monitor Socket.io health — start RTDB fallback if connection drops
-    SocketService.connectionHealthStream.listen((isHealthy) {
+    _socketHealthSub?.cancel();
+    _socketHealthSub = SocketService.connectionHealthStream.listen((isHealthy) {
       if (!mounted || _phase == _TrackPhase.completed) return;
       final did = widget.driverId;
       if (!isHealthy && did != null && did.isNotEmpty && _rtdbDriverId == null) {
@@ -1077,7 +1078,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         debugPrint('[RiderTracking] RTDB driver location null — checking trip status');
         _checkTripStatusFallback();
         // Retry after 5s in case Firestore write is delayed
-        Future.delayed(const Duration(seconds: 5), () {
+        _rtdbNullRetryTimer?.cancel();
+        _rtdbNullRetryTimer = Timer(const Duration(seconds: 5), () {
           if (mounted && _phase != _TrackPhase.completed) {
             _checkTripStatusFallback();
           }

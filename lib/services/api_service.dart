@@ -2877,7 +2877,7 @@ class ApiService {
       final res = await http.Response.fromStream(streamed);
       debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
       if (res.statusCode >= 300) {
-        debugPrint('[ApiService] uploadDocument ERROR: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
+        debugPrint('[ApiService] uploadDocument ERROR: status=${res.statusCode}');
       }
       return _parse(res);
     }
@@ -2900,7 +2900,7 @@ class ApiService {
         .timeout(const Duration(seconds: 60));
     debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
     if (res.statusCode >= 300) {
-      debugPrint('[ApiService] uploadDocument ERROR: ${res.body.length > 500 ? res.body.substring(0, 500) : res.body}');
+      debugPrint('[ApiService] uploadDocument ERROR: status=${res.statusCode}');
     }
     return _parse(res);
   }

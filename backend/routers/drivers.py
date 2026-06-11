@@ -13,6 +13,7 @@ from models.database import (
 from models.schemas import (
     DriverLocationIn, CashoutIn, PayoutMethodIn,
     RiderPaymentMethodIn, WalletTopUpIn, WalletWithdrawIn,
+    VehicleIn,
 )
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
@@ -1643,31 +1644,30 @@ async def get_vehicle(user: User = Depends(_get_current_user), db: AsyncSession 
     return {"vehicle": _vehicle_dict(v)}
 
 @router.post("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
-async def create_or_update_vehicle(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    body = await request.json()
+async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
     v = result.scalar_one_or_none()
+    update_data = body.model_dump(exclude_unset=True)
     if v:
-        for k in ("make", "model", "year", "color", "plate", "vin"):
-            if k in body:
-                setattr(v, k, body[k])
+        for k, val in update_data.items():
+            setattr(v, k, val)
     else:
         v = Vehicle(
             user_id=user.id,
-            make=body.get("make", ""),
-            model=body.get("model", ""),
-            year=body.get("year", 2020),
-            color=body.get("color"),
-            plate=body.get("plate", ""),
-            vin=body.get("vin"),
+            make=body.make or "",
+            model=body.model or "",
+            year=body.year or 2020,
+            color=body.color,
+            plate=body.plate or "",
+            vin=body.vin,
             vehicle_type="comfort",  # will be auto-classified below
         )
         db.add(v)
 
     # Auto-classify vehicle tier based on make/model/year + driver rating
-    make = v.make or body.get("make", "")
-    model = v.model or body.get("model", "")
-    year = v.year or body.get("year", 0)
+    make = v.make or body.make or ""
+    model = v.model or body.model or ""
+    year = v.year or body.year or 0
     base_tier = _classify_vehicle_tier(make, model, year)
 
     if base_tier == "vip":

@@ -245,3 +245,25 @@ class AdminStatsResponse(BaseModel):
     total_revenue_today: float
     avg_trip_time: float
     completion_rate: float
+
+
+class AdminUpdateTripIn(BaseModel):
+    status: Optional[str] = None
+    driver_id: Optional[int] = None
+    fare: Optional[float] = None
+    vehicle_type: Optional[str] = None
+    notes: Optional[str] = None
+    cancel_reason: Optional[str] = None
+
+
+class AdminCancelTripIn(BaseModel):
+    reason: Optional[str] = None
+
+
+class VehicleIn(BaseModel):
+    make: Optional[str] = None
+    model: Optional[str] = None
+    year: Optional[int] = None
+    color: Optional[str] = None
+    plate: Optional[str] = None
+    vin: Optional[str] = None

@@ -14,7 +14,9 @@ from models.database import (
 
 # Process uptime anchor — set once at module import
 _SERVER_START_TIME = datetime.now(timezone.utc)
-from models.schemas import AdminStatsResponse
+from models.schemas import (
+    AdminStatsResponse, CreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
+)
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
     _require_dispatch_auth, _security_audit_log,
@@ -175,22 +177,21 @@ async def admin_list_trips(
     return out
 
 @router.post("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)):
+async def admin_create_trip(body: CreateTripIn, db: AsyncSession = Depends(get_db)):
     """Create a trip from the dispatch panel (no JWT user required)."""
-    body = await request.json()
     trip = Trip(
-        rider_id=body.get("rider_id", 0),
-        pickup_address=body.get("pickup_address", ""),
-        dropoff_address=body.get("dropoff_address", ""),
-        pickup_lat=body.get("pickup_lat", 0.0),
-        pickup_lng=body.get("pickup_lng", 0.0),
-        dropoff_lat=body.get("dropoff_lat", 0.0),
-        dropoff_lng=body.get("dropoff_lng", 0.0),
-        fare=body.get("fare"),
-        vehicle_type=body.get("vehicle_type"),
-        status=body.get("status", "requested"),
-        scheduled_at=datetime.fromisoformat(body["scheduled_at"]) if body.get("scheduled_at") else None,
-        notes=body.get("notes"),
+        rider_id=body.rider_id,
+        pickup_address=body.pickup_address,
+        dropoff_address=body.dropoff_address,
+        pickup_lat=body.pickup_lat,
+        pickup_lng=body.pickup_lng,
+        dropoff_lat=body.dropoff_lat,
+        dropoff_lng=body.dropoff_lng,
+        fare=body.fare,
+        vehicle_type=body.vehicle_type,
+        status="requested",
+        scheduled_at=datetime.fromisoformat(body.scheduled_at) if body.scheduled_at else None,
+        notes=body.notes,
     )
     db.add(trip)
     await db.commit()
@@ -216,16 +217,15 @@ async def admin_create_trip(request: Request, db: AsyncSession = Depends(get_db)
     return _trip_dict(trip)
 
 @router.patch("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSession = Depends(get_db)):
     """Update trip fields from the dispatch panel."""
-    body = await request.json()
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    for key in ("status", "driver_id", "fare", "vehicle_type", "notes", "cancel_reason"):
-        if key in body:
-            setattr(trip, key, body[key])
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(trip, key, value)
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:
@@ -283,7 +283,7 @@ async def admin_update_trip(trip_id: int, request: Request, db: AsyncSession = D
         except Exception as _fcm_err:
             logging.warning("[FCM] push failed on admin update: %s", _fcm_err)
 
-    _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(body.keys())}")
+    _security_audit_log("ADMIN_TRIP_UPDATED", "admin", f"trip_id={trip_id} changes={list(update_data.keys())}")
     return _trip_dict(trip)
 
 
@@ -413,10 +413,9 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
     return {"canceled_count": len(canceled), "trip_ids": canceled}
 
 @router.post("/admin/trips/{trip_id}/cancel", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_cancel_trip(trip_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSession = Depends(get_db)):
     """Dedicated cancel endpoint for the dispatch admin app."""
-    body = await request.json()
-    reason = body.get("reason", "")
+    reason = body.reason or ""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:

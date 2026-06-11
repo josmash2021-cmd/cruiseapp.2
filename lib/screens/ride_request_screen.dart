@@ -816,6 +816,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _pickerAnchorCtrl?.dispose();
     _pickerRippleTicker?.dispose();
     _shakeCtrl.dispose();
+    _searchCamCtrl?.dispose();
     _tiltCtrl?.dispose();
     _bearingCtrl?.dispose();
     _pinPopCtrl?.dispose();

@@ -478,9 +478,14 @@ app.include_router(worker_router)
 # -- LAYER 1: CORS — Allow mobile-app + known web origins ----
 # Mobile apps (Flutter) don't send browser-origin headers; CORS does not
 # protect native traffic.  Real security is in L5-L10 (API key, HMAC, JWT).
-# SECURITY FIX: localhost origins are ONLY included when DEBUG=1 is set,
-# preventing accidental exposure in production if CORS_ORIGINS is unset.
-_is_debug_cors = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+# SECURITY FIX: localhost origins are ONLY included when DEBUG=1 is set AND
+# ENV is not production. This prevents accidental exposure if DEBUG=1 is
+# accidentally set in production.
+_is_production = os.getenv("ENV", "").lower() == "production"
+_is_debug_cors = (
+    not _is_production
+    and os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+)
 if os.getenv("CORS_ORIGINS"):
     _CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 else:

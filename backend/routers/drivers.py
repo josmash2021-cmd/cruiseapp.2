@@ -849,11 +849,10 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                 transfer_id = transfer["id"]
                 logging.info("[Cashout] Stripe Transfer %s created for driver %s - $%.2f", transfer_id, user.id, body.amount)
             cashout.status = "completed"
-            # Deduct from pending_balance
-            result2 = await db.execute(select(User).where(User.id == user.id))
-            drv = result2.scalar_one_or_none()
-            if drv:
-                drv.pending_balance = round(max(0.0, (drv.pending_balance or 0.0) - body.amount), 2)
+            # Deduct from pending_balance using the already-locked row
+            locked_user.pending_balance = round(
+                max(0.0, (locked_user.pending_balance or 0.0) - body.amount), 2
+            )
             await db.commit()
             await db.refresh(cashout)
         except Exception as _se:

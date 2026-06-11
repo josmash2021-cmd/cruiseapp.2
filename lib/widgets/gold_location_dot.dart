@@ -26,6 +26,8 @@ class GoldLocationDot {
   Uint8List? _frame;
   Ticker? _ticker;
   Duration _lastElapsed = Duration.zero;
+  VoidCallback? _onTick;
+  TickerProvider? _vsync;
 
   /// Interpolated position — use this to place the Mapbox annotation.
   double? get lat => _motion.lat;
@@ -99,6 +101,8 @@ class GoldLocationDot {
     _frame = data.buffer.asUint8List();
 
     _lastElapsed = Duration.zero;
+    _onTick = onTick;
+    _vsync = vsync;
     _ticker?.dispose();
     _ticker = vsync.createTicker((elapsed) {
       final dtSec = _lastElapsed == Duration.zero
@@ -112,8 +116,20 @@ class GoldLocationDot {
       ..start();
   }
 
+  /// Restart the ticker if it was stopped (e.g. after app resume).
+  /// Safe to call multiple times.
+  void ensureRunning() {
+    if (_ticker == null || _onTick == null || _vsync == null) return;
+    if (!_ticker!.isActive) {
+      _lastElapsed = Duration.zero;
+      _ticker!.start();
+    }
+  }
+
   void dispose() {
     _ticker?.dispose();
     _ticker = null;
+    _onTick = null;
+    _vsync = null;
   }
 }

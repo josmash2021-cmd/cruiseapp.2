@@ -459,6 +459,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _shimmerController.repeat();
       _clockRotateCtrl.repeat();
       _promoShimmerCtrl.repeat();
+      // FIX: Restart GPS stream — Geolocator stream can die in background
+      // on some Android/iOS devices. Re-establish it so the dot moves again.
+      _fetchCurrentLocation();
+      // FIX: Ensure the GoldLocationDot ticker is running after resume.
+      // Some Flutter versions fail to auto-resume tickers after background.
+      _miniDot.ensureRunning();
       _checkDriversOnline();
       _driverCheckTimer?.cancel();
       _driverCheckTimer = Timer.periodic(

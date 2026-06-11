@@ -77,14 +77,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
         try {
           if (_miniMapController != null) {
             await _applyDarkNavyGoldTheme(_miniMapController!);
-            // Re-apply annotation manager layer properties after style reload
-            if (_miniMapAnnotMgr != null) {
-              try {
-                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
-              } catch (_) {}
+            // FIX: Mapbox DESTROYS annotations + managers on style reload.
+            // We MUST recreate them, then redraw the dot. Without this,
+            // the gold dot disappears or stops moving after a style change.
+            _miniMapAnnot = null;
+            try {
+              _miniMapAnnotMgr = await _miniMapController!.annotations.createPointAnnotationManager();
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
+            } catch (e) {
+              debugPrint('[Map] Failed to recreate annotation manager on style load: $e');
             }
+            // Recreate gold dot if we have a position
+            if (_currentLatLng != null) _updateMiniMapAnnotation();
+            // Re-disable native puck in case style reset re-enabled it
+            try {
+              await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+            } catch (_) {}
           }
         } catch (e) {
           debugPrint('[Map] onStyleLoaded error: $e');

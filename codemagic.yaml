@@ -23,7 +23,8 @@ definitions:
   #   ENV_EMAILJS_TEMPLATE_ID, ENV_EMAILJS_PUBLIC_KEY, ENV_EMAILJS_PRIVATE_KEY,
   #   ENV_STRIPE_PK, ENV_TWILIO_SID, ENV_TWILIO_TOKEN, ENV_TWILIO_SERVICE,
   #   ENV_MAPS_SERVICES_KEY, ENV_PAYPAL_CLIENT_ID, ENV_PAYPAL_SECRET,
-  #   GOOGLE_MAPS_API_KEY, MAPBOX_ACCESS_TOKEN
+  #   GOOGLE_MAPS_API_KEY, MAPBOX_ACCESS_TOKEN,
+  #   ENV_GOOGLE_SERVICES_JSON_BASE64, ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64
   #
   # Non-secret defaults (safe to keep in YAML):
   vars: &shared_vars
@@ -148,6 +149,37 @@ definitions:
         MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-}
         XCEOF
         echo "iOS Secrets.xcconfig generated"
+
+    - &generate_firebase_configs
+      name: Generate Firebase config files
+      script: |
+        # Generate google-services.json from base64 env var if missing
+        if [ ! -f "android/app/google-services.json" ]; then
+          if [ -n "${ENV_GOOGLE_SERVICES_JSON_BASE64}" ]; then
+            echo "$ENV_GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
+            echo "✅ android/app/google-services.json generated from ENV_GOOGLE_SERVICES_JSON_BASE64"
+          else
+            echo "⚠️  android/app/google-services.json missing and ENV_GOOGLE_SERVICES_JSON_BASE64 not set"
+            echo "     Add the base64-encoded google-services.json to Codemagic secrets."
+            exit 1
+          fi
+        else
+          echo "✅ android/app/google-services.json already exists"
+        fi
+
+        # Generate GoogleService-Info.plist from base64 env var if missing
+        if [ ! -f "ios/Runner/GoogleService-Info.plist" ]; then
+          if [ -n "${ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64}" ]; then
+            echo "$ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 -d > ios/Runner/GoogleService-Info.plist
+            echo "✅ ios/Runner/GoogleService-Info.plist generated from ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64"
+          else
+            echo "⚠️  ios/Runner/GoogleService-Info.plist missing and ENV_GOOGLE_SERVICE_INFO_PLIST_BASE64 not set"
+            echo "     Add the base64-encoded GoogleService-Info.plist to Codemagic secrets."
+            exit 1
+          fi
+        else
+          echo "✅ ios/Runner/GoogleService-Info.plist already exists"
+        fi
 
     - &flutter_pub_get
       name: Get Flutter packages
@@ -296,6 +328,7 @@ workflows:
         FLUTTER_XCODE_CODE_SIGNING_REQUIRED: "NO"
     scripts:
       - *generate_env
+      - *generate_firebase_configs
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
@@ -354,6 +387,7 @@ workflows:
         BUNDLE_ID: "com.cruiseinride.app"
     scripts:
       - *generate_env
+      - *generate_firebase_configs
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
@@ -464,6 +498,7 @@ workflows:
         BUNDLE_ID: "com.cruiseinride.app"
     scripts:
       - *generate_env
+      - *generate_firebase_configs
       - *configure_git
       - *mapbox_auth
       - *flutter_pub_get
@@ -687,6 +722,7 @@ workflows:
           echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
+      - *generate_firebase_configs
       - *mapbox_auth
       - *decode_keystore
       - *flutter_pub_get
@@ -736,6 +772,7 @@ workflows:
           echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
+      - *generate_firebase_configs
       - *mapbox_auth
       - name: Decode keystore (required for Play Store)
         script: |

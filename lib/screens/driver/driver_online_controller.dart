@@ -11,6 +11,8 @@ int _driverOnlinePollingGen = 0;
 bool _driverOnlinePollLock = false;
 DateTime? _driverOnlineLastStartPolling;
 
+final _htmlTagRe = RegExp(r'<[^>]*>');
+
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
   String _normalizePhotoUrl(dynamic rawUrl) {
@@ -2595,7 +2597,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             String instr = mounted ? S.of(context).headToDestination : '';
             if (steps.isNotEmpty) {
               instr = (steps[0]['html_instructions']?.toString() ?? '')
-                  .replaceAll(RegExp(r'<[^>]*>'), '');
+                  .replaceAll(_htmlTagRe, '');
             }
 
             // Parse turn-by-turn NavRoute for live navigation

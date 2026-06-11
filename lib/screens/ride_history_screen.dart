@@ -16,6 +16,7 @@ class RideHistoryScreen extends StatefulWidget {
 }
 
 class _RideHistoryScreenState extends State<RideHistoryScreen> {
+  static final _fareRe = RegExp(r'^\$?(-?\d+)(?:\.(\d{1,2}))?');
   static const _gold = Color(0xFFE8C547);
   List<TripHistoryItem> _trips = [];
   bool _loading = true;
@@ -397,7 +398,7 @@ class _PriceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final match = RegExp(r'^\$?(-?\d+)(?:\.(\d{1,2}))?').firstMatch(raw.trim());
+    final match = _fareRe.firstMatch(raw.trim());
     if (match == null) {
       return Text(
         raw,

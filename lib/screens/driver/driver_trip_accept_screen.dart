@@ -113,6 +113,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   static const _card   = Color(0xFF1A1A1F);
   static const _border = Color(0xFF262626);
 
+  static final _usSuffixRe = RegExp(r',\s*United States$');
+  static final _prSuffixRe = RegExp(r',\s*Puerto Rico$');
+
   // ── Firestore doc ID (matches backend convention) ─────────────────────
   String get _fsDocId => 'sql_${widget.tripId}';
 
@@ -511,8 +514,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final features = data['features'] as List?;
         if (features != null && features.isNotEmpty) {
           return (features[0]['place_name'] as String?)
-              ?.replaceAll(RegExp(r',\s*United States$'), '')
-              .replaceAll(RegExp(r',\s*Puerto Rico$'), '');
+              ?.replaceAll(_usSuffixRe, '')
+              .replaceAll(_prSuffixRe, '');
         }
       }
     } catch (_) {}

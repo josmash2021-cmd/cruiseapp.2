@@ -110,6 +110,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
 
+  static final _usSuffixRe = RegExp(r',\s*United States$');
+  static final _prSuffixRe = RegExp(r',\s*Puerto Rico$');
+
   /// Sync the search-pulse animation to the current phase.
   /// Call this immediately after any setState block that changes _phase.
   void _syncSearchPulse() {
@@ -709,8 +712,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         final features = data['features'] as List?;
         if (features != null && features.isNotEmpty) {
           return (features[0]['place_name'] as String?)
-              ?.replaceAll(RegExp(r',\s*United States$'), '')
-              .replaceAll(RegExp(r',\s*Puerto Rico$'), '');
+              ?.replaceAll(_usSuffixRe, '')
+              .replaceAll(_prSuffixRe, '');
         }
       }
     } catch (_) {}

@@ -4,6 +4,8 @@ part of 'ride_request_screen.dart';
 //  CONTROLLER — payment, search, scheduling
 // ════════════════════════════════════════════════════════════
 
+final _last4Re = RegExp(r'(\d{4})$');
+
 extension _RideRequestController on _RideRequestScreenState {
 
   /// Shows an error SnackBar with a Retry action button (8-second duration).
@@ -230,7 +232,7 @@ extension _RideRequestController on _RideRequestScreenState {
       if (pmId == null) return;
 
       // Extract last4 and brand from display_name (e.g. "Visa ending in 4242")
-      final last4Match = RegExp(r'(\d{4})$').firstMatch(displayName);
+      final last4Match = _last4Re.firstMatch(displayName);
       final last4 = last4Match?.group(1) ?? '****';
       final brand = displayName.split(' ').first.toLowerCase();
 

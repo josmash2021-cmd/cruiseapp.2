@@ -48,6 +48,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  static final _nonPhoneCharRe = RegExp(r'[^0-9+]');
   static const _gold = Color(0xFFE8C547);
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -476,7 +477,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if ((_recipientPhone ?? '').isEmpty) {
       await _resolveRecipientPhone();
     }
-    final phone = (_recipientPhone ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+    final phone = (_recipientPhone ?? '').replaceAll(_nonPhoneCharRe, '');
     if (phone.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -45,6 +45,11 @@ class ScheduleBookingScreen extends StatefulWidget {
 class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     with TickerProviderStateMixin, SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
+  static final _hourRe = RegExp(r'(\d+)\s*(h|hr|hrs|hour|hours)');
+  static final _minRe = RegExp(r'(\d+)\s*(m|min|mins|minute|minutes)');
+  static final _digitRe = RegExp(r'(\d+)');
+  static final _milesCleanRe = RegExp(r'[^\d.]');
+  static final _durCleanRe = RegExp(r'[^\d]');
   // Map center — starts at rider GPS, falls back to Birmingham
   LatLng _mapCenter = const LatLng(33.5186, -86.8104);
 
@@ -522,14 +527,14 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
   int _durationToMinutes(String v) {
     final lower = v.toLowerCase();
-    final h = RegExp(r'(\d+)\s*(h|hr|hrs|hour|hours)').firstMatch(lower);
-    final m = RegExp(r'(\d+)\s*(m|min|mins|minute|minutes)').firstMatch(lower);
+    final h = _hourRe.firstMatch(lower);
+    final m = _minRe.firstMatch(lower);
     var mins = 0;
     if (h != null) mins += (int.tryParse(h.group(1) ?? '') ?? 0) * 60;
     if (m != null) {
       mins += int.tryParse(m.group(1) ?? '') ?? 0;
     } else {
-      final n = RegExp(r'(\d+)').firstMatch(lower);
+      final n = _digitRe.firstMatch(lower);
       if (n != null) mins += int.tryParse(n.group(1) ?? '') ?? 0;
     }
     return mins.clamp(1, 300);
@@ -648,9 +653,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
       // Fire-and-forget: Firestore mirror (non-blocking)
       UserSession.getUser().then((session) {
-        final milesStr = _tripMiles.replaceAll(RegExp(r'[^\d.]'), '');
+        final milesStr = _tripMiles.replaceAll(_milesCleanRe, '');
         final km = (double.tryParse(milesStr) ?? 0.0) * 1.60934;
-        final durStr = _tripDuration.replaceAll(RegExp(r'[^\d]'), '');
+        final durStr = _tripDuration.replaceAll(_durCleanRe, '');
         final durMin = int.tryParse(durStr) ?? 0;
         final name =
             '${session?['firstName'] ?? ''} ${session?['lastName'] ?? ''}'

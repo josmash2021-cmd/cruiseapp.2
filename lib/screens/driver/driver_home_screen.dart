@@ -66,6 +66,7 @@ class DriverHomeScreen extends StatefulWidget {
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, VelocityAwarePanelMixin {
+  static final _sqlPrefixRe = RegExp(r'^sql_');
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
   // ignore: unused_field
@@ -1992,7 +1993,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         final driverIdStr = driverId.toString();
         final matches = rawDriverStr == driverIdStr ||
             rawDriverStr == 'sql_$driverIdStr' ||
-            rawDriverStr.replaceFirst(RegExp(r'^sql_'), '') == driverIdStr;
+            rawDriverStr.replaceFirst(_sqlPrefixRe, '') == driverIdStr;
         if (matches) {
           active = {'_docId': doc.id, ...data};
           break;

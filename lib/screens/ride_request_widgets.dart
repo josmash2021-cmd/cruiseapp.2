@@ -582,7 +582,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   int _parseDurationMins(String text) {
-    final parts = text.split(RegExp(r'\s+'));
+    final parts = text.split(_whitespaceRe);
     int total = 0;
     for (int i = 0; i < parts.length; i++) {
       final n = int.tryParse(parts[i]);
@@ -3075,6 +3075,7 @@ class _PaymentMethodButton extends StatefulWidget {
 }
 
 class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
+  static final _whitespaceRe = RegExp(r'\s+');
   bool _pressed = false;
 
   @override

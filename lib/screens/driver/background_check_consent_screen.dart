@@ -15,6 +15,7 @@ class BackgroundCheckConsentScreen extends StatefulWidget {
 
 class _BackgroundCheckConsentScreenState
     extends State<BackgroundCheckConsentScreen> {
+  static final _yearRe = RegExp(r'^\d{4}$');
   static const _gold = Color(0xFFE8C547);
   static const _card = Color(0xFF1C1C1E);
   static const _surface = Color(0xFF141414);
@@ -188,7 +189,7 @@ class _BackgroundCheckConsentScreenState
                     if (v == null || v.length != 4) {
                       return 'Enter exactly 4 digits';
                     }
-                    if (!RegExp(r'^\d{4}$').hasMatch(v)) {
+                    if (!_yearRe.hasMatch(v)) {
                       return 'Digits only';
                     }
                     return null;

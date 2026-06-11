@@ -31,6 +31,8 @@ class AirportTerminalSheet extends StatefulWidget {
 
 class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     with SingleTickerProviderStateMixin {
+  static final _airportCodeRe = RegExp(r'\b([A-Z]{3})\b');
+
   // ── colours ── Premium gold palette matching web
   static const _gold      = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5DC7A);
@@ -258,7 +260,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         for (final p in predictions) {
           final desc    = p['description'] as String? ?? '';
           final placeId = p['place_id']   as String? ?? '';
-          final codeM   = RegExp(r'\b([A-Z]{3})\b').allMatches(desc);
+          final codeM   = _airportCodeRe.allMatches(desc);
           final code    = codeM.isNotEmpty ? codeM.last.group(0)! : '';
           if (localCodes.contains(code)) continue;
           suggestions.add(_AirportSuggestion(description: desc, placeId: placeId, code: code));

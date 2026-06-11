@@ -728,7 +728,11 @@ workflows:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
-          echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
+          if [ -z "${MAPBOX_ACCESS_TOKEN:-}" ]; then
+            echo "❌ MAPBOX_ACCESS_TOKEN is not set. Add it as a secret variable in Codemagic app settings."
+            exit 1
+          fi
+          echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
       - *generate_firebase_configs
@@ -778,7 +782,11 @@ workflows:
       - name: Write android/local.properties
         script: |
           echo "MAPS_API_KEY=$ENV_MAPS_SERVICES_KEY" >> android/local.properties
-          echo "MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN:-pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w}" >> android/local.properties
+          if [ -z "${MAPBOX_ACCESS_TOKEN:-}" ]; then
+            echo "❌ MAPBOX_ACCESS_TOKEN is not set. Add it as a secret variable in Codemagic app settings."
+            exit 1
+          fi
+          echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" >> android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
       - *generate_env
       - *generate_firebase_configs

@@ -456,7 +456,7 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
                 )),
                 Text(
                   _methodTypeLabel(methodType),
-                  style: TextStyle(color: c.textTertiary, fontSize: 11),
+                  style: TextStyle(color: c.textTertiary, fontSize: 12),
                 ),
               ],
             ),

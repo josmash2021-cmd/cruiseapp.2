@@ -925,7 +925,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         Expanded(child: Divider(color: _border, height: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(S.of(context).moreAirports, style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+          child: Text(S.of(context).moreAirports, style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
         ),
         Expanded(child: Divider(color: _border, height: 1)),
       ]),
@@ -1015,7 +1015,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                             Text(airline, style: TextStyle(color: selected ? _gold : _textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
                             if (termLabel.isNotEmpty) ...[
                               const SizedBox(height: 2),
-                              Text(termLabel, style: TextStyle(color: _textSecondary, fontSize: 11)),
+                              Text(termLabel, style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
                             ],
                           ],
                         ),

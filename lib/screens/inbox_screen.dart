@@ -639,14 +639,14 @@ class _MessagesTabState extends State<_MessagesTab> {
                         children: [
                           Text(
                             _formatDate(createdAt),
-                            style: TextStyle(fontSize: 11, color: c.textTertiary),
+                            style: TextStyle(fontSize: 12, color: c.textTertiary),
                           ),
                           const Spacer(),
                           if (expiresAt != null)
                             Text(
                               _timeRemaining(expiresAt),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 color: Colors.orange.shade300,
                               ),
                             ),

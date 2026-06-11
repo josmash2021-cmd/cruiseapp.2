@@ -236,7 +236,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               S.of(context).tripDetailsHeader,
                               style: TextStyle(
                                 color: c.textTertiary,
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 1.2,
                               ),
@@ -277,7 +277,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                 S.of(context).fareBreakdownHeader,
                                 style: TextStyle(
                                   color: c.textTertiary,
-                                  fontSize: 11,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.2,
                                 ),

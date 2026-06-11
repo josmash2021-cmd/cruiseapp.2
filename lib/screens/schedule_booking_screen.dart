@@ -573,6 +573,28 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
       return;
     }
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(S.of(context).confirmRide, style: const TextStyle(color: Colors.white)),
+        content: Text(S.of(context).confirmBeforeSubmit, style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(S.of(context).cancelBtn, style: const TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: _gold),
+            child: Text(S.of(context).confirm, style: const TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     setState(() => _isBooking = true);
 
     // Pre-capture localized strings before async gaps

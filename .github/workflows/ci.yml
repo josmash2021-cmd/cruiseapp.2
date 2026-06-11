@@ -17,7 +17,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'
+          flutter-version: '3.38.10'
           channel: 'stable'
 
       - name: Check Flutter version
@@ -57,7 +57,6 @@ jobs:
         run: flutter analyze --fatal-infos
 
       - name: Run Flutter tests
-        continue-on-error: true
         run: flutter test
 
   # ── Backend tests ─────────────────────────────────────────────────
@@ -81,3 +80,15 @@ jobs:
       - name: Run backend tests
         working-directory: ./backend
         run: pytest tests/ -v --tb=short
+
+      - name: Lint backend with ruff
+        working-directory: ./backend
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Type-check backend with mypy
+        working-directory: ./backend
+        run: |
+          pip install mypy
+          mypy . --ignore-missing-imports --warn-return-any

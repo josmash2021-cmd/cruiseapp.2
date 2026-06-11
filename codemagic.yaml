@@ -203,7 +203,7 @@ definitions:
       script: |
         cd backend
         pip3 install -q -r requirements.txt
-        python -m pytest tests/ -v --tb=short || true
+        python -m pytest tests/ -v --tb=short
 
     - &pod_install
       name: Install CocoaPods dependencies
@@ -328,7 +328,7 @@ workflows:
     environment:
       groups:
         - Default
-      flutter: stable
+      flutter: 3.38.10
       xcode: 26.0
       cocoapods: 1.15.2
       vars:
@@ -388,7 +388,7 @@ workflows:
     environment:
       groups:
         - Default
-      flutter: stable
+      flutter: 3.38.10
       xcode: 26.0
       cocoapods: 1.15.2
       vars:
@@ -499,7 +499,7 @@ workflows:
     environment:
       groups:
         - Default
-      flutter: stable
+      flutter: 3.38.10
       xcode: 26.0
       cocoapods: 1.15.2
       vars:
@@ -720,7 +720,7 @@ workflows:
     environment:
       groups:
         - Default
-      flutter: stable
+      flutter: 3.38.10
       java: 17
       vars:
         <<: *shared_vars
@@ -774,7 +774,7 @@ workflows:
     environment:
       groups:
         - Default
-      flutter: stable
+      flutter: 3.38.10
       java: 17
       vars:
         <<: *shared_vars

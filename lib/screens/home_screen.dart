@@ -451,6 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _accountStatusTimer?.cancel();
       _countdownTimer?.cancel();
       _imminentRideTimer?.cancel();
+      _locationSub?.cancel();
       // Pause animations to save CPU/GPU when backgrounded
       _shimmerController.stop();
       _clockRotateCtrl.stop();

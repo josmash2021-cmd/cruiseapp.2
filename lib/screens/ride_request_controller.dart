@@ -341,7 +341,8 @@ extension _RideRequestController on _RideRequestScreenState {
       if (addr != null && mounted) {
         _setState(() => _currentAddress = addr);
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GPS] _initLocation error: $e');
       if (mounted) _setState(() => _fetchingLocation = false);
     }
   }

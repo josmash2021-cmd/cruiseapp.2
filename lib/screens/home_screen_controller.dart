@@ -269,7 +269,9 @@ extension _HomeScreenController on _HomeScreenState {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
       _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-    }).catchError((_) {});
+    }).catchError((e) {
+      debugPrint('[GPS] getCurrentPosition error: $e');
+    });
     // Start continuous location stream
     _locationSub?.cancel();
     _locationSub = Geolocator.getPositionStream(
@@ -277,12 +279,17 @@ extension _HomeScreenController on _HomeScreenState {
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 0, // Every GPS fix for fluid movement
       ),
-    ).listen((Position p) {
-      if (!mounted) return;
-      final ll = LatLng(p.latitude, p.longitude);
-      _currentLatLng = ll;
-      _miniDot.setTarget(ll.latitude, ll.longitude);
-    });
+    ).listen(
+      (Position p) {
+        if (!mounted) return;
+        final ll = LatLng(p.latitude, p.longitude);
+        _currentLatLng = ll;
+        _miniDot.setTarget(ll.latitude, ll.longitude);
+      },
+      onError: (e) {
+        debugPrint('[GPS] Position stream error: $e');
+      },
+    );
   }
 
   // ─── Ride progress countdown ───

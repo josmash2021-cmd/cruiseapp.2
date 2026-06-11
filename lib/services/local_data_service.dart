@@ -1,5 +1,7 @@
 ﻿import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FavoritePlace {
@@ -467,16 +469,28 @@ class LocalDataService {
   static const _cardBrandKey = 'credit_card_brand';
   static const _stripePaymentMethodIdKey = 'stripe_pm_id';
 
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   /// Save the Stripe PaymentMethod ID for charging later.
   static Future<void> saveStripePaymentMethodId(String pmId) async {
-    final prefs = _p;
-    await prefs.setString(_stripePaymentMethodIdKey, pmId);
+    if (kIsWeb) {
+      final prefs = _p;
+      await prefs.setString(_stripePaymentMethodIdKey, pmId);
+    } else {
+      await _secureStorage.write(key: _stripePaymentMethodIdKey, value: pmId);
+    }
   }
 
   /// Get the stored Stripe PaymentMethod ID (null if none).
   static Future<String?> getStripePaymentMethodId() async {
-    final prefs = _p;
-    return prefs.getString(_stripePaymentMethodIdKey);
+    if (kIsWeb) {
+      final prefs = _p;
+      return prefs.getString(_stripePaymentMethodIdKey);
+    } else {
+      return _secureStorage.read(key: _stripePaymentMethodIdKey);
+    }
   }
 
   /// Save the last 4 digits of a linked credit card.
@@ -770,6 +784,9 @@ class LocalDataService {
     await prefs.remove(_cardLast4Key);
     await prefs.remove(_cardBrandKey);
     await prefs.remove(_stripePaymentMethodIdKey);
+    if (!kIsWeb) {
+      await _secureStorage.delete(key: _stripePaymentMethodIdKey);
+    }
     await prefs.remove(_activeRideKey);
     await prefs.remove(_verifiedKey);
     await prefs.remove(_docTypeKey);

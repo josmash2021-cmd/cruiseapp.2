@@ -32,6 +32,9 @@ class TrackingMapAnnotations {
   bool _dropoffLabelRevealed = false;
   bool _dropoffPinAdded = false;
 
+  Timer? _dropoffPopTimer;
+  Timer? _pickupPopTimer;
+
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PointAnnotationManager? mgr) {
     _pointAnnotMgr = mgr;
@@ -131,11 +134,12 @@ class TrackingMapAnnotations {
   /// Animación pop-in para el pin de dropoff
   void _animateDropoffPinPop(mapbox.PointAnnotationManager mgr) {
     if (_dropoffAnnot == null) return;
+    _dropoffPopTimer?.cancel();
 
     final startTime = DateTime.now();
     const durationMs = 500;
 
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / durationMs).clamp(0.0, 1.0);
 
@@ -193,8 +197,9 @@ class TrackingMapAnnotations {
     const durationMs = 600;
 
     final completer = Completer<void>();
+    _pickupPopTimer?.cancel();
 
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _pickupPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / durationMs).clamp(0.0, 1.0);
 
@@ -240,6 +245,10 @@ class TrackingMapAnnotations {
 
   /// Reset para recreación del mapa
   void reset() {
+    _dropoffPopTimer?.cancel();
+    _dropoffPopTimer = null;
+    _pickupPopTimer?.cancel();
+    _pickupPopTimer = null;
     _pickupAnnot = null;
     _dropoffAnnot = null;
     _dropoffPinAdded = false;

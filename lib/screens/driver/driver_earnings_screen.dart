@@ -20,7 +20,7 @@ class DriverEarningsScreen extends StatefulWidget {
 }
 
 class _DriverEarningsScreenState extends State<DriverEarningsScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _card = Color(0xFF1C1C1E);
   static const _surface = Color(0xFF141414);
@@ -224,7 +224,19 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _chartCtrl.stop();
+      _listCtrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _chartCtrl.forward();
+      _listCtrl.forward();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chartCtrl.dispose();
     _listCtrl.dispose();
     super.dispose();

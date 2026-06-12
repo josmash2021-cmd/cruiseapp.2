@@ -5,6 +5,9 @@ part of 'ride_request_screen.dart';
 // ════════════════════════════════════════════════════════════
 
 extension _RideRequestMap on _RideRequestScreenState {
+  // Single source of truth for the gold route line color so the drawn
+  // route and any updated/recreated route use the exact same shade.
+  static const int _routeGoldColor = 0xFFF0CA3E;
 
   /// Detect what icon to show on the dropoff pin based on address text.
   _PinIcon _detectDropoffType(String address) {
@@ -1106,7 +1109,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       // Warm gold — averages the web's 3-stop gradient
       // (#D4AF37 → #FFD700 → #E8C547). Solid #F0CA3E reads close to
       // the middle-weighted visual of the CSS gradient on a dark map.
-      lineColor: const Color(0xFFF0CA3E).toARGB32(),
+      lineColor: const Color(_routeGoldColor).toARGB32(),
       lineWidth: 5.0,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
@@ -1231,12 +1234,28 @@ extension _RideRequestMap on _RideRequestScreenState {
     return completer.future;
   }
 
+  /// Removes the shimmer dot annotation if it exists.
+  /// Called before creating a new shimmer and during route cleanup so
+  /// ghost dots don't accumulate when the route changes.
+  void _clearRouteShimmerDot() {
+    final dot = _routeShimmerDot;
+    final mgr = _pointAnnotMgr;
+    if (dot != null && mgr != null) {
+      mgr.delete(dot).catchError((_) {});
+    }
+    _routeShimmerDot = null;
+  }
+
   /// Shimmer animation — gold dot travels continuously from pickup to dropoff
   /// Creates a sparkling effect that guides the eye along the completed route.
   void _startRouteShimmer(List<LatLng> points) {
     if (points.length < 2) return;
-    
-    // Dispose previous shimmer if any
+
+    // Remove any previous shimmer dot annotation before creating a new one.
+    // Without this, route updates would leave ghost shimmer dots on the map.
+    _clearRouteShimmerDot();
+
+    // Dispose previous shimmer controller if any
     _routeShimmerCtrl?.dispose();
     _routeShimmerCtrl = AnimationController(
       vsync: this,
@@ -1372,7 +1391,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (routeGeo == null) return;
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: routeGeo,
-      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineColor: const Color(_routeGoldColor).toARGB32(),
       lineWidth: 5.0,
     ));
   }

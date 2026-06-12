@@ -208,42 +208,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           .toList();
     }
 
-    // Fallback: generate default options if empty but we have a route
-    if (displayOptions.isEmpty && s.route != null) {
-      final basePrice = 15.0; // Default base price
-      displayOptions = [
-        RideOption(
-          id: 'suburban',
-          name: 'VIP',
-          description: 'Spacious • Leather • Snacks & Drinks',
-          priceEstimate: basePrice * 2.20,
-          etaMinutes: 8,
-          icon: '🚐',
-          capacity: 7,
-          surgeMultiplier: 1.0,
-        ),
-        RideOption(
-          id: 'camry',
-          name: 'Sedan',
-          description: 'Comfort • Climate • Charger',
-          priceEstimate: basePrice * 1.35,
-          etaMinutes: 5,
-          icon: '🚙',
-          capacity: 4,
-          surgeMultiplier: 1.0,
-        ),
-        RideOption(
-          id: 'fusion',
-          name: 'Comfort',
-          description: 'Clean • Safe • Efficient',
-          priceEstimate: basePrice,
-          etaMinutes: 3,
-          icon: '🚗',
-          capacity: 4,
-          surgeMultiplier: 1.0,
-        ),
-      ];
-    }
+    // NOTE: We intentionally do NOT generate fake fallback options when
+    // displayOptions is empty. The grid below already renders shimmer
+    // skeleton cards while the backend calculates fares, and a retry
+    // widget if the fetch fails. Hardcoded prices would be dangerous in
+    // production because the rider could book at an incorrect rate.
 
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)

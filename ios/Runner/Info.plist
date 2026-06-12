@@ -86,8 +86,6 @@
 	<string>Cruise needs your location to show nearby drivers and calculate routes.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Cruise needs your location in the background to track your ride in real time.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Cruise needs your location to track your ride.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Cruise needs the camera for your profile photo and identity verification.</string>
 	<key>NSFaceIDUsageDescription</key>
@@ -133,8 +131,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSPrivacyPolicyURL</key>
-	<string>https://cruiseride.com/privacy</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

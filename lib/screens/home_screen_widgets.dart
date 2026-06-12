@@ -443,13 +443,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
           (raw / 0.18).clamp(0.0, 1.0),
         );
         final collapseT = 1.0 - expandT;
-        // Drive the collapsed glow only while the bar is visible —
-        // saves frames when fully expanded.
-        if (collapseT > 0.05 && !_collapsedGlowCtrl.isAnimating) {
-          _collapsedGlowCtrl.repeat();
-        } else if (collapseT <= 0.05 && _collapsedGlowCtrl.isAnimating) {
-          _collapsedGlowCtrl.stop();
-        }
 
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -465,32 +458,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ),
           child: Stack(
             children: [
-              // ── Animated gold border on the mini bar ───────────
-              // Painted as a Stack peer so it only ever covers the
-              // mini-bar region and never bleeds into the expanded
-              // content above.
-              if (collapseT > 0.05)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: MediaQuery.of(context).size.height * _kMinSheet,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: collapseT,
-                      child: AnimatedBuilder(
-                        animation: _collapsedGlowCtrl,
-                        builder: (_, __) => CustomPaint(
-                          foregroundPainter: SearchingBorderPainter(
-                            progress: _collapsedGlowCtrl.value,
-                            expansion: 1.0,
-                            cornerRadius: 28.0,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // NOTE: The animated gold border on the collapsed mini-bar was
+              // removed to match the new clean home design. The collapsed
+              // state now shows only the drag handle + greeting row on a
+              // pure black sheet.
 
               ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
@@ -583,17 +554,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: _buildFleetHeader(),
               ),
                 const SizedBox(height: 16),
-                AnimatedCrossFade(
-                  firstChild: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: RepaintBoundary(child: _buildFleetStack(screenW)),
-                  ),
-                  secondChild: const SizedBox.shrink(),
-                  crossFadeState: _fleetExpanded
-                      ? CrossFadeState.showFirst
-                      : CrossFadeState.showSecond,
-                  duration: const Duration(milliseconds: 300),
-                  sizeCurve: Curves.easeInOut,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: RepaintBoundary(child: _buildFleetStack(screenW)),
                 ),
 
                 const SizedBox(height: 36),
@@ -1064,83 +1027,49 @@ extension _HomeScreenWidgets on _HomeScreenState {
         }
         await _openSearchThenRide();
       },
-      child: ListenableBuilder(
-        listenable: _shimmerController,
-        builder: (context, child) {
-          final v = _shimmerController.value;
-          return Opacity(
-            opacity: (disabled && !verificationBlocked) ? 0.55 : 1.0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOutCubic,
-              height: (active || imminent)
-                  ? Responsive.h(195)
-                  : verificationBlocked
-                      ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
-                      : Responsive.h(155),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(
-                  color: (active || imminent)
-                      ? _gold.withValues(alpha: 0.4)
-                      : Colors.transparent,
-                  width: (active || imminent) ? 1.5 : 0,
-                ),
-              ),
-              child: CustomPaint(
-                painter: disabled
-                    ? null
-                    : _GlowBorderPainter(
-                        progress: v,
-                        gold: _gold,
-                        goldLight: _goldLight,
-                        isDark: isDark,
-                      ),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: isDark
-                        ? const LinearGradient(
-                            colors: [Color(0xFF141210), Color(0xFF0C0B09)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : LinearGradient(
-                            colors: [
-                              const Color(0xFF161820),
-                              const Color(0xFF1C1E24),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (active || imminent)
-                            ? _gold.withValues(alpha: 0.15 + 0.1 * ((v * 3.14).clamp(0, 1)))
-                            : _gold.withValues(alpha: 0.06 + 0.08 * ((v * 3.14).clamp(0, 1))),
-                        blurRadius: (active || imminent) ? 20 + 10 * v : 30 + 15 * v,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 400),
-                    switchInCurve: Curves.easeInOutCubic,
-                    switchOutCurve: Curves.easeInOutCubic,
-                    transitionBuilder: (child, anim) =>
-                        FadeTransition(opacity: anim, child: child),
-                    child: active
-                        ? _buildHeroRideInProgress()
-                        : imminent
-                            ? _buildHeroUpcomingRide()
-                            : _buildHeroWhereToContent(isDark, disabled, zoneBlocked, verificationBlocked),
-                  ),
-                ),
-              ),
+      child: Opacity(
+        opacity: (disabled && !verificationBlocked) ? 0.55 : 1.0,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOutCubic,
+          height: (active || imminent)
+              ? Responsive.h(195)
+              : verificationBlocked
+                  ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
+                  : Responsive.h(155),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E0F12),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: (active || imminent)
+                  ? _gold.withValues(alpha: 0.4)
+                  : Colors.white.withValues(alpha: 0.06),
+              width: 1.5,
             ),
-          );
-        },
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 28,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchInCurve: Curves.easeInOutCubic,
+              switchOutCurve: Curves.easeInOutCubic,
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
+              child: active
+                  ? _buildHeroRideInProgress()
+                  : imminent
+                      ? _buildHeroUpcomingRide()
+                      : _buildHeroWhereToContent(isDark, disabled, zoneBlocked, verificationBlocked),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1995,51 +1924,34 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // ─── Fleet header with collapse/expand toggle (TAP to toggle) ───
+  // ─── Fleet header ───
   Widget _buildFleetHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () {
-        _setState(() => _fleetExpanded = !_fleetExpanded);
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [_gold, _goldLight],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(2),
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_gold, _goldLight],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
+            borderRadius: BorderRadius.circular(2),
           ),
-          const SizedBox(width: 12),
-          Text(
-            S.of(context).chooseRide,
-            style: TextStyle(
-              color: isDark ? Colors.white : const Color(0xFF1C1C1E),
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          S.of(context).chooseRide,
+          style: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
           ),
-          const Spacer(),
-          AnimatedRotation(
-            turns: _fleetExpanded ? 0.5 : 0.0, // Arrow up when expanded, down when collapsed
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: Colors.white.withValues(alpha: 0.5),
-              size: 24,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

@@ -94,10 +94,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 
-  late AnimationController _shimmerController;
-  // 3000ms loop driving the gold "running glow" border around the
-  // collapsed mini-bar (mirrors driver "Finding trips" panel timing).
-  late AnimationController _collapsedGlowCtrl;
   late AnimationController _boltFlashCtrl;
   late AnimationController _clockRotateCtrl;
   late AnimationController _promoShimmerCtrl;
@@ -112,7 +108,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _loadingSavedData = true;
   bool _hasActivePromo = false;
   int _dockIndex = 0; // 0=Ride, 1=Schedule, 2=Account
-  bool _fleetExpanded = true;
 
   // Scheduled ride indicator
   Map<String, dynamic>? _nextScheduledRide;
@@ -336,14 +331,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // Optimized: fewer animation controllers to reduce CPU usage
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-    _collapsedGlowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
     _boltFlashCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -454,12 +441,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _imminentRideTimer?.cancel();
       _locationSub?.cancel();
       // Pause animations to save CPU/GPU when backgrounded
-      _shimmerController.stop();
       _clockRotateCtrl.stop();
       _promoShimmerCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
       // Resume looping animations
-      _shimmerController.repeat();
       _clockRotateCtrl.repeat();
       _promoShimmerCtrl.repeat();
       // FIX: Restart GPS stream — Geolocator stream can die in background
@@ -518,8 +503,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _miniDot.dispose();
     _driverMotionTicker?.dispose();
     _driverMotion.reset();
-    _shimmerController.dispose();
-    _collapsedGlowCtrl.dispose();
     _boltFlashCtrl.dispose();
     _clockRotateCtrl.dispose();
     _promoShimmerCtrl.dispose();
@@ -1788,105 +1771,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 // ─────────────────────────────────────────────
 // Later Options Sheet - Airport or Schedule
 // ─────────────────────────────────────────────
-// ─────────────────────────────────────────────
-// Animated glow border painter for Where-to card
-// Uses PathMetrics on a real RRect path for pixel-perfect smooth corners.
-// ─────────────────────────────────────────────
-class _GlowBorderPainter extends CustomPainter {
-  final double progress;
-  final Color gold;
-  final Color goldLight;
-  final bool isDark;
-
-  _GlowBorderPainter({
-    required this.progress,
-    required this.gold,
-    required this.goldLight,
-    required this.isDark,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(28));
-
-    // Base subtle border — smooth RRect, always visible
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..isAntiAlias = true
-        ..color = gold.withValues(alpha: isDark ? 0.12 : 0.20),
-    );
-
-    // Build the border path from the RRect — Flutter uses Bézier curves
-    // internally so corners are mathematically exact (no pixel jaggedness).
-    final borderPath = Path()..addRRect(rrect);
-    final metricsList = borderPath.computeMetrics().toList();
-    if (metricsList.isEmpty) return;
-    final pm = metricsList.first;
-    final total = pm.length;
-
-    const glowFraction = 0.18; // fraction of perimeter covered by the glow
-    final glowLen = total * glowFraction;
-    final headDist = (progress * total) % total;
-
-    // Divide glow tail into steps for the fade gradient
-    const steps = 48;
-    final stepLen = glowLen / steps;
-
-    for (int k = 0; k < steps; k++) {
-      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
-      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
-      if (fadeAlpha < 0.02) continue;
-
-      final segEnd   = (headDist - k * stepLen + total) % total;
-      final segStart = (segEnd - stepLen + total) % total;
-
-      // extractPath handles wrapping correctly when start > end
-      final Path seg;
-      if (segStart <= segEnd) {
-        seg = pm.extractPath(segStart, segEnd);
-      } else {
-        seg = pm.extractPath(segStart, total)
-          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
-      }
-
-      // Bright stroke — isAntiAlias + round join = crisp smooth line
-      canvas.drawPath(
-        seg,
-        Paint()
-          ..style      = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeCap  = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..isAntiAlias = true
-          ..color = Color.lerp(gold, goldLight, t)!
-              .withValues(alpha: fadeAlpha * 0.95),
-      );
-
-      // Soft outer glow halo (every other step for perf)
-      if (k % 2 == 0) {
-        canvas.drawPath(
-          seg,
-          Paint()
-            ..style      = PaintingStyle.stroke
-            ..strokeWidth = 12
-            ..strokeCap  = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round
-            ..isAntiAlias = true
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-            ..color = goldLight.withValues(alpha: fadeAlpha * 0.30),
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GlowBorderPainter old) => old.progress != progress;
-}
-
 // ─── Address Autocomplete Bottom Sheet ────────────────────────────────
 
 class _AddressAutocompleteSheet extends StatefulWidget {

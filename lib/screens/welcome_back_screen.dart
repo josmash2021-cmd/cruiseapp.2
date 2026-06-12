@@ -55,7 +55,6 @@ class _WelcomeBackScreenState extends State<WelcomeBackScreen>
 
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         systemNavigationBarColor: _bg,
         systemNavigationBarIconBrightness: Brightness.light,

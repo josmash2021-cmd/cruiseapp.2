@@ -44,7 +44,6 @@ class _DriverApprovedScreenState extends State<DriverApprovedScreen>
     WidgetsBinding.instance.addObserver(this);
 
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       systemNavigationBarColor: _bg,
     ));

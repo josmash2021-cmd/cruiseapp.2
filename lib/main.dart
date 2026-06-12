@@ -606,7 +606,7 @@ void main() async {
       
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
+        const SystemUiOverlayStyle(),
       );
       debugPrint('[Perf] runApp: ${perfStopwatch.elapsedMilliseconds}ms');
       runApp(const UberCloneApp());

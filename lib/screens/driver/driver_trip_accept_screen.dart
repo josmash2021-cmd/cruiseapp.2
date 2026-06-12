@@ -2354,7 +2354,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final bot = MediaQuery.of(context).padding.bottom;
 
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor:           Colors.transparent,
       statusBarIconBrightness:  Brightness.light,
     ));
 

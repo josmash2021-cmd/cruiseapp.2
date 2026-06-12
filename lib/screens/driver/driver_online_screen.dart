@@ -843,7 +843,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _phase == _Phase.routeSummary;
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
         statusBarIconBrightness:
             isNav ? Brightness.light : (isDark ? Brightness.light : Brightness.dark),
       ),

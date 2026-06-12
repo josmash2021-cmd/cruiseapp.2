@@ -58,7 +58,6 @@ class _SplashScreenState extends State<SplashScreen>
 
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         systemNavigationBarColor: _bg,
         systemNavigationBarIconBrightness: Brightness.light,

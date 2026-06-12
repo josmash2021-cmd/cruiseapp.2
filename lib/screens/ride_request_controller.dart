@@ -2524,11 +2524,6 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
-    // Stop shimmer controller and remove shimmer dot annotation.
-    _routeShimmerCtrl?.stop();
-    _routeShimmerCtrl?.dispose();
-    _routeShimmerCtrl = null;
-    _clearRouteShimmerDot();
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_routeAnnot != null) {

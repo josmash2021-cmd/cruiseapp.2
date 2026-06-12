@@ -417,6 +417,8 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 15. **Session start = ground in reality:** al arrancar una sesión (o después de compact), leer `CLAUDE.md` + `git status` + `git log -10` antes de la primera edición. Memoria se expira; no citar file:line sin verificar primero.
 
+16. **Part files + `static const` = riesgo de build (v494):** cuando una constante se declare como `static const` dentro de una clase y se use dentro de un `part` file en una expresión `const` (ej. `const Duration(seconds: _x)` o `const Icon(color: _y)`), el compilador de iOS puede fallar con "Not a constant expression" / "getter isn't defined". La regla es: **cualquier constante usada en un part file dentro de `const` debe declararse a top-level**, no como `static const` de clase. Ver [lib/screens/home_screen.dart:92](lib/screens/home_screen.dart#L92).
+
 ---
 
-**Última actualización:** 2026-04-11 (v1.0.2+301 — 3 bugs tracking fixes + SmoothMotion util + memory upgrade)
+**Última actualización:** 2026-06-12 (v1.0.3+494 — home sheet redesign + part-file const fix)

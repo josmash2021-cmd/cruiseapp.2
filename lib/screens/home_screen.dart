@@ -197,6 +197,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Throttle debug logs from the dot ticker so we don't flood logcat.
   DateTime _lastDotTickLog = DateTime(0);
 
+  // Self-healing watchdogs — detect and recover from a stuck GPS stream
+  // or a dot that has drifted too far behind the raw GPS fix.
+  DateTime _lastGpsFixAt = DateTime(0);
+  Timer? _gpsStreamWatchdog;
+  Timer? _dotDriftWatchdog;
+  static const int _gpsWatchdogSec = 5;
+  static const int _dotDriftWatchdogSec = 3;
+  static const double _maxDotDriftMeters = 30.0;
+
   // User profile data
   String _firstName = '';
   String _lastName = '';
@@ -397,6 +406,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             'lng=${_miniDot.lng?.toStringAsFixed(6)} annot=$_miniMapAnnot');
       }
     });
+    // Self-healing watchdogs: restart dead GPS streams and snap a stuck dot.
+    _startLocationWatchdogs();
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkDriversOnline();
@@ -531,6 +542,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _pendingSearchTimer?.cancel();
     _pendingSearchTimer = null;
     _locationSub?.cancel();
+    _stopLocationWatchdogs();
     _zonesSub?.cancel();
     _driverLocationSub?.cancel();
     _tripDocSub?.cancel();
@@ -704,6 +716,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // distanceFilter: 0 -> every GPS fix. This is required for fluid
       // rider-dot movement when walking or in a car; SmoothMotion absorbs
       // jitter and the ticker is paused when the rider is stationary.
+      _lastGpsFixAt = DateTime.now();
       _locationSub?.cancel();
       _locationSub =
           Geolocator.getPositionStream(
@@ -713,10 +726,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             ),
           ).listen((Position p) {
             if (!mounted) return;
+            _lastGpsFixAt = DateTime.now();
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
             debugPrint('[GPS] Home stream fix: ${ll.latitude.toStringAsFixed(6)}, ${ll.longitude.toStringAsFixed(6)} '
                 'accuracy=${p.accuracy.toStringAsFixed(1)}m speed=${p.speed.toStringAsFixed(1)}m/s');
+            // Make sure the interpolation ticker is alive after each fix.
+            _miniDot.ensureRunning();
             _miniDot.setTarget(ll.latitude, ll.longitude);
             _throttledCameraRecenter();
           });

@@ -48,4 +48,74 @@ extension _HomeScreenMap on _HomeScreenState {
       debugPrint('[Map] Camera recenter failed: $e');
     }
   }
+
+  /// Start watchdogs that keep the GPS stream and rider dot healthy.
+  /// Call from initState after building the dot.
+  void _startLocationWatchdogs() {
+    // Start the grace period now so the watchdog doesn't fire before the
+    // first GPS fix has had a chance to arrive.
+    _lastGpsFixAt = DateTime.now();
+
+    _gpsStreamWatchdog?.cancel();
+    _gpsStreamWatchdog = Timer.periodic(const Duration(seconds: _gpsWatchdogSec), (_) {
+      _checkGpsStreamHealth();
+    });
+
+    _dotDriftWatchdog?.cancel();
+    _dotDriftWatchdog = Timer.periodic(const Duration(seconds: _dotDriftWatchdogSec), (_) {
+      _checkDotDrift();
+    });
+  }
+
+  /// Stop the self-healing watchdogs. Call from dispose.
+  void _stopLocationWatchdogs() {
+    _gpsStreamWatchdog?.cancel();
+    _gpsStreamWatchdog = null;
+    _dotDriftWatchdog?.cancel();
+    _dotDriftWatchdog = null;
+  }
+
+  /// If no GPS fix has arrived recently, restart the position stream.
+  /// Geolocator streams can die silently on some Android/iOS devices.
+  /// Only restarts if a stream was already started (i.e., permission granted).
+  void _checkGpsStreamHealth() {
+    if (!mounted || _locationSub == null) return;
+    final elapsed = DateTime.now().difference(_lastGpsFixAt).inSeconds;
+    if (elapsed < _gpsWatchdogSec) return;
+    debugPrint('[GPS] Watchdog: no fix for ${elapsed}s, restarting stream');
+    _fetchCurrentLocation();
+  }
+
+  /// If the interpolated dot has drifted too far from the raw GPS fix,
+  /// snap it back. This prevents the dot from getting stuck if the
+  /// SmoothMotion or annotation update pipeline silently fails.
+  void _checkDotDrift() {
+    if (!mounted || _currentLatLng == null) return;
+    final dotLat = _miniDot.lat;
+    final dotLng = _miniDot.lng;
+    if (dotLat == null || dotLng == null) return;
+
+    final drift = _haversineMeters(
+      dotLat, dotLng,
+      _currentLatLng!.latitude, _currentLatLng!.longitude,
+    );
+    if (drift <= _maxDotDriftMeters) return;
+
+    debugPrint('[Dot] Watchdog: drift=${drift.toStringAsFixed(1)}m > $_maxDotDriftMeters, snapping to GPS');
+    _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+    unawaited(_updateMiniMapAnnotation());
+  }
+
+  /// Haversine distance in meters between two lat/lng pairs.
+  double _haversineMeters(double lat1, double lng1, double lat2, double lng2) {
+    const R = 6371000.0;
+    final dLat = (lat2 - lat1) * math.pi / 180;
+    final dLng = (lng2 - lng1) * math.pi / 180;
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return 2 * R * math.asin(math.sqrt(a));
+  }
 }

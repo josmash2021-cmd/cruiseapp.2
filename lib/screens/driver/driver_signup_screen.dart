@@ -16,6 +16,8 @@ import '../face_liveness_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'license_scanner_screen.dart';
 
+final _nonDigitRe = RegExp(r'\D');
+
 /// Multi-step driver sign-up + verification flow.
 ///
 ///  Step 0 — Personal information

@@ -1,5 +1,7 @@
 part of 'ride_request_screen.dart';
 
+final _whitespaceRe = RegExp(r'\s+');
+
 // ════════════════════════════════════════════════════════════
 //  WIDGETS — panels, cards, overlays
 // ════════════════════════════════════════════════════════════
@@ -3075,7 +3077,6 @@ class _PaymentMethodButton extends StatefulWidget {
 }
 
 class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
-  static final _whitespaceRe = RegExp(r'\s+');
   bool _pressed = false;
 
   @override

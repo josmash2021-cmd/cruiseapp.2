@@ -1444,9 +1444,9 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       S.of(context).save,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
                       ),

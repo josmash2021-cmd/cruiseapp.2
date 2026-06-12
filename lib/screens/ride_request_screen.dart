@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -793,8 +794,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _priceShimmerCtrl.stop();
       _badgePremiumCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
-      if (_searching) _pulseCtrl.repeat();
-      if (_searching) _radarCtrl.repeat();
+      final searching = _ctrl.state.phase == RiderPhase.searchingDriver;
+      if (searching) _pulseCtrl.repeat();
+      if (searching) _radarCtrl.repeat();
       _shimmerCtrl.repeat();
       _priceShimmerCtrl.repeat();
       _badgePremiumCtrl.repeat();

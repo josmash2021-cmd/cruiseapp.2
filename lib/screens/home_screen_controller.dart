@@ -271,7 +271,7 @@ extension _HomeScreenController on _HomeScreenState {
       _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
       _throttledCameraRecenter();
     }).catchError((e) {
-      debugPrint('[GPS] getCurrentPosition error: $e');
+      if (kDebugMode) debugPrint('[GPS] getCurrentPosition error: $e');
     });
     // Start continuous location stream
     _lastGpsFixAt = DateTime.now();
@@ -287,14 +287,12 @@ extension _HomeScreenController on _HomeScreenState {
         _lastGpsFixAt = DateTime.now();
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
-        debugPrint('[GPS] Background stream fix: ${ll.latitude.toStringAsFixed(6)}, ${ll.longitude.toStringAsFixed(6)} '
-            'accuracy=${p.accuracy.toStringAsFixed(1)}m speed=${p.speed.toStringAsFixed(1)}m/s');
         _miniDot.ensureRunning();
         _miniDot.setTarget(ll.latitude, ll.longitude);
         _throttledCameraRecenter();
       },
       onError: (e) {
-        debugPrint('[GPS] Position stream error: $e');
+        if (kDebugMode) debugPrint('[GPS] Position stream error: $e');
       },
     );
   }

@@ -98,23 +98,29 @@ class GoldLocationDot {
         .endRecording()
         .toImage(_canvasSize.toInt(), _canvasSize.toInt());
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
-    if (data == null) return;
+    if (data == null || _isDisposing) return;
     _frame = data.buffer.asUint8List();
 
     _lastElapsed = Duration.zero;
     _onTick = onTick;
     _vsync = vsync;
     _ticker?.dispose();
-    _ticker = vsync.createTicker((elapsed) {
-      final dtSec = _lastElapsed == Duration.zero
-          ? 0.0
-          : (elapsed - _lastElapsed).inMicroseconds / 1e6;
-      _lastElapsed = elapsed;
+    try {
+      _ticker = vsync.createTicker((elapsed) {
+        final dtSec = _lastElapsed == Duration.zero
+            ? 0.0
+            : (elapsed - _lastElapsed).inMicroseconds / 1e6;
+        _lastElapsed = elapsed;
 
-      final posChanged = _motion.tick(dtSec);
-      if (posChanged) onTick();
-    })
-      ..start();
+        final posChanged = _motion.tick(dtSec);
+        if (posChanged) onTick();
+      })
+        ..start();
+    } catch (_) {
+      // TickerProvider was disposed while we were awaiting the image.
+      // Leave the dot ready for the next build call.
+      _ticker = null;
+    }
   }
 
   /// Restart the ticker if it was stopped (e.g. after app resume).

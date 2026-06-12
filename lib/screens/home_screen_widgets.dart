@@ -62,7 +62,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           try {
             _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           } catch (e) {
-            debugPrint('[Map] Failed to create annotation manager: $e');
+            if (kDebugMode) debugPrint('[Map] Failed to create annotation manager: $e');
           }
 
           // FIX: Apply layer properties only if annotation manager exists
@@ -85,7 +85,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
             _drawRouteOnMap();
           }
         } catch (e) {
-          debugPrint('[Map] onMapCreated error: $e');
+          if (kDebugMode) debugPrint('[Map] onMapCreated error: $e');
         }
       },
       onStyleLoadedListener: (_) async {
@@ -102,7 +102,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
               await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
             } catch (e) {
-              debugPrint('[Map] Failed to recreate annotation manager on style load: $e');
+              if (kDebugMode) debugPrint('[Map] Failed to recreate annotation manager on style load: $e');
             }
             // Recreate gold dot if we have a position
             if (_currentLatLng != null) _updateMiniMapAnnotation();
@@ -112,12 +112,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
             } catch (_) {}
           }
         } catch (e) {
-          debugPrint('[Map] onStyleLoaded error: $e');
+          if (kDebugMode) debugPrint('[Map] onStyleLoaded error: $e');
         }
       },
       // FIX: onMapLoadErrorListener catches style/load errors
       onMapLoadErrorListener: (err) {
-        debugPrint('[Map] Load error: ${err.message} (type: ${err.type})');
+        if (kDebugMode) debugPrint('[Map] Load error: ${err.message} (type: ${err.type})');
       },
     );
     return _cachedMapWidget!;

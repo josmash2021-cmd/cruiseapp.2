@@ -21,7 +21,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
 import '../utils/smooth_motion.dart';
 import 'airport_terminal_sheet.dart';
@@ -194,9 +194,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Throttle camera recentering so it doesn't fight the 60fps dot ticker.
   DateTime _lastCameraRecenter = DateTime(0);
 
-  // Throttle debug logs from the dot ticker so we don't flood logcat.
-  DateTime _lastDotTickLog = DateTime(0);
-
   // Self-healing watchdogs — detect and recover from a stuck GPS stream
   // or a dot that has drifted too far behind the raw GPS fix.
   DateTime _lastGpsFixAt = DateTime(0);
@@ -302,9 +299,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
-        debugPrint('[Map] Gold dot created at $lat, $lng');
       } catch (e) {
-        debugPrint('[Map] Failed to create gold dot: $e');
+        if (kDebugMode) debugPrint('[Map] Failed to create gold dot: $e');
       } finally {
         _creatingMiniMapAnnot = false;
       }
@@ -325,10 +321,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         // A map rebuild or style reload may have created a new annotation
         // while this update was in flight.
         if (_miniMapAnnot == annot) _miniMapAnnot = null;
-        debugPrint('[Map] Gold dot update failed: $e');
+        if (kDebugMode) debugPrint('[Map] Gold dot update failed: $e');
       });
     } catch (e) {
-      debugPrint('[Map] Gold dot geometry write failed: $e');
+      if (kDebugMode) debugPrint('[Map] Gold dot geometry write failed: $e');
       _miniMapAnnot = null;
     }
   }
@@ -388,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         });
       }
     });
-    _miniDot.build(this, () {
+    unawaited(_miniDot.build(this, () {
       if (!mounted) return;
       // The ticker advances the interpolated dot position. Only update the
       // annotation here; camera recenter is throttled in the GPS stream
@@ -396,16 +392,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // unawaited: the ticker is fire-and-forget; we don't want to block
       // the 60fps animation waiting for the Mapbox platform channel.
       unawaited(_updateMiniMapAnnotation());
-
-      // Throttled diagnostic log so we can verify the ticker is running
-      // and the interpolated dot position is changing.
-      final now = DateTime.now();
-      if (now.difference(_lastDotTickLog).inSeconds >= 2) {
-        _lastDotTickLog = now;
-        debugPrint('[Dot] ticker lat=${_miniDot.lat?.toStringAsFixed(6)} '
-            'lng=${_miniDot.lng?.toStringAsFixed(6)} annot=$_miniMapAnnot');
-      }
-    });
+    }));
     // Self-healing watchdogs: restart dead GPS streams and snap a stuck dot.
     _startLocationWatchdogs();
     // Defer driver check until after first frame to avoid blocking startup
@@ -729,8 +716,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _lastGpsFixAt = DateTime.now();
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
-            debugPrint('[GPS] Home stream fix: ${ll.latitude.toStringAsFixed(6)}, ${ll.longitude.toStringAsFixed(6)} '
-                'accuracy=${p.accuracy.toStringAsFixed(1)}m speed=${p.speed.toStringAsFixed(1)}m/s');
             // Make sure the interpolation ticker is alive after each fix.
             _miniDot.ensureRunning();
             _miniDot.setTarget(ll.latitude, ll.longitude);

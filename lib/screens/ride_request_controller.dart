@@ -344,7 +344,7 @@ extension _RideRequestController on _RideRequestScreenState {
         _setState(() => _currentAddress = addr);
       }
     } catch (e) {
-      debugPrint('[GPS] _initLocation error: $e');
+      if (kDebugMode) debugPrint('[GPS] _initLocation error: $e');
       if (mounted) _setState(() => _fetchingLocation = false);
     }
   }

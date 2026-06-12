@@ -45,7 +45,7 @@ extension _HomeScreenMap on _HomeScreenState {
         mapbox.MapAnimationOptions(duration: 400),
       );
     } catch (e) {
-      debugPrint('[Map] Camera recenter failed: $e');
+      if (kDebugMode) debugPrint('[Map] Camera recenter failed: $e');
     }
   }
 
@@ -82,7 +82,6 @@ extension _HomeScreenMap on _HomeScreenState {
     if (!mounted || _locationSub == null) return;
     final elapsed = DateTime.now().difference(_lastGpsFixAt).inSeconds;
     if (elapsed < _gpsWatchdogSec) return;
-    debugPrint('[GPS] Watchdog: no fix for ${elapsed}s, restarting stream');
     _fetchCurrentLocation();
   }
 
@@ -101,7 +100,6 @@ extension _HomeScreenMap on _HomeScreenState {
     );
     if (drift <= _maxDotDriftMeters) return;
 
-    debugPrint('[Dot] Watchdog: drift=${drift.toStringAsFixed(1)}m > $_maxDotDriftMeters, snapping to GPS');
     _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
     unawaited(_updateMiniMapAnnotation());
   }

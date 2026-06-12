@@ -54,7 +54,6 @@ import 'account_deactivated_screen.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/vehicle_tier_badge.dart';
-import '../widgets/searching_border_painter.dart';
 import '../widgets/smart_map_pin.dart';
 import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';

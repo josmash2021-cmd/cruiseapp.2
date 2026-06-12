@@ -390,34 +390,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // Floating FAB buttons on top of map (notifications only)
-  Widget _buildMapFab() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _glassIconButton(
-          Icons.notifications_rounded,
-          badge: _unreadNotifications > 0 ? _unreadNotifications : 0,
-          onTap: _openNotificationsSheet,
-          semanticLabel: 'Notifications',
-        ),
-      ],
-    );
-  }
-
-  // Small avatar pill for the FAB area
-  Widget _buildAvatarChip() {
-    return VerifiedAvatar(
-      photoUrl: _photoUrl ?? UserSession.photoUrlNotifier.value,
-      photoPath: _photoPath,
-      radius: 22,
-      fallbackName: '$_firstName $_lastName',
-      uid: UserSession.currentUid,
-      role: 'rider',
-      isVerified: _isVerified,
-    );
-  }
-
   // Draggable bottom sheet content
   Widget _buildSheet(ScrollController sc, double botPad) {
     final screenW = MediaQuery.of(context).size.width;
@@ -456,14 +428,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ],
           ),
-          child: Stack(
-            children: [
-              // NOTE: The animated gold border on the collapsed mini-bar was
-              // removed to match the new clean home design. The collapsed
-              // state now shows only the drag handle + greeting row on a
-              // pure black sheet.
-
-              ClipRRect(
+          child: ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
             child: CustomScrollView(
               controller: sc,
@@ -622,8 +587,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ],
             ),
           ),
-            ],  // close outer Stack children
-          ),    // close outer Stack
         );
       },
     );
@@ -632,24 +595,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
   // ════════════════════════════════════════════════════
   //  W I D G E T S
   // ════════════════════════════════════════════════════
-
-  Widget _glowOrb(double size, Color color, double opacity) {
-    return RepaintBoundary(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color.withValues(alpha: opacity),
-              Colors.transparent,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // ─── Top bar ───
   Widget _buildTopBar() {

@@ -419,6 +419,8 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 16. **Part files + `static const` = riesgo de build (v494):** cuando una constante se declare como `static const` dentro de una clase y se use dentro de un `part` file en una expresión `const` (ej. `const Duration(seconds: _x)` o `const Icon(color: _y)`), el compilador de iOS puede fallar con "Not a constant expression" / "getter isn't defined". La regla es: **cualquier constante usada en un part file dentro de `const` debe declararse a top-level**, no como `static const` de clase. Ver [lib/screens/home_screen.dart:92](lib/screens/home_screen.dart#L92).
 
+17. **Mapbox annotation dedup: `deleteAll()` antes de `create` + null inmediato en `update` fallido (v494):** `PointAnnotationManager.update()`/`delete()` pueden fallar silenciosamente y dejar el marcador viejo visible, causando dots duplicados cuando el siguiente tick crea uno nuevo. Para evitarlo: (a) antes de cada `mgr.create()` hacer `try { await mgr.deleteAll(); } catch (_) {}`; (b) en el `catchError` de `mgr.update()`, setear `_miniMapAnnot = null` **inmediatamente** y lanzar el `mgr.delete(annot)` fire-and-forget; (c) nunca esperar el `delete` antes de invalidar el handle. Ver [lib/screens/home_screen.dart:290](lib/screens/home_screen.dart#L290).
+
 ---
 
-**Última actualización:** 2026-06-12 (v1.0.3+494 — home sheet redesign + part-file const fix)
+**Última actualización:** 2026-06-12 (v1.0.3+494 — home sheet redesign + part-file const fix + gold dot dedup)

@@ -58,7 +58,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
           await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
           await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
 
-          // FIX: Create annotation manager with error handling
+          // FIX: Create annotation manager with error handling.
+          // Null out the old handle first so any concurrent gold-dot update
+          // returns early instead of using a stale/destroyed manager.
+          _miniMapAnnotMgr = null;
           try {
             _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           } catch (e) {
@@ -96,6 +99,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
             // We MUST recreate them, then redraw the dot. Without this,
             // the gold dot disappears or stops moving after a style change.
             _miniMapAnnot = null;
+            // Null the manager while recreating so concurrent updates don't
+            // touch the destroyed manager and create orphaned annotations.
+            _miniMapAnnotMgr = null;
             try {
               _miniMapAnnotMgr = await _miniMapController!.annotations.createPointAnnotationManager();
               await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');

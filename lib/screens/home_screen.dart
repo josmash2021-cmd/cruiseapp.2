@@ -291,6 +291,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (_creatingMiniMapAnnot) return;
       _creatingMiniMapAnnot = true;
       try {
+        // Defensive cleanup: if a previous update failed or a style reload
+        // left a stale annotation behind, delete all existing point
+        // annotations so we never draw two gold dots.
+        try { await mgr.deleteAll(); } catch (_) {}
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
@@ -316,10 +320,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     try {
       annot.geometry = point;
       mgr.update(annot).catchError((e) {
-        // Only null the field if it still points to the same annotation.
-        // A map rebuild or style reload may have created a new annotation
-        // while this update was in flight.
-        if (_miniMapAnnot == annot) _miniMapAnnot = null;
+        // The update failed; remove the stale annotation from the map and
+        // force a recreate on the next tick. Otherwise the old annotation
+        // stays visible and we end up with stacked dots.
+        if (_miniMapAnnot == annot) {
+          _miniMapAnnot = null; // mark invalid immediately so next tick recreates
+          mgr.delete(annot).catchError((_) {}); // fire-and-forget cleanup
+        }
         if (kDebugMode) debugPrint('[Map] Gold dot update failed: $e');
       });
     } catch (e) {
@@ -711,6 +718,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _miniDot.ensureRunning();
             _miniDot.setTarget(ll.latitude, ll.longitude);
             _throttledCameraRecenter();
+            // Force an immediate annotation update. The ticker normally drives
+            // this, but if the dot just snapped to its first target the ticker
+            // may return "no movement" and the annotation would never appear.
+            unawaited(_updateMiniMapAnnotation());
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {

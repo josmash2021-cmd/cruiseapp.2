@@ -221,6 +221,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   String? _locationError;
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
+  bool _fetchingLocation = false; // re-entry guard for _fetchCurrentLocation
   final GoldLocationDot _miniDot = GoldLocationDot();
   // ── Rider location dot (GoldLocationDot owns SmoothMotion + prediction) ──
   // The dot's internal Ticker drives position interpolation at vsync.
@@ -263,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
 
   Future<void> _updateMiniMapAnnotation() async {
+    if (!mounted) return;
     final mgr = _miniMapAnnotMgr;
     if (mgr == null) return;
 
@@ -594,6 +596,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _fetchCurrentLocation() async {
+    // Prevent the GPS watchdog or rapid lifecycle events from stacking
+    // multiple concurrent location fetches / streams.
+    if (_fetchingLocation) return;
+    _fetchingLocation = true;
     try {
       // Use pre-loaded GPS from splash if available (instant)
       final preloaded = PreloadService.initialPosition;
@@ -725,6 +731,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (mounted && _currentLatLng == null) {
         setState(() => _locationError = S.of(context).unableToGetLocation);
       }
+    } finally {
+      _fetchingLocation = false;
     }
   }
 

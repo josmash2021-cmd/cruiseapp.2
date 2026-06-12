@@ -120,6 +120,8 @@ class GoldLocationDot {
       // TickerProvider was disposed while we were awaiting the image.
       // Leave the dot ready for the next build call.
       _ticker = null;
+      _onTick = null;
+      _vsync = null;
     }
   }
 

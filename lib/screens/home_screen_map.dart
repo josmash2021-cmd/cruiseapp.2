@@ -22,7 +22,7 @@ extension _HomeScreenMap on _HomeScreenState {
   /// in sync. Called from the GPS stream so the map follows the rider
   /// without being driven by the 60fps dot ticker.
   void _throttledCameraRecenter({Duration interval = const Duration(milliseconds: 500)}) {
-    if (_miniMapController == null) return;
+    if (!mounted || _miniMapController == null) return;
     final lat = _miniDot.lat ?? _currentLatLng?.latitude;
     final lng = _miniDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;
@@ -79,7 +79,7 @@ extension _HomeScreenMap on _HomeScreenState {
   /// Geolocator streams can die silently on some Android/iOS devices.
   /// Only restarts if a stream was already started (i.e., permission granted).
   void _checkGpsStreamHealth() {
-    if (!mounted || _locationSub == null) return;
+    if (!mounted || _locationSub == null || _fetchingLocation) return;
     final elapsed = DateTime.now().difference(_lastGpsFixAt).inSeconds;
     if (elapsed < _gpsWatchdogSec) return;
     _fetchCurrentLocation();

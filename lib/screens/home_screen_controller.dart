@@ -269,6 +269,7 @@ extension _HomeScreenController on _HomeScreenState {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
       _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+      _throttledCameraRecenter();
     }).catchError((e) {
       debugPrint('[GPS] getCurrentPosition error: $e');
     });
@@ -285,6 +286,7 @@ extension _HomeScreenController on _HomeScreenState {
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
         _miniDot.setTarget(ll.latitude, ll.longitude);
+        _throttledCameraRecenter();
       },
       onError: (e) {
         debugPrint('[GPS] Position stream error: $e');

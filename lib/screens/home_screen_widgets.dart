@@ -17,15 +17,15 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // Default to NYC if no GPS yet — map shows immediately, camera moves later
     final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
 
-    // Only rebuild the map widget when the epoch or center changes.
-    // This prevents setState on unrelated UI (sheets, buttons, etc.)
-    // from tearing down and rebuilding the expensive native MapWidget.
-    if (_cachedMapWidget != null &&
-        _cachedMapLatLng == _currentLatLng &&
-        _cachedMapEpoch == _mapEpoch) {
+    // Only rebuild the map widget when the epoch changes.
+    // IMPORTANT: Do NOT include _currentLatLng in the cache key. The rider's
+    // GPS updates continuously and unrelated setState() calls (timers,
+    // listeners) would otherwise tear down the native Mapbox view and
+    // recreate it, destroying the annotation manager and stalling the dot.
+    // Camera position is updated via setCamera/flyTo, never by rebuilding.
+    if (_cachedMapWidget != null && _cachedMapEpoch == _mapEpoch) {
       return _cachedMapWidget!;
     }
-    _cachedMapLatLng = _currentLatLng;
     _cachedMapEpoch = _mapEpoch;
 
     // CRITICAL FIX: Use MapWidget with explicit widget options for compatibility
@@ -47,20 +47,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
           _miniMapController = ctrl;
           // Cache controller for reuse across screens
           MapControllerCache.instance.cache(ctrl);
-          
+
+          // The native view was just recreated, so any previous annotation
+          // belongs to the old manager. Reset it so we create a fresh one.
+          _miniMapAnnot = null;
+
           // FIX: Disable all UI elements that might cause rendering issues
           await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
           await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
           await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
           await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-          
+
           // FIX: Create annotation manager with error handling
           try {
             _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
           } catch (e) {
             debugPrint('[Map] Failed to create annotation manager: $e');
           }
-          
+
           // FIX: Apply layer properties only if annotation manager exists
           if (_miniMapAnnotMgr != null) {
             try {
@@ -69,13 +73,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
               await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
             } catch (_) {}
           }
-          
+
           // Explicitly disable Mapbox native location puck
           await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-          
+
           // Create gold dot annotation immediately if position is already known
           if (_currentLatLng != null) _updateMiniMapAnnotation();
-          
+
           // Draw route if there's an active ride
           if (_activeRide != null) {
             _drawRouteOnMap();

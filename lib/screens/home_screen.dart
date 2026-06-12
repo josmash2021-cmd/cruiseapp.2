@@ -185,12 +185,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   // Cache the map widget so setState on unrelated fields doesn't rebuild it
   Widget? _cachedMapWidget;
-  LatLng? _cachedMapLatLng;
   int _cachedMapEpoch = -1;
 
   // Cache mini map widget (driver tracking card)
   Widget? _cachedMiniMapWidget;
   LatLng? _cachedMiniMapLatLng;
+
+  // Throttle camera recentering so it doesn't fight the 60fps dot ticker.
+  DateTime _lastCameraRecenter = DateTime(0);
 
   // User profile data
   String _firstName = '';
@@ -205,16 +207,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.MapboxMap? _miniMapController;
   mapbox.PointAnnotationManager? _miniMapAnnotMgr;
   mapbox.PointAnnotation? _miniMapAnnot;
+  bool _creatingMiniMapAnnot = false; // guard: prevents parallel annotation creation
   LatLng? _currentLatLng;
   String? _locationError;
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
   final GoldLocationDot _miniDot = GoldLocationDot();
-  bool _updatingMiniMapAnnot = false; // guard: prevents concurrent annotation updates
-
   // ── Rider location dot (GoldLocationDot owns SmoothMotion + prediction) ──
   // The dot's internal Ticker drives position interpolation at vsync.
-  // Camera follow is handled inside the dot's onTick callback.
+  // Camera follow is throttled in the GPS stream listener, not the ticker.
 
   // ── Active trip driver tracking ──
   LatLng? _driverLocation;
@@ -258,80 +259,65 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     // Hide gold dot when an active ride route is drawn (route + car + dropoff shown instead)
     if (_rideRouteDrawn && _activeRide != null) {
-      if (_miniMapAnnot != null && !_updatingMiniMapAnnot) {
-        _updatingMiniMapAnnot = true;
+      if (_miniMapAnnot != null) {
         try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
         _miniMapAnnot = null;
-        _updatingMiniMapAnnot = false;
       }
       return;
     }
 
+    final lat = _miniDot.lat ?? _currentLatLng?.latitude;
+    final lng = _miniDot.lng ?? _currentLatLng?.longitude;
+    if (lat == null || lng == null) return;
+
+    final point = safePoint(lng, lat);
+    if (point == null) return;
+
+    final bytes = _miniDot.currentBytes;
+    if (bytes == null) return;
+
     // First-time creation must be guarded — without it the per-frame
     // ticker would attempt to create N annotations in parallel and we'd
-    // end up with stacked dots. Once the annotation exists, however,
-    // updates run concurrent-safe via the in-flight pattern below.
+    // end up with stacked dots.
     if (_miniMapAnnot == null) {
-      if (_updatingMiniMapAnnot) return;
-      if (_currentLatLng == null) return;
-      final firstBytes = _miniDot.currentBytes;
-      if (firstBytes == null) return;
-      _updatingMiniMapAnnot = true;
+      if (_creatingMiniMapAnnot) return;
+      _creatingMiniMapAnnot = true;
       try {
-        final pos = (_miniDot.lat != null && _miniDot.lng != null)
-            ? LatLng(_miniDot.lat!, _miniDot.lng!)
-            : _currentLatLng ?? const LatLng(0, 0);
-        final point = safePoint(pos.longitude, pos.latitude);
-        if (point == null) return;
         _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
-          image: firstBytes,
+          image: bytes,
           iconSize: 1.05,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
-      } catch (_) {
-        // creation failed — leave _miniMapAnnot null so we retry
+        debugPrint('[Map] Gold dot created at $lat, $lng');
+      } catch (e) {
+        debugPrint('[Map] Failed to create gold dot: $e');
       } finally {
-        _updatingMiniMapAnnot = false;
+        _creatingMiniMapAnnot = false;
       }
       return;
     }
 
-    // Subsequent updates: skip-if-busy pattern.
-    // The GoldLocationDot Ticker runs at vsync (60-120 Hz) and calls into
-    // Mapbox via the platform channel which can take longer than 16 ms to
-    // round-trip. The previous full-await guard meant any frame that landed
-    // mid-IPC was DROPPED entirely, so the dot effectively updated ~1×/sec
-    // and looked like jumps.
-    //
-    // New pattern: update the in-memory geometry every frame so the
-    // next sent IPC always carries the freshest interpolated position;
-    // only fire mgr.update() when the previous one finished. End result
-    // is glass-smooth motion at the IPC's natural cadence (still 10-20
-    // updates per second) without the artificial stall.
-    final pos = (_miniDot.lat != null && _miniDot.lng != null)
-        ? LatLng(_miniDot.lat!, _miniDot.lng!)
-        : _currentLatLng ?? const LatLng(0, 0);
-    final bytes = _miniDot.currentBytes;
-    if (bytes == null) return;
+    // Subsequent updates: write geometry in memory and fire Mapbox update
+    // without awaiting. Awaiting every frame serializes the 60fps ticker
+    // behind the platform channel and can stall the dot if an update hangs.
+    // NOTE: Only geometry is updated here. The image bytes are static, so
+    // setting them on every frame is unnecessary and wastes platform channel
+    // bandwidth. The image is set once during creation above.
+    final annot = _miniMapAnnot!;
     try {
-      _miniMapAnnot!.geometry = mapbox.Point(
-        coordinates: mapbox.Position(pos.longitude, pos.latitude),
-      );
-      _miniMapAnnot!.image = bytes;
-    } catch (_) {
+      annot.geometry = point;
+      mgr.update(annot).catchError((e) {
+        // Only null the field if it still points to the same annotation.
+        // A map rebuild or style reload may have created a new annotation
+        // while this update was in flight.
+        if (_miniMapAnnot == annot) _miniMapAnnot = null;
+        debugPrint('[Map] Gold dot update failed: $e');
+      });
+    } catch (e) {
+      debugPrint('[Map] Gold dot geometry write failed: $e');
       _miniMapAnnot = null;
-      return;
-    }
-    if (_updatingMiniMapAnnot) return;
-    _updatingMiniMapAnnot = true;
-    try {
-      await mgr.update(_miniMapAnnot!);
-    } catch (_) {
-      _miniMapAnnot = null;
-    } finally {
-      _updatingMiniMapAnnot = false;
     }
   }
 
@@ -392,19 +378,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
     _miniDot.build(this, () {
       if (!mounted) return;
-      _updateMiniMapAnnotation();
-      // Camera glides with the dot at vsync (no separate Ticker needed)
-      if (_miniMapController != null && _miniDot.lat != null && _miniDot.lng != null) {
-        try {
-          _miniMapController!.setCamera(
-            mapbox.CameraOptions(
-              center: mapbox.Point(
-                coordinates: mapbox.Position(_miniDot.lng!, _miniDot.lat!),
-              ),
-            ),
-          );
-        } catch (_) {}
-      }
+      // The ticker advances the interpolated dot position. Only update the
+      // annotation here; camera recenter is throttled in the GPS stream
+      // listener to avoid saturating the platform channel.
+      // unawaited: the ticker is fire-and-forget; we don't want to block
+      // the 60fps animation waiting for the Mapbox platform channel.
+      unawaited(_updateMiniMapAnnotation());
     });
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -725,6 +704,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
             _miniDot.setTarget(ll.latitude, ll.longitude);
+            _throttledCameraRecenter();
           });
     } catch (e) {
       if (mounted && _currentLatLng == null) {

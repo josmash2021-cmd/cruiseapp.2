@@ -321,7 +321,7 @@ extension _HomeScreenController on _HomeScreenState {
 
     // Draw route on home screen map + start driver tracking
     if (_activeRide != null && _miniMapController != null) {
-      _drawRouteOnMap();
+      unawaited(_drawRouteOnMap());
       _listenToDriverLocation();
     }
 
@@ -544,12 +544,12 @@ extension _HomeScreenController on _HomeScreenState {
       await _addDropoffPin(ride);
 
       // Hide the gold location dot now that route is visible
-      _updateMiniMapAnnotation();
+      unawaited(_updateMiniMapAnnotation());
 
       // Fit camera to show the whole route
       _fitCameraToRoute();
     } catch (e) {
-      debugPrint('Error drawing route on home map: $e');
+      if (kDebugMode) debugPrint('Error drawing route on home map: $e');
     }
   }
 
@@ -602,7 +602,7 @@ extension _HomeScreenController on _HomeScreenState {
       if (dl.longitude > maxLng) maxLng = dl.longitude;
     }
 
-    _miniMapController!.flyTo(
+    unawaited(_miniMapController!.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
           coordinates: mapbox.Position(
@@ -615,7 +615,7 @@ extension _HomeScreenController on _HomeScreenState {
         bearing: 0,
       ),
       mapbox.MapAnimationOptions(duration: 800),
-    );
+    ));
   }
 
   double _calculateZoomForBounds(double minLat, double maxLat, double minLng, double maxLng) {
@@ -755,7 +755,7 @@ extension _HomeScreenController on _HomeScreenState {
       // with a new ValueKey it will be destroyed.
       final mapCtrl = _miniMapController;
       if (mapCtrl != null && _currentLatLng != null) {
-        mapCtrl.flyTo(
+        unawaited(mapCtrl.flyTo(
           mapbox.CameraOptions(
             center: mapbox.Point(
               coordinates: mapbox.Position(
@@ -768,7 +768,7 @@ extension _HomeScreenController on _HomeScreenState {
             bearing: 0,
           ),
           mapbox.MapAnimationOptions(duration: 800),
-        );
+        ));
       }
 
       _setState(() {

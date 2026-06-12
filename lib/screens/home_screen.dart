@@ -609,11 +609,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           _locationError = null;
         });
         _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-        _miniMapController?.flyTo(
+        unawaited(_miniMapController?.flyTo(
           mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
           mapbox.MapAnimationOptions(duration: 400),
-        );
-        _updateMiniMapAnnotation();
+        ));
+        unawaited(_updateMiniMapAnnotation());
         if (!_stateCheckDone) {
           _stateCheckDone = true;
           _checkUserStateZone(_currentLatLng!);
@@ -693,11 +693,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       });
       // Set initial position without animation (first fix)
       _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-      _miniMapController?.flyTo(
+      unawaited(_miniMapController?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
         mapbox.MapAnimationOptions(duration: 800),
-      );
-      _updateMiniMapAnnotation();
+      ));
+      unawaited(_updateMiniMapAnnotation());
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {

@@ -78,11 +78,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
           await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
 
           // Create gold dot annotation immediately if position is already known
-          if (_currentLatLng != null) _updateMiniMapAnnotation();
+          if (_currentLatLng != null) unawaited(_updateMiniMapAnnotation());
 
           // Draw route if there's an active ride
           if (_activeRide != null) {
-            _drawRouteOnMap();
+            unawaited(_drawRouteOnMap());
           }
         } catch (e) {
           if (kDebugMode) debugPrint('[Map] onMapCreated error: $e');
@@ -105,7 +105,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               if (kDebugMode) debugPrint('[Map] Failed to recreate annotation manager on style load: $e');
             }
             // Recreate gold dot if we have a position
-            if (_currentLatLng != null) _updateMiniMapAnnotation();
+            if (_currentLatLng != null) unawaited(_updateMiniMapAnnotation());
             // Re-disable native puck in case style reset re-enabled it
             try {
               await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));

@@ -35,7 +35,7 @@ extension _HomeScreenMap on _HomeScreenState {
     if (point == null) return;
 
     try {
-      _miniMapController!.flyTo(
+      unawaited(_miniMapController!.flyTo(
         mapbox.CameraOptions(
           center: point,
           zoom: 15.0,
@@ -43,7 +43,7 @@ extension _HomeScreenMap on _HomeScreenState {
           bearing: 0,
         ),
         mapbox.MapAnimationOptions(duration: 400),
-      );
+      ));
     } catch (e) {
       if (kDebugMode) debugPrint('[Map] Camera recenter failed: $e');
     }

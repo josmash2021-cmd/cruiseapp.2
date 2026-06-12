@@ -185,7 +185,7 @@ class _HomeOverlay extends StatelessWidget {
                   color: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.06),
+                    color: Colors.white.withValues(alpha: 0.06),
                   ),
                 ),
                 alignment: Alignment.centerLeft,

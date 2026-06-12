@@ -1,26 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Network Security Configuration for Cruise App.
-  Production: Only HTTPS traffic is allowed.
-  Debug builds: localhost cleartext is permitted for dev servers.
+  Network Security Configuration for Cruise App (PRODUCTION).
+  Only HTTPS traffic is allowed. Cleartext (HTTP) is blocked.
+  Debug builds use the override in src/debug/res/xml/network_security_config.xml
 -->
 <network-security-config>
-    <!-- Production: block all cleartext (HTTP) traffic -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <!-- Debug only: allow cleartext to localhost / 10.0.2.2 (Android emulator) -->
-    <debug-overrides>
-        <trust-anchors>
-            <certificates src="user" />
-            <certificates src="system" />
-        </trust-anchors>
-    </debug-overrides>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
 </network-security-config>

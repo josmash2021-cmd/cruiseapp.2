@@ -165,7 +165,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     initPanelAnimation();
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarBrightness: Brightness.dark,
         statusBarIconBrightness: Brightness.light,
       ),
     );

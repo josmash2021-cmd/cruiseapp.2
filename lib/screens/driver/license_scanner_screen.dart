@@ -46,7 +46,6 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarBrightness: Brightness.dark,
         statusBarIconBrightness: Brightness.light,
         systemNavigationBarColor: Colors.black,
         systemNavigationBarIconBrightness: Brightness.light,

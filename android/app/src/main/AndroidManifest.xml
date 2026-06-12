@@ -88,22 +88,8 @@
             android:exported="false"
             tools:replace="android:exported" />
 
-        <!-- Firebase Cloud Messaging service -->
-        <service
-            android:name="com.google.firebase.messaging.FirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-        <!-- FCM default notification channel (used when no channel_id specified) -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="cruise_premium" />
-        <!-- FCM default notification icon -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+        <!-- FirebaseMessagingService is auto-merged by the Firebase SDK;
+             do NOT declare it manually to avoid manifest merge conflicts. -->
 
         <!-- FileProvider required by share_plus for sharing text/files -->
         <provider

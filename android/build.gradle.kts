@@ -1,21 +1,15 @@
-val mapboxDownloadsToken: String = providers.gradleProperty("MAPBOX_DOWNLOADS_TOKEN")
-    .orElse(providers.environmentVariable("MAPBOX_DOWNLOADS_TOKEN"))
-    .getOrElse("")
-
 allprojects {
     repositories {
         google()
         mavenCentral()
-        if (mapboxDownloadsToken.isNotEmpty()) {
-            maven {
-                url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
-                credentials {
-                    username = "mapbox"
-                    password = mapboxDownloadsToken
-                }
-                authentication {
-                    create<BasicAuthentication>("basic")
-                }
+        maven {
+            url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+            credentials {
+                username = "mapbox"
+                password = "pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w"
+            }
+            authentication {
+                create<BasicAuthentication>("basic")
             }
         }
     }

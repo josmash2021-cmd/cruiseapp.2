@@ -12,6 +12,7 @@ import '../services/error_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
+import '../widgets/dismiss_keyboard.dart';
 
 /// Full-page chat screen — real-time via Firebase RTDB for trip chats,
 /// REST API polling for support chat.

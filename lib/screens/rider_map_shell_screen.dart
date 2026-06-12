@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
+import '../l10n/app_localizations.dart';
 import '../map/unified_map_service.dart';
 import '../models/lat_lng.dart';
 

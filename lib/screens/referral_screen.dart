@@ -4,6 +4,7 @@ import '../services/haptic_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/api_service.dart';
+import '../l10n/app_localizations.dart';
 import 'transfer_cruise_cash_screen.dart';
 
 /// Invite Friends screen — Cruise Cash referral system.

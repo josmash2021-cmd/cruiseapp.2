@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
+import '../widgets/dismiss_keyboard.dart';
 import 'notifications_screen.dart';
 
 class EmailCollectScreen extends StatefulWidget {

@@ -1099,9 +1099,9 @@ class _BankLinkWebViewState extends State<_BankLinkWebView> {
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text(
+                  child: Text(
                     S.of(context).cancel,
-                    style: TextStyle(color: Colors.white54),
+                    style: const TextStyle(color: Colors.white54),
                   ),
                 ),
               ],

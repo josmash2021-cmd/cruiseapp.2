@@ -15,8 +15,9 @@ class RideHistoryScreen extends StatefulWidget {
   State<RideHistoryScreen> createState() => _RideHistoryScreenState();
 }
 
+final _fareRe = RegExp(r'^\$?(-?\d+)(?:\.(\d{1,2}))?');
+
 class _RideHistoryScreenState extends State<RideHistoryScreen> {
-  static final _fareRe = RegExp(r'^\$?(-?\d+)(?:\.(\d{1,2}))?');
   static const _gold = Color(0xFFE8C547);
   List<TripHistoryItem> _trips = [];
   bool _loading = true;

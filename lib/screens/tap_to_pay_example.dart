@@ -5,6 +5,7 @@
 // el flujo de pago.
 
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'tap_to_pay_screen.dart';
 import '../services/local_data_service.dart';
 

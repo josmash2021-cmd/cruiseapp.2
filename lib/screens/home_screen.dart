@@ -89,6 +89,12 @@ const double _kMinSheet = 0.17;
 const double _kMaxSheet = 1.0; // Full screen when expanded
 const int _locAnimDurationMs = 1200; // smooth glide between updates
 
+// Self-healing watchdog constants — top-level so part files can reference them
+// inside const expressions without relying on class static const visibility.
+const int _gpsWatchdogSec = 5;
+const int _dotDriftWatchdogSec = 3;
+const double _maxDotDriftMeters = 30.0;
+
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver, SecureScreenMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
@@ -193,9 +199,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   DateTime _lastGpsFixAt = DateTime(0);
   Timer? _gpsStreamWatchdog;
   Timer? _dotDriftWatchdog;
-  static const int _gpsWatchdogSec = 5;
-  static const int _dotDriftWatchdogSec = 3;
-  static const double _maxDotDriftMeters = 30.0;
 
   // User profile data
   String _firstName = '';

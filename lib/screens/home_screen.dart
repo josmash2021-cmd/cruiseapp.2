@@ -194,6 +194,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Throttle camera recentering so it doesn't fight the 60fps dot ticker.
   DateTime _lastCameraRecenter = DateTime(0);
 
+  // Throttle debug logs from the dot ticker so we don't flood logcat.
+  DateTime _lastDotTickLog = DateTime(0);
+
   // User profile data
   String _firstName = '';
   String _lastName = '';
@@ -384,6 +387,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // unawaited: the ticker is fire-and-forget; we don't want to block
       // the 60fps animation waiting for the Mapbox platform channel.
       unawaited(_updateMiniMapAnnotation());
+
+      // Throttled diagnostic log so we can verify the ticker is running
+      // and the interpolated dot position is changing.
+      final now = DateTime.now();
+      if (now.difference(_lastDotTickLog).inSeconds >= 2) {
+        _lastDotTickLog = now;
+        debugPrint('[Dot] ticker lat=${_miniDot.lat?.toStringAsFixed(6)} '
+            'lng=${_miniDot.lng?.toStringAsFixed(6)} annot=$_miniMapAnnot');
+      }
     });
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -688,21 +700,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _checkUserStateZone(_currentLatLng!);
       }
 
-      // Start continuous location stream for always-centered map
+      // Start continuous location stream for always-centered map.
+      // distanceFilter: 0 -> every GPS fix. This is required for fluid
+      // rider-dot movement when walking or in a car; SmoothMotion absorbs
+      // jitter and the ticker is paused when the rider is stationary.
       _locationSub?.cancel();
       _locationSub =
           Geolocator.getPositionStream(
-            // distanceFilter: 2 -> fixes every 2 meters.
-            // SmoothMotion still interpolates smoothly between fixes.
-            // Reduces CPU/battery drain vs raw 0-meter stream.
             locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              distanceFilter: 2,
+              accuracy: LocationAccuracy.bestForNavigation,
+              distanceFilter: 0,
             ),
           ).listen((Position p) {
             if (!mounted) return;
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
+            debugPrint('[GPS] Home stream fix: ${ll.latitude.toStringAsFixed(6)}, ${ll.longitude.toStringAsFixed(6)} '
+                'accuracy=${p.accuracy.toStringAsFixed(1)}m speed=${p.speed.toStringAsFixed(1)}m/s');
             _miniDot.setTarget(ll.latitude, ll.longitude);
             _throttledCameraRecenter();
           });

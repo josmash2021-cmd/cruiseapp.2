@@ -285,6 +285,8 @@ extension _HomeScreenController on _HomeScreenState {
         if (!mounted) return;
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
+        debugPrint('[GPS] Background stream fix: ${ll.latitude.toStringAsFixed(6)}, ${ll.longitude.toStringAsFixed(6)} '
+            'accuracy=${p.accuracy.toStringAsFixed(1)}m speed=${p.speed.toStringAsFixed(1)}m/s');
         _miniDot.setTarget(ll.latitude, ll.longitude);
         _throttledCameraRecenter();
       },

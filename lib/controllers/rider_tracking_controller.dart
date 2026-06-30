@@ -1810,17 +1810,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every 800ms.
-  /// Smoother than 1500ms while still preventing animation overlap.
-  /// 
-  /// FIX: Every 4th tick (≈3.2s) we do a full bounds fit instead of chase
+  /// Start real-time camera tracking - follows driver every 2000ms.
+  /// The map car interpolation runs at 60fps independently, so the camera
+  /// only needs to re-frame the route periodically. A wider interval plus
+  /// a short (800ms) animation prevents overlapping flyTo jumps.
+  ///
+  /// FIX: Every 4th tick (≈8s) we do a full bounds fit instead of chase
   /// camera to ensure the dropoff hasn't gone off-screen when the driver
   /// moves far from the destination.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
     var tickCount = 0;
-    // Follow every 800ms — smooth but prevents overlapping flyTo animations
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
+    // Follow every 2000ms — wide enough for the 800ms animation to finish
+    // cleanly, eliminating the stutter caused by overlapping flyTo calls.
+    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) {
       if (!mounted || !_shouldFollowDriver || _map == null) return;
       if (_phase == _TrackPhase.arrived) return;
       if (_animPos.latitude == 0 && _animPos.longitude == 0) return;

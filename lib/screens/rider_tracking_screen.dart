@@ -265,6 +265,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Throttle UI rebuilds — car annotation updates don't need setState
   DateTime _lastUiRebuild = DateTime(2000);
 
+  /// Throttle car annotation updates so we don't pound the Mapbox SDK at 60fps.
+  /// 30fps is plenty smooth and avoids native-thread stutter.
+  DateTime _lastCarUpdate = DateTime(2000);
+  static const int _minCarUpdateMs = 33;
+
   // ── Rerouting when driver deviates ──
   int _offRouteCount = 0; // consecutive off-route GPS updates
   bool _rerouteInProgress = false; // guard: prevents concurrent reroute fetches

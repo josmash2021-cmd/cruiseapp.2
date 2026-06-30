@@ -22,7 +22,7 @@ class TrackingMapCamera {
     required double bottomPadding,
     double leftPadding = 44,
     double rightPadding = 44,
-    int durationMs = 1200,
+    int durationMs = 800,
     double minZoom = 11.0,
     double maxZoom = 16.0,
   }) async {
@@ -80,7 +80,7 @@ class TrackingMapCamera {
     required double bottomPadding,
     double minZoom = 12.0,
     double maxZoom = 16.0,
-    int durationMs = 1200,
+    int durationMs = 800,
   }) async {
     if (_map == null) return;
     if (driverPos.latitude == 0 && driverPos.longitude == 0) return;

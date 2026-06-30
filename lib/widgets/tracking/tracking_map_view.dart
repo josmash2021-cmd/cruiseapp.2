@@ -668,7 +668,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         anchor: cam.anchor,
       );
       _cameraAnimating = true;
-      const dur = 1200;
+      // FIX: shorter animation (800ms) so the camera settles before the next
+      // follow tick, preventing overlapping flyTo jumps.
+      const dur = 800;
       _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
       _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: dur));
       Future.delayed(const Duration(milliseconds: dur), () {
@@ -750,7 +752,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
 
     _cameraAnimating = true;
-    const dur = 1200;
+    // FIX: shorter animation (800ms) to match the wider 2000ms follow interval
+    // and avoid overlapping camera movements that cause visible jumps.
+    const dur = 800;
     _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
 
     // Use cameraForCoordinates to auto-fit zoom so full route is visible
@@ -819,10 +823,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_phase == _TrackPhase.arrived) return;
 
     final now = DateTime.now();
-    // Chase mode: follow driver — throttle at 800ms to match camera follow timer.
-    // 600ms animation finishes before next tick, preventing overlap jitter.
+    // Chase mode: follow driver — throttle at 2000ms to match camera follow timer.
+    // 800ms animation finishes well before next tick, preventing overlap jitter.
     if (_shouldFollowDriver && _animPos.latitude != 0) {
-      if (now.difference(_lastBoundsFit).inMilliseconds < 800) return;
+      if (now.difference(_lastBoundsFit).inMilliseconds < 2000) return;
       _lastBoundsFit = now;
       _followDriver(_animPos, _animBearing);
       return;
@@ -1217,6 +1221,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   // ── Car update: delegates to TrackingMapCar ──
   void _updateCarSmooth() {
     if (_map == null) return;
+
+    // Throttle to ~30fps — Mapbox native updates don't need 60fps and can
+    // stutter if we queue too many async annotation updates.
+    final now = DateTime.now();
+    if (now.difference(_lastCarUpdate).inMilliseconds < _minCarUpdateMs) return;
+    _lastCarUpdate = now;
 
     // Determine effective position: use _animPos if valid, fallback to _directTargetPos
     LatLng effectivePos = _animPos;

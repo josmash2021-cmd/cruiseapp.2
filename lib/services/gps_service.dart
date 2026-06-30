@@ -29,11 +29,17 @@ class GpsService {
   final _database = FirebaseDatabase.instance;
 
   // ── Intervals ───────────────────────────────────────────────────────
-  // FIX: Increased from 200ms to 1000ms to reduce network congestion
-  // and prevent battery drain. Still smooth for rider tracking.
-  static const Duration _socketIOInterval = Duration(milliseconds: 1000);
+  // Adaptive Socket.io interval: fast (300ms) while the driver is on an
+  // active trip and moving so the rider sees fluid motion; relaxed (1000ms)
+  // when idle or offline to save battery/data.
+  static const Duration _socketIONormalInterval = Duration(milliseconds: 1000);
+  static const Duration _socketIOFastInterval = Duration(milliseconds: 300);
   static const Duration _rtdbInterval = Duration(seconds: 5); // Increased from 2s
   static const double _minDistanceMeters = 2.0; // Increased from 0.5m to reduce noise
+
+  /// Hysteresis speed thresholds for switching Socket.io cadence (m/s).
+  static const double _fastSpeedOn = 1.2;
+  static const double _fastSpeedOff = 0.8;
 
   // ── Timers ──────────────────────────────────────────────────────────
   Timer? _socketIOTimer;
@@ -49,6 +55,7 @@ class GpsService {
   DateTime? _lastSocketIOAt;
   DateTime? _lastRTDBAt;
   LatLng? _lastSocketIOPos;
+  bool _isFastInterval = false;
   StreamSubscription? _presenceSub;
   StreamSubscription<bool>? _socketReconnectSub;
 
@@ -68,9 +75,10 @@ class GpsService {
 
     _activeDriverId = driverId;
 
-    // Primary: Socket.io every 1s (when enabled)
+    // Primary: Socket.io every 1s by default (when enabled)
+    _isFastInterval = false;
     _socketIOTimer = Timer.periodic(
-      _socketIOInterval,
+      _socketIONormalInterval,
       (_) => unawaited(_uploadViaSocketIO()),
     );
 
@@ -103,12 +111,18 @@ class GpsService {
     _currentHeading = heading;
     _currentSpeed = speed;
 
+    // Adapt upload cadence to trip state / speed.
+    _adaptSocketIOInterval(speed);
+
     final now = DateTime.now();
 
     // Eager Socket.io upload if interval passed
+    final socketInterval = _isFastInterval
+        ? _socketIOFastInterval
+        : _socketIONormalInterval;
     if (FeatureFlags.useSocketIO &&
         (_lastSocketIOAt == null ||
-            now.difference(_lastSocketIOAt!) >= _socketIOInterval)) {
+            now.difference(_lastSocketIOAt!) >= socketInterval)) {
       unawaited(_uploadViaSocketIO());
     }
 
@@ -116,6 +130,33 @@ class GpsService {
     if (_lastRTDBAt == null || now.difference(_lastRTDBAt!) >= _rtdbInterval) {
       unawaited(_uploadToFirebase());
     }
+  }
+
+  /// Switch Socket.io cadence between relaxed and fast depending on whether
+  /// the driver is on an active trip and moving. Uses hysteresis to avoid
+  /// toggling rapidly around the threshold.
+  void _adaptSocketIOInterval(double speed) {
+    final hasActiveTrip = _activeTripId != null && _activeTripId!.isNotEmpty;
+    final wantsFast = hasActiveTrip && speed > _fastSpeedOn;
+    final wantsNormal = !hasActiveTrip || speed < _fastSpeedOff;
+
+    if (_isFastInterval && wantsNormal) {
+      _isFastInterval = false;
+      debugPrint('[GPS] Switching to relaxed Socket.io cadence (1000ms)');
+      _restartSocketIOTimer(_socketIONormalInterval);
+    } else if (!_isFastInterval && wantsFast) {
+      _isFastInterval = true;
+      debugPrint('[GPS] Switching to fast Socket.io cadence (300ms) for active trip');
+      _restartSocketIOTimer(_socketIOFastInterval);
+    }
+  }
+
+  void _restartSocketIOTimer(Duration interval) {
+    _socketIOTimer?.cancel();
+    _socketIOTimer = Timer.periodic(
+      interval,
+      (_) => unawaited(_uploadViaSocketIO()),
+    );
   }
 
   /// Stop uploads, mark driver offline in RTDB.

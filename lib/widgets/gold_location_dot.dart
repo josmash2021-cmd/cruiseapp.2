@@ -30,6 +30,12 @@ class GoldLocationDot {
   TickerProvider? _vsync;
   bool _isDisposing = false;
 
+  // Throttle annotation redraws to ~30 fps. Mapbox point annotations don't
+  // benefit from 60 fps updates and the extra platform-channel traffic can
+  // cause micro-stutter on mid-range devices.
+  static const int _minTickIntervalMs = 33;
+  DateTime? _lastTickAt;
+
   /// Interpolated position — use this to place the Mapbox annotation.
   double? get lat => _motion.lat;
   double? get lng => _motion.lng;
@@ -113,7 +119,15 @@ class GoldLocationDot {
         _lastElapsed = elapsed;
 
         final posChanged = _motion.tick(dtSec);
-        if (posChanged) onTick();
+        if (!posChanged) return;
+
+        final now = DateTime.now();
+        if (_lastTickAt != null &&
+            now.difference(_lastTickAt!).inMilliseconds < _minTickIntervalMs) {
+          return;
+        }
+        _lastTickAt = now;
+        onTick();
       })
         ..start();
     } catch (_) {

@@ -263,4 +263,110 @@ class TrackingMapCamera {
 
   /// Verifica si hay una animación de cámara en curso
   bool get isAnimating => _cameraAnimating;
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  NAVIGATION CHASE CAMERA — estilo Uber/Waze
+  // ═══════════════════════════════════════════════════════════════════
+  bool _navChaseActive = false;
+  double _navBearing = 0;
+  double _navPitch = 0;
+  double _navZoom = 16.0;
+  DateTime? _lastNavFrameAt;
+
+  bool get isNavChaseActive => _navChaseActive;
+
+  void startNavigationChase() {
+    _navChaseActive = true;
+    _lastNavFrameAt = null;
+  }
+
+  void stopNavigationChase() {
+    _navChaseActive = false;
+  }
+
+  /// Update the chase camera frame. Call from a ~20-30 fps ticker.
+  ///
+  /// [driverPos]   Smoothed car position (e.g. _animPos).
+  /// [bearing]     Smoothed car bearing (e.g. _animBearing).
+  /// [speedMps]    Driver speed in m/s for adaptive zoom.
+  /// [screenSize]  Full screen size.
+  /// [topPadding] / [bottomPadding]  Visible map insets (cards + safe area).
+  /// [use3DPitch]  When true, pitch is 55° like Uber; false = 2D north-up.
+  void updateChaseFrame({
+    required LatLng driverPos,
+    required double bearing,
+    required double speedMps,
+    required Size screenSize,
+    required double topPadding,
+    required double bottomPadding,
+    bool use3DPitch = true,
+  }) {
+    if (_map == null) return;
+    if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
+
+    final now = DateTime.now();
+    final dtSec = _lastNavFrameAt == null
+        ? 0.0
+        : now.difference(_lastNavFrameAt!).inMilliseconds / 1000.0;
+    _lastNavFrameAt = now;
+
+    // Time-based interpolation factor; works at any refresh rate.
+    double tf(double base) =>
+        1.0 - math.pow(1.0 - base, (dtSec.clamp(0.0, 0.1) * 60)).toDouble();
+
+    // Zoom by speed: closer when stopped, wider as the car goes faster.
+    final targetZoom = speedMps < 2.0
+        ? 17.5
+        : speedMps < 8.0
+            ? 16.5
+            : speedMps < 18.0
+                ? 15.5
+                : 14.5;
+
+    // Bearing: freeze when nearly stopped so the map doesn't spin in traffic.
+    var targetBearing = bearing;
+    if (speedMps < 1.0) {
+      targetBearing = _navBearing;
+    }
+
+    // Smooth bearing via shortest arc.
+    var db = targetBearing - _navBearing;
+    while (db > 180) db -= 360;
+    while (db < -180) db += 360;
+    _navBearing = (_navBearing + db * tf(0.25)) % 360;
+
+    // Smooth pitch: animate into 3D once chase starts.
+    final targetPitch = use3DPitch ? 55.0 : 0.0;
+    _navPitch = _navPitch + (targetPitch - _navPitch) * tf(0.12);
+
+    // Smooth zoom.
+    _navZoom = _navZoom + (targetZoom - _navZoom) * tf(0.08);
+
+    // Anchor the driver a bit above the lower third of the visible map area
+    // (Uber-style): enough road ahead is visible while the car stays prominent.
+    final visibleH = screenSize.height - topPadding - bottomPadding;
+    final anchorX = screenSize.width / 2;
+    final anchorY = topPadding + visibleH * 0.62;
+
+    // Fire-and-forget easeTo: short duration gives a continuous glide
+    // without serializing the ticker behind the platform channel.
+    try {
+      _map!.easeTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+            coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude),
+          ),
+          zoom: _navZoom,
+          bearing: _navBearing,
+          pitch: _navPitch,
+          anchor: mapbox.ScreenCoordinate(x: anchorX, y: anchorY),
+        ),
+        mapbox.MapAnimationOptions(duration: 150),
+      ).catchError((e) {
+        debugPrint('[TrackingMapCamera] easeTo failed: $e');
+      });
+    } catch (e) {
+      debugPrint('[TrackingMapCamera] easeTo error: $e');
+    }
+  }
 }

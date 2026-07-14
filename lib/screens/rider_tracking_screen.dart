@@ -456,6 +456,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _routeFadeJob?.cancel();
     _startRidePhaseTimer?.cancel();
     _cameraFollowTimer?.cancel();
+    _stopCameraTicker();
     _tripStartedTimer?.cancel();
     _ratingNavTimer?.cancel();
     _socketHealthSub?.cancel();
@@ -527,7 +528,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // Smooth camera follow (for real-time tracking after animation)
   bool _shouldFollowDriver = true;
   Timer? _cameraFollowTimer;
-  final bool _useNavCamera = true; // When true: follow driver at 45° pitch
+  bool _useNavCamera = true; // When true: follow driver at 55° pitch (Uber-style)
+
+  // Navigation chase camera ticker — drives the camera at ~25 fps for
+  // continuous Uber-style follow, replacing the previous 2000 ms Timer.
+  Ticker? _cameraTicker;
+  DateTime _lastCameraTick = DateTime(2000);
+  bool _userControllingCamera = false;
+  DateTime? _lastUserCameraInteraction;
+  // Guard: onCameraChange fires for both user gestures and code-driven
+  // easeTo updates. This flag lets us ignore the programmatic ones.
+  bool _cameraUpdateFromCode = false;
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;

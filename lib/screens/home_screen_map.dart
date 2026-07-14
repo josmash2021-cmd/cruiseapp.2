@@ -35,14 +35,16 @@ extension _HomeScreenMap on _HomeScreenState {
     if (point == null) return;
 
     try {
-      unawaited(_miniMapController!.flyTo(
+      // easeTo is cheaper and steadier than flyTo for following a moving
+      // point; keep zoom/bearing/pitch constant so only the center glides.
+      unawaited(_miniMapController!.easeTo(
         mapbox.CameraOptions(
           center: point,
           zoom: 15.0,
           pitch: 0,
           bearing: 0,
         ),
-        mapbox.MapAnimationOptions(duration: 400),
+        mapbox.MapAnimationOptions(duration: 250),
       ));
     } catch (e) {
       if (kDebugMode) debugPrint('[Map] Camera recenter failed: $e');
@@ -86,8 +88,8 @@ extension _HomeScreenMap on _HomeScreenState {
   }
 
   /// If the interpolated dot has drifted too far from the raw GPS fix,
-  /// snap it back. This prevents the dot from getting stuck if the
-  /// SmoothMotion or annotation update pipeline silently fails.
+  /// gently nudge it back instead of snapping. A hard snap breaks the
+  /// illusion of smooth motion; setTarget lets SmoothMotion glide back.
   void _checkDotDrift() {
     if (!mounted || _currentLatLng == null) return;
     final dotLat = _miniDot.lat;
@@ -100,7 +102,12 @@ extension _HomeScreenMap on _HomeScreenState {
     );
     if (drift <= _maxDotDriftMeters) return;
 
-    _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+    // Guide the dot back smoothly; only snap if it's catastrophically off.
+    if (drift > _maxDotDriftMeters * 3) {
+      _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+    } else {
+      _miniDot.setTarget(_currentLatLng!.latitude, _currentLatLng!.longitude);
+    }
     unawaited(_updateMiniMapAnnotation());
   }
 

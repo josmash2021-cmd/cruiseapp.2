@@ -115,11 +115,16 @@ class TrackingMapCar {
         coordinates: mapbox.Position(pos.longitude, pos.latitude),
       );
       _carAnnot!.iconRotate = bearing;
+      // Fire-and-forget: awaiting every frame serializes the animation behind
+      // the Mapbox platform channel and produces stutter. Catch errors so a
+      // stale annotation is recreated on the next valid position.
       try {
-        await mgr.update(_carAnnot!);
+        mgr.update(_carAnnot!).catchError((e) {
+          debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
+          if (_carAnnot != null) _carAnnot = null;
+        });
       } catch (e) {
         debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
-        // Annotation may have been destroyed — reset and retry next frame
         _carAnnot = null;
       }
     }

@@ -564,6 +564,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
     if (_phase == _TrackPhase.arrived) return;
 
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    // When the Uber-style navigation chase is active, the continuous ticker
+    // drives the camera. A periodic flyTo bounds-fit would fight it and
+    // create visible jumps, so we skip those calls.
+    if (isOnTrip && (_mapCamera?.isNavChaseActive ?? false)) return;
+
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
     final bottomHeight = _bottomCardHeight;
@@ -572,8 +578,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final mq = MediaQuery.of(context).padding;
     final topPad = mq.top;
     final bottomPad = mq.bottom;
-
-    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
 
     // Use modular camera component if available
     if (_mapCamera != null) {
@@ -847,7 +851,82 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _recenter() {
-    _fitRouteBounds();
+    _userControllingCamera = false;
+    _lastUserCameraInteraction = null;
+    _mapCamera?.startNavigationChase();
+
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    if (!isOnTrip) {
+      // Non-navigation phases still need a full bounds fit.
+      _fitRouteBounds();
+    }
+    // In onTrip the next chase-camera tick will easeTo the driver smoothly.
+  }
+
+  /// Called when the camera changes. Ignore programmatic easeTo updates
+  /// (flagged by [_cameraUpdateFromCode]); only react to user gestures.
+  void _onCameraChanged() {
+    if (_cameraUpdateFromCode) return;
+    if (!_userControllingCamera) {
+      _userControllingCamera = true;
+      _mapCamera?.stopNavigationChase();
+    }
+    _lastUserCameraInteraction = DateTime.now();
+  }
+
+  /// Start the navigation chase camera ticker (~25 fps).
+  void _startCameraTicker() {
+    _cameraTicker?.dispose();
+    _cameraTicker = createTicker(_onCameraTick);
+    _cameraTicker?.start();
+  }
+
+  /// Stop the navigation chase camera ticker.
+  void _stopCameraTicker() {
+    _cameraTicker?.dispose();
+    _cameraTicker = null;
+  }
+
+  /// Ticker callback: drive the Uber-style chase camera.
+  void _onCameraTick(Duration elapsed) {
+    if (!mounted || _map == null || _mapCamera == null) return;
+    if (!_shouldFollowDriver || _userControllingCamera) return;
+    if (_phase == _TrackPhase.arrived) return;
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+
+    // Throttle to ~25 fps — camera animations don't need 60 fps and the
+    // platform channel benefits from fewer calls.
+    final now = DateTime.now();
+    if (now.difference(_lastCameraTick).inMilliseconds < 40) return;
+    _lastCameraTick = now;
+
+    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
+    if (!isOnTrip) return;
+
+    if (!_mapCamera!.isNavChaseActive) {
+      _mapCamera!.startNavigationChase();
+    }
+
+    final mq = MediaQuery.of(context);
+    final topPad = mq.padding.top;
+    final bottomPad = mq.padding.bottom;
+    final screenSize = mq.size;
+
+    _cameraUpdateFromCode = true;
+    _mapCamera!.updateChaseFrame(
+      driverPos: _animPos,
+      bearing: _animBearing,
+      speedMps: _velocityMps,
+      screenSize: screenSize,
+      topPadding: topPad + 10 + _topCardHeight + 32,
+      bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+      use3DPitch: _useNavCamera,
+    );
+    // The camera-change listener fires asynchronously after easeTo starts.
+    // Keep the guard up long enough to swallow those programmatic events.
+    Future.delayed(const Duration(milliseconds: 120), () {
+      if (mounted) _cameraUpdateFromCode = false;
+    });
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1024,19 +1103,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // Reset car annotation — old one was destroyed with previous map instance.
               _carAnnot = null;
               _carAnnotCreating = false;
-              // Allow rider to pinch-zoom + pan + double-tap zoom so
-              // they can inspect the route at their own pace.
-              // Keep rotate / tilt disabled so the camera never breaks
-              // the cinematic perspective the auto-fit chooses.
-              // (Was fully locked — user reported they couldn't zoom
-              // out to see the full route on long distances.)
+              // Allow rider to pan, zoom, rotate and tilt so they can
+              // inspect the route. The navigation chase camera pauses
+              // automatically when the user touches the map.
               ctrl.gestures.updateSettings(mapbox.GesturesSettings(
                 scrollEnabled: true,
                 pinchToZoomEnabled: true,
                 doubleTapToZoomInEnabled: true,
                 doubleTouchToZoomOutEnabled: true,
-                rotateEnabled: false,
-                pitchEnabled: false,
+                rotateEnabled: true,
+                pitchEnabled: true,
                 quickZoomEnabled: true,
               ));
               ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
@@ -1091,6 +1167,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 }
               });
             },
+            onCameraChangeListener: (_) => _onCameraChanged(),
             onMapLoadErrorListener: (err) {
               debugPrint('[TrackingMap] Map load error: ${err.message} (type: ${err.type})');
               _setState(() {

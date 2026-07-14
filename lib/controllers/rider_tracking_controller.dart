@@ -1810,47 +1810,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// Start real-time camera tracking - follows driver every 2000ms.
-  /// The map car interpolation runs at 60fps independently, so the camera
-  /// only needs to re-frame the route periodically. A wider interval plus
-  /// a short (800ms) animation prevents overlapping flyTo jumps.
+  /// Start real-time camera tracking.
   ///
-  /// FIX: Every 4th tick (≈8s) we do a full bounds fit instead of chase
-  /// camera to ensure the dropoff hasn't gone off-screen when the driver
-  /// moves far from the destination.
+  /// In onTrip/nearDestination we now use a 25 fps navigation chase ticker
+  /// (Uber-style: bearing follows the car, 55° pitch, adaptive zoom, driver
+  /// anchored at the lower third). In arriving/final states the existing
+  /// bounds-fit paths keep pickup + dropoff visible.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();
-    var tickCount = 0;
-    // Follow every 2000ms — wide enough for the 800ms animation to finish
-    // cleanly, eliminating the stutter caused by overlapping flyTo calls.
-    _cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 2000), (_) {
-      if (!mounted || !_shouldFollowDriver || _map == null) return;
-      if (_phase == _TrackPhase.arrived) return;
-      if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
-      if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-      tickCount++;
-      // Every 4th tick do a full bounds fit to re-center the route.
-      // This prevents the dropoff from going off-screen when the driver
-      // moves far from the destination on long trips.
-      final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-      if (isOnTrip && tickCount % 4 == 0) {
-        _fitRouteBounds();
-      } else {
-        _followDriver(_animPos, _animBearing);
-      }
-    });
+    _startCameraTicker();
+    // The ticker is enough for continuous chase; no periodic flyTo re-frame
+    // is needed, which removes the remaining source of camera jumps.
   }
 
-  /// Camera follows the route — always keeps driver + route ahead + destination
-  /// visible so the rider never loses sight of where they're going.
+  /// Legacy helper kept for non-chase states. Now used only by the safety
+  /// re-frame timer and manual recenter.
   void _followDriver(LatLng position, double bearing) {
     if (_map == null || !mounted) return;
-    // Skip if another camera animation is still running
-    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
     if (position.latitude == 0 && position.longitude == 0) return;
-
-    // Always use fitRouteBounds — it shows driver + route + destination
-    // instead of centering on just the driver (which loses the route).
     _fitRouteBounds();
   }
 

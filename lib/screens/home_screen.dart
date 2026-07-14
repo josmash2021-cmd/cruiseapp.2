@@ -93,7 +93,7 @@ const int _locAnimDurationMs = 1200; // smooth glide between updates
 // inside const expressions without relying on class static const visibility.
 const int _gpsWatchdogSec = 5;
 const int _dotDriftWatchdogSec = 3;
-const double _maxDotDriftMeters = 30.0;
+const double _maxDotDriftMeters = 80.0;
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver, SecureScreenMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }

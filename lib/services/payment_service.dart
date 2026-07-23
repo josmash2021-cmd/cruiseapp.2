@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:pay/pay.dart';
 
@@ -35,10 +35,10 @@ class PaymentService {
   static Future<Pay> _getClient() async {
     if (_client != null) return _client!;
     final configs = <PayProvider, PaymentConfiguration>{};
-    if (Platform.isAndroid) {
+    if (AppPlatform.isAndroid) {
       configs[PayProvider.google_pay] = await _loadGooglePayConfig();
     }
-    if (Platform.isIOS) {
+    if (AppPlatform.isIOS) {
       configs[PayProvider.apple_pay] = await PaymentConfiguration.fromAsset(
         'apple_pay.yaml',
       );
@@ -48,7 +48,7 @@ class PaymentService {
 
   /// Returns true if the device supports Google Pay and has at least one card.
   static Future<bool> isGooglePayAvailable() async {
-    if (!Platform.isAndroid) return false;
+    if (!AppPlatform.isAndroid) return false;
     try {
       final client = await _getClient();
       return await client.userCanPay(PayProvider.google_pay);
@@ -59,7 +59,7 @@ class PaymentService {
 
   /// Returns true if the device supports Apple Pay and has at least one card.
   static Future<bool> isApplePayAvailable() async {
-    if (!Platform.isIOS) return false;
+    if (!AppPlatform.isIOS) return false;
     try {
       final client = await _getClient();
       return await client.userCanPay(PayProvider.apple_pay);

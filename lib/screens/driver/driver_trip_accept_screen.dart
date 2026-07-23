@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import '../../utils/app_platform.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -1042,7 +1042,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _openNativeMaps(LatLng dest) async {
     final lat = dest.latitude;
     final lng = dest.longitude;
-    if (Platform.isIOS) {
+    if (AppPlatform.isIOS) {
       final gMapsUrl = Uri.parse(
         'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
       );

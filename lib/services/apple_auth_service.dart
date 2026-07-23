@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'api_service.dart';
@@ -11,7 +11,7 @@ class AppleAuthService {
   static final AppleAuthService instance = AppleAuthService._();
 
   /// Whether Apple Sign-In is available on this device.
-  bool get isAvailable => Platform.isIOS || Platform.isMacOS;
+  bool get isAvailable => AppPlatform.isIOS || AppPlatform.isMacOS;
 
   /// Returns the Apple account email without calling the backend.
   /// Used on the Create Account screen to extract the email for registration.

@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
@@ -18,9 +18,9 @@ class DriverReportService {
     // Simple device info without external dependencies
     String deviceInfo = 'Unknown';
     try {
-      if (Platform.isIOS) {
+      if (AppPlatform.isIOS) {
         deviceInfo = 'iOS Device';
-      } else if (Platform.isAndroid) {
+      } else if (AppPlatform.isAndroid) {
         deviceInfo = 'Android Device';
       }
     } catch (e) {

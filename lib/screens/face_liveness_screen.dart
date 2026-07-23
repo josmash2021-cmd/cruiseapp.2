@@ -1,5 +1,5 @@
-﻿import 'dart:async';
-import 'dart:io';
+import 'dart:async';
+import '../utils/app_platform.dart';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -166,7 +166,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       front,
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: Platform.isAndroid
+      imageFormatGroup: AppPlatform.isAndroid
           ? ImageFormatGroup.yuv420
           : ImageFormatGroup.bgra8888,
     );

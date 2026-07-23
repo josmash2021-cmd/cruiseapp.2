@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
 /// Initializes the background service for keeping the driver online
@@ -18,7 +18,7 @@ class DriverBackgroundService {
   /// Initialize the background service. Call once at app startup.
   Future<void> initialize() async {
     if (_initialized) return;
-    if (!Platform.isAndroid) {
+    if (!AppPlatform.isAndroid) {
       _initialized = true;
       return; // iOS uses native background modes
     }
@@ -49,7 +49,7 @@ class DriverBackgroundService {
   /// Start the foreground service (shows persistent notification).
   Future<void> start() async {
     if (!_initialized) await initialize();
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.isAndroid) return;
 
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
@@ -62,7 +62,7 @@ class DriverBackgroundService {
   /// Stop the foreground service.
   Future<void> stop() async {
     if (!_initialized) return;
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.isAndroid) return;
 
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
@@ -74,7 +74,7 @@ class DriverBackgroundService {
 
   /// Update the notification text (e.g., when trip state changes).
   void updateNotification({required String title, required String body}) {
-    if (!_initialized || !Platform.isAndroid) return;
+    if (!_initialized || !AppPlatform.isAndroid) return;
     final service = FlutterBackgroundService();
     service.invoke('updateNotification', {
       'title': title,

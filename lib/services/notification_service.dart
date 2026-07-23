@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import '../utils/app_platform.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
@@ -342,7 +342,7 @@ class NotificationService {
     // iOS: skip entirely — no foreground-service requirement and the
     // notification would appear in the system tray while the driver
     // is actively looking at the online screen.
-    if (Platform.isIOS) {
+    if (AppPlatform.isIOS) {
       debugPrint('[NotificationService] driver online notification skipped on iOS');
       return;
     }

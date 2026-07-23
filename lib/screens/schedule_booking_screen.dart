@@ -1,5 +1,5 @@
-﻿import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:async';
+import '../utils/app_platform.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -101,7 +101,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   List<_RideOption> _rides = [];
 
   // Payment
-  String _selectedPaymentMethod = Platform.isIOS ? 'apple_pay' : 'google_pay';
+  String _selectedPaymentMethod = AppPlatform.isIOS ? 'apple_pay' : 'google_pay';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -728,8 +728,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         ? '${_savedCardBrand![0].toUpperCase()}${_savedCardBrand!.substring(1)} •••• $_savedCardLast4'
         : S.of(context).creditOrDebitCard;
     final methods = [
-      if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),
-      if (Platform.isAndroid) ('google_pay', 'Google Pay', true),
+      if (AppPlatform.isIOS) ('apple_pay', 'Apple Pay', true),
+      if (AppPlatform.isAndroid) ('google_pay', 'Google Pay', true),
       ('credit_card', creditLabel, true),
       ('paypal', 'PayPal', false), // Coming Soon
     ];

@@ -1302,7 +1302,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Throttle to ~30fps — Mapbox native updates don't need 60fps and can
     // stutter if we queue too many async annotation updates.
     final now = DateTime.now();
-    if (now.difference(_lastCarUpdate).inMilliseconds < _minCarUpdateMs) return;
+    if (now.difference(_lastCarUpdate).inMilliseconds < _RiderTrackingScreenState._minCarUpdateMs) return;
     _lastCarUpdate = now;
 
     // Determine effective position: use _animPos if valid, fallback to _directTargetPos

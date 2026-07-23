@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import '../utils/app_platform.dart';
 import 'env.dart';
 
 class ApiKeys {
@@ -16,7 +16,7 @@ class ApiKeys {
   static const String _googlePlacesAndroid = String.fromEnvironment(
     'GOOGLE_PLACES_ANDROID', defaultValue: '');
   static String get googlePlaces =>
-      Platform.isIOS ? _googlePlacesIOS : _googlePlacesAndroid;
+      AppPlatform.isIOS ? _googlePlacesIOS : _googlePlacesAndroid;
 
   /// Stripe publishable key (pk_test_... or pk_live_...)
   static const String stripePublishableKey = Env.stripePublishableKey;

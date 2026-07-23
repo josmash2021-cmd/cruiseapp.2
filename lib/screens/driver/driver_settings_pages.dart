@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../../utils/app_platform.dart';
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -486,11 +486,11 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
 
   // Store URLs if app is not installed
   static final _storeUrls = {
-    'google': Platform.isIOS
+    'google': AppPlatform.isIOS
         ? 'https://apps.apple.com/app/google-maps/id585027354'
         : 'https://play.google.com/store/apps/details?id=com.google.android.apps.maps',
     'apple': 'https://apps.apple.com/app/apple-maps/id915056765',
-    'waze': Platform.isIOS
+    'waze': AppPlatform.isIOS
         ? 'https://apps.apple.com/app/waze-navigation-live-traffic/id323229106'
         : 'https://play.google.com/store/apps/details?id=com.waze',
   };

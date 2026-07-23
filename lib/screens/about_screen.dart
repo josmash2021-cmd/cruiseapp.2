@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 import '../config/page_transitions.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
@@ -248,7 +248,7 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   Future<void> _rateApp() async {
-    final storeUrl = Platform.isIOS
+    final storeUrl = AppPlatform.isIOS
         ? 'https://apps.apple.com/app/id0000000000'
         : 'https://play.google.com/store/apps/details?id=com.cruise_app';
     final uri = Uri.parse(storeUrl);
@@ -267,7 +267,7 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   Future<void> _shareCruise() async {
-    final storeUrl = Platform.isIOS
+    final storeUrl = AppPlatform.isIOS
         ? 'https://apps.apple.com/app/id0000000000'
         : 'https://play.google.com/store/apps/details?id=com.cruise_app';
     final text = S.of(context).shareAppText.replaceAll(

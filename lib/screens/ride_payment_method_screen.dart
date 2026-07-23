@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import '../utils/app_platform.dart';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -200,7 +200,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                   // platforms also see Card + Bank Account (coming soon)
                   // and — when enabled — the Test Mode tile for QA.
                   children: [
-                    if (Platform.isIOS)
+                    if (AppPlatform.isIOS)
                       _PayCard(
                         entryCtl: _entryCtl,
                         staggerDelay: 0.00,
@@ -212,7 +212,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                             color: Colors.white, size: 32),
                         onTap: () => _pick(PaymentMethodId.apple),
                       ),
-                    if (Platform.isAndroid)
+                    if (AppPlatform.isAndroid)
                       _PayCard(
                         entryCtl: _entryCtl,
                         staggerDelay: 0.00,
@@ -242,7 +242,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                     // proximity-reader entitlement which is per-app and
                     // pending approval — the SDK throws at runtime
                     // without it, so we hide the option entirely.
-                    if (Platform.isAndroid)
+                    if (AppPlatform.isAndroid)
                       _PayCard(
                         entryCtl: _entryCtl,
                         staggerDelay: 0.12,

@@ -2108,16 +2108,16 @@ extension _RideRequestController on _RideRequestScreenState {
     final methods = <String>[];
     
     // Check for native pay
-    if (Platform.isIOS && await PaymentService.isApplePayAvailable()) {
+    if (AppPlatform.isIOS && await PaymentService.isApplePayAvailable()) {
       methods.add('apple_pay');
     }
-    if (Platform.isAndroid && await PaymentService.isGooglePayAvailable()) {
+    if (AppPlatform.isAndroid && await PaymentService.isGooglePayAvailable()) {
       methods.add('google_pay');
     }
     
     // Tap to Pay (Stripe Terminal NFC). Only available on Android until
     // Apple approves the proximity-reader entitlement for iOS.
-    if (Platform.isAndroid) {
+    if (AppPlatform.isAndroid) {
       methods.add('tap_to_pay');
     }
     
@@ -2193,8 +2193,8 @@ extension _RideRequestController on _RideRequestScreenState {
 void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final loc = S.of(context);
     final methods = [
-      if (Platform.isIOS) ('apple_pay', 'Apple Pay', true),
-      if (!Platform.isIOS) ('google_pay', 'Google Pay', true),
+      if (AppPlatform.isIOS) ('apple_pay', 'Apple Pay', true),
+      if (!AppPlatform.isIOS) ('google_pay', 'Google Pay', true),
       ('tap_to_pay', 'Tap to Pay', true),
       (
         'credit_card',
@@ -2457,7 +2457,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
       case 'test_mode':
         return loc.testModeLabel;
       default:
-        return Platform.isIOS ? 'Apple Pay' : 'Google Pay';
+        return AppPlatform.isIOS ? 'Apple Pay' : 'Google Pay';
     }
   }
 

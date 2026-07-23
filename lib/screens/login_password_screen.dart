@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../services/haptic_service.dart';
@@ -817,7 +817,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               ),
 
               // ── Apple Sign-In (iOS only) ──
-              if (Platform.isIOS) ...[
+              if (AppPlatform.isIOS) ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

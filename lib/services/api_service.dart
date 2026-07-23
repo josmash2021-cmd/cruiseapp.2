@@ -277,6 +277,8 @@ class ApiService {
   /// - idleTimeout: 60 s — keep TCP/TLS alive between calls
   /// - maxConnectionsPerHost: 10 — increased for parallel API calls
   static final http.Client _client = () {
+    // dart:io HttpClient throws UnsupportedError on web — use the browser client.
+    if (kIsWeb) return http.Client();
     final inner = HttpClient()
       ..autoUncompress = true
       ..connectionTimeout = const Duration(seconds: 3)
@@ -293,6 +295,7 @@ class ApiService {
 
   /// Pre-resolve DNS for all API domains to eliminate lookup latency on first request.
   static Future<void> preResolveDns() async {
+    if (kIsWeb) return; // dart:io InternetAddress is unsupported on web
     await Future.wait([
       InternetAddress.lookup('cruiseapp2-production.up.railway.app').catchError((_) => <InternetAddress>[]),
       InternetAddress.lookup('api.mapbox.com').catchError((_) => <InternetAddress>[]),
@@ -305,6 +308,7 @@ class ApiService {
   /// Lightweight connectivity check — pings DNS without adding dependencies.
   /// Uses dart:io InternetAddress.lookup with a 3-second timeout.
   static Future<bool> isOnline() async {
+    if (kIsWeb) return true; // no dart:io DNS lookup on web; browser handles connectivity
     try {
       final result = await InternetAddress.lookup('google.com')
           .timeout(const Duration(seconds: 3));

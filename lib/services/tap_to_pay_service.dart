@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import '../utils/app_platform.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mek_stripe_terminal/mek_stripe_terminal.dart';
 import '../services/api_service.dart';
@@ -131,7 +131,7 @@ class TapToPayService extends ChangeNotifier {
   /// Solo Android está habilitado en producción hasta que Apple apruebe
   /// el entitlement de proximity-reader para iOS.
   static Future<bool> isSupported() async {
-    return Platform.isAndroid;
+    return AppPlatform.isAndroid;
   }
 
   /// Inicializa Stripe Terminal y conecta al lector NFC del propio
@@ -145,7 +145,7 @@ class TapToPayService extends ChangeNotifier {
 
     // Bloquea iOS hasta tener el entitlement de Apple. Lanza un error
     // claro para que la UI pueda mostrar un mensaje útil al usuario.
-    if (Platform.isIOS) {
+    if (AppPlatform.isIOS) {
       _handleError(
         'Tap to Pay no está disponible en iOS aún. '
         'Por favor selecciona otro método de pago.',
@@ -157,7 +157,7 @@ class TapToPayService extends ChangeNotifier {
       );
     }
 
-    if (!Platform.isAndroid) {
+    if (!AppPlatform.isAndroid) {
       _handleError('Tap to Pay solo funciona en Android e iOS.');
       throw TapToPayException('Plataforma no soportada', status: _status);
     }

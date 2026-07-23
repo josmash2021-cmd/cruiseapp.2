@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../utils/app_platform.dart';
 
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
@@ -73,8 +73,8 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
 
   bool _isAllowedMethodType(String methodType) {
     if (methodType == 'stripe_card' || methodType == 'paypal') return true;
-    if (Platform.isIOS) return methodType == 'apple_pay';
-    if (Platform.isAndroid) return methodType == 'google_pay';
+    if (AppPlatform.isIOS) return methodType == 'apple_pay';
+    if (AppPlatform.isAndroid) return methodType == 'google_pay';
     return false;
   }
 

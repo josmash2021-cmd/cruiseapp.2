@@ -1,6 +1,6 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import '../utils/app_platform.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kDebugMode, defaultTargetPlatform, TargetPlatform;

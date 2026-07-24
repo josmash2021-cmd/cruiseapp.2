@@ -556,10 +556,27 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   List<RideOption> _generateRideOptions(RouteResult route) {
     // Prefer traffic-aware durationSeconds from the API; fall back to parsing durationText
-    final mins = route.durationSeconds != null && route.durationSeconds! > 0
+    final rawMins = route.durationSeconds != null && route.durationSeconds! > 0
         ? (route.durationSeconds! / 60.0).ceil()
         : _parseDurationMinutes(route.durationText);
-    final miles = route.distanceMeters / 1609.344;
+    final rawMiles = route.distanceMeters / 1609.344;
+
+    // Sanity clamp: a corrupt route (bad coordinates, or the straight-line
+    // fallback between far-apart points) otherwise explodes the fare — a
+    // $33k estimate once reached Apple Pay and was rejected by the backend
+    // ($1,000 PaymentIntent cap), surfacing as a bogus "Payment Declined".
+    // Cap inputs at 500 mi / 12 h and flag the estimate as unreliable.
+    const double maxMiles = 500.0;
+    const int maxMins = 720;
+    final routeIsSane =
+        rawMiles > 0 && rawMiles <= maxMiles && rawMins > 0 && rawMins <= maxMins;
+    if (!routeIsSane) {
+      debugPrint(
+          '[RiderTrip] insane route (${rawMiles.toStringAsFixed(1)} mi, $rawMins min) — clamping fare inputs');
+      _state = _state.copyWith(routeFetchFailed: true);
+    }
+    final mins = rawMins < 1 ? 1 : (rawMins > maxMins ? maxMins : rawMins);
+    final miles = rawMiles < 0.5 ? 0.5 : (rawMiles > maxMiles ? maxMiles : rawMiles);
     double baseFare = 2.50 + (miles * 1.50) + (mins * 0.25);
 
     // Airport surcharge: +$8 flat + 15% uplift

@@ -1741,6 +1741,10 @@ class S {
   String get genericPaymentError => _es
       ? 'Hubo un problema con el pago. Intenta de nuevo o usa otro método.'
       : 'There was a problem with the payment. Try again or use another method.';
+  String get fareEstimateError => _es ? 'Tarifa no disponible' : 'Fare unavailable';
+  String get fareEstimateErrorMsg => _es
+      ? 'No pudimos calcular una tarifa válida para esta ruta. Ajusta el origen o el destino e inténtalo de nuevo.'
+      : "We couldn't calculate a valid fare for this route. Adjust the pickup or destination and try again.";
       
   String get cancelRideMsg => _es
       ? '¿Estás seguro de que quieres cancelar tu solicitud de viaje?'

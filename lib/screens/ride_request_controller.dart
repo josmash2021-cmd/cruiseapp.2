@@ -1495,6 +1495,15 @@ extension _RideRequestController on _RideRequestScreenState {
     final amountCents = (effectivePrice * 100).round();
     final label = 'Cruise · ${option.name}';
 
+    // The backend hard-caps PaymentIntents at $1,000 (payments.py). A fare
+    // outside (0, $1,000] means the route estimate is corrupt — fail fast
+    // with a clear error instead of letting the backend's 400 surface as a
+    // bogus "Payment Declined" (App Store rejection, Jul 2026).
+    if (amountCents <= 0 || amountCents > 100000) {
+      debugPrint('[Payment] invalid fare amount: $amountCents cents — aborting before backend call');
+      throw const ApiException(400, 'invalid_fare_amount');
+    }
+
     // Sandbox mode: simulate successful payment with brief delay
     if (AppConfig.sandboxPayments) {
       await Future.delayed(const Duration(milliseconds: 800));
@@ -1551,14 +1560,18 @@ extension _RideRequestController on _RideRequestScreenState {
         ),
       );
       return true;
-    } on stripe.StripeException catch (e) {
+    } on stripe.StripeException catch (e, stack) {
       debugPrint('[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
       // Apple Pay was declined by the bank — surface the error so the caller
       // shows the "Payment declined" banner instead of opening a card sheet.
+      // Report to Crashlytics: a silent decline during App Review once cost
+      // us a rejection with no diagnostics.
+      FirebaseCrashlytics.instance.recordError(e, stack, reason: 'ApplePay confirm failed: ${e.error.code}');
       rethrow;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('[ApplePay] Error: $e');
+      FirebaseCrashlytics.instance.recordError(e, stack, reason: 'ApplePay confirm error');
       rethrow;
     }
   }
@@ -2021,6 +2034,27 @@ extension _RideRequestController on _RideRequestScreenState {
             errorTitle = s.paymentDeclined;
             errorMessage = s.genericPaymentError;
           }
+      }
+    } else if (error is ApiException) {
+      // The backend rejected the payment request itself (invalid amount,
+      // Stripe config, etc.) — this is NOT a card decline. Surface the real
+      // reason instead of the misleading "Payment Declined" defaults.
+      final msg = error.message;
+      final msgLower = msg.toLowerCase();
+      if (msgLower.contains('invalid_fare_amount') ||
+          msgLower.contains('invalid payment amount')) {
+        errorTitle = s.fareEstimateError;
+        errorMessage = s.fareEstimateErrorMsg;
+        errorCode = 'invalid_fare';
+      } else {
+        // Stripe errors arrive as a stringified dict: {message: …, code: …,
+        // decline_code: …}. Extract the human message when possible.
+        final m = RegExp(r'message: ([^,}]+)').firstMatch(msg);
+        errorTitle = s.paymentDeclined;
+        errorMessage = m != null
+            ? m.group(1)!.trim()
+            : (msg.isNotEmpty ? msg : s.genericPaymentError);
+        errorCode = 'api_${error.statusCode}';
       }
     } else if (error is Map<String, dynamic>) {
       // Backend may return structured error with decline_code

@@ -16,6 +16,12 @@ os.environ["JWT_SECRET"] = "test-jwt-secret"
 os.environ["DISPATCH_API_KEY"] = "test-dispatch-key"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_secret"
 os.environ["STRIPE_SECRET_KEY"] = ""  # disable real Stripe calls
+# Masked-call bridge number (routers/masked_calls.py reads it at import time)
+os.environ.setdefault("TWILIO_PROXY_PHONE_NUMBER", "+12065550100")
+# Test-only Fernet key for SSN encryption (mandatory at import time)
+os.environ.setdefault(
+    "SSN_ENCRYPTION_KEY", "CHOLakXLTCPdG29vmJAiLF9C4L5pCEiB88IQZjL-tSo="
+)
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

@@ -173,6 +173,34 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
         return _driver_visible_trip_dict(trip)
     return _trip_dict(trip)
 
+
+async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:
+    """Split a charged cancellation fee with the driver using the SAME ledger
+    mechanism as the completed-trip fare split:
+      - trip.driver_earnings  <- 60% driver share (e.g. $3.00 of $5.00)
+      - trip.platform_fee     <- 40% Company revenue (e.g. $2.00 of $5.00)
+      - driver.pending_balance / total_earnings incremented by the driver share
+    Returns (driver_share, platform_share). No-op when there is no fee or
+    no assigned driver.
+    """
+    fee = float(trip.cancellation_fee or 0.0)
+    if fee <= 0 or not trip.driver_id:
+        return 0.0, 0.0
+    driver_share = round(fee * DRIVER_SHARE_RATE, 2)
+    platform_share = round(fee - driver_share, 2)
+    trip.driver_earnings = driver_share
+    trip.platform_fee = platform_share
+    _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+    _drv = _drv_res.scalar_one_or_none()
+    if _drv:
+        _drv.pending_balance = round((_drv.pending_balance or 0.0) + driver_share, 2)
+        _drv.total_earnings = round((_drv.total_earnings or 0.0) + driver_share, 2)
+    logging.info(
+        "[CancelFee] Trip %s fee %.2f split: driver %.2f / company %.2f",
+        trip.id, fee, driver_share, platform_share,
+    )
+    return driver_share, platform_share
+
 # ---====================================================
 #  TRIP  ENDPOINTS
 # ---====================================================
@@ -759,11 +787,22 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         pm = pm_result.scalar_one_or_none()
         if pm:
             payment_method_display = pm.display_name  # e.g. "Visa **** 4242"
+    # Driver first name — required on the electronic receipt by
+    # Fla. Stat. § 627.748(6).
+    driver_first_name = None
+    if trip.driver_id:
+        drv_result = await db.execute(
+            select(User).where(User.id == trip.driver_id)
+        )
+        drv = drv_result.scalar_one_or_none()
+        if drv:
+            driver_first_name = drv.first_name
     # Generate receipt number
     receipt_number = f"CR-{trip.id:08d}"
     return {
         "trip_id": trip.id,
         "receipt_number": receipt_number,
+        "driver_first_name": driver_first_name,
         "base_fare": base,
         "distance_miles": dist_mi,
         "per_mile_rate": per_mile,
@@ -868,27 +907,26 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     #   1. The RIDER who owns the trip (their own trip, from the rider app)
     #   2. ADMIN / DISPATCH users (via the dispatch panel)
     #
-    # Drivers are explicitly BLOCKED from cancelling. If a driver needs a
-    # trip cancelled they must contact dispatch. This closes the phantom-
-    # cancel class of bugs entirely — any ambiguous pop/timeout/retry in
-    # the driver app can NEVER cancel a ride again.
-    #
-    # System auto-cancels (scheduler expiration, guardian ghost cleanup,
-    # dispatch cascade exhaustion) run with their own DB sessions and
-    # don't go through this HTTP endpoint, so they're unaffected.
+    # Drivers cancel via POST /trips/{id}/driver-cancel (pre-pickup only,
+    # with mandatory reason, audit log and automatic rematch) — never
+    # through this generic status endpoint, so the audit trail and the
+    # rematch logic always run. System auto-cancels (scheduler expiration,
+    # guardian ghost cleanup, dispatch cascade exhaustion) run with their
+    # own DB sessions and don't go through this HTTP endpoint, so they're
+    # unaffected.
     if canonical_new == "cancelled":
         is_owner_rider = (user.id == trip.rider_id)
         is_privileged = user_role in ("admin", "dispatch")
         if not (is_owner_rider or is_privileged):
             logging.warning(
                 "[Guard] BLOCKED cancel on trip %d by user %d (role=%s) — "
-                "only owning rider or admin/dispatch may cancel. rider_id=%d driver_id=%s",
+                "only owning rider or admin/dispatch may cancel here; drivers use /driver-cancel. rider_id=%d driver_id=%s",
                 trip_id, user.id, user_role, trip.rider_id, trip.driver_id,
             )
             raise HTTPException(
                 403,
-                "Only the rider or dispatch can cancel a trip. "
-                "Drivers must contact dispatch to request a cancellation.",
+                "Only the rider or dispatch can cancel a trip here. "
+                "Drivers: use /trips/{id}/driver-cancel.",
             )
 
     # Validate status transition using canonical names.
@@ -1260,18 +1298,12 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     if not trip:
         raise HTTPException(404, "Trip not found")
 
-    # ── STRICT CANCEL POLICY (2026-04-11) ──────────────────────────────
-    # Only two actors may cancel a trip:
+    # ── CANCEL POLICY ───────────────────────────────────────────
+    # Who may cancel a trip here:
     #   1. The owning rider — AND ONLY before a driver has been assigned.
     #   2. Admin / dispatch — at any time.
-    #
-    # Drivers are HARD-BLOCKED. Any driver-initiated cancel must go
-    # through /trips/{id}/request-cancel which creates an ActionRequest
-    # that dispatch reviews in their panel.
-    #
-    # This endpoint is also hit by legacy clients via
-    # ApiService.cancelTrip(), so the guard lives here too — not only
-    # on PATCH /trips/{id}/status.
+    #   3. The assigned driver — via POST /trips/{id}/driver-cancel
+    #      (pre-pickup only, with reason + audit log + rematch).
     user_role = getattr(user, "role", None) or ""
     is_owner_rider = (user.id == trip.rider_id)
     is_privileged = user_role in ("admin", "dispatch")
@@ -1315,6 +1347,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     cancellation_fee = 0.0
     if trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
         reference_time = trip.driver_assigned_at or trip.updated_at
+        # SQLite returns tz-naive datetimes — normalize before subtracting
+        # from tz-aware now (Postgres timestamptz is already aware).
+        if reference_time and reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=timezone.utc)
         minutes_elapsed = (datetime.now(timezone.utc) - reference_time).total_seconds() / 60 if reference_time else 0
         if minutes_elapsed > 2:
             cancellation_fee = 5.0
@@ -1363,7 +1399,12 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         except Exception as e:
             logging.warning("[Refund] Failed to refund trip %d: %s -- marking for manual refund", trip_id, e)
             trip.payment_status = "pending_refund"  # Manual refund needed
-    
+
+    # Credit the driver their 60% share of any charged cancellation fee
+    # (same 60/40 ledger split as completed-trip fares; 40% = Company revenue).
+    if cancellation_fee > 0:
+        await _credit_driver_cancellation_fee(db, trip)
+
     await db.commit()
     await db.refresh(trip)
 
@@ -1411,6 +1452,177 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     }))
 
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
+
+# ---====================================================
+#  DRIVER CANCEL  (pre-pickup only, no dispatch pre-approval)
+# ---====================================================
+
+# Statuses in which the assigned driver may still cancel (rider NOT aboard).
+_DRIVER_CANCELLABLE_STATUSES = (
+    "accepted", "driver_assigned", "driver_en_route",
+    "en_route_to_pickup", "driver_arriving", "arrived", "driver_arrived",
+)
+
+
+@router.post("/trips/{trip_id}/driver-cancel", dependencies=[Depends(_verify_api_key)])
+async def driver_cancel_trip(
+    trip_id: int,
+    request: Request,
+    payload: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow the ASSIGNED driver to cancel an accepted trip before pickup,
+    without dispatch pre-approval (independent-contractor requirement).
+
+    - Requires a reason (from the in-app reason list).
+    - Logs trip/driver/timestamp/location/reason/previous status and a
+      fraud-suspicion heuristic into the tamper-evident audit chain.
+    - Returns the trip to "requested" and triggers a rematch (offer to the
+      next nearest driver, excluding the cancelling one).
+    - A cancellation alone NEVER reduces the driver's priority, premium
+      access, or triggers suspension/deactivation — only documented fraud,
+      safety, or abuse can, via manual review.
+    """
+    reason = (payload.get("reason") or "").strip() if isinstance(payload, dict) else ""
+    if not reason:
+        raise HTTPException(400, "reason is required")
+
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    if user.id != trip.driver_id or user.role != "driver":
+        raise HTTPException(403, "Only the assigned driver can cancel this trip")
+
+    # Rider already aboard → NOT an ordinary cancellation. The driver must
+    # use the safety / end-ride flow instead.
+    if trip.status in ("in_trip", "in_progress"):
+        raise HTTPException(
+            409,
+            "Rider is already aboard — use the safety / end-ride flow instead of cancelling.",
+        )
+    if trip.status in ("completed", "canceled", "cancelled"):
+        raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
+    if trip.status not in _DRIVER_CANCELLABLE_STATUSES:
+        raise HTTPException(409, f"Trip status '{trip.status}' cannot be cancelled by the driver")
+
+    previous_status = trip.status
+
+    # ── Fraud heuristic (documented, review-only signal) ──
+    # Cancelling AFTER arriving at the pickup point flags the entry for
+    # manual fraud review. It has NO automatic consequence for the driver.
+    fraud_suspected = previous_status in ("arrived", "driver_arrived")
+    driver_lat = payload.get("lat") if isinstance(payload, dict) else None
+    driver_lng = payload.get("lng") if isinstance(payload, dict) else None
+
+    # ── Tamper-evident audit log ──
+    _security_audit_log(
+        "DRIVER_TRIP_CANCELLED",
+        request.client.host if request.client else "app",
+        (
+            f"trip_id={trip.id} driver_id={user.id} previous_status={previous_status} "
+            f"reason={reason!r} lat={driver_lat} lng={driver_lng} "
+            f"fraud_suspected={fraud_suspected}"
+        ),
+        user_id=user.id,
+    )
+
+    # ── Return the trip to the dispatch pool (rematch) ──
+    trip.driver_id = None
+    trip.status = "requested"
+    trip.cancel_reason = None  # fresh dispatch cycle — the record lives in the audit log
+    trip.driver_assigned_at = None
+    trip.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(trip)
+
+    # ── Rider: back to searching state (socket + firestore + push) ──
+    try:
+        _safe_create_task(emit_trip_status(
+            trip_id=trip.id, status="requested", extra={"driver_id": None},
+        ))
+    except Exception as _sock_err:
+        logging.warning("[DriverCancel] trip_status emit failed for trip %d: %s", trip.id, _sock_err)
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_status(
+                trip_id=trip.id, status="requested", cancelled_by="driver",
+            )
+        except Exception as _fs_err:
+            logging.warning("[DriverCancel] firestore sync failed for trip %d: %s", trip.id, _fs_err)
+    try:
+        rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_res.scalar_one_or_none()
+        if rider and rider.fcm_token:
+            _safe_create_task(_send_fcm_push_async(
+                rider.fcm_token,
+                "Finding you another driver",
+                "Your previous driver cancelled — we're matching you with a new driver now.",
+                data={"type": "driver_cancelled", "trip_id": str(trip.id)},
+            ))
+    except Exception as _fcm_err:
+        logging.warning("[DriverCancel] rider FCM failed for trip %d: %s", trip.id, _fcm_err)
+
+    # ── Rematch: offer to the next nearest driver (mirrors reject_offer) ──
+    rematch_offer_id = None
+    rematch_driver_id = None
+    try:
+        from routers.dispatch import (
+            _find_nearest_drivers, _send_offer_to_driver,
+            _auto_cascade, _cascade_tasks,
+        )
+        prev_offers = await db.execute(
+            select(DispatchOffer).where(
+                and_(DispatchOffer.trip_id == trip.id, DispatchOffer.status == "pending")
+            )
+        )
+        tried_ids = set()
+        for stale in prev_offers.scalars().all():
+            stale.status = "expired"
+            tried_ids.add(stale.driver_id)
+        tried_ids.add(user.id)
+        await db.commit()
+
+        drivers_sorted = await _find_nearest_drivers(
+            db,
+            pickup_lat=trip.pickup_lat or 0,
+            pickup_lng=trip.pickup_lng or 0,
+            exclude_driver_ids=tried_ids,
+            vehicle_type=trip.vehicle_type or "comfort",
+            limit=5,
+        )
+        if drivers_sorted:
+            next_driver = drivers_sorted[0]
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+            new_offer = await _send_offer_to_driver(
+                db, trip, next_driver, rider_name, rider_phone, rider_photo,
+            )
+            old_task = _cascade_tasks.pop(trip.id, None)
+            if old_task and not old_task.done():
+                old_task.cancel()
+            _cascade_tasks[trip.id] = _safe_create_task(
+                _auto_cascade(trip.id, new_offer.id, next_driver.id)
+            )
+            rematch_offer_id = new_offer.id
+            rematch_driver_id = next_driver.id
+    except Exception as _rematch_err:
+        # Non-fatal: the trip stays "requested" and UnmatchedTripRetryAgent
+        # will re-offer it on its next cycle.
+        logging.error(
+            "[DriverCancel] rematch failed for trip %d: %s — left as requested for retry agent",
+            trip.id, _rematch_err,
+        )
+
+    return {
+        "status": "cancelled_by_driver",
+        "trip_id": trip.id,
+        "rematch": rematch_driver_id is not None,
+        "rematch_offer_id": rematch_offer_id,
+        "rematch_driver_id": rematch_driver_id,
+    }
 
 # ---====================================================
 #  REQUEST CANCEL  (non-destructive: creates ActionRequest)

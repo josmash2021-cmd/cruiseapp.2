@@ -8,7 +8,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
@@ -18,6 +17,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/map_controller_cache.dart';
+import '../../services/masked_call_service.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
@@ -308,7 +308,6 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final dropoff = trip['dropoff_address'] ?? '';
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
     final riderName = trip['rider_name'] ?? '';
-    final riderPhone = trip['rider_phone'] ?? '';
     final riderPhoto = trip['rider_photo_url']?.toString() ?? '';
     final vehicleType = trip['vehicle_type'] ?? 'standard';
     final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
@@ -568,10 +567,12 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                                   ],
                                 ),
                               ),
-                              if (riderPhone.isNotEmpty)
-                                IconButton(
+                              IconButton(
                                   icon: const Icon(Icons.phone, color: Colors.green, size: 20),
-                                  onPressed: () => launchUrl(Uri.parse('tel:$riderPhone')),
+                                  onPressed: () => MaskedCallService.callCounterparty(
+                                    tripId: _tripId,
+                                    role: 'driver',
+                                  ),
                                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   padding: EdgeInsets.zero,
                                 ),

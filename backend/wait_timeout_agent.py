@@ -224,6 +224,17 @@ class WaitTimeoutAgent:
         if wait_fee > 0:
             trip.cancellation_fee = wait_fee
             trip.wait_time_charge = wait_fee
+            # Credit the driver their 60% share of the no-show fee using the
+            # same 60/40 ledger split as completed-trip fares.
+            if trip.driver_id:
+                try:
+                    from routers.trips import _credit_driver_cancellation_fee
+                    await _credit_driver_cancellation_fee(db, trip)
+                except Exception as e:
+                    logger.warning(
+                        "[WaitTimeout] Driver fee credit failed for trip #%d: %s",
+                        trip.id, e,
+                    )
 
         logger.warning(
             "[WaitTimeout] Cancelling trip #%d — driver waited %d min (threshold: %d min), "

@@ -15,6 +15,7 @@ import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
+import 'driver_agreement_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'license_scanner_screen.dart';
 
@@ -276,6 +277,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   final _passwordCtrl = TextEditingController();
   bool _obscurePass = true;
 
+  // Date of birth — drivers must be at least 21 (server re-validates).
+  DateTime? _dob;
+  static const int _minDriverAge = 21;
+
   // ── Inline duplicate-check state ───────────────────────────────────────────
   String? _emailError;
   String? _phoneError;
@@ -306,6 +311,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   // ── Step 3: Review ─────────────────────────────────────────────────────────
   bool _agreedTerms = false;
+  // Separate explicit acceptance of the Independent Contractor Agreement —
+  // required by Fla. Stat. § 627.748(9)(d) (written IC agreement).
+  bool _agreedContractor = false;
   bool _submitting = false;
 
   @override
@@ -317,6 +325,42 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   void _onPasswordChanged() => setState(() {});
+
+  /// Age in full years from the selected date of birth (null if not set).
+  int? get _driverAge {
+    final dob = _dob;
+    if (dob == null) return null;
+    final now = DateTime.now();
+    var age = now.year - dob.year;
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  /// Date of birth formatted as YYYY-MM-DD for the backend.
+  String get _dobIso {
+    final dob = _dob;
+    if (dob == null) return '';
+    final mm = dob.month.toString().padLeft(2, '0');
+    final dd = dob.day.toString().padLeft(2, '0');
+    return '${dob.year}-$mm-$dd';
+  }
+
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate:
+          _dob ?? DateTime(now.year - _minDriverAge, now.month, now.day),
+      firstDate: DateTime(1900),
+      lastDate: now,
+    );
+    if (picked != null && mounted) {
+      setState(() => _dob = picked);
+    }
+  }
 
   @override
   void dispose() {
@@ -345,6 +389,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       case 0:
         return _firstNameCtrl.text.trim().length >= 2 &&
             _lastNameCtrl.text.trim().length >= 2 &&
+            _dob != null &&
+            (_driverAge ?? 0) >= _minDriverAge &&
             _emailRe.hasMatch(_emailCtrl.text.trim()) &&
             _phoneCtrl.text.replaceAll(_nonDigitRe, '').length >= 10 &&
             _passwordCtrl.text.length >= 8 &&
@@ -371,7 +417,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _biometricDone &&
             _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
       case 3:
-        return _agreedTerms;
+        return _agreedTerms && _agreedContractor;
       default:
         return false;
     }
@@ -789,6 +835,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         phone: phone.isNotEmpty ? phone : null,
         password: _passwordCtrl.text,
         role: 'driver',
+        dateOfBirth: _dobIso,
       );
 
       final user = result['user'] as Map<String, dynamic>;
@@ -805,6 +852,29 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         role: 'driver',
       );
       await UserSession.saveMode('driver');
+
+      // Record written acceptances (timestamp + version + IP server-side).
+      // The contractor agreement acceptance is the § 627.748(9)(d) evidence.
+      // Non-blocking: a logging failure must not abort registration.
+      try {
+        await ApiService.recordConsent(
+          consentType: 'independent_contractor_agreement',
+          action: 'accepted',
+          version: kDriverAgreementVersion,
+        );
+        await ApiService.recordConsent(
+          consentType: 'terms',
+          action: 'accepted',
+          version: '2026-07-26',
+        );
+        await ApiService.recordConsent(
+          consentType: 'privacy',
+          action: 'accepted',
+          version: '2026-07-26',
+        );
+      } catch (e) {
+        debugPrint('⚠️ Consent log failed (non-blocking): $e');
+      }
 
       try {
         await ApiService.saveVehicle(
@@ -850,7 +920,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Future<void> _uploadDocuments() async {
-    final body = <String, dynamic>{'id_document_type': 'driver_license'};
+    final body = <String, dynamic>{
+      'id_document_type': 'driver_license',
+      'dob': _dobIso,
+    };
 
     // Include SSN
     final ssnDigits = _ssnCtrl.text.replaceAll(_nonDigitRe, '');
@@ -875,7 +948,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
     // Initiate background check after document submission
     try {
-      await ApiService.initiateBackgroundCheck();
+      await ApiService.initiateBackgroundCheck(dob: _dobIso);
     } catch (_) {
       // Background check is non-blocking — driver can proceed
     }
@@ -1044,6 +1117,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ],
           ),
           const SizedBox(height: 16),
+          _buildDobPicker(),
+          const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,
             label: S.of(context).emailAddressLabel,
@@ -1149,6 +1224,72 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 40),
         ],
       ),
+    );
+  }
+
+  /// Date-of-birth picker tile (Step 0). Shows the 21+ requirement and an
+  /// inline error when the selected date makes the driver underage.
+  Widget _buildDobPicker() {
+    final dob = _dob;
+    final tooYoung = dob != null && (_driverAge ?? 0) < _minDriverAge;
+    final label = dob == null
+        ? S.of(context).dateOfBirth
+        : '${dob.month.toString().padLeft(2, '0')}/${dob.day.toString().padLeft(2, '0')}/${dob.year}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _pickDob,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: tooYoung ? Colors.redAccent : Colors.white12,
+                width: tooYoung ? 1.5 : 1.0,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.cake_outlined,
+                  color: tooYoung ? Colors.redAccent : _gold,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: dob == null ? Colors.white38 : Colors.white,
+                      fontSize: dob == null ? 14 : 16,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.calendar_today_outlined,
+                    color: Colors.white38, size: 18),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8, left: 4),
+          child: Text(
+            tooYoung
+                ? S.of(context).driverAgeTooYoung
+                : S.of(context).driverAgeRequirement,
+            style: TextStyle(
+              color: tooYoung
+                  ? Colors.redAccent
+                  : Colors.white.withValues(alpha: 0.45),
+              fontSize: 12,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1699,6 +1840,66 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Independent Contractor Agreement (separate written
+          // acceptance — Fla. Stat. § 627.748(9)(d)) ──
+          GestureDetector(
+            onTap: () => setState(() => _agreedContractor = !_agreedContractor),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: _agreedContractor ? _gold : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _agreedContractor ? _gold : Colors.white24,
+                      width: 2,
+                    ),
+                  ),
+                  child: _agreedContractor
+                      ? const Icon(Icons.check, size: 16, color: Colors.black)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    S.of(context).agreeContractorText,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 34),
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                slideFromRightRoute(const DriverAgreementScreen()),
+              ),
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                S.of(context).readContractorAgreement,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: _gold,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 20),

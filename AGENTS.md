@@ -30,7 +30,7 @@
 - `backend/models/database.py` without a migration plan
 - `backend/utils/security.py` without regression tests
 - `backend/migrations/*.py` that have already run in production
-- `docs/privacy_policy.md`, `docs/terms_of_service.md` (legal documents)
+- `docs/privacy_policy.md`, `docs/rider_terms_of_service.md`, `docs/driver_terms_of_service.md`, `docs/driver_agreement.md` (legal documents); `docs/archive/terms_of_service_alabama_legacy.md` is the superseded Alabama ToS — do not restore or reference it
 - `.github/copilot-instructions.md`, `.github/agents/*.md`, `.github/workflows/*.yml`
 
 ### Always do this

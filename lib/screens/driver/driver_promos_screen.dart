@@ -92,13 +92,13 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         targetCount: 5,
         expiresAt: now.add(const Duration(hours: 4)),
         details:
-            'Accept and complete 5 consecutive trip requests without declining or letting any expire. '
+            'Complete 5 trips to earn a \$5 bonus. '
             'The bonus is added to your earnings after the 5th trip is completed. '
-            'Canceling or declining a trip resets your progress.',
+            'Declining an offer never counts against you — only completed trips move the counter.',
         tips: [
-          'Stay in high-demand areas to get quick consecutive requests',
-          'Keep your acceptance rate high for maximum bonuses',
-          'Timer resets if you go offline between trips',
+          'Stay in high-demand areas to get back-to-back requests',
+          'You are always free to decline any offer without penalty',
+          'Take breaks anytime — going offline does not affect your progress',
         ],
       ),
       _Promo(
@@ -159,8 +159,9 @@ class _DriverPromosScreenState extends State<DriverPromosScreen>
         targetCount: 20,
         startsAt: _nextWeekend(now),
         details:
-            'Drive all weekend long! Complete 20 or more trips between Friday 6 PM and Sunday midnight '
-            'to earn a 10% bonus on your total weekend earnings. The bonus is paid out on Monday.',
+            'Weekends bring the highest rider demand. Trips you complete between Friday evening '
+            'and Sunday night — whenever you choose to drive — count toward a 10% bonus on your '
+            'total weekend earnings. The bonus is paid out on Monday.',
         tips: [
           'Start early Friday evening for a head start',
           'Saturday afternoon shopping areas are great for quick rides',

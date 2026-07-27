@@ -286,11 +286,11 @@ async def run():
 
         # Default service area
         try:
-            cur = await conn.execute("SELECT id FROM service_areas WHERE area_name = %s LIMIT 1", ("Birmingham Metro",))
+            cur = await conn.execute("SELECT id FROM service_areas WHERE area_name = %s LIMIT 1", ("Florida",))
             if not await cur.fetchone():
                 await conn.execute(
                     "INSERT INTO service_areas (area_name, center_lat, center_lng, radius_km) VALUES (%s, %s, %s, %s)",
-                    ("Birmingham Metro", 33.5186, -86.8104, 50.0)
+                    ("Florida", 28.0, -82.4, 600.0)
                 )
                 log.info("  ok: default service area created")
         except Exception as e:

@@ -2615,9 +2615,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ),
                   IconButton(
                     onPressed: () async {
-                      if (_riderPhone.isNotEmpty) {
-                        final uri = Uri(scheme: 'tel', path: _riderPhone);
-                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      final tid = _tripId;
+                      if (tid != null) {
+                        await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
                       }
                     },
                     icon: const Icon(Icons.phone, color: _gold, size: 22),
@@ -2788,9 +2788,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
               _actionBtn(Icons.phone_rounded, () async {
-                if (_riderPhone.isNotEmpty) {
-                  final uri = Uri(scheme: 'tel', path: _riderPhone);
-                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                final tid = _tripId;
+                if (tid != null) {
+                  await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
                 }
               }),
               const SizedBox(width: 8),
@@ -2801,7 +2801,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     Navigator.of(context, rootNavigator: true).push(
                       slideFromRightRoute(ChatScreen(
                         recipientName: _riderName,
-                        recipientPhone: _riderPhone,
                         tripId: _tripId,
                         currentUserId: _driverId?.toString(),
                         currentRole: 'driver',
@@ -2998,9 +2997,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ),
                   IconButton(
                     onPressed: () async {
-                      if (_riderPhone.isNotEmpty) {
-                        final uri = Uri(scheme: 'tel', path: _riderPhone);
-                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      final tid = _tripId;
+                      if (tid != null) {
+                        await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
                       }
                     },
                     icon: const Icon(

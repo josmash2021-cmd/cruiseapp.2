@@ -22,7 +22,7 @@ headers = {
 resp = requests.post('https://cruiseapp2-production.up.railway.app/auth/register', json={
     'first_name': 'Apple',
     'last_name': 'Review Driver',
-    'email': 'applereviewdriver@cruiseride.com',
+    'email': 'applereviewdriver@cruiseinride.com',
     'phone': '+15550001235',
     'password': 'CruiseDemo2026!',
     'role': 'driver',

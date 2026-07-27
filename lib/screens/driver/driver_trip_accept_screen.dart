@@ -35,6 +35,7 @@ import '../../services/user_session.dart';
 import '../home_screen.dart';
 import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
+import '../../services/masked_call_service.dart';
 import '../../services/complimentary_drink_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -203,6 +204,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // sit on the FINISH RIDE screen forever after dispatch cancels/completes.
   Timer? _statusPollTimer;
   bool _isPollingTripStatus = false; // prevents overlapping in-flight requests
+
+  // ── Driver pre-pickup cancel (POST /trips/{id}/driver-cancel) ──
+  bool _driverCancelling = false;
+  LatLng? _lastDriverPos; // latest live GPS fix, for the cancel audit trail
 
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
@@ -450,6 +455,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ),
     ).listen((pos) {
       if (!mounted) return;
+      _lastDriverPos = LatLng(pos.latitude, pos.longitude);
       _gpsService.updatePosition(
         LatLng(pos.latitude, pos.longitude),
         pos.heading,
@@ -716,9 +722,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
       // Detect external cancellation (dispatch cancelled the trip, or
       // guardian ghost cleanup fired, or an auto-cancel reason landed).
-      // The driver can no longer cancel directly — any cancel here is
-      // remote. Pop back to the online controller which will show a
-      // gold toast and reset to searching.
+      // Driver-initiated cancels go through _performDriverCancel; any
+      // cancel arriving here is remote. Pop back to the online controller
+      // which will show a gold toast and reset to searching.
       if (!_tripFinished &&
           (status == 'cancelled' || status == 'canceled')) {
         // Re-check mounted: this listener is async-firing and the
@@ -1079,22 +1085,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Phone / Message ───────────────────────────────────────────────────────
   Future<void> _call() async {
-    String phone = widget.riderPhone.trim();
-    if (phone.isEmpty) {
-      try {
-        final snap = await FirebaseFirestore.instance
-            .collection('trips')
-            .doc(_fsDocId)
-            .get();
-        final data = snap.data();
-        phone = (data?['rider_phone'] ?? data?['passengerPhone'] ?? '').toString().trim();
-      } catch (_) {}
-    }
-    if (phone.isEmpty) return;
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
+    // Masked call via the Twilio bridge — the rider's real number is never
+    // exposed to the driver (nor the driver's to the rider).
+    await MaskedCallService.callCounterparty(tripId: widget.tripId, role: 'driver');
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1310,7 +1303,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     Navigator.of(context).push(
       slideFromRightRoute(ChatScreen(
         recipientName: widget.riderName,
-        recipientPhone: widget.riderPhone.isNotEmpty ? widget.riderPhone : null,
         tripId: widget.tripId,
         currentRole: 'driver',
         currentUserId: driverId?.toString(),
@@ -1704,6 +1696,248 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         backgroundColor: Colors.red,
       ));
     }
+  }
+
+  // ── Driver pre-pickup cancel ───────────────────────────────────────────
+  // Only reachable while `!_rideStarted` (en route to pickup / arrived but
+  // rider not aboard). Once the trip is in_trip the backend rejects direct
+  // cancels with 409 and the driver must use the end-ride flow.
+
+  /// Bottom sheet with the MANDATORY reason picker. The labels are
+  /// localized; the machine strings are what the API expects.
+  void _showDriverCancelSheet() {
+    if (_driverCancelling || _rideStarted || _tripFinished) return;
+    HapticService.mediumImpact();
+    final s = S.of(context);
+    // (icon, localized label, machine reason for the API)
+    final reasons = <(IconData, String, String)>[
+      (Icons.directions_car_rounded, s.driverCancelReasonVehicleIssue, 'vehicle_issue'),
+      (Icons.person_off_rounded, s.driverCancelReasonRiderUnreachable, 'rider_unreachable'),
+      (Icons.shield_rounded, s.driverCancelReasonSafety, 'safety'),
+      (Icons.wrong_location_rounded, s.driverCancelReasonWrongPickup, 'wrong_pickup'),
+      (Icons.emergency_rounded, s.emergency, 'emergency'),
+      (Icons.more_horiz_rounded, s.otherLabel, 'other'),
+    ];
+    final bot = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              const Icon(Icons.cancel_outlined,
+                  color: Color(0xFFEF4444), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(s.driverCancelReasonTitle,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 17,
+                      fontWeight: FontWeight.w800)),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            ...reasons.map((r) => _driverCancelOption(ctx, r)),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(s.cancelBtn,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.42),
+                      fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _driverCancelOption(BuildContext ctx, (IconData, String, String) reason) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(ctx);
+        _confirmDriverCancel(reason.$3);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0d0d1a),
+          borderRadius: BorderRadius.circular(12),
+          border: const Border(left: BorderSide(color: Color(0xFFc8a951), width: 2)),
+        ),
+        child: Row(children: [
+          Icon(reason.$1, color: Colors.white70, size: 18),
+          const SizedBox(width: 12),
+          Expanded(child: Text(reason.$2,
+            style: const TextStyle(color: Colors.white, fontSize: 14,
+                fontWeight: FontWeight.w700))),
+          const Icon(Icons.chevron_right_rounded,
+              color: Color(0xFFc8a951), size: 20),
+        ]),
+      ),
+    );
+  }
+
+  /// Explicit confirmation before the cancel request is sent.
+  void _confirmDriverCancel(String reason) {
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(s.driverCancelConfirmTitle,
+          style: const TextStyle(color: Colors.white,
+              fontWeight: FontWeight.w800, fontSize: 17)),
+        content: Text(s.driverCancelConfirmBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 14, height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(s.cancelBtn,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _performDriverCancel(reason);
+            },
+            child: Text(s.driverCancelConfirmButton,
+              style: const TextStyle(color: Colors.white,
+                  fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Calls POST /trips/{id}/driver-cancel. On success the trip returns to
+  /// "requested" and the backend rematches another driver, so the driver
+  /// exits via the SAME return-to-online path the external-cancellation
+  /// handler uses (Firestore listener / status poll above).
+  Future<void> _performDriverCancel(String reason) async {
+    if (_driverCancelling || !mounted) return;
+    setState(() => _driverCancelling = true);
+    try {
+      final pos = _lastDriverPos ?? widget.driverPos;
+      await ApiService.driverCancelTrip(
+        tripId: widget.tripId,
+        reason: reason,
+        lat: pos.latitude,
+        lng: pos.longitude,
+      );
+      if (!mounted) return;
+      debugPrint('[Driver] Trip cancelled by driver (reason=$reason) → returning to online');
+      _tripFinished = true;
+      _riderConfirmSub?.cancel();
+      _statusPollTimer?.cancel();
+      try {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 400),
+          ),
+          (route) => route.isFirst, // keep only the very first route (usually home)
+        );
+      } catch (e) {
+        debugPrint('[Driver] driver-cancel-navigate failed: $e');
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 409) {
+        // Rider already aboard → direct cancel no longer allowed.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).driverCancelRiderAboard),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${S.of(context).driverCancelFailed}: ${e.message}'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${S.of(context).driverCancelFailed}: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _driverCancelling = false);
+    }
+  }
+
+  /// Cancel affordance — pre-pickup only (hidden once the ride started).
+  Widget _buildDriverCancelButton() {
+    return GestureDetector(
+      onTap: _driverCancelling ? null : _showDriverCancelSheet,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_driverCancelling)
+              const SizedBox(
+                width: 14, height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFFEF4444)),
+              )
+            else
+              Icon(Icons.cancel_outlined,
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.85),
+                  size: 16),
+            const SizedBox(width: 6),
+            Text(
+              _driverCancelling
+                  ? S.of(context).driverCancellingLabel
+                  : S.of(context).cancelTrip,
+              style: TextStyle(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.85),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSheet({
@@ -2724,11 +2958,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             if (!_tripFinished)
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), bot + 18),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: _buildCurrentPhaseWidget(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 350),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    child: _buildCurrentPhaseWidget(),
+                  ),
+                  // Cancel trip — pre-pickup only; never while in_trip.
+                  if (!_rideStarted) ...[
+                    const SizedBox(height: 8),
+                    _buildDriverCancelButton(),
+                  ],
+                ],
               ),
             ),
           ],

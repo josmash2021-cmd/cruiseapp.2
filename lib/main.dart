@@ -368,13 +368,11 @@ void _navigateToChat(int tripId) {
 
   ApiService.getTrip(tripId).then((trip) {
     final driverName = (trip['driver_name'] ?? 'Driver').toString();
-    final driverPhone = (trip['driver_phone'] ?? '').toString();
     final driverPhoto = trip['driver_photo_url']?.toString();
 
     nav.push(MaterialPageRoute(
       builder: (_) => ChatScreen(
         recipientName: driverName,
-        recipientPhone: driverPhone.isNotEmpty ? driverPhone : null,
         tripId: tripId,
         avatarInitial: driverName.isNotEmpty ? driverName[0] : 'D',
       ),

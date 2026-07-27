@@ -6,7 +6,7 @@ import math
 import os
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
 
@@ -313,3 +313,53 @@ def _support_msg_dict(m, sender_name=""):
         "is_read": m.is_read,
         "created_at": m.created_at.isoformat() if m.created_at else None,
     }
+
+
+# ═══════════════════════════════════════════════════════
+#  Driver minimum-age validation (21+) / Edad mínima de conductor
+# ═══════════════════════════════════════════════════════
+
+MIN_DRIVER_AGE = 21
+
+
+def parse_date_of_birth(value) -> date:
+    """Parse a date of birth given as 'YYYY-MM-DD' (str) or date/datetime.
+
+    Raises ValueError with a clear message on missing/invalid input.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not value or not isinstance(value, str):
+        raise ValueError("Date of birth is required")
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("Invalid date of birth — expected format YYYY-MM-DD")
+
+
+def compute_age(dob: date, today: date | None = None) -> int:
+    """Return the age in full years at `today` (defaults to the current UTC date)."""
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    years = today.year - dob.year
+    if (today.month, today.day) < (dob.month, dob.day):
+        years -= 1
+    return years
+
+
+def validate_driver_minimum_age(value, minimum_age: int = MIN_DRIVER_AGE) -> date:
+    """Parse a DOB and ensure the person is at least `minimum_age` years old.
+
+    Returns the parsed date. Raises ValueError with a clear message otherwise.
+    """
+    dob = parse_date_of_birth(value)
+    age = compute_age(dob)
+    if age < 0:
+        raise ValueError("Date of birth cannot be in the future")
+    if age < minimum_age:
+        raise ValueError(
+            f"Drivers must be at least {minimum_age} years old to drive with Cruise"
+        )
+    return dob

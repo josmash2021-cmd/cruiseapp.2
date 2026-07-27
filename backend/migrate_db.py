@@ -156,12 +156,12 @@ def migrate():
         """)
         print("  [OK] Created: service_areas")
         
-        # Create default service area (Birmingham, AL)
+        # Create default service area (Florida — statewide; refine per launch market)
         cursor.execute("""
             INSERT OR IGNORE INTO service_areas (area_name, center_lat, center_lng, radius_km)
-            VALUES ('Birmingham Metro', 33.5186, -86.8104, 50.0)
+            VALUES ('Florida', 28.0, -82.4, 600.0)
         """)
-        print("  [OK] Created default service area: Birmingham Metro")
+        print("  [OK] Created default service area: Florida")
         
         conn.commit()
         print("\n" + "=" * 60)

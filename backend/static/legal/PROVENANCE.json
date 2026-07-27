@@ -1,0 +1,25 @@
+{
+  "document": "A Summary of Your Rights Under the Fair Credit Reporting Act",
+  "issuer": "Consumer Financial Protection Bureau (CFPB)",
+  "model_form_version": "2023-03",
+  "publication_date": "2023-03-17",
+  "federal_register_rule": "Agency Contact Information final rule, published 2023-03-20",
+  "mandatory_compliance_date": "2024-03-20",
+  "downloaded_at_utc": "2026-07-27T22:10:55Z",
+  "files": {
+    "en": {
+      "path": "cfpb_summary_of_rights_en_2023-03.pdf",
+      "official_url": "https://files.consumerfinance.gov/f/documents/bcfp_consumer-rights-summary_2018-09.pdf",
+      "official_url_note": "CFPB serves the March 2023 corrected model form at this legacy-named URL; PDF metadata title is 'Summary of Consumer Rights Model Form (Mar. 2023)'",
+      "sha256": "16ab600dd7cf88251dbc3ddb03fb4b1e2d2d429d43e1409124a37a32c8f85a45",
+      "pages": 4
+    },
+    "es": {
+      "path": "cfpb_summary_of_rights_es_2023-03.pdf",
+      "official_url": "https://files.consumerfinance.gov/f/documents/bcfp_consumer-rights-summary_2018-09_es.pdf",
+      "official_url_note": "PDF metadata title is 'Un resumen de sus derechos en virtud de la Ley de Informe Justo de Crédito (Mar. 2023)'",
+      "sha256": "aa4263c8d0406c6ad23582b3e862c06018fb5731e284bcd9f0954f16fc6ec05c",
+      "pages": 4
+    }
+  }
+}

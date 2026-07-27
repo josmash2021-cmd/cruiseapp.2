@@ -23,6 +23,8 @@ class RegisterIn(BaseModel):
     password: str
     photo_url: Optional[str] = None
     role: str = "rider"
+    # YYYY-MM-DD. Required (and 21+) for drivers; optional for riders.
+    date_of_birth: Optional[str] = None
 
     @field_validator('first_name', 'last_name')
     @classmethod
@@ -57,6 +59,16 @@ class RegisterIn(BaseModel):
         if not _re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
             raise ValueError('Password must contain at least one special character')
         return v
+
+    @model_validator(mode='after')
+    def validate_driver_age(self):
+        """Drivers must provide a date of birth and be at least 21 years old."""
+        if self.role == 'driver':
+            if not self.date_of_birth:
+                raise ValueError('Date of birth is required for driver registration')
+            from utils.helpers import validate_driver_minimum_age
+            validate_driver_minimum_age(self.date_of_birth)
+        return self
 
 
 class CheckExistsIn(BaseModel):
@@ -273,3 +285,15 @@ class VehicleIn(BaseModel):
     color: Optional[str] = None
     plate: Optional[str] = None
     vin: Optional[str] = None
+class ZeroToleranceReportIn(BaseModel):
+    """Rider intake for a zero-tolerance (drug/alcohol) complaint."""
+    driver_id: Optional[int] = None  # derived from trip_id when omitted
+    trip_id: Optional[int] = None
+    category: str = "impairment"
+    description: Optional[str] = None
+
+
+class ZeroToleranceResolveIn(BaseModel):
+    action: str  # "restore" | "deactivate"
+    notes: Optional[str] = None
+    resolved_by: Optional[str] = None

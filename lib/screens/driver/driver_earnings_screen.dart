@@ -174,12 +174,18 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       _transactions = rawTx is List
         ? rawTx
           .whereType<Map>()
-          .map((e) => <String, dynamic>{
-            'type': _toStr(e['type'], fallback: 'trip'),
-            'desc': _toStr(e['desc'], fallback: 'Trip'),
-            'time': _toStr(e['time'], fallback: 'Now'),
-            'amount': _toDouble(e['amount']),
-            })
+          .map((e) {
+            final txType = _toStr(e['type'], fallback: 'trip');
+            return <String, dynamic>{
+            'type': txType,
+            'desc': _toStr(e['desc'],
+              fallback: txType == 'cancellation_fee'
+                ? 'Cancellation fee'
+                : _toStr(e['dropoff'], fallback: 'Trip')),
+            'time': _toStr(e['time'], fallback: _toStr(e['date'], fallback: 'Now')),
+            'amount': _toDouble(e['amount'] ?? e['fare']),
+            };
+          })
           .toList()
         : [];
       _loading = false;
@@ -863,6 +869,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     IconData icon;
     Color iconColor;
     switch (type) {
+      case 'cancellation_fee':
+        icon = Icons.cancel_rounded;
+        iconColor = const Color(0xFFFF8A80);
+        break;
       case 'bonus':
         icon = Icons.bolt_rounded;
         iconColor = const Color(0xFFF5D990);

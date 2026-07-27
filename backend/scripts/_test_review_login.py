@@ -17,10 +17,10 @@ PASSWORD = os.environ.get("REVIEW_DEMO_PASSWORD")
 if not PASSWORD:
     raise SystemExit("Set REVIEW_DEMO_PASSWORD env var first")
 ACCOUNTS = [
-    ("applereview@cruiseride.com", "rider"),
     ("applereview@cruiseinride.com", "rider"),
-    ("appledriver@cruiseride.com", "driver"),
-    ("applereviewdriver@cruiseride.com", "driver"),
+    ("applereview@cruiseinride.com", "rider"),
+    ("appledriver@cruiseinride.com", "driver"),
+    ("applereviewdriver@cruiseinride.com", "driver"),
     ("applereviewdriver@cruiseinride.com", "driver"),
 ]
 

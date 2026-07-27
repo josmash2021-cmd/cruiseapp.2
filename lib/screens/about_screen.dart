@@ -284,7 +284,7 @@ class _AboutScreenState extends State<AboutScreen> {
         ? _kAppStoreUrl
         : 'https://cruiseinride.com';
     final text = S.of(context).shareAppText.replaceAll(
-      'https://cruiseride.com/download',
+      'https://cruiseinride.com/download',
       storeUrl,
     );
     await Share.share(text);

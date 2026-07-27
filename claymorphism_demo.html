@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Panel Claymorphism — Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+
+  body {
+    background: #d8e2f3;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+  }
+
+  /* Claymorphism:
+     - bordes MUY redondeados (look "arcilla/plastilina")
+     - sombra exterior grande, suave y difuminada
+     - luz interna (inset) clara arriba + sombra interna oscura abajo
+       → da volumen 3D tipo globo de plastilina */
+  .panel {
+    background: #f2f6ff;
+    border-radius: 40px;
+    padding: 40px;
+    width: 420px;
+    box-shadow: 0 25px 50px rgba(120, 140, 190, 0.35),
+                inset 2px 2px 6px rgba(255, 255, 255, 0.9),
+                inset -6px -6px 14px rgba(120, 140, 190, 0.18);
+  }
+
+  .panel h1 {
+    color: #44507a;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .panel p.sub {
+    color: #8b96b8;
+    font-size: 13px;
+    margin-bottom: 30px;
+  }
+
+  .stats { display: flex; gap: 18px; margin-bottom: 30px; }
+
+  .stat {
+    flex: 1;
+    background: #ffffff;
+    border-radius: 26px;
+    padding: 18px;
+    text-align: center;
+    box-shadow: 0 12px 24px rgba(120, 140, 190, 0.28),
+                inset 2px 2px 5px rgba(255, 255, 255, 1),
+                inset -4px -4px 10px rgba(120, 140, 190, 0.15);
+  }
+
+  .stat .num { color: #44507a; font-size: 24px; font-weight: 800; }
+  .stat .lbl { color: #8b96b8; font-size: 11px; margin-top: 4px; }
+
+  .field { margin-bottom: 24px; }
+
+  .field label {
+    display: block;
+    color: #6b7686;
+    font-size: 12px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .field input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: #e8eefb;
+    border-radius: 20px;
+    padding: 15px 20px;
+    font-size: 14px;
+    color: #44507a;
+    box-shadow: inset 3px 3px 8px rgba(120, 140, 190, 0.25),
+                inset -3px -3px 8px rgba(255, 255, 255, 0.9);
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .row span { color: #6b7686; font-size: 14px; font-weight: 600; }
+
+  .toggle {
+    width: 64px;
+    height: 36px;
+    border-radius: 18px;
+    background: #e8eefb;
+    box-shadow: inset 3px 3px 8px rgba(120, 140, 190, 0.3),
+                inset -3px -3px 8px rgba(255, 255, 255, 0.9);
+    position: relative;
+    cursor: pointer;
+    transition: background .2s;
+  }
+
+  .toggle .knob {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 6px 12px rgba(120, 140, 190, 0.4),
+                inset 1px 1px 3px rgba(255,255,255,1),
+                inset -2px -2px 5px rgba(120,140,190,0.2);
+    transition: left .2s, background .2s;
+  }
+
+  .toggle.on { background: #a5c1ff; }
+  .toggle.on .knob { left: 33px; background: #5b8de8; }
+
+  .slider {
+    width: 100%;
+    height: 16px;
+    border-radius: 10px;
+    background: #e8eefb;
+    box-shadow: inset 3px 3px 8px rgba(120, 140, 190, 0.3),
+                inset -3px -3px 8px rgba(255, 255, 255, 0.9);
+    margin-bottom: 30px;
+    position: relative;
+  }
+
+  .slider .fill {
+    position: absolute;
+    left: 0; top: 0;
+    height: 100%;
+    width: 65%;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #7ba7ff, #a5c1ff);
+    box-shadow: inset 1px 1px 3px rgba(255,255,255,0.6),
+                inset -2px -2px 4px rgba(91,141,232,0.4);
+  }
+
+  .slider .thumb {
+    position: absolute;
+    left: 65%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 8px 16px rgba(120, 140, 190, 0.45),
+                inset 2px 2px 4px rgba(255,255,255,1),
+                inset -3px -3px 6px rgba(120,140,190,0.2);
+  }
+
+  .buttons { display: flex; gap: 16px; }
+
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 22px;
+    padding: 16px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #ffffff;
+    color: #5b8de8;
+    box-shadow: 0 10px 20px rgba(120, 140, 190, 0.3),
+                inset 2px 2px 5px rgba(255,255,255,1),
+                inset -4px -4px 8px rgba(120,140,190,0.15);
+    transition: transform .1s, box-shadow .1s;
+  }
+
+  .btn:active {
+    transform: scale(0.96);
+    box-shadow: 0 4px 10px rgba(120, 140, 190, 0.3),
+                inset 3px 3px 8px rgba(120,140,190,0.25);
+  }
+
+  .btn.primary {
+    background: linear-gradient(145deg, #7ba7ff, #5b8de8);
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(91, 141, 232, 0.45),
+                inset 2px 2px 6px rgba(255,255,255,0.5),
+                inset -4px -4px 8px rgba(60, 100, 190, 0.4);
+  }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <h1>Panel de Control</h1>
+  <p class="sub">Ejemplo de diseño claymorphism (arcilla / soft 3D)</p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="num">128</div>
+      <div class="lbl">VIAJES</div>
+    </div>
+    <div class="stat">
+      <div class="num">4.9</div>
+      <div class="lbl">RATING</div>
+    </div>
+    <div class="stat">
+      <div class="num">$842</div>
+      <div class="lbl">SEMANA</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Buscar destino</label>
+    <input type="text" placeholder="Aeropuerto, hotel, dirección...">
+  </div>
+
+  <div class="row">
+    <span>Modo en línea</span>
+    <div class="toggle on" onclick="this.classList.toggle('on')">
+      <div class="knob"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <span>Radio de búsqueda</span>
+    <span style="color:#5b8de8;font-weight:700">6.5 km</span>
+  </div>
+
+  <div class="slider">
+    <div class="fill"></div>
+    <div class="thumb"></div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn">Cancelar</button>
+    <button class="btn primary">Aceptar viaje</button>
+  </div>
+</div>
+
+</body>
+</html>

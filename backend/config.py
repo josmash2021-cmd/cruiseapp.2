@@ -14,6 +14,10 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 TWILIO_SERVICE_SID = os.getenv("TWILIO_SERVICE_SID", "")
+# Dedicated Twilio number for masked rider<->driver calls (voice webhook ->
+# POST /voice/bridge). Falls back to TWILIO_PHONE_NUMBER when unset; see
+# routers/masked_calls.py docstring for the console configuration required.
+TWILIO_PROXY_PHONE_NUMBER = os.getenv("TWILIO_PROXY_PHONE_NUMBER", "")
 
 # ── Claude AI ──
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

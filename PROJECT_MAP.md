@@ -50,7 +50,9 @@
 | Archivo | Estado | Descripción |
 |---------|--------|-------------|
 | `docs/privacy_policy.md` | 🔴 CRÍTICO — LEGAL | Política de privacidad (GDPR, CCPA, LGPD). Requerido por stores. Cambios requieren revisión legal. |
-| `docs/terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio. Requerido por stores. |
+| `docs/rider_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del rider (Royal Purple LLC, Florida). Requerido por stores. |
+| `docs/driver_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del driver (Royal Purple LLC, Florida). |
+| `docs/archive/terms_of_service_alabama_legacy.md` | 🔴 ARCHIVADO | ToS legado de Alabama (Cruiseinride LLC). Superseded — no usar ni referenciar. |
 | `docs/GAME_NAVIGATION.md` | 🟢 EDITABLE | Sistema de navegación estilo videojuego (isométrico 3D, glow routes). |
 | `docs/INFRASTRUCTURE_MIGRATION_PLAN.md` | 🟢 EDITABLE | Plan de migración de región PostgreSQL. |
 | `docs/NETWORK_CONFIG.md` | 🟢 EDITABLE | Config de red para funcionar desde cualquier red. |
@@ -191,6 +193,7 @@
 | `backend/tests/test_support_chat.py` | 🟢 EDITABLE | Tests de chat AI. |
 | `backend/tests/test_upload.py` | 🟢 EDITABLE | Tests de uploads. |
 | `backend/tests/test_checkr_service.py` / `test_checkr_webhooks.py` | 🟢 EDITABLE | Tests de background checks. |
+| `backend/tests/test_background_recheck.py` / `test_document_acceptance.py` | 🟢 EDITABLE | Tests de re-check periódico (3 años) y registro de aceptación de documentos. |
 
 ### Agentes Autónomos (`backend/`)
 
@@ -201,6 +204,7 @@
 | `backend/ghost_driver_agent.py` | 🟡 CUIDADO | Detección de GPS falso. |
 | `backend/safety_monitor_agent.py` | 🟡 CUIDADO | Incidentes, SOS. |
 | `backend/document_expiry_agent.py` | 🟢 EDITABLE | Expiración de documentos. |
+| `backend/background_recheck_agent.py` | 🟢 EDITABLE | Re-check de antecedentes cada 3 años (Checkr), suspensión tras grace period. |
 | `backend/document_approval_agent.py` | 🟢 EDITABLE | Aprobación de documentos. |
 | `backend/rating_moderator_agent.py` | 🟢 EDITABLE | Moderación de ratings. |
 | `backend/cruise_level_agent.py` | 🟢 EDITABLE | Niveles de conductor. |

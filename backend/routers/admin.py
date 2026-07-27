@@ -24,10 +24,11 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _haversine, _resolve_rider_display, _safe_create_task,
+    _abs_photo_url,
 )
 from utils.ssn_encryption import is_ssn_provided
 from services.fcm_service import _send_fcm_push_async
-from services.socketio_service import notify_user
+from services.socketio_service import notify_user, emit_trip_status
 from config import (
     PUBLIC_URL, UPLOADS_DIR,
     firestore_sync, _HAS_FIRESTORE,
@@ -504,69 +505,28 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
     driver = driver_r.scalar_one_or_none()
     if not driver or driver.role != "driver":
         raise HTTPException(404, "Driver not found")
-    trip.driver_id = driver_id
-    trip.status = "accepted"
-    await db.commit()
-    await db.refresh(trip)
-    if _HAS_FIRESTORE:
-        try:
-            rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_r.scalar_one_or_none()
-            firestore_sync.sync_trip(
-                trip_id=trip.id, rider_id=trip.rider_id,
-                rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
-                rider_phone=rider.phone or "" if rider else "",
-                pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
-                dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
-                status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
-                created_at=trip.created_at, scheduled_at=trip.scheduled_at,
-                driver_id=driver.id,
-                driver_name=f"{driver.first_name} {driver.last_name}",
-                driver_phone=driver.phone or "",
-                pickup_zone=trip.pickup_zone, notes=trip.notes,
-            )
-        except Exception as e:
-            logging.warning("Firestore accept sync failed: %s", e)
-    # Socket.io: notify rider that driver was assigned (real-time update)
-    try:
-        _safe_create_task(notify_driver_assigned(
-            trip_id=trip.id,
-            driver_id=driver_id,
-            driver_info={
-                "driver_name": f"{driver.first_name or ''} {driver.last_name or ''}".strip() or "Your driver",
-                "driver_phone": driver.phone or "",
-                "status": "accepted",
-            },
-        ))
-    except Exception as _socket_err:
-        logging.warning("[Socket.io] driver_assigned emit failed on admin accept: %s", _socket_err)
 
-    # SSE: push update for riders on SSE channel
-    try:
-        from services.event_bus import event_bus as _ev_bus
-        _safe_create_task(_ev_bus.push_trip_update(trip.id, {
-            "status": "accepted",
-            "trip_id": trip.id,
-            "driver_id": driver_id,
-        }))
-    except Exception as _sse_err:
-        logging.warning("[SSE] trip update push failed on admin accept: %s", _sse_err)
+    # Priority OFFER instead of force-accept: the trip is only assigned if
+    # the driver affirmatively accepts (independent-contractor requirement,
+    # Fla. Stat. § 627.748(9) — no unilateral assignment of work).
+    from routers.dispatch import _send_offer_to_driver  # lazy: dispatch imports _pricing_config from this module
+    rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+    rider = rider_r.scalar_one_or_none()
+    rider_name = (f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "") or "Rider"
+    rider_phone = (rider.phone or "") if rider else ""
+    rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
 
-    # Send push notification to rider: "Driver assigned!"
-    try:
-        rider_r2 = await db.execute(select(User).where(User.id == trip.rider_id))
-        rider2 = rider_r2.scalar_one_or_none()
-        if rider2 and rider2.fcm_token:
-            _safe_create_task(_send_fcm_push_async(
-                rider2.fcm_token,
-                "Driver Assigned",
-                f"{driver.first_name} has been assigned to your ride!",
-                data={"type": "driver_assigned", "trip_id": str(trip.id)},
-            ))
-    except Exception as e:
-        logging.warning("FCM push on accept failed: %s", e)
-    _security_audit_log("ADMIN_TRIP_ACCEPTED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
-    return _trip_dict(trip)
+    offer = await _send_offer_to_driver(
+        db, trip, driver, rider_name, rider_phone, rider_photo,
+    )
+    logging.info("[Admin] Priority offer for trip %d sent to driver %d (accept endpoint)", trip_id, driver_id)
+    _security_audit_log("ADMIN_TRIP_OFFERED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
+    return {
+        "status": "offer_sent",
+        "trip_id": trip.id,
+        "driver_id": driver_id,
+        "offer_id": offer.id,
+    }
 
 
 @router.delete("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
@@ -1376,97 +1336,26 @@ async def admin_assign_driver(
         )
         for offer in existing.scalars().all():
             offer.status = "expired"
-        
-        # Create new offer
-        new_offer = DispatchOffer(
-            trip_id=trip_id,
-            driver_id=driver_id,
-            status="pending"
+
+        # Priority OFFER instead of force-assignment: the trip is only
+        # assigned if the driver affirmatively accepts. Unilateral
+        # assignment of work undermines the independent-contractor
+        # classification (Fla. Stat. § 627.748(9)).
+        from routers.dispatch import _send_offer_to_driver  # lazy: dispatch imports _pricing_config from this module
+        rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_res.scalar_one_or_none()
+        rider_name = (f"{rider.first_name or ''} {rider.last_name or ''}".strip() if rider else "") or "Rider"
+        rider_phone = (rider.phone or "") if rider else ""
+        rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+
+        new_offer = await _send_offer_to_driver(
+            db, trip, driver, rider_name, rider_phone, rider_photo,
         )
-        db.add(new_offer)
-        
-        trip.driver_id = driver_id
-        trip.status = "accepted"
-        await db.commit()
-        await db.refresh(trip)
-        
-        logging.info("[Admin] Manually assigned trip %d to driver %d", trip_id, driver_id)
-        
-        # ── Real-time sync: Firestore + Socket.IO + SSE + FCM ──
-        if _HAS_FIRESTORE:
-            try:
-                rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_res.scalar_one_or_none()
-                firestore_sync.sync_trip(
-                    trip_id=trip.id, rider_id=trip.rider_id,
-                    rider_name=f"{rider.first_name} {rider.last_name}" if rider else "Unknown",
-                    rider_phone=rider.phone or "" if rider else "",
-                    pickup_address=trip.pickup_address, pickup_lat=trip.pickup_lat, pickup_lng=trip.pickup_lng,
-                    dropoff_address=trip.dropoff_address, dropoff_lat=trip.dropoff_lat, dropoff_lng=trip.dropoff_lng,
-                    status=trip.status, fare=trip.fare, vehicle_type=trip.vehicle_type,
-                    created_at=trip.created_at, scheduled_at=trip.scheduled_at,
-                    driver_id=driver.id,
-                    driver_name=f"{driver.first_name} {driver.last_name}",
-                    driver_phone=driver.phone or "",
-                    pickup_zone=trip.pickup_zone, notes=trip.notes,
-                )
-            except Exception as e:
-                logging.warning("[Firestore] assign sync failed: %s", e)
-        
-        try:
-            _safe_create_task(emit_trip_status(
-                trip_id=trip.id,
-                status="accepted",
-                extra={"driver_id": driver_id},
-            ))
-        except Exception as _socket_err:
-            logging.warning("[Socket.io] trip_status emit failed on admin assign: %s", _socket_err)
-        
-        try:
-            _safe_create_task(notify_driver_assigned(
-                trip_id=trip.id,
-                driver_id=driver_id,
-                driver_info={
-                    "driver_name": f"{driver.first_name or ''} {driver.last_name or ''}".strip() or "Your driver",
-                    "driver_phone": driver.phone or "",
-                    "status": "accepted",
-                },
-            ))
-        except Exception as _socket_err:
-            logging.warning("[Socket.io] driver_assigned emit failed on admin assign: %s", _socket_err)
-        
-        try:
-            from services.event_bus import event_bus as _ev_bus
-            _safe_create_task(_ev_bus.push_trip_update(trip.id, {
-                "status": "accepted",
-                "trip_id": trip.id,
-                "driver_id": driver_id,
-            }))
-        except Exception as _sse_err:
-            logging.warning("[SSE] trip update push failed on admin assign: %s", _sse_err)
-        
-        try:
-            rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_res.scalar_one_or_none()
-            if rider and rider.fcm_token:
-                _safe_create_task(_send_fcm_push_async(
-                    rider.fcm_token,
-                    "Driver Assigned",
-                    f"{driver.first_name} has been assigned to your ride!",
-                    data={"type": "driver_assigned", "trip_id": str(trip.id)},
-                ))
-            if driver.fcm_token:
-                _safe_create_task(_send_fcm_push_async(
-                    driver.fcm_token,
-                    "New Assignment",
-                    "You have been assigned a new ride. Open the app to accept.",
-                    data={"type": "new_assignment", "trip_id": str(trip.id)},
-                ))
-        except Exception as _fcm_err:
-            logging.warning("[FCM] push failed on admin assign: %s", _fcm_err)
-        
+
+        logging.info("[Admin] Priority offer for trip %d sent to driver %d", trip_id, driver_id)
+        _security_audit_log("ADMIN_TRIP_OFFERED", "admin", f"trip_id={trip_id} driver_id={driver_id}")
         return {
-            "status": "assigned",
+            "status": "offer_sent",
             "trip_id": trip_id,
             "driver_id": driver_id,
             "offer_id": new_offer.id,

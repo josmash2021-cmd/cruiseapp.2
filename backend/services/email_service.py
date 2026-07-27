@@ -31,7 +31,7 @@ BRAND_MUTED = "#8a7e4e"
 BRAND_BORDER = "rgba(232,197,71,.22)"
 
 LOGO_URL = "https://cdn.shopify.com/s/files/1/0805/8640/8191/files/Untitled_design_069defa2-9e36-4d98-831f-f776d4c6f7a5.png?v=1772961171"
-SUPPORT_EMAIL = "support@cruiseinride.com"
+SUPPORT_EMAIL = "support@cruiseapp.com"
 SUPPORT_PHONE = "+1 (205) 555-0100"  # placeholder — update if needed
 
 
@@ -766,7 +766,7 @@ def _build_no_driver(trip, lang: str, refunded: bool) -> tuple[str, str, str]:
             "No charge was processed. Any pending hold will clear automatically in 1-3 days."
         )
         retry_hdr = "Want to try again?"
-        retry_body = ("Our fleet may be busy. We recommend trying again in a few minutes. "
+        retry_body = ("Our drivers may be busy. We recommend trying again in a few minutes. "
                       "You can also schedule your ride in advance to guarantee availability.")
         thanks = "Thank you for your patience. We're here to serve you."
 

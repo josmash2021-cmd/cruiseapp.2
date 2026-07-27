@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,6 +18,7 @@ import 'driver_settings_screen.dart';
 import 'driver_profile_screen.dart';
 import 'driver_info_pages.dart';
 import 'driver_referral_screen.dart';
+import 'driver_terms_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
@@ -402,6 +403,17 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                     () {
                       Navigator.of(context).push(
                         slideFromRightRoute(const DriverDocumentsScreen()),
+                      );
+                    },
+                  ),
+                  _item(
+                    context,
+                    Icons.gavel_rounded,
+                    S.of(context).driverTermsOfServiceMenu,
+                    S.of(context).driverTermsOfServiceMenuSubtitle,
+                    () {
+                      Navigator.of(context).push(
+                        slideFromRightRoute(const DriverTermsScreen()),
                       );
                     },
                   ),
@@ -928,10 +940,10 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               _helpRow(
                 Icons.email_rounded,
                 S.of(context).emailUs,
-                'support@cruiseride.com',
+                'support@cruiseapp.com',
                 () {
                   Navigator.pop(ctx);
-                  launchUrl(Uri.parse('mailto:support@cruiseride.com'));
+                  launchUrl(Uri.parse('mailto:support@cruiseapp.com'));
                 },
               ),
               _helpRow(

@@ -21,7 +21,8 @@ void main() {
       expect(find.text('License State'), findsOneWidget);
     });
 
-    testWidgets('shows consent checkbox', (WidgetTester tester) async {
+    testWidgets('shows dedicated disclosure checkbox label',
+        (WidgetTester tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: BackgroundCheckConsentScreen(),
@@ -29,13 +30,72 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Find consent checkbox
+      // Dedicated FCRA disclosure checkbox (standalone from ToS/privacy)
       expect(find.byType(Checkbox), findsOneWidget);
-      expect(find.textContaining('background check'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'I have received, read, and agree to the Background Check Disclosure and Authorization',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Royal Purple LLC'), findsOneWidget);
     });
 
-    testWidgets('submit button present and starts disabled-looking',
+    testWidgets('shows document links for disclosure and FCRA summary',
         (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: BackgroundCheckConsentScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('View Background Check Disclosure and Authorization'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('View Summary of Your Rights Under the FCRA'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('submit without checking consent shows consent-required snackbar',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: BackgroundCheckConsentScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Fill the form so validation passes and the consent check is reached.
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'First Name'), 'Jane');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Last Name'), 'Doe');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Date of Birth'), '1990-01-01');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'SSN (Last 4 digits)'), '1234');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'License Number'), 'D1234567');
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'License State'), 'FL');
+
+      // Tap submit WITHOUT checking the consent checkbox.
+      await tester.ensureVisible(find.text('Start Background Check'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start Background Check'));
+      await tester.pump();
+
+      expect(
+        find.text('Please accept the consent to proceed'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('submit button present', (WidgetTester tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: BackgroundCheckConsentScreen(),

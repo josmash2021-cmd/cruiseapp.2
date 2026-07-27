@@ -14,6 +14,36 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     _executeCancelAndTransition();
   }
 
+  /// Post-assignment cancellation: once a driver is assigned the backend
+  /// rejects direct rider cancels (403 on /trips/{id}/cancel), so file a
+  /// cancellation request with support/dispatch instead. The trip stays
+  /// active until the request is approved — the rider remains on the
+  /// tracking screen.
+  Future<void> _requestCancelViaSupport() async {
+    if (widget.tripId == null) return;
+    try {
+      await ApiService.requestTripCancel(tripId: widget.tripId!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).cancelRequestSentToSupport),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[RiderTracking] requestTripCancel(${widget.tripId}) failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).cancelOnServerFailedActive),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _executeCancelAndTransition() async {
     await LocalDataService.clearActiveRide();
     bool backendOk = true;

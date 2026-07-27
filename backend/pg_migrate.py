@@ -157,17 +157,17 @@ async def migrate_support_tables(conn):
 
 # Also create default service area if not exists
 async def create_default_service_area(conn):
-    """Create default Birmingham service area if it doesn't exist."""
+    """Create default Florida service area if it doesn't exist."""
     try:
         result = await conn.execute(text("""
-            SELECT id FROM service_areas WHERE area_name = 'Birmingham Metro' LIMIT 1
+            SELECT id FROM service_areas WHERE area_name = 'Florida' LIMIT 1
         """))
         if result.scalar() is None:
             await conn.execute(text("""
                 INSERT INTO service_areas (area_name, center_lat, center_lng, radius_km)
-                VALUES ('Birmingham Metro', 33.5186, -86.8104, 50.0)
+                VALUES ('Florida', 28.0, -82.4, 600.0)
             """))
-            logger.info("✓ Created default service area: Birmingham Metro")
+            logger.info("✓ Created default service area: Florida")
         else:
             logger.info("  Default service area exists")
     except Exception as e:

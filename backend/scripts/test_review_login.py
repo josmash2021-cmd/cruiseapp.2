@@ -24,7 +24,7 @@ BASE = 'https://cruiseapp2-production.up.railway.app'
 # Test rider login (should return access_token directly now)
 h = make_headers()
 resp = requests.post(f'{BASE}/auth/login', json={
-    'identifier': 'applereview@cruiseride.com',
+    'identifier': 'applereview@cruiseinride.com',
     'password': 'CruiseDemo2026!'
 }, headers=h)
 print('RIDER LOGIN:', resp.status_code)
@@ -37,7 +37,7 @@ else:
 # Test driver login (should return access_token directly)
 h = make_headers()
 resp = requests.post(f'{BASE}/auth/login', json={
-    'identifier': 'applereviewdriver@cruiseride.com',
+    'identifier': 'applereviewdriver@cruiseinride.com',
     'password': 'CruiseDemo2026!'
 }, headers=h)
 print('DRIVER LOGIN:', resp.status_code)

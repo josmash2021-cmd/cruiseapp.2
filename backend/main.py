@@ -50,9 +50,11 @@ from guardian_agent import guardian_agent
 from ghost_driver_agent import ghost_driver_agent
 from safety_monitor_agent import safety_monitor_agent
 from document_expiry_agent import document_expiry_agent
+from background_recheck_agent import background_recheck_agent
 from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
 from cruise_level_agent import cruise_level_agent
+from chat_retention_agent import chat_retention_agent
 from proactive_support_agent import run_proactive_agent_loop
 from wait_timeout_agent import wait_timeout_agent
 
@@ -356,6 +358,9 @@ async def lifespan(app: FastAPI):
         document_expiry_agent.set_db_session_maker(SessionLocal)
         await document_expiry_agent.start()
 
+        background_recheck_agent.set_db_session_maker(SessionLocal)
+        await background_recheck_agent.start()
+
         document_approval_agent.set_db_session_maker(SessionLocal)
         await document_approval_agent.start()
 
@@ -364,6 +369,9 @@ async def lifespan(app: FastAPI):
 
         cruise_level_agent.set_db_session_maker(SessionLocal)
         await cruise_level_agent.start()
+
+        chat_retention_agent.set_db_session_maker(SessionLocal)
+        await chat_retention_agent.start()
         logging.info("[Lifespan] Class-based agents started")
 
         # Cache sweep every 60s
@@ -387,9 +395,11 @@ async def lifespan(app: FastAPI):
     await ghost_driver_agent.stop()
     await safety_monitor_agent.stop()
     await document_expiry_agent.stop()
+    await background_recheck_agent.stop()
     await document_approval_agent.stop()
     await rating_moderator_agent.stop()
     await wait_timeout_agent.stop()
+    await chat_retention_agent.stop()
     # Dispose SQLAlchemy engine to close all pooled connections gracefully
     try:
         from models.database import engine as _engine
@@ -437,6 +447,7 @@ from routers.drivers import router as drivers_router
 from routers.dispatch import router as dispatch_router
 from routers.support import router as support_router, _rehydrate_pending_reminders
 from routers.voice import router as voice_router
+from routers.masked_calls import router as masked_calls_router
 from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.misc import router as misc_router
@@ -451,6 +462,8 @@ from routers.system import router as system_router
 from routers.uploads import router as uploads_router
 from routers.webhooks import router as webhooks_router
 from routers.worker import router as worker_router
+from routers.legal import router as legal_router
+from routers.zero_tolerance import router as zero_tolerance_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -459,6 +472,7 @@ app.include_router(drivers_router)
 app.include_router(dispatch_router)
 app.include_router(support_router)
 app.include_router(voice_router)
+app.include_router(masked_calls_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
 app.include_router(misc_router)
@@ -470,6 +484,15 @@ app.include_router(system_router)
 app.include_router(uploads_router)
 app.include_router(webhooks_router)
 app.include_router(worker_router)
+app.include_router(legal_router)
+app.include_router(zero_tolerance_router)
+
+# Serve static legal documents (FCRA Summary of Rights PDF, disclosures, etc.)
+app.mount(
+    "/static",
+    StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")),
+    name="static",
+)
 
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
@@ -710,8 +733,10 @@ async def health(x_api_key: str = Header(default="")):
         "ghost_driver_agent": ghost_driver_agent.get_status(),
         "safety_monitor_agent": safety_monitor_agent.get_status(),
         "document_expiry_agent": document_expiry_agent.get_status(),
+        "background_recheck_agent": background_recheck_agent.get_status(),
         "document_approval_agent": document_approval_agent.get_status(),
         "rating_moderator_agent": rating_moderator_agent.get_status(),
+        "chat_retention_agent": chat_retention_agent.get_status(),
         "sse": event_bus.get_stats(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -754,8 +779,10 @@ async def agents_health(x_api_key: str = Header(default="")):
         "ghost_driver": ghost_driver_agent.get_status(),
         "safety_monitor": safety_monitor_agent.get_status(),
         "document_expiry": document_expiry_agent.get_status(),
+        "background_recheck": background_recheck_agent.get_status(),
         "document_approval": document_approval_agent.get_status(),
         "rating_moderator": rating_moderator_agent.get_status(),
+        "chat_retention": chat_retention_agent.get_status(),
     }
 
 # -- One-time migration endpoint (protected by API key) ------------------
@@ -1477,8 +1504,13 @@ async def _nightly_reconcile_loop():
                                SUM(COALESCE(driver_earnings, 0.0)) AS earned,
                                COUNT(*) AS trip_count
                           FROM trips
-                         WHERE status = 'completed'
-                           AND driver_id IS NOT NULL
+                         WHERE driver_id IS NOT NULL
+                           AND (
+                               status = 'completed'
+                               OR (status = 'cancelled'
+                                   AND driver_earnings IS NOT NULL
+                                   AND driver_earnings > 0)
+                           )
                          GROUP BY driver_id
                     ) t ON t.driver_id = u.id
                     LEFT JOIN (

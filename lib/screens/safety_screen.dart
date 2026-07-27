@@ -137,13 +137,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                 onTap: () => _showRideCheck(context, c),
               ),
               const SizedBox(height: 10),
-              _featureCard(
-                c,
-                icon: Icons.record_voice_over_outlined,
-                title: S.of(context).audioRecording,
-                subtitle: S.of(context).audioRecordingDesc,
-                onTap: () => _showAudioRecording(context, c),
-              ),
+              _policyInfoCard(c),
 
               const SizedBox(height: 28),
 
@@ -340,6 +334,48 @@ class _SafetyScreenState extends State<SafetyScreen> {
             Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _policyInfoCard(AppColors c) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: c.isDark
+            ? null
+            : Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.escalator_warning_rounded,
+              color: _gold,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              S.of(context).safetyMinorsPolicy,
+              style: TextStyle(
+                fontSize: 13,
+                color: c.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -785,57 +821,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
               const SizedBox(height: 8),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showAudioRecording(BuildContext context, AppColors c) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: c.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.textTertiary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Icon(Icons.record_voice_over_outlined, size: 48, color: _gold),
-            const SizedBox(height: 16),
-            Text(
-              S.of(context).audioRecording,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: c.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              S.of(context).audioRecordingFullDesc,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: c.textSecondary),
-            ),
-            const SizedBox(height: 24),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                S.of(context).close,
-                style: TextStyle(color: c.textSecondary),
-              ),
-            ),
-          ],
         ),
       ),
     );

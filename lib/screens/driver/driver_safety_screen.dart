@@ -124,15 +124,7 @@ class DriverSafetyScreen extends StatelessWidget {
                       },
                     ),
                     const SizedBox(height: 8),
-                    _actionCard(
-                      icon: Icons.record_voice_over_rounded,
-                      title: 'Record Audio',
-                      subtitle: 'Start recording for your safety',
-                      onTap: () {
-                        HapticService.lightImpact();
-                        _showToast(context, 'Audio recording started');
-                      },
-                    ),
+                    _minorsPolicyCard(context),
 
                     const SizedBox(height: 24),
 
@@ -272,6 +264,40 @@ class DriverSafetyScreen extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.3), size: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _minorsPolicyCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.escalator_warning_rounded,
+                color: _gold, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(S.of(context).driverMinorsPolicy,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 13,
+                height: 1.4)),
+          ),
+        ],
       ),
     );
   }

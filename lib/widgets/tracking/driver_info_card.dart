@@ -230,11 +230,13 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Call the driver — launches native phone dialer directly.
-  void _handleCallDriver() {
-    final phone = widget.driverPhone;
+  /// Call the driver through the masked-call bridge — fetches a short-lived
+  /// masked contact (Twilio number + extension) and dials that, so neither
+  /// side ever sees the other's real phone number.
+  Future<void> _handleCallDriver() async {
     final name = nh.displayName(widget.driverName, widget.rideName);
-    if (phone == null || phone.isEmpty) {
+    final tripId = widget.tripId;
+    if (tripId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${S.of(context).phoneNotAvailable} - $name'),
@@ -244,10 +246,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       return;
     }
 
-    launchUrl(
-      Uri.parse('tel:$phone'),
-      mode: LaunchMode.externalApplication,
-    );
+    final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: 'rider');
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${S.of(context).phoneNotAvailable} - $name'),
+          // Uses global snackBarTheme
+        ),
+      );
+    }
   }
 
   /// Share a Google Maps deep-link to the driver's current GPS location.
@@ -409,7 +416,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                'Si cancelas ahora puede aplicar una tarifa de cancelación.',
+                S.of(context).cancelAfterAssignBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
               ),
@@ -424,9 +431,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _startCancelFlow();
+                    _requestCancelViaSupport();
                   },
-                  child: Text(S.of(context).yesCancelTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  child: Text(S.of(context).sendCancellationRequest, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(height: 10),

@@ -282,6 +282,25 @@ class _RideRatingScreenState extends State<RideRatingScreen>
                     ),
                   ),
                 ),
+
+                // ── Zero-tolerance safety report (Fla. Stat. § 627.748(10)) ──
+                if (widget.tripId != null)
+                  TextButton.icon(
+                    onPressed: () => _showSafetyReportDialog(context, c),
+                    icon: const Icon(
+                      Icons.report_problem_rounded,
+                      size: 16,
+                      color: Color(0xFFDC2626),
+                    ),
+                    label: Text(
+                      S.of(context).reportSafetyIssue,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFDC2626),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -289,6 +308,92 @@ class _RideRatingScreenState extends State<RideRatingScreen>
         ),
       ),
     );
+  }
+
+  /// Zero-tolerance impairment report dialog (drug/alcohol).
+  /// The backend suspends the driver immediately upon receipt.
+  Future<void> _showSafetyReportDialog(BuildContext context, AppColors c) async {
+    final descController = TextEditingController();
+    bool submitting = false;
+
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: c.surface,
+          title: Text(
+            S.of(dialogContext).reportSafetyIssue,
+            style: TextStyle(color: c.textPrimary),
+          ),
+          content: TextField(
+            controller: descController,
+            maxLines: 3,
+            maxLength: 500,
+            style: TextStyle(color: c.textPrimary),
+            decoration: InputDecoration(
+              hintText: S.of(dialogContext).describeIssue,
+              hintStyle: TextStyle(color: c.textTertiary),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: submitting
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(false),
+              child: Text(S.of(dialogContext).cancel),
+            ),
+            TextButton(
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      final desc = descController.text.trim();
+                      if (desc.isEmpty) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content:
+                                Text(S.of(dialogContext).pleaseDescribeProblem),
+                          ),
+                        );
+                        return;
+                      }
+                      setDialogState(() => submitting = true);
+                      try {
+                        await ApiService.reportZeroTolerance(
+                          tripId: widget.tripId,
+                          description: desc,
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => submitting = false);
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text(S.of(dialogContext).reportError),
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: Text(
+                submitting
+                    ? S.of(dialogContext).submittingLabel
+                    : S.of(dialogContext).submitReport,
+                style: const TextStyle(color: Color(0xFFDC2626)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    descController.dispose();
+
+    if (sent == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.of(context).reportSent)),
+      );
+    }
   }
 
   Widget _tipChip(AppColors c, int index, String label) {

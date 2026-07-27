@@ -4,11 +4,11 @@ import 'package:flutter/services.dart';
 import '../services/haptic_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
 import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/error_service.dart';
+import '../services/masked_call_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
@@ -20,7 +20,6 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.recipientName,
-    this.recipientPhone,
     this.isSupport = false,
     this.avatarInitial,
     this.tripId,
@@ -33,7 +32,6 @@ class ChatScreen extends StatefulWidget {
   static int? activeTripId;
 
   final String recipientName;
-  final String? recipientPhone;
   final bool isSupport;
   final String? avatarInitial;
   final int? tripId;
@@ -49,7 +47,6 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  static final _nonPhoneCharRe = RegExp(r'[^0-9+]');
   static const _gold = Color(0xFFE8C547);
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -80,7 +77,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ── Typing ──
   Timer? _typingTimer;
-  String? _recipientPhone;
   bool? _rtdbConnected;
   StreamSubscription<DatabaseEvent>? _rtdbConnectionSub;
 
@@ -96,8 +92,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initChat() async {
-    _recipientPhone = widget.recipientPhone?.trim();
-
     // Resolve user ID
     if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
       _myUserId = widget.currentUserId!;
@@ -122,9 +116,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _startConnectionListener();
       // Mark existing messages as read when opening
       _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
-      if ((_recipientPhone ?? '').isEmpty) {
-        unawaited(_resolveRecipientPhone());
-      }
     } else if (widget.isSupport) {
       _useRtdb = false;
       await _initSupportChat();
@@ -205,25 +196,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       debugPrint('[Chat] Support poll error: $e');
     }
-  }
-
-  Future<void> _resolveRecipientPhone() async {
-    final tripId = widget.tripId;
-    if (tripId == null) return;
-    try {
-      final status = await ApiService.getDispatchStatus(tripId).timeout(const Duration(seconds: 15));
-      final trip = (status['trip'] is Map)
-          ? Map<String, dynamic>.from((status['trip'] as Map).cast<String, dynamic>())
-          : <String, dynamic>{};
-      final isDriver = _myRole == 'driver';
-      final resolved = (isDriver
-              ? (trip['rider_phone'] ?? trip['passengerPhone'] ?? trip['passenger_phone'])
-              : (trip['driver_phone'] ?? trip['driverPhone']))
-          ?.toString()
-          .trim();
-      if (!mounted || resolved == null || resolved.isEmpty) return;
-      setState(() => _recipientPhone = resolved);
-    } catch (_) {}
   }
 
   @override
@@ -473,13 +445,12 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _callRecipient() async {
+  Future<void> _callRecipient() async {
     HapticService.mediumImpact();
-    if ((_recipientPhone ?? '').isEmpty) {
-      await _resolveRecipientPhone();
-    }
-    final phone = (_recipientPhone ?? '').replaceAll(_nonPhoneCharRe, '');
-    if (phone.isEmpty) {
+    // Calls go through the masked-call bridge (Twilio number + short-lived
+    // extension) so neither side ever sees the other's real phone number.
+    final tripId = widget.tripId;
+    if (tripId == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -490,9 +461,15 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return;
     }
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: _myRole);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).driverContacted),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1200),
+        ),
+      );
     }
   }
 

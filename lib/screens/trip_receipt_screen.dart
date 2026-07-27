@@ -248,6 +248,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               child: Divider(color: c.divider, height: 1),
                             ),
                             _detailRow(c, Icons.schedule_rounded, S.of(context).duration, _effectiveDuration),
+                            if (_fareBreakdown?['driver_first_name'] != null) ...[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Divider(color: c.divider, height: 1),
+                              ),
+                              _detailRow(c, Icons.person_rounded, S.of(context).driverLabel, _fareBreakdown!['driver_first_name'] as String),
+                            ],
                             if (_fareBreakdown?['payment_method'] != null) ...[
                               Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 12),

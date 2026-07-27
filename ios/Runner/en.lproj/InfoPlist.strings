@@ -1,6 +1,6 @@
-"NSLocationWhenInUseUsageDescription" = "Cruise needs your location to show nearby drivers and calculate routes.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "Cruise needs your location in the background to track your ride in real time.";
-"NSLocationAlwaysUsageDescription" = "Cruise needs your location to track your ride.";
+"NSLocationWhenInUseUsageDescription" = "Cruise uses your location while the app is open to show nearby drivers, calculate routes, and track your trip.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Drivers: Cruise uses your location in the background only while you are online so riders can track trips. Riders: location is used only while the app is open.";
+"NSLocationAlwaysUsageDescription" = "Drivers: Cruise uses your location in the background only while you are online so riders can track trips. Riders: location is used only while the app is open.";
 "NSCameraUsageDescription" = "Cruise needs the camera for your profile photo and identity verification.";
 "NSFaceIDUsageDescription" = "Cruise uses Face ID for secure sign-in.";
 "NSPhotoLibraryUsageDescription" = "Cruise needs access to your photos for your profile picture.";

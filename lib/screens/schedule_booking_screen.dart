@@ -51,8 +51,9 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   static final _digitRe = RegExp(r'(\d+)');
   static final _milesCleanRe = RegExp(r'[^\d.]');
   static final _durCleanRe = RegExp(r'[^\d]');
-  // Map center — starts at rider GPS, falls back to Birmingham
-  LatLng _mapCenter = const LatLng(33.5186, -86.8104);
+  // Map center — starts at rider GPS, falls back to central Florida
+  // (service area: State of Florida; refine per launch market)
+  LatLng _mapCenter = const LatLng(28.0, -82.4);
 
   final _places = PlacesService(ApiKeys.webServices);
   final _directions = DirectionsService(ApiKeys.webServices);

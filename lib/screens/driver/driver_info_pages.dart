@@ -2501,7 +2501,7 @@ class DriverSafetyScreen extends StatelessWidget {
         const SizedBox(height: 16),
         GestureDetector(
           onTap: () =>
-              launchUrl(Uri.parse('https://cruiseride.com/driver-safety')),
+              launchUrl(Uri.parse('https://cruiseinride.com/driver-safety')),
           child: Center(
             child: Text(
               'View Full Safety Guidelines →',

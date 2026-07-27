@@ -83,9 +83,9 @@
 		</dict>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cruise needs your location to show nearby drivers and calculate routes.</string>
+	<string>Cruise uses your location while the app is open to show nearby drivers, calculate routes, and track your trip.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Cruise needs your location in the background to track your ride in real time.</string>
+	<string>Drivers: Cruise uses your location in the background only while you are online so riders can track trips. Riders: location is used only while the app is open.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Cruise needs the camera for your profile photo and identity verification.</string>
 	<key>NSFaceIDUsageDescription</key>

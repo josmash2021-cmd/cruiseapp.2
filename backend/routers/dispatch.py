@@ -106,6 +106,9 @@ async def _find_nearest_drivers(
     conditions = [
         User.role == "driver",
         User.is_online == True,
+        # Suspended/deactivated drivers (zero-tolerance, doc expiry, etc.)
+        # are never eligible for offers, even if is_online is stale.
+        User.status == "active",
         User.lat.isnot(None),
         User.lng.isnot(None),
         User.lat >= min_lat,

@@ -752,6 +752,7 @@ class ApiService {
     required String password,
     String? photoUrl,
     String role = 'rider',
+    String? dateOfBirth,
   }) async {
     final res = await _client
         .post(
@@ -766,6 +767,8 @@ class ApiService {
             // ignore: use_null_aware_elements
             if (photoUrl != null) 'photo_url': photoUrl,
             'role': role,
+            if (dateOfBirth != null && dateOfBirth.isNotEmpty)
+              'date_of_birth': dateOfBirth,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -1331,6 +1334,38 @@ class ApiService {
     }
   }
 
+  /// Get a masked contact (Twilio bridge number + short-lived extension) for
+  /// calling the counterparty of [tripId] without exposing real phone numbers.
+  /// [role] is the CALLER's role: 'rider' or 'driver'.
+  /// Returns {'phone_number': ..., 'extension': ..., 'expires_in': ...} on
+  /// success, or a map with 'error' set on failure.
+  static Future<Map<String, dynamic>> getMaskedContact(
+    int tripId, {
+    required String role,
+  }) async {
+    final h = await _authHeaders();
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/trips/$tripId/masked-contact?role=$role'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) return body;
+        return {'error': 'unexpected_body'};
+      }
+      debugPrint(
+        '[ApiService] getMaskedContact($tripId) status=${res.statusCode}',
+      );
+      return {'error': 'http_${res.statusCode}'};
+    } catch (e) {
+      debugPrint('[ApiService] getMaskedContact($tripId) exception: $e');
+      return {'error': 'exception'};
+    }
+  }
+
   /// Submit identity verification for dispatch review.
   static Future<Map<String, dynamic>> submitVerification(
     Map<String, dynamic> data,
@@ -1663,6 +1698,31 @@ class ApiService {
     final res = await _client
         .post(Uri.parse('$_baseUrl/trips/$tripId/cancel'), headers: h)
         .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
+  /// Driver cancels an accepted trip BEFORE pickup — no dispatch approval.
+  /// Requires a [reason]; optional [lat]/[lng] for the audit trail.
+  /// Returns `{status, trip_id, rematch, rematch_offer_id, rematch_driver_id}`.
+  static Future<Map<String, dynamic>> driverCancelTrip({
+    required int tripId,
+    required String reason,
+    double? lat,
+    double? lng,
+  }) async {
+    final h = await _authHeaders();
+    h['Content-Type'] = 'application/json';
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/driver-cancel'),
+          headers: h,
+          body: jsonEncode({
+            'reason': reason,
+            if (lat != null) 'lat': lat,
+            if (lng != null) 'lng': lng,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
     return _parse(res);
   }
 
@@ -3532,6 +3592,31 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Report a zero-tolerance (drug/alcohol) violation by a driver.
+  /// Per Fla. Stat. § 627.748(10) the backend suspends the driver
+  /// immediately while the complaint is investigated.
+  static Future<Map<String, dynamic>> reportZeroTolerance({
+    int? tripId,
+    int? driverId,
+    String category = 'impairment',
+    String? description,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/safety/zero-tolerance/report'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            if (tripId != null) 'trip_id': tripId,
+            if (driverId != null) 'driver_id': driverId,
+            'category': category,
+            if (description != null) 'description': description,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
   // ═══════════════════════════════════════════════════════
   //  BACKGROUND CHECK
   // ═══════════════════════════════════════════════════════
@@ -3574,6 +3659,113 @@ class ApiService {
         .timeout(const Duration(seconds: 10));
     return _parse(res);
   }
+
+  /// Fetch the standalone "Background Check Disclosure and Authorization"
+  /// document (FCRA). Returns `{document_id, version, content_hash,
+  /// content_markdown}`.
+  static Future<Map<String, dynamic>> fetchBackgroundCheckDisclosure() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/legal/background-check-disclosure'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Record acceptance of the Background Check Disclosure and Authorization.
+  /// FCRA requires this consent to be logged separately from ToS/privacy/ICA.
+  static Future<Map<String, dynamic>> recordBackgroundCheckConsent({
+    required String version,
+    required String contentHash,
+    required String deviceInfo,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/consent'),
+          headers: h,
+          body: jsonEncode({
+            'consent_type': 'background_check_disclosure',
+            'action': 'accepted',
+            'version': version,
+            'document_id': 'background_check_disclosure_authorization',
+            'content_hash': contentHash,
+            'device_info': deviceInfo,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Fetch the Cruiseinride Driver Terms of Service document
+  /// (Royal Purple LLC / Florida). Returns `{document_id, version,
+  /// content_hash, content_markdown}`.
+  static Future<Map<String, dynamic>> fetchDriverTermsOfService() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/legal/driver-terms-of-service'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Record acceptance of the Cruiseinride Driver Terms of Service.
+  /// Logged as its own consent type, separate from the FCRA background
+  /// check disclosure and the Independent Contractor Agreement.
+  static Future<Map<String, dynamic>> recordDriverTermsConsent({
+    required String version,
+    required String contentHash,
+    required String deviceInfo,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/consent'),
+          headers: h,
+          body: jsonEncode({
+            'consent_type': 'driver_terms_of_service',
+            'action': 'accepted',
+            'version': version,
+            'document_id': 'driver_terms_of_service',
+            'content_hash': contentHash,
+            'device_info': deviceInfo,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Fetch the current user's consent history (all consent types).
+  /// Returns the `items` list from `{items: [...]}`.
+  static Future<List<Map<String, dynamic>>> fetchConsentHistory() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/auth/consent/history'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 15));
+    final parsed = _parse(res);
+    final items = parsed['items'];
+    if (items is List) {
+      return items.whereType<Map<String, dynamic>>().toList();
+    }
+    return const [];
+  }
+
+  /// URL of the English CFPB "Summary of Your Rights Under the FCRA" PDF
+  /// (current March 2023 model form).
+  static String get backgroundCheckSummaryOfRightsUrlEn =>
+      '$publicBaseUrl/static/legal/cfpb_summary_of_rights_en_2023-03.pdf';
+
+  /// URL of the Spanish CFPB "Resumen de Sus Derechos bajo la FCRA" PDF
+  /// (current March 2023 model form).
+  static String get backgroundCheckSummaryOfRightsUrlEs =>
+      '$publicBaseUrl/static/legal/cfpb_summary_of_rights_es_2023-03.pdf';
 
   // ═══════════════════════════════════════════════════════
   //  TRIP SHARING

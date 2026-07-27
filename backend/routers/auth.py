@@ -24,7 +24,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age
 from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
@@ -1760,6 +1760,14 @@ async def delete_account(user: User = Depends(_get_current_user), db: AsyncSessi
         raise HTTPException(404, "User not found")
     db_user.status = "pending_deletion"
     db_user.deletion_requested_at = datetime.now(timezone.utc)
+    # Purge the user's chat data now (2-year retention policy honors legal holds;
+    # account deletion purges regardless of age but still respects legal_hold).
+    try:
+        from chat_retention_agent import purge_user_chat_data
+        purge_stats = await purge_user_chat_data(db, db_user.id)
+        logging.info("[DeleteAccount] Purged chat data for user #%d: %s", db_user.id, purge_stats)
+    except Exception as e:
+        logging.error("[DeleteAccount] Chat purge failed for user #%d: %s", db_user.id, e)
     await db.commit()
     # Notify dispatch app about the deletion request via Firestore
     if _HAS_FIRESTORE:
@@ -1874,13 +1882,16 @@ async def export_user_data(user: User = Depends(_get_current_user), db: AsyncSes
 @router.post("/auth/consent", dependencies=[Depends(_verify_api_key)])
 async def record_consent(
     request: Request,
-    consent_type: str = Body(...),  # terms, privacy, location, analytics, ads
+    consent_type: str = Body(...),  # terms, privacy, location, analytics, ads, background_check_disclosure
     action: str = Body(...),  # accepted, revoked
     version: str = Body(None),
+    document_id: str = Body(None),  # e.g. "background_check_disclosure_authorization"
+    content_hash: str = Body(None),  # sha256 of the exact document text shown
+    device_info: str = Body(None),  # free-form device description
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Record user consent action for GDPR/CCPA compliance."""
+    """Record user consent action for GDPR/CCPA/FCRA compliance."""
     # Get request metadata
     ip = request.client.host if request.client else None
     ua = request.headers.get("User-Agent", "")[:500]
@@ -1891,12 +1902,18 @@ async def record_consent(
         consent_type=consent_type,
         action=action,
         version=version,
+        document_id=document_id,
+        content_hash=content_hash,
+        device_info=device_info,
         ip_address=ip,
         user_agent=ua,
     )
     db.add(log)
     
-    # Update user privacy preferences if applicable
+    # Update user privacy preferences if applicable.
+    # NOTE: "background_check_disclosure" is a standalone FCRA document —
+    # it is logged above but must NOT flip any User flag (it is separate
+    # from terms/ICA acceptance), so it intentionally falls through.
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if db_user:
@@ -1916,6 +1933,34 @@ async def record_consent(
     return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.now(timezone.utc).isoformat()}
 
 
+@router.get("/auth/consent/history", dependencies=[Depends(_verify_api_key)])
+async def get_consent_history(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's consent history, newest first."""
+    result = await db.execute(
+        select(ConsentLog)
+        .where(ConsentLog.user_id == user.id)
+        .order_by(ConsentLog.created_at.desc())
+    )
+    items = [
+        {
+            "consent_type": c.consent_type,
+            "action": c.action,
+            "version": c.version,
+            "document_id": c.document_id,
+            "content_hash": c.content_hash,
+            "device_info": c.device_info,
+            "ip_address": c.ip_address,
+            "user_agent": c.user_agent,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in result.scalars().all()
+    ]
+    return {"items": items}
+
+
 @router.post("/auth/verify-request", dependencies=[Depends(_verify_api_key)])
 async def submit_verification(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Submit identity verification for dispatch review, with optional ID photo and selfie."""
@@ -1932,6 +1977,13 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         db_user.verification_status = "pending"
         db_user.verification_reason = None
         db_user.is_verified = False
+        # Enforce minimum driver age (21+) when a date of birth is provided
+        dob = body.get("dob") or body.get("date_of_birth")
+        if dob and db_user.role == "driver":
+            try:
+                validate_driver_minimum_age(dob)
+            except ValueError as ve:
+                raise HTTPException(400, str(ve))
         # Store SSN if provided — encrypt at application layer before saving to DB
         raw_ssn = body.get("ssn", "")
         if raw_ssn:

@@ -46,12 +46,12 @@ _TPL = {
         "en": (
             "Cruise: Driver found! {driver_name} is coming in a {vehicle_color} "
             "{vehicle_year} {vehicle_make} {vehicle_model} · plate {vehicle_plate}. "
-            "Call/text {driver_phone} if needed. Ride #{tid}."
+            "Ride #{tid}."
         ),
         "es": (
             "Cruise: ¡Conductor encontrado! {driver_name} llegará en un "
             "{vehicle_make} {vehicle_model} {vehicle_color} {vehicle_year} · "
-            "placa {vehicle_plate}. Contacto: {driver_phone}. Viaje #{tid}."
+            "placa {vehicle_plate}. Viaje #{tid}."
         ),
     },
     "driver_en_route": {
@@ -150,7 +150,7 @@ def _trip_fare(trip) -> str:
 
 def _normalize_phone(phone: str) -> str:
     # Twilio needs E.164. We default non-prefixed numbers to US (+1) because
-    # Cruise currently only serves Birmingham Metro; revisit if we launch
+    # Cruise currently only serves Florida (US); revisit if we launch
     # in markets outside North America.
     phone = (phone or "").strip()
     if not phone:
@@ -177,6 +177,15 @@ def _guest_phone(trip) -> str:
 
 def _guest_first_name(trip) -> str:
     return (getattr(trip, "guest_first_name", None) or "").strip() or "amig@"
+
+
+def _mask_phone(phone: str) -> str:
+    """Last-4-only rendering — used for SmsLog audit rows and log lines so raw
+    phone numbers never hit persistent storage or logs. Idempotency lives on
+    the (trip_id, event_type) UNIQUE constraint, not on this field, so masking
+    here is safe."""
+    digits = re.sub(r"\D", "", phone or "")
+    return f"***{digits[-4:]}" if digits else "***"
 
 
 def _guest_last_name(trip) -> str:
@@ -230,7 +239,7 @@ async def _dispatch(
         try:
             await asyncio.to_thread(_send_sms, phone_number, message)
         except Exception as e:
-            _log.warning("[SMS] exception sending %s to %s: %s", event_type, phone_number, e)
+            _log.warning("[SMS] exception sending %s to %s: %s", event_type, _mask_phone(phone_number), e)
         return
 
     try:
@@ -272,22 +281,22 @@ async def _dispatch(
         send_error = str(e)
 
     if send_error is None:
-        _log.warning("[SMS-DIAG] sent %s to %s sid=%s", event_type, phone_number, twilio_sid)
+        _log.warning("[SMS-DIAG] sent %s to %s sid=%s", event_type, _mask_phone(phone_number), twilio_sid)
         await _write_log(
             db,
             trip_id=trip_id,
             event_type=event_type,
-            phone_number=phone_number,
+            phone_number=_mask_phone(phone_number),
             status="sent",
             twilio_sid=twilio_sid,
         )
     else:
-        _log.warning("[SMS-DIAG] failed %s to %s: %s", event_type, phone_number, send_error)
+        _log.warning("[SMS-DIAG] failed %s to %s: %s", event_type, _mask_phone(phone_number), send_error)
         await _write_log(
             db,
             trip_id=trip_id,
             event_type=event_type,
-            phone_number=phone_number,
+            phone_number=_mask_phone(phone_number),
             status="failed",
             error_message=send_error,
         )
@@ -308,7 +317,7 @@ async def notify_guest_welcome(db, trip) -> None:
     phone = _guest_phone(trip)
     _log.warning(
         "[SMS-DIAG] notify_guest_welcome trip=%s raw_phone=%r normalized=%r",
-        getattr(trip, "id", "?"), raw, phone,
+        getattr(trip, "id", "?"), _mask_phone(raw or ""), _mask_phone(phone),
     )
     if not phone:
         return
@@ -334,7 +343,6 @@ async def notify_guest_driver_assigned(db, trip, driver, vehicle) -> None:
         vehicle_model=getattr(vehicle, "model", "") or "",
         vehicle_color=getattr(vehicle, "color", "") or "",
         vehicle_plate=getattr(vehicle, "plate", None) or getattr(vehicle, "license_plate", "") or "—",
-        driver_phone=getattr(driver, "phone", "") or "—",
         tid=_trip_id_short(trip),
     )
     await _dispatch(db, trip.id, "driver_assigned", phone, message)

@@ -65,7 +65,7 @@ async def wipe_postgres():
         "trips",
         "surge_zones",
         "users",          # last — everything FK-references users
-        # Keep service_areas (Birmingham Metro default)
+        # Keep service_areas (Florida default)
     ]
 
     try:

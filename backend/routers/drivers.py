@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, DispatchOffer,
@@ -22,7 +22,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
-    _compute_user_rating,
+    _compute_user_rating, validate_driver_minimum_age,
 )
 from services.fcm_service import _send_fcm_push_async
 from config import (
@@ -114,6 +114,13 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Ownership check: only the driver themselves can update their location
     if user.id != driver_id:
         raise HTTPException(403, "Not authorized to update this driver's location")
+
+    # Suspended/deactivated drivers (zero-tolerance, doc expiry, re-check, etc.)
+    # must not be able to flip themselves back online — otherwise they would
+    # re-enter dispatch eligibility. Offline heartbeats are still accepted.
+    if body.is_online and (user.status or "active") != "active":
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, f"Account {user.status} — cannot go online")
 
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()
@@ -415,9 +422,18 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
 
     # Use cached total_earnings for instant total (updated on every trip completion)
     # Only query recent trips for breakdown/transactions (limited to 50 for speed)
+    # Cancelled trips with driver_earnings carry a charged cancellation fee —
+    # the driver's 60% share must appear in earnings like a completed fare.
     result = await db.execute(
         select(Trip).where(
-            and_(Trip.driver_id == user.id, Trip.status == "completed", Trip.created_at >= since)
+            and_(
+                Trip.driver_id == user.id,
+                or_(
+                    Trip.status == "completed",
+                    and_(Trip.status == "cancelled", Trip.driver_earnings.isnot(None), Trip.driver_earnings > 0),
+                ),
+                Trip.created_at >= since,
+            )
         ).order_by(Trip.created_at.desc())
         .limit(50)  # Limit for speed — driver rarely needs more than 50 recent trips
     )
@@ -459,6 +475,9 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
             "dropoff": t.dropoff_address,
             "fare": base,
             "date": t.created_at.isoformat() if t.created_at else None,
+            # "cancellation_fee" lets the app label the driver's share of a
+            # charged cancellation fee instead of a completed fare.
+            "type": "cancellation_fee" if t.status == "cancelled" else "trip",
         })
 
     return {
@@ -777,8 +796,18 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     # Verify with lightweight query if cache seems stale (negative or very high)
     if available_balance < 0 or available_balance > 100000:
         # Recalculate from scratch (rare — indicates cache bug)
+        # Include cancelled trips with driver_earnings (charged cancellation
+        # fees) so the driver's 60% fee share isn't wiped from the balance.
         completed_r = await db.execute(
-            select(Trip).where(and_(Trip.driver_id == user.id, Trip.status == "completed"))
+            select(Trip).where(
+                and_(
+                    Trip.driver_id == user.id,
+                    or_(
+                        Trip.status == "completed",
+                        and_(Trip.status == "cancelled", Trip.driver_earnings.isnot(None), Trip.driver_earnings > 0),
+                    ),
+                )
+            )
             .limit(1000)  # Cap for safety
         )
         completed_trips = completed_r.scalars().all()
@@ -1871,6 +1900,12 @@ async def initiate_background_check(
     if not dob:
         raise HTTPException(400, "Date of birth is required")
 
+    # Enforce minimum driver age (21+) before creating a Checkr candidate
+    try:
+        validate_driver_minimum_age(dob)
+    except ValueError as ve:
+        raise HTTPException(400, str(ve))
+
     from services.checkr_service import checkr
     # Create candidate
     candidate = await checkr.create_candidate(
@@ -1943,6 +1978,89 @@ async def get_background_check_status_self(
     return await get_background_check_status(user.id, user, db)
 
 
+def _record_background_check_result(driver, completed_at: datetime):
+    """Record a completed background check and schedule the next re-check.
+
+    Sets the recurring 3-year cadence promised in
+    docs/background_check_disclosure_authorization.md §1.
+    """
+    from background_recheck_agent import compute_next_due
+    driver.last_background_check_at = completed_at
+    driver.next_background_check_due_at = compute_next_due(completed_at)
+
+
+async def _restore_recheck_suspension(driver):
+    """Restore platform access after a clear re-check, but only when the
+    suspension was caused by the overdue re-check itself (so suspensions
+    for other reasons, e.g. expired documents, are untouched)."""
+    if not driver.background_recheck_suspended:
+        return
+    driver.background_recheck_suspended = False
+    driver.status = "active"
+    logging.info(
+        "[BGRecheck] Driver %s reinstated after clear background re-check",
+        driver.id,
+    )
+    try:
+        if _HAS_FIRESTORE and firestore_sync:
+            firestore_sync._db.collection("drivers").document(
+                f"sql_{driver.id}"
+            ).update({
+                "status": "active",
+                "suspended_reason": None,
+            })
+    except Exception as e:
+        logging.warning("[BGRecheck] Firestore restore sync failed for #%s: %s", driver.id, e)
+
+
+async def _send_pre_adverse_notice(driver, report_id: str):
+    """FCRA minimal hook for reports requiring adverse-action review.
+
+    Notifies the driver and alerts ops. The formal FCRA pre-adverse action
+    package (pre-adverse letter + copy of the report + CFPB "Summary of Your
+    Rights") remains a MANUAL OPS STEP — see docs/fcra_screening_process.md
+    §3 and its Appendix blocker #3 (Summary of Rights delivery is not yet
+    automated anywhere).
+    """
+    try:
+        if driver.fcm_token:
+            from services.fcm_service import _send_fcm_push
+            _send_fcm_push(
+                driver.fcm_token,
+                title="📋 Actualización sobre tu verificación de antecedentes",
+                body=(
+                    "Tu verificación de antecedentes requiere revisión. "
+                    "Si resulta en una decisión adversa, recibirás un aviso "
+                    "previo con una copia del reporte y tus derechos (FCRA)."
+                ),
+                data={
+                    "type": "background_check_pre_adverse",
+                    "driver_id": str(driver.id),
+                    "report_id": report_id or "",
+                },
+            )
+    except Exception as e:
+        logging.warning("[FCRA] Pre-adverse push failed for #%s: %s", driver.id, e)
+    try:
+        from services.admin_alerts import send_alert, HIGH
+        await send_alert(
+            alert_type="fcra_pre_adverse",
+            title=f"FCRA pre-adverse review — Driver #{driver.id}",
+            message=(
+                f"Checkr report {report_id} returned 'consider' for "
+                f"{driver.first_name} {driver.last_name}. MANUAL OPS STEP: "
+                "send the pre-adverse action notice with a copy of the report "
+                "and the CFPB Summary of Rights, allow reasonable time to "
+                "dispute, then issue a final adverse action notice if "
+                "proceeding (docs/fcra_screening_process.md §3-4)."
+            ),
+            severity=HIGH,
+            data={"driver_id": driver.id, "report_id": report_id},
+        )
+    except Exception as e:
+        logging.warning("[FCRA] Pre-adverse admin alert failed: %s", e)
+
+
 @router.post("/webhooks/checkr")
 async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle Checkr webhook events (report.completed, invitation.completed, etc.)."""
@@ -1979,13 +2097,17 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if event_type == "report.completed":
         report_id = data.get("id")
         status = data.get("status", "")  # clear, consider
+        now = datetime.now(timezone.utc)
         driver.checkr_report_id = report_id
-        driver.background_check_completed_at = datetime.now(timezone.utc)
+        driver.background_check_completed_at = now
+        _record_background_check_result(driver, now)
         if status == "clear":
             driver.background_check_status = "clear"
             driver.verification_status = "approved"
+            await _restore_recheck_suspension(driver)
         elif status == "consider":
             driver.background_check_status = "consider"
+            await _send_pre_adverse_notice(driver, report_id)
         else:
             driver.background_check_status = status
         await db.commit()
@@ -1999,13 +2121,17 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     elif event_type == "report.upgraded":
         report_id = data.get("id")
         status = data.get("status", "")
+        now = datetime.now(timezone.utc)
         driver.checkr_report_id = report_id
+        _record_background_check_result(driver, now)
         if status == "clear":
             driver.background_check_status = "clear"
             driver.verification_status = "approved"
+            await _restore_recheck_suspension(driver)
         elif status == "consider":
             driver.background_check_status = "consider"
-        driver.background_check_completed_at = datetime.now(timezone.utc)
+            await _send_pre_adverse_notice(driver, report_id)
+        driver.background_check_completed_at = now
         await db.commit()
         logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
 

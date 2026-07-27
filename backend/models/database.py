@@ -181,6 +181,13 @@ class User(Base):
     checkr_report_id = Column(String(100), nullable=True)
     background_check_status = Column(String(20), default="none")
     background_check_completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Recurring re-check every 3 years (see background_recheck_agent.py and
+    # docs/background_check_disclosure_authorization.md §1).
+    last_background_check_at = Column(DateTime(timezone=True), nullable=True)
+    next_background_check_due_at = Column(DateTime(timezone=True), nullable=True)
+    # True while suspended specifically for an overdue background re-check,
+    # so completion can restore access without touching other suspensions.
+    background_recheck_suspended = Column(Boolean, default=False)
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
     average_rating = Column(Float, nullable=True, default=None)
@@ -199,9 +206,30 @@ class ConsentLog(Base):
     consent_type = Column(String(50), nullable=False)
     action = Column(String(20), nullable=False)
     version = Column(String(20), nullable=True)
+    # FCRA standalone documents (e.g. the background check disclosure) are
+    # logged with the exact document id, a sha256 of its content, and the
+    # device info, so consent can be proven against the exact text shown.
+    document_id = Column(String(100), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    device_info = Column(Text, nullable=True)
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class SummaryOfRightsDelivery(Base):
+    """FCRA audit trail: each delivery of the CFPB "A Summary of Your Rights
+    Under the Fair Credit Reporting Act" document to a user."""
+    __tablename__ = "summary_rights_deliveries"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # "initial_consent" (with the disclosure authorization) or
+    # "pre_adverse_action" (with the pre-adverse action package).
+    channel = Column(String(30), nullable=False)
+    document_version = Column(String(20), nullable=False)
+    # PDF edition delivered to the user ("en" or "es").
+    language = Column(String(5), nullable=False, default="en")
+    delivered_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Trip(Base):
@@ -418,6 +446,7 @@ class ChatMessage(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
+    legal_hold = Column(Boolean, default=False)  # exempt from 2-year retention cleanup
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -434,6 +463,7 @@ class SupportChat(Base):
     last_user_message_at = Column(DateTime(timezone=True), nullable=True)
     locale = Column(String(5), default="en")
     ai_disabled = Column(Boolean, default=False)
+    legal_hold = Column(Boolean, default=False)  # exempt from 2-year retention cleanup
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -446,6 +476,7 @@ class SupportMessage(Base):
     sender_role = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
+    legal_hold = Column(Boolean, default=False)  # exempt from 2-year retention cleanup
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -726,6 +757,40 @@ class EmailLog(Base):
     created_at = Column(DateTime(timezone=True), default=func.now())
 
 
+class ZeroToleranceComplaint(Base):
+    """Fla. Stat. § 627.748(10) zero-tolerance complaint (drug/alcohol).
+
+    On intake the driver is suspended for the duration of the investigation;
+    an admin later resolves it (restore or deactivate).
+    """
+    __tablename__ = "zero_tolerance_complaints"
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
+    category = Column(String(50), default="impairment")
+    description = Column(Text, nullable=True)
+    # under_investigation / resolved_restored / resolved_deactivated
+    status = Column(String(30), default="under_investigation", index=True)
+    resolved_by = Column(String(200), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ZeroToleranceAudit(Base):
+    """Audit trail: one row per state transition of a zero-tolerance complaint."""
+    __tablename__ = "zero_tolerance_audit"
+    id = Column(Integer, primary_key=True, index=True)
+    complaint_id = Column(Integer, ForeignKey("zero_tolerance_complaints.id"), nullable=False, index=True)
+    action = Column(String(50), nullable=False)  # intake / restore / deactivate
+    actor = Column(String(200), nullable=False)  # e.g. "rider:42", "admin:dispatch"
+    from_status = Column(String(30), nullable=True)
+    to_status = Column(String(30), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
@@ -809,6 +874,9 @@ async def migrate_add_columns(conn):
         ("users", "privacy_ads", "BOOLEAN DEFAULT 0"),
         ("users", "terms_accepted_at", "DATETIME"),
         ("users", "privacy_accepted_at", "DATETIME"),
+        ("users", "last_background_check_at", "DATETIME"),
+        ("users", "next_background_check_due_at", "DATETIME"),
+        ("users", "background_recheck_suspended", "BOOLEAN DEFAULT 0"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -826,6 +894,33 @@ async def migrate_add_columns(conn):
             version VARCHAR(20),
             ip_address VARCHAR(50),
             user_agent TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS zero_tolerance_complaints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER NOT NULL,
+            rider_id INTEGER NOT NULL,
+            trip_id INTEGER,
+            category VARCHAR(50) DEFAULT 'impairment',
+            description TEXT,
+            status VARCHAR(30) DEFAULT 'under_investigation',
+            resolved_by VARCHAR(200),
+            resolution_notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME
+        )
+    """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS zero_tolerance_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            complaint_id INTEGER NOT NULL,
+            action VARCHAR(50) NOT NULL,
+            actor VARCHAR(200) NOT NULL,
+            from_status VARCHAR(30),
+            to_status VARCHAR(30) NOT NULL,
+            notes TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """))
@@ -874,6 +969,9 @@ async def migrate_postgres(conn):
         ("users", "checkr_report_id", "VARCHAR(100)"),
         ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),
         ("users", "background_check_completed_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "last_background_check_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "next_background_check_due_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "background_recheck_suspended", "BOOLEAN DEFAULT FALSE"),
         ("users", "active_session_id", "VARCHAR(64)"),
         ("users", "average_rating", "FLOAT DEFAULT 5.0"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
@@ -968,6 +1066,44 @@ async def migrate_postgres(conn):
                 logging.info("support_messages.sender_id made nullable")
     except Exception as _e:
         logging.warning("support_messages.sender_id nullable migration: %s", _e)
+
+    # ── Zero-tolerance tables (Fla. Stat. § 627.748(10)) ──
+    for _ddl in (
+        """
+        CREATE TABLE IF NOT EXISTS zero_tolerance_complaints (
+            id SERIAL PRIMARY KEY,
+            driver_id INTEGER NOT NULL REFERENCES users(id),
+            rider_id INTEGER NOT NULL REFERENCES users(id),
+            trip_id INTEGER REFERENCES trips(id),
+            category VARCHAR(50) DEFAULT 'impairment',
+            description TEXT,
+            status VARCHAR(30) DEFAULT 'under_investigation',
+            resolved_by VARCHAR(200),
+            resolution_notes TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            resolved_at TIMESTAMP WITH TIME ZONE
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS zero_tolerance_audit (
+            id SERIAL PRIMARY KEY,
+            complaint_id INTEGER NOT NULL REFERENCES zero_tolerance_complaints(id),
+            action VARCHAR(50) NOT NULL,
+            actor VARCHAR(200) NOT NULL,
+            from_status VARCHAR(30),
+            to_status VARCHAR(30) NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_zt_complaints_status ON zero_tolerance_complaints (status)",
+        "CREATE INDEX IF NOT EXISTS idx_zt_audit_complaint ON zero_tolerance_audit (complaint_id)",
+    ):
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(_ddl))
+        except Exception as _e:
+            logging.warning("Postgres zero-tolerance DDL skip: %s", _e)
 
     # ── Performance indexes for hot-path queries ──
     _indexes = [

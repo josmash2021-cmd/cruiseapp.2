@@ -52,13 +52,13 @@ class _HelpScreenState extends State<HelpScreen> {
               '1. Check your trip history to find the ride details\n'
               '2. Note the driver\'s name, date, and time\n'
               '3. Contact support with these details\n\n'
-              'We\'ll reach out to the driver on your behalf. Most items are recovered within 24 hours. A small return fee may apply for item delivery.',
+              'We\'ll reach out to the driver on your behalf. Most items are recovered within 24 hours. Riders and drivers coordinate returns directly; no return fee is charged through the platform.',
         ),
         _HelpTopic(
           icon: Icons.cancel_outlined,
           title: 'Dispute a cancellation fee',
           answer:
-              'Cancellation fees are charged when a ride is cancelled after the driver has already started heading to the pickup location, or if the driver waited at the pickup for more than 5 minutes.\n\n'
+              'A \$5.00 cancellation fee may apply when a ride is cancelled more than 2 minutes after a driver has been assigned. Before a driver is assigned you can cancel free of charge in the app; after assignment, cancellations are requested through support. Wait-time charges accrue after the free waiting period (Sedan/Comfort 2 min, Premium 3 min, VIP 5 min, Airport 10 min).\n\n'
               'You may qualify for a refund if:\n'
               '• The driver cancelled, not you\n'
               '• The driver was significantly delayed\n'
@@ -649,7 +649,7 @@ class _HelpScreenState extends State<HelpScreen> {
 
   Future<void> _launchEmail(BuildContext context) async {
     final uri = Uri.parse(
-      'mailto:support@cruiseride.com?subject=Help%20Request',
+      'mailto:support@cruiseapp.com?subject=Help%20Request',
     );
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
@@ -835,7 +835,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                         ),
                         onPressed: () async {
                           final uri = Uri.parse(
-                            'mailto:support@cruiseride.com?subject=${Uri.encodeComponent(widget.topic.title)}',
+                            'mailto:support@cruiseapp.com?subject=${Uri.encodeComponent(widget.topic.title)}',
                           );
                           if (await canLaunchUrl(uri)) await launchUrl(uri);
                         },

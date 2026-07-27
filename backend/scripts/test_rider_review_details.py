@@ -24,7 +24,7 @@ BASE = 'https://cruiseapp2-production.up.railway.app'
 # Get rider access token
 h = make_headers()
 resp = requests.post(f'{BASE}/auth/login', json={
-    'identifier': 'applereview@cruiseride.com',
+    'identifier': 'applereview@cruiseinride.com',
     'password': 'CruiseDemo2026!'
 }, headers=h)
 data = resp.json()

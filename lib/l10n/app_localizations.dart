@@ -440,13 +440,12 @@ class S {
   String get rideCheckDesc => _es
       ? 'Detectamos si tu viaje se sale de la ruta y te verificamos.'
       : 'We detect if your trip goes off route and check in on you.';
-  String get audioRecording => _es ? 'Grabación de Audio' : 'Audio recording';
-  String get audioRecordingDesc => _es
-      ? 'Graba audio durante tu viaje para mayor tranquilidad.'
-      : 'Record audio during your trip for added peace of mind.';
-  String get audioRecordingFullDesc => _es
-      ? 'Durante un viaje, Cruise puede grabar audio de forma segura. Las grabaciones están encriptadas y solo se acceden si reportas un problema de seguridad.'
-      : 'During a trip, Cruise can securely record audio. Recordings are encrypted and only accessed if you report a safety issue.';
+  String get safetyMinorsPolicy => _es
+      ? 'Los pasajeros deben tener al menos 18 años para crear una cuenta. Los menores solo pueden viajar acompañados por un adulto que haya solicitado el viaje o que esté autorizado para acompañar al menor. No se permiten menores no acompañados.'
+      : 'Riders must be at least 18 years old to create an account. Minors may ride only when accompanied by an adult who requested the ride or is otherwise authorized to accompany the minor. Unaccompanied minors are not permitted.';
+  String get driverMinorsPolicy => _es
+      ? 'No transportes menores no acompañados. Los menores solo pueden viajar acompañados por un adulto.'
+      : 'Do not transport unaccompanied minors. Minors may ride only when accompanied by an adult.';
   String get rideCheckFullDesc => _es
       ? 'Si tu viaje se desvía de la ruta esperada o toma más tiempo de lo normal, te enviaremos una notificación para verificar que estés bien. También puedes compartir tu ubicación en tiempo real con tus contactos de confianza.'
       : 'If your trip goes off the expected route or takes longer than usual, we\'ll send you a notification to check that you\'re okay. You can also share your real-time location with your trusted contacts.';
@@ -723,6 +722,13 @@ class S {
       _es ? 'Información Personal' : 'Personal information';
   String get personalInfoSubtitle =>
       _es ? 'Cuéntanos un poco sobre ti' : 'Tell us a bit about yourself';
+  String get dateOfBirth => _es ? 'Fecha de nacimiento' : 'Date of birth';
+  String get driverAgeRequirement => _es
+      ? 'Debes tener al menos 21 años para conducir con Cruise.'
+      : 'You must be at least 21 years old to drive with Cruise.';
+  String get driverAgeTooYoung => _es
+      ? 'Lo sentimos, debes tener al menos 21 años para registrarte como conductor.'
+      : 'Sorry, you must be at least 21 years old to sign up as a driver.';
   String get vehicleDetails =>
       _es ? 'Detalles del Vehículo' : 'Vehicle details';
   String get vehicleInfoSubtitle => _es
@@ -1018,6 +1024,14 @@ class S {
       ? 'Se te puede cobrar una tarifa de cancelación.'
       : 'You may be charged a cancellation fee.';
   String get yesCancelTrip => _es ? 'Sí, Cancelar Viaje' : 'Yes, Cancel Trip';
+  String get cancelAfterAssignBody => _es
+      ? 'Ya hay un conductor asignado a tu viaje. Las cancelaciones después de la asignación se gestionan a través de soporte. Enviaremos tu solicitud ahora; puede aplicar una tarifa de cancelación de \$5.00.'
+      : 'A driver is already assigned to your trip. Cancellations after assignment are handled through support. We will send your request now; a \$5.00 cancellation fee may apply.';
+  String get sendCancellationRequest =>
+      _es ? 'Enviar solicitud de cancelación' : 'Send cancellation request';
+  String get cancelRequestSentToSupport => _es
+      ? 'Solicitud de cancelación enviada a soporte.'
+      : 'Cancellation request sent to support.';
   // ── Chat ──────────────────────────────────────────────────────────────────
   String get connectionIssueRetrying => _es
       ? 'Problema de conexión - reintentando...'
@@ -2259,8 +2273,8 @@ class S {
   String get termsAcceptanceTitle =>
       _es ? '1. Aceptación de los Términos' : '1. Acceptance of Terms';
   String get termsAcceptanceBody => _es
-      ? 'Al descargar, acceder o usar la aplicación Cruise ("App"), usted acepta estar sujeto a estos Términos y Condiciones ("Términos"). Si no está de acuerdo con estos Términos, por favor no use la App. Estos Términos constituyen un acuerdo legalmente vinculante entre usted y Cruise Technologies, Inc. ("Cruise", "nosotros" o "nuestro").'
-      : 'By downloading, accessing, or using the Cruise application ("App"), you agree to be bound by these Terms and Conditions ("Terms"). If you do not agree to these Terms, please do not use the App. These Terms constitute a legally binding agreement between you and Cruise Technologies, Inc. ("Cruise," "we," or "our").';
+      ? 'Al descargar, acceder o usar la aplicación Cruise ("App"), usted acepta estar sujeto a estos Términos y Condiciones ("Términos"). Si no está de acuerdo con estos Términos, por favor no use la App. Estos Términos constituyen un acuerdo legalmente vinculante entre usted y Royal Purple LLC ("Cruise", "nosotros" o "nuestro").'
+      : 'By downloading, accessing, or using the Cruise application ("App"), you agree to be bound by these Terms and Conditions ("Terms"). If you do not agree to these Terms, please do not use the App. These Terms constitute a legally binding agreement between you and Royal Purple LLC ("Cruise," "we," or "our").';
   String get termsEligibilityTitle =>
       _es ? '2. Elegibilidad' : '2. Eligibility';
   String get termsEligibilityBody => _es
@@ -2280,8 +2294,8 @@ class S {
       ? '5. Reserva y Cancelación de Viajes'
       : '5. Ride Booking & Cancellation';
   String get termsBookingBody => _es
-      ? 'Al solicitar un viaje a través de la App:\n\n• Se le proporcionará una tarifa estimada antes de confirmar\n• Los precios pueden variar según la demanda, distancia y condiciones del tráfico\n• Se puede aplicar una tarifa de cancelación si cancela después de que un conductor ha sido asignado\n• Ventana de cancelación gratuita: 2 minutos después de la asignación del conductor\n• Tarifa de cancelación: \$5.00 (después de la ventana de cancelación gratuita)\n• La tarifa de no presentarse: \$10.00 si el conductor espera más de 5 minutos'
-      : 'When you request a ride through the App:\n\n• You will be provided with an estimated fare before confirming\n• Prices may vary based on demand, distance, and traffic conditions\n• A cancellation fee may apply if you cancel after a driver has been assigned\n• Free cancellation window: 2 minutes after driver assignment\n• Cancellation fee: \$5.00 (after free cancellation window)\n• No-show fee: \$10.00 if driver waits more than 5 minutes';
+      ? 'Al solicitar un viaje a través de la App:\n\n• Se le proporcionará una tarifa estimada antes de confirmar\n• Los precios pueden variar según la demanda, distancia y condiciones del tráfico\n• Puede cancelar gratis en la app antes de que se asigne un conductor\n• Después de la asignación del conductor, las cancelaciones se solicitan a través de soporte\n• Ventana de cancelación gratuita: 2 minutos después de la asignación del conductor\n• Tarifa de cancelación: \$5.00 (después de la ventana de cancelación gratuita)\n• Cargos por tiempo de espera tras el período gratuito: Sedan/Comfort 2 min gratis, luego \$0.40/min; Premium 3 min gratis, luego \$0.60/min; VIP 5 min gratis, luego \$1.00/min; Aeropuerto 10 min gratis, luego \$0.40/min\n• Si no se presenta, el viaje puede cancelarse y se aplican los cargos de espera acumulados'
+      : 'When you request a ride through the App:\n\n• You will be provided with an estimated fare before confirming\n• Prices may vary based on demand, distance, and traffic conditions\n• You may cancel free of charge in the app before a driver is assigned\n• After driver assignment, cancellations are requested through support\n• Free cancellation window: 2 minutes after driver assignment\n• Cancellation fee: \$5.00 (after free cancellation window)\n• Wait-time charges after the free period: Sedan/Comfort 2 free min, then \$0.40/min; Premium 3 free min, then \$0.60/min; VIP 5 free min, then \$1.00/min; Airport 10 free min, then \$0.40/min\n• If you do not show up, the trip may be cancelled and the accrued wait-time charges apply';
   String get termsPaymentsTitle =>
       _es ? '6. Pagos y Precios' : '6. Payments & Pricing';
   String get termsPaymentsBody => _es
@@ -2308,8 +2322,8 @@ class S {
   String get termsIpTitle =>
       _es ? '11. Propiedad Intelectual' : '11. Intellectual Property';
   String get termsIpBody => _es
-      ? 'El nombre, logotipo, diseño de la app y todo el contenido relacionado de Cruise son propiedad de Cruise Technologies, Inc. y están protegidos por leyes de propiedad intelectual. No puede copiar, modificar, distribuir ni crear trabajos derivados sin nuestro consentimiento previo por escrito.'
-      : 'The Cruise name, logo, app design, and all related content are the property of Cruise Technologies, Inc. and are protected by intellectual property laws. You may not copy, modify, distribute, or create derivative works without our prior written consent.';
+      ? 'El nombre, logotipo, diseño de la app y todo el contenido relacionado de Cruise son propiedad de Royal Purple LLC y están protegidos por leyes de propiedad intelectual. No puede copiar, modificar, distribuir ni crear trabajos derivados sin nuestro consentimiento previo por escrito.'
+      : 'The Cruise name, logo, app design, and all related content are the property of Royal Purple LLC and are protected by intellectual property laws. You may not copy, modify, distribute, or create derivative works without our prior written consent.';
   String get termsLiabilityTitle =>
       _es ? '12. Limitación de Responsabilidad' : '12. Limitation of Liability';
   String get termsLiabilityBody => _es
@@ -2338,12 +2352,12 @@ class S {
   String get termsGoverningLawTitle =>
       _es ? '17. Ley Aplicable' : '17. Governing Law';
   String get termsGoverningLawBody => _es
-      ? 'Estos Términos se regirán y serán interpretados de acuerdo con las leyes del Estado de Alabama, sin tener en cuenta los principios de conflictos de leyes. Cualquier acción legal no cubierta por arbitraje será presentada ante los tribunales estatales o federales ubicados en el Condado de Jefferson, Alabama.'
-      : 'These Terms shall be governed by and construed in accordance with the laws of the State of Alabama, without regard to conflict of law principles. Any legal action not covered by arbitration shall be brought in the state or federal courts located in Jefferson County, Alabama.';
+      ? 'Estos Términos se regirán exclusivamente por las leyes del Estado de Florida, sin tener en cuenta los principios de conflicto de leyes. Las disputas que no se resuelvan de manera informal se resolverán ante los tribunales estatales o federales ubicados en el Condado de [COUNTY], Florida, y las partes consienten la jurisdicción personal y la competencia de dichos tribunales.'
+      : 'These Terms are governed exclusively by the laws of the State of Florida, without regard to conflict-of-laws principles. Disputes not resolved informally shall be resolved in the state or federal courts located in [COUNTY] County, Florida, and the parties consent to the personal jurisdiction and venue of those courts.';
   String get termsContactTitle => _es ? '18. Contáctenos' : '18. Contact Us';
   String get termsContactBody => _es
-      ? 'Si tiene alguna pregunta sobre estos Términos, contáctenos:\n\nCruise Technologies, Inc.\nEmail: legal@cruiseapp.com\nSoporte: support@cruiseapp.com'
-      : 'If you have any questions about these Terms, please contact us:\n\nCruise Technologies, Inc.\nEmail: legal@cruiseapp.com\nSupport: support@cruiseapp.com';
+      ? 'Si tiene alguna pregunta sobre estos Términos, contáctenos:\n\nRoyal Purple LLC\nEmail: legal@cruiseapp.com\nSoporte: support@cruiseapp.com'
+      : 'If you have any questions about these Terms, please contact us:\n\nRoyal Purple LLC\nEmail: legal@cruiseapp.com\nSupport: support@cruiseapp.com';
   String get termsAcceptanceNotice => _es
       ? 'Al crear una cuenta o usar la app Cruise, usted reconoce que ha leído, comprendido y acepta estar sujeto a estos Términos y Condiciones.'
       : 'By creating an account or using the Cruise app, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.';
@@ -2478,6 +2492,18 @@ class S {
   String get agreeTermsText => _es
       ? 'Acepto los Términos de Servicio para Conductores de Cruise, reconozco la Política de Privacidad y consiento a una verificación de antecedentes.'
       : "I agree to Cruise's Driver Terms of Service, acknowledge the Privacy Policy, and consent to a background check.";
+  String get agreeContractorText => _es
+      ? 'Acepto el Acuerdo de Contratista Independiente.'
+      : 'I agree to the Independent Contractor Agreement.';
+  String get readContractorAgreement => _es
+      ? 'Leer el Acuerdo de Contratista Independiente'
+      : 'Read the Independent Contractor Agreement';
+  String get driverTermsOfServiceMenu => _es
+      ? 'Términos de Servicio para Conductores'
+      : 'Driver Terms of Service';
+  String get driverTermsOfServiceMenuSubtitle => _es
+      ? 'Lee y acepta los términos'
+      : 'Review and accept the terms';
   String get applicationReviewNote => _es
       ? 'Tu solicitud y verificación de antecedentes serán revisadas en 24-48 horas. Se te notificará por correo una vez aprobado.'
       : 'Your application and background check will be reviewed within 24-48 hours. You will be notified via email once approved.';
@@ -2857,8 +2883,8 @@ class S {
   String get shareInviteLinkBtn =>
       _es ? 'Compartir Enlace de Invitación' : 'Share Invite Link';
   String get referDriverShareText => _es
-      ? '¡Conduce con Cruise y gana excelente dinero! Regístrate con mi enlace: https://cruiseride.com/drive'
-      : 'Drive with Cruise and earn great money! Sign up with my link: https://cruiseride.com/drive';
+      ? '¡Conduce con Cruise y gana excelente dinero! Regístrate con mi enlace: https://cruiseinride.com/drive'
+      : 'Drive with Cruise and earn great money! Sign up with my link: https://cruiseinride.com/drive';
   String get howItWorksTitle => _es ? 'Cómo funciona' : 'How it works';
   String get howItWorksDesc => _es
       ? '1. Comparte tu enlace de invitación único\n2. Tu amigo se registra y completa sus primeros 50 viajes\n3. Ganas un bono de \$200'
@@ -3041,8 +3067,8 @@ class S {
       ? 'Nunca manejes bajo la influencia de alcohol, medicamentos u otras sustancias.'
       : 'Never drive under the influence of alcohol, medication, or other substances.';
   String get lcSafety5 => _es
-      ? 'Revisa tu vehículo antes de cada turno: frenos, luces, espejos y presión de llantas.'
-      : 'Check your vehicle before each shift: brakes, lights, mirrors, and tire pressure.';
+      ? 'Revisa tu vehículo antes de salir a conducir: frenos, luces, espejos y presión de llantas.'
+      : 'Check your vehicle before you start driving: brakes, lights, mirrors, and tire pressure.';
   String get lcMaxEarningsTitle =>
       _es ? 'Maximizar Ganancias' : 'Maximizing Earnings';
   String get lcMaxEarningsSubtitle => _es
@@ -3111,8 +3137,8 @@ class S {
 
   // ── About Screen ───────────────────────────────────────────────────────────
   String get shareAppText => _es
-      ? '¡Mira Cruise — la mejor experiencia de viaje! 🚗\nhttps://cruiseride.com/download'
-      : 'Check out Cruise - the best ride experience! 🚗\nhttps://cruiseride.com/download';
+      ? '¡Mira Cruise — la mejor experiencia de viaje! 🚗\nhttps://cruiseinride.com/download'
+      : 'Check out Cruise - the best ride experience! 🚗\nhttps://cruiseinride.com/download';
 
   // ── Driver Trip Accept Screen ──
   String get tripCompleted => _es ? 'Viaje Finalizado' : 'Trip Completed';
@@ -3179,8 +3205,6 @@ class S {
   String get shareTripSubtitle => _es ? 'Envía tu ubicación en tiempo real a un contacto' : 'Send your real-time location to a contact';
   String get reportUnsafeRider => _es ? 'Reportar rider inseguro' : 'Report Unsafe Rider';
   String get reportUnsafeSubtitle => _es ? 'Reportar comportamiento inseguro' : 'Flag unsafe behavior for review';
-  String get recordAudio => _es ? 'Grabar audio' : 'Record Audio';
-  String get recordAudioSubtitle => _es ? 'Comienza a grabar por tu seguridad' : 'Start recording for your safety';
   String get currentTrip => _es ? 'Viaje actual' : 'Current Trip';
   String get emergency => _es ? 'Emergencia' : 'Emergency';
   String get call911Help => _es ? 'Llama al 911 para ayuda inmediata' : 'Call 911 for immediate help';
@@ -3795,6 +3819,41 @@ class S {
   String get cancelRequestRetryBackground => _es
       ? 'La solicitud de cancelación puede no haber llegado al servidor — reintentaremos en segundo plano.'
       : 'Cancel request may not have reached the server — we will retry in the background.';
+
+  // ── Driver pre-pickup cancel (accepted trip, before rider boards) ──────
+  // Reason labels shown in the cancel bottom sheet; the machine strings
+  // sent to the API live in driver_trip_accept_screen.dart.
+  String get driverCancelReasonTitle => _es
+      ? '¿Por qué cancelas el viaje?'
+      : 'Why are you cancelling?';
+  String get driverCancelReasonVehicleIssue => _es
+      ? 'Problema con el vehículo'
+      : 'Vehicle issue';
+  String get driverCancelReasonRiderUnreachable => _es
+      ? 'No puedo contactar al pasajero'
+      : 'Rider unreachable';
+  String get driverCancelReasonSafety => _es
+      ? 'Preocupación de seguridad'
+      : 'Safety concern';
+  String get driverCancelReasonWrongPickup => _es
+      ? 'Ubicación de recogida incorrecta'
+      : 'Wrong pickup location';
+  String get driverCancelConfirmTitle => _es
+      ? '¿Cancelar este viaje?'
+      : 'Cancel this trip?';
+  String get driverCancelConfirmBody => _es
+      ? 'El viaje volverá al marketplace y se buscará otro conductor para el pasajero.'
+      : 'The trip will return to the marketplace and another driver will be matched for the rider.';
+  String get driverCancelConfirmButton => _es
+      ? 'Sí, cancelar viaje'
+      : 'Yes, cancel trip';
+  String get driverCancellingLabel => _es ? 'Cancelando...' : 'Cancelling...';
+  String get driverCancelRiderAboard => _es
+      ? 'El pasajero ya está a bordo — usa el flujo de finalizar viaje.'
+      : 'The rider is already aboard — use the end-ride flow instead.';
+  String get driverCancelFailed => _es
+      ? 'No se pudo cancelar el viaje'
+      : 'Could not cancel the trip';
 
   // ── Cancel-code → user-friendly localized message ──────────────
   // Used by the rider UI to translate the canonical `cancelCode`

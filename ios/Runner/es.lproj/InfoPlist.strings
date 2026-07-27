@@ -1,6 +1,6 @@
-"NSLocationWhenInUseUsageDescription" = "Cruise necesita tu ubicación para mostrarte conductores cercanos y calcular rutas.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "Cruise necesita tu ubicación en segundo plano para rastrear tu viaje en tiempo real.";
-"NSLocationAlwaysUsageDescription" = "Cruise necesita tu ubicación para rastrear tu viaje.";
+"NSLocationWhenInUseUsageDescription" = "Cruise usa tu ubicación mientras la app está abierta para mostrar conductores cercanos, calcular rutas y seguir tu viaje.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Conductores: Cruise usa tu ubicación en segundo plano solo mientras estás en línea para que los pasajeros puedan seguir los viajes. Pasajeros: la ubicación se usa solo mientras la app está abierta.";
+"NSLocationAlwaysUsageDescription" = "Conductores: Cruise usa tu ubicación en segundo plano solo mientras estás en línea para que los pasajeros puedan seguir los viajes. Pasajeros: la ubicación se usa solo mientras la app está abierta.";
 "NSCameraUsageDescription" = "Cruise necesita la cámara para tu foto de perfil y verificación de identidad.";
 "NSFaceIDUsageDescription" = "Cruise usa Face ID para iniciar sesión de forma segura.";
 "NSPhotoLibraryUsageDescription" = "Cruise necesita acceso a tus fotos para tu foto de perfil.";

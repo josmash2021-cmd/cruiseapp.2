@@ -181,6 +181,12 @@ class RiderPaymentMethodIn(BaseModel):
     set_default: bool = False
 
 
+class BankAccountAttachIn(BaseModel):
+    # Financial Connections account id (fca_...) collected client-side by the
+    # native Stripe SDK. Raw account/routing numbers are never accepted.
+    account_id: str
+
+
 class WalletTopUpIn(BaseModel):
     amount: float
     payment_method_id: Optional[str] = None

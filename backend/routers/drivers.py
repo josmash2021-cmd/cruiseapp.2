@@ -564,9 +564,12 @@ async def create_driver_financial_connections_session(
             permissions=["balances", "ownership", "payment_method"],
             return_url=f"{PUBLIC_URL}/driver/bank-connected",
         )
+        # NOTE: FC Sessions have NO hosted `url` (session.url 500'd here).
+        # The client_secret launches the native SDK sheet; the WebView flow
+        # in the driver app must be migrated to it.
         return {
-            "url": session.url,
             "client_secret": session.client_secret,
+            "session_id": session.id,
             "stripe_account_id": user.stripe_connect_id,
         }
     except _stripe.error.StripeError as e:

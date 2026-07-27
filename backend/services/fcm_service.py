@@ -29,6 +29,11 @@ try:
 except Exception as _e:
     logging.warning("[FCM] Firebase Admin not available: %s", _e)
 
+# Main event loop reference — captured by _send_fcm_push_async so the
+# stale-token cleanup can schedule coroutines thread-safely from the
+# executor worker thread (asyncio.get_event_loop() always fails there).
+_MAIN_LOOP = None
+
 
 async def send_to_topic_async(topic: str, title: str, body: str, data: dict = None) -> None:
     """Send FCM push to all subscribers of a topic (e.g. 'drivers_available').
@@ -70,6 +75,9 @@ def _send_to_topic(topic: str, title: str, body: str, data: dict = None) -> None
 async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = None, is_offer: bool = False) -> None:
     """Async wrapper — runs FCM push in thread pool to avoid blocking event loop."""
     import asyncio
+    global _MAIN_LOOP
+    if _MAIN_LOOP is None:
+        _MAIN_LOOP = asyncio.get_event_loop()
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: _send_fcm_push(token, title, body, data, is_offer))
 
@@ -137,15 +145,11 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
                     async with _SL() as _db:
                         await _db.execute(_upd(_U).where(_U.fcm_token == token).values(fcm_token=None))
                         await _db.commit()
-                try:
-                    _loop = _asyncio.get_event_loop()
-                    if _loop.is_running():
-                        _asyncio.create_task(_clear())
-                    else:
-                        _loop.run_until_complete(_clear())
-                except Exception:
-                    pass
-                logging.info("[FCM] stale token cleared (...%s)", token[-8:] if token else "?")
+                if _MAIN_LOOP is not None and _MAIN_LOOP.is_running():
+                    _asyncio.run_coroutine_threadsafe(_clear(), _MAIN_LOOP)
+                    logging.info("[FCM] stale token cleared (...%s)", token[-8:] if token else "?")
+                else:
+                    logging.info("[FCM] stale-token cleanup skipped (no main loop)")
             except Exception as _clean_err:
                 logging.warning("[FCM] stale-token cleanup failed: %s", _clean_err)
         else:

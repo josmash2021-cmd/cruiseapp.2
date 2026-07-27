@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
 )
-from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn
+from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn, BankAccountAttachIn
 from utils.security import (
     HMAC_SECRET,
 
@@ -402,9 +402,131 @@ async def create_financial_connections_session(
             permissions=["payment_method"],
             return_url=f"{os.environ.get('PUBLIC_URL', 'https://cruiseinride.com')}/bank-connected",
         )
-        return {"url": session.url, "client_secret": session.client_secret}
+        # NOTE: FC Sessions have NO hosted `url` — the object only carries a
+        # client_secret that the native SDK (flutter_stripe
+        # collectFinancialConnectionsAccounts) uses to launch the bank
+        # linking sheet. Returning session.url here 500'd in production.
+        return {"client_secret": session.client_secret, "session_id": session.id}
     except _stripe_mod.error.StripeError as e:
         logging.error("[Stripe] Financial Connections session failed: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+@router.post("/stripe/bank-accounts/attach", dependencies=[Depends(_verify_api_key)])
+async def attach_bank_account(
+    payload: BankAccountAttachIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Convert a Financial Connections account (collected client-side by the
+    native Stripe SDK) into a us_bank_account PaymentMethod, attach it to the
+    rider's Stripe customer and register it in rider_payment_methods so it
+    shows in settings and can be charged via ACH."""
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured on this server")
+
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        raise HTTPException(500, "Could not initialise payment customer")
+
+    try:
+        pm = _stripe_mod.PaymentMethod.create(
+            type="us_bank_account",
+            us_bank_account={
+                "financial_connections_account": payload.account_id,
+            },
+        )
+        _stripe_mod.PaymentMethod.attach(pm.id, customer=customer_id)
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[Stripe] Attach bank account failed: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+    bank = getattr(pm, "us_bank_account", None)
+    bank_name = getattr(bank, "bank_name", None) if bank else None
+    last4 = getattr(bank, "last4", None) if bank else None
+    display = f"{bank_name} •••• {last4}" if bank_name else f"Bank •••• {last4}"
+
+    existing_r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user.id,
+            RiderPaymentMethod.stripe_pm_id == pm.id,
+        )
+    )
+    if existing_r.scalar_one_or_none() is None:
+        db.add(
+            RiderPaymentMethod(
+                user_id=user.id,
+                method_type="bank_account",
+                display_name=display,
+                stripe_pm_id=pm.id,
+                is_default=False,
+            )
+        )
+        await db.commit()
+
+    return {
+        "stripe_pm_id": pm.id,
+        "bank_name": bank_name,
+        "last4": last4,
+        "display_name": display,
+    }
+
+
+@router.get("/stripe/bank-accounts", dependencies=[Depends(_verify_api_key)])
+async def list_bank_accounts(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the rider's linked US bank accounts (ACH) and upsert them into
+    rider_payment_methods so they survive reinstall and appear in settings.
+
+    Returns an empty list (never 503) when Stripe is not configured so the
+    app doesn't break in dev environments."""
+    if not _HAS_STRIPE:
+        return {"accounts": []}
+
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        return {"accounts": []}
+
+    try:
+        pms = _stripe_mod.PaymentMethod.list(
+            customer=customer_id, type="us_bank_account"
+        )
+        accounts = []
+        for pm in pms.data:
+            bank = getattr(pm, "us_bank_account", None)
+            bank_name = getattr(bank, "bank_name", None) if bank else None
+            last4 = getattr(bank, "last4", None) if bank else None
+            display = (
+                f"{bank_name} •••• {last4}" if bank_name else f"Bank •••• {last4}"
+            )
+
+            # Upsert into rider_payment_methods (same pattern as
+            # sync_payment_method: skip if this stripe_pm_id already exists).
+            existing_r = await db.execute(
+                select(RiderPaymentMethod).where(
+                    RiderPaymentMethod.user_id == user.id,
+                    RiderPaymentMethod.stripe_pm_id == pm.id,
+                )
+            )
+            if existing_r.scalar_one_or_none() is None:
+                db.add(
+                    RiderPaymentMethod(
+                        user_id=user.id,
+                        method_type="bank_account",
+                        display_name=display,
+                        stripe_pm_id=pm.id,
+                        is_default=False,
+                    )
+                )
+            accounts.append(
+                {"stripe_pm_id": pm.id, "bank_name": bank_name, "last4": last4}
+            )
+        await db.commit()
+        return {"accounts": accounts}
+    except _stripe_mod.error.StripeError as e:
+        logging.error("[Stripe] List bank accounts failed: %s", e)
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
 

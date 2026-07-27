@@ -50,6 +50,10 @@
     <div class="spinner"></div>
   </div>
 
+  <!-- Mapbox GL JS v3 (web map renderer). Token is injected from Dart via --dart-define=MAPBOX_TOKEN, never here. -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.12.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.12.0/mapbox-gl.js"></script>
+
   <!-- GOOGLE_MAPS_API_KEY is injected at build time. For local dev, replace __GOOGLE_MAPS_API_KEY__ with your key or run the generate_env script. -->
   <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=places"></script>
   <script src="flutter_bootstrap.js" async></script>

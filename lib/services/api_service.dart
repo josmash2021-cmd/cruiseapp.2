@@ -3319,6 +3319,34 @@ class ApiService {
   //  STRIPE LINK / FINANCIAL CONNECTIONS (BANK ACCOUNT)
   // ═══════════════════════════════════════════════════════
 
+  /// List the rider's linked US bank accounts (ACH). Each entry has
+  /// stripe_pm_id, bank_name and last4. Empty list when none/Stripe off.
+  static Future<List<Map<String, dynamic>>> getBankAccounts() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/stripe/bank-accounts'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    final dynamic data = _parse(res);
+    if (data is Map<String, dynamic>) {
+      final accounts = data['accounts'];
+      if (accounts is List) {
+        final out = <Map<String, dynamic>>[];
+        for (final item in accounts) {
+          if (item is Map<String, dynamic>) {
+            out.add(item);
+          } else if (item is Map) {
+            out.add(Map<String, dynamic>.from(item));
+          }
+        }
+        return out;
+      }
+    }
+    return [];
+  }
+
   /// Create a Stripe Financial Connections session for bank account linking.
   static Future<Map<String, dynamic>?> createFinancialConnectionsSession() async {
     final h = await _authHeaders();
@@ -3328,6 +3356,21 @@ class ApiService {
           headers: h,
         )
         .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Convert a Financial Connections account (fca_...) into an attached
+  /// us_bank_account PaymentMethod on the backend. Returns the display
+  /// info (bank name / last4 / stripe_pm_id) or throws on failure.
+  static Future<Map<String, dynamic>?> attachBankAccount(String accountId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/stripe/bank-accounts/attach'),
+          headers: h,
+          body: jsonEncode({'account_id': accountId}),
+        )
+        .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
 

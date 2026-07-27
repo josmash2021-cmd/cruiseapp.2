@@ -385,6 +385,29 @@ class S {
   String get deleteAccountConfirm => _es
       ? 'Esto eliminará permanentemente tu cuenta y todos tus datos. Esta acción no se puede deshacer.'
       : 'This will permanently delete your account and all data. This action cannot be undone.';
+  String get deleteAccountError => _es
+      ? 'No se pudo eliminar tu cuenta. Revisa tu conexión e inténtalo de nuevo.'
+      : 'Could not delete your account. Check your connection and try again.';
+  String get exportDataAction => _es ? 'Exportar Datos' : 'Export Data';
+  String get exportingData =>
+      _es ? 'Exportando tus datos...' : 'Exporting your data...';
+  String get exportDataSummary => _es
+      ? 'Mira un resumen de los datos personales que guardamos sobre ti.'
+      : 'View a summary of the personal data we store about you.';
+  String get yourDataExport =>
+      _es ? 'Tu Exportación de Datos' : 'Your Data Export';
+  String get exportTripsLabel => _es ? 'Viajes' : 'Trips';
+  String get exportRatingsLabel => _es ? 'Calificaciones' : 'Ratings';
+  String get exportConsentLabel =>
+      _es ? 'Historial de Consentimiento' : 'Consent History';
+  String get joinedLabel => _es ? 'Miembro desde' : 'Joined';
+  String tripsOnRecord(int count) =>
+      _es ? '$count viaje(s) registrados' : '$count trip(s) on record';
+  String ratingsGiven(int count) =>
+      _es ? '$count calificación(es) dadas' : '$count rating(s) given';
+  String consentRecords(int count) => _es
+      ? '$count registro(s) de consentimiento'
+      : '$count consent record(s)';
 
   // ── Edit Profile ──────────────────────────────────────────────────────────
   String get changePhoto => _es ? 'Cambiar Foto' : 'Change Photo';
@@ -1442,6 +1465,14 @@ class S {
       ? 'Retiro instantáneo disponible con tarjetas de débito'
       : 'Instant cashout available with debit cards';
   String get addCard => _es ? 'Agregar tarjeta' : 'Add card';
+  String get addDebitCreditCard =>
+      _es ? 'Agregar tarjeta de débito/crédito' : 'Add Debit/Credit Card';
+  String get cardEntryMobileOnly => _es
+      ? 'La captura segura de tarjeta está disponible en la app móvil (iOS / Android).'
+      : 'Secure card entry is available in the mobile app (iOS / Android).';
+  String get bankLinkMobileOnly => _es
+      ? 'La vinculación bancaria está disponible en la app móvil (iOS / Android).'
+      : 'Bank linking is available in the mobile app (iOS / Android).';
   String get debitCardAdded => _es
       ? 'Tarjeta de débito agregada — retiro instantáneo habilitado'
       : 'Debit card added — instant cashout enabled';

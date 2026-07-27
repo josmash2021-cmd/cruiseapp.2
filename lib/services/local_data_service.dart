@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -491,6 +491,56 @@ class LocalDataService {
     } else {
       return _secureStorage.read(key: _stripePaymentMethodIdKey);
     }
+  }
+
+  // ── Bank account (ACH) ──
+
+  static const _stripeBankPmIdKey = 'stripe_bank_pm_id_v1';
+  static const _bankLast4Key = 'bank_last4';
+
+  /// Save the Stripe PaymentMethod ID of the linked bank account (ACH).
+  static Future<void> saveStripeBankPmId(String pmId) async {
+    if (kIsWeb) {
+      final prefs = _p;
+      await prefs.setString(_stripeBankPmIdKey, pmId);
+    } else {
+      await _secureStorage.write(key: _stripeBankPmIdKey, value: pmId);
+    }
+  }
+
+  /// Get the stored bank account PaymentMethod ID (null if none).
+  static Future<String?> getStripeBankPmId() async {
+    if (kIsWeb) {
+      final prefs = _p;
+      return prefs.getString(_stripeBankPmIdKey);
+    } else {
+      return _secureStorage.read(key: _stripeBankPmIdKey);
+    }
+  }
+
+  /// Save the last 4 digits of the linked bank account.
+  static Future<void> saveBankLast4(String last4) async {
+    final prefs = _p;
+    await prefs.setString(_bankLast4Key, last4);
+  }
+
+  /// Get the stored bank account last 4 digits (null if none).
+  static Future<String?> getBankLast4() async {
+    final prefs = _p;
+    return prefs.getString(_bankLast4Key);
+  }
+
+  /// Wipe all locally cached bank account data. Called when the user
+  /// removes the linked account so no stale ACH PaymentMethod id survives.
+  static Future<void> clearBankAccount() async {
+    final prefs = _p;
+    await prefs.remove(_bankLast4Key);
+    if (kIsWeb) {
+      await prefs.remove(_stripeBankPmIdKey);
+    } else {
+      await _secureStorage.delete(key: _stripeBankPmIdKey);
+    }
+    await unlinkPaymentMethod('bank_account');
   }
 
   /// Save the last 4 digits of a linked credit card.

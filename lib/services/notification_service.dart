@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../utils/app_platform.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'haptic_service.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'api_service.dart';
 import 'prefs_cache.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -36,6 +38,25 @@ class NotificationService {
   // AudioPlayer instances — one per sound so they can overlap if needed
   static final AudioPlayer _onlinePlayer = AudioPlayer();
   static final AudioPlayer _offerPlayer = AudioPlayer();
+
+  /// FCM token-refresh subscription (see [registerTokenWithBackend]).
+  /// Never cancelled: the service is a process-lifetime static.
+  static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// Registers the current FCM token with the backend and keeps it updated
+  /// on rotation. Safe to call multiple times and before login (fails silently).
+  static Future<void> registerTokenWithBackend() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final token = await messaging.getToken();
+      if (token != null) {
+        unawaited(ApiService.saveFcmToken(token).catchError((_) {}));
+      }
+      _tokenRefreshSub ??= messaging.onTokenRefresh.listen((t) {
+        unawaited(ApiService.saveFcmToken(t).catchError((_) {}));
+      });
+    } catch (_) {}
+  }
 
   /// Initialize the notification plugin. Call once at app startup.
   static Future<void> init() async {
@@ -198,6 +219,9 @@ class NotificationService {
     if (!_initialized) await init();
 
     final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+
+    // Master gate — when notifications are disabled app-wide, nothing shows.
+    if (!(prefs.getBool('notif_master') ?? true)) return;
 
     if (type == 'ride' && !(prefs.getBool('notif_ride') ?? true)) return;
     if (type == 'promo' && !(prefs.getBool('notif_promo') ?? true)) return;

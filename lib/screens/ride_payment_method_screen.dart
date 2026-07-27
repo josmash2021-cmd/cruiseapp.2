@@ -1,12 +1,15 @@
 import '../utils/app_platform.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import '../services/haptic_service.dart';
 import '../services/api_service.dart';
+import '../services/local_data_service.dart';
 
 import '../l10n/app_localizations.dart';
-import 'tap_to_pay_screen.dart';
+import '../widgets/neu_style.dart';
+import 'credit_card_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Payment Method — Grid 2×2 de tarjetas cuadradas como en la web de Shopify
@@ -21,9 +24,8 @@ import 'tap_to_pay_screen.dart';
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
-// Pure black page background to match the web overlay's backdrop-filter
-// result (shows through as near-black over the dark map).
-const _bg = Color(0xFF000000);
+// Neumorphic page background (shows through over the dark map).
+const _bg = neuBase;
 
 class PaymentMethodId {
   static const apple = 'apple_pay';
@@ -90,22 +92,126 @@ class RidePaymentMethodScreen extends StatefulWidget {
 }
 
 class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late String _selected;
   late final AnimationController _entryCtl;
+
+  // Saved debit/credit card — when present the card tile shows the brand
+  // logo + last 4 digits instead of the "Add card" prompt.
+  String? _cardBrand;
+  String? _cardLast4;
+
+  // Linked bank account (ACH) — when present the bank tile shows the
+  // bank name / last 4 instead of the linking prompt.
+  String? _bankLast4;
+  String? _bankName;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _selected = widget.currentMethod;
     _entryCtl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     )..forward();
+    _loadCardInfo();
+    _loadBankInfo();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh bank info when returning from the linking browser flow.
+    if (state == AppLifecycleState.resumed) _loadBankInfo();
+  }
+
+  /// Loads the saved card from local cache instantly, then refreshes from
+  /// the backend so cards survive reinstalls (same contract as the
+  /// ride-request controller: display_name "Visa ending in 4242").
+  Future<void> _loadCardInfo() async {
+    final last4 = await LocalDataService.getCreditCardLast4();
+    final brand = await LocalDataService.getCreditCardBrand();
+    if (!mounted) return;
+    setState(() {
+      _cardLast4 = last4;
+      _cardBrand = brand;
+    });
+
+    try {
+      final methods = await ApiService.getMyPaymentMethods();
+      final stripeCards =
+          methods.where((m) => m['method_type'] == 'stripe_card').toList();
+      if (stripeCards.isEmpty) return;
+      final defaultCard = stripeCards.firstWhere(
+        (m) => m['is_default'] == true,
+        orElse: () => stripeCards.first,
+      );
+      final displayName = defaultCard['display_name'] as String? ?? '';
+      final match = RegExp(r'(\d{4})$').firstMatch(displayName);
+      if (match == null) return;
+      final freshBrand = displayName.split(' ').first.toLowerCase();
+      await LocalDataService.saveCreditCardLast4(match.group(1)!);
+      await LocalDataService.saveCreditCardBrand(freshBrand);
+      if (!mounted) return;
+      setState(() {
+        _cardLast4 = match.group(1);
+        _cardBrand = freshBrand;
+      });
+    } catch (_) {
+      // Non-fatal — the local cache (if any) is already showing.
+    }
+  }
+
+  /// Loads the linked bank account from the backend and caches it
+  /// locally so the tile (and the ACH charge path) can use it offline.
+  Future<void> _loadBankInfo() async {
+    try {
+      final accounts = await ApiService.getBankAccounts();
+      if (!mounted) return;
+      if (accounts.isEmpty) return;
+      final first = accounts.first;
+      final pmId = first['stripe_pm_id'] as String?;
+      final last4 = first['last4'] as String?;
+      final bankName = first['bank_name'] as String?;
+      if (pmId != null) {
+        await LocalDataService.saveStripeBankPmId(pmId);
+        await LocalDataService.linkPaymentMethod('bank_account');
+      }
+      if (last4 != null) await LocalDataService.saveBankLast4(last4);
+      if (!mounted) return;
+      setState(() {
+        _bankLast4 = last4;
+        _bankName = bankName;
+      });
+    } catch (_) {
+      // Non-fatal — the tile keeps its "Bank Account" linking prompt.
+    }
+  }
+
+  /// Opens the add-card flow; on success ("brand:last4") the tile updates
+  /// to the brand logo + last 4 digits.
+  Future<void> _addCard() async {
+    HapticService.selectionClick();
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const CreditCardScreen()),
+    );
+    if (result == null || !mounted) return;
+    final parts = result.split(':');
+    if (parts.length == 2) {
+      await LocalDataService.saveCreditCardBrand(parts[0]);
+      await LocalDataService.saveCreditCardLast4(parts[1]);
+      await LocalDataService.linkPaymentMethod('credit_card');
+      if (!mounted) return;
+      setState(() {
+        _cardBrand = parts[0];
+        _cardLast4 = parts[1];
+      });
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _entryCtl.dispose();
     super.dispose();
   }
@@ -119,13 +225,23 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     });
   }
 
-  /// Open Stripe Financial Connections to link a bank account.
+  bool _linkingBank = false;
+
+  /// Opens the native Stripe Financial Connections sheet to link a bank
+  /// account (ACH), then attaches it server-side so it can be charged.
   Future<void> _openBankConnection(BuildContext ctx) async {
+    if (_linkingBank) return; // double-tap guard
     HapticService.selectionClick();
     final s = S.of(ctx);
-    
-    // Show loading indicator
-    if (!mounted) return;
+
+    if (kIsWeb) {
+      // flutter_stripe's FC sheet is native-only; Stripe hosts no web URL
+      // for this flow (the session object only carries a client_secret).
+      _showBankError(ctx, s.bankLinkMobileOnly);
+      return;
+    }
+
+    _linkingBank = true;
     showDialog(
       context: ctx,
       barrierDismissible: false,
@@ -136,30 +252,69 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
 
     try {
       final result = await ApiService.createFinancialConnectionsSession();
+      final clientSecret = result?['client_secret'] as String?;
       if (!mounted) return;
-      // dismiss loading using the State's context (guarded by mounted)
+      // Dismiss the loading spinner before presenting the native sheet.
       if (Navigator.of(context, rootNavigator: true).canPop()) {
         Navigator.of(context, rootNavigator: true).pop();
       }
+      if (clientSecret == null) {
+        _showBankError(ctx, s.genericPaymentError);
+        return;
+      }
 
-      if (result != null && result['url'] != null) {
-        final url = Uri.parse(result['url'] as String);
-        if (await canLaunchUrl(url)) {
-          await launchUrl(url, mode: LaunchMode.externalApplication);
-        } else {
-          if (!mounted) return;
-          _showBankError(context, s.genericPaymentError);
-        }
-      } else {
-        if (!mounted) return;
-        _showBankError(context, s.genericPaymentError);
+      final collected =
+          await Stripe.instance.collectFinancialConnectionsAccounts(
+        clientSecret: clientSecret,
+      );
+      if (!mounted) return;
+
+      final accounts = collected.session.accounts;
+      if (accounts.isEmpty) return; // sheet closed without selecting
+      final attached = await ApiService.attachBankAccount(accounts.first.id);
+      if (!mounted) return;
+
+      final last4 = attached?['last4'] as String? ?? accounts.first.last4;
+      final bankName =
+          attached?['bank_name'] as String? ?? accounts.first.institutionName;
+      final pmId = attached?['stripe_pm_id'] as String?;
+      if (pmId != null) {
+        await LocalDataService.saveStripeBankPmId(pmId);
+        await LocalDataService.linkPaymentMethod('bank_account');
+      }
+      if (last4 != null) await LocalDataService.saveBankLast4(last4);
+      if (!mounted) return;
+      setState(() {
+        _bankLast4 = last4;
+        _bankName = bankName;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text(s.bankAccountLinked),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on StripeException catch (e) {
+      if (!mounted) return;
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      }
+      // User cancelled the native sheet — stay silent, that's fine.
+      final code = e.error.code.toString().toLowerCase();
+      if (!code.contains('cancel')) {
+        _showBankError(
+            ctx, e.error.localizedMessage ?? s.genericPaymentError);
       }
     } catch (e) {
       if (!mounted) return;
       if (Navigator.of(context, rootNavigator: true).canPop()) {
         Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
       }
-      _showBankError(context, '${s.genericPaymentError} (${e.toString()})');
+      _showBankError(ctx, '${s.genericPaymentError} (${e.toString()})');
+    } finally {
+      _linkingBank = false;
     }
   }
 
@@ -223,20 +378,33 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                         icon: _GoogleGLogo(size: 32),
                         onTap: () => _pick(PaymentMethodId.google),
                       ),
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: 0.08,
-                      id: PaymentMethodId.card,
-                      selected: _selected == PaymentMethodId.card,
-                      iconBg: const Color(0xFF2A2A2A),
-                      label: s.cardPaymentLabel,
-                      icon: const Icon(
-                        Icons.credit_card_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      onTap: () => _pick(PaymentMethodId.card),
-                    ),
+                    _cardLast4 != null
+                        // Saved card: brand logo + last 4 digits
+                        ? _PayCard(
+                            entryCtl: _entryCtl,
+                            staggerDelay: 0.08,
+                            id: PaymentMethodId.card,
+                            selected: _selected == PaymentMethodId.card,
+                            iconBg: const Color(0xFF2A2A2A),
+                            label: '•••• $_cardLast4',
+                            icon: _CardBrandBadge(brand: _cardBrand),
+                            onTap: () => _pick(PaymentMethodId.card),
+                          )
+                        // No card yet: prompt to add one
+                        : _PayCard(
+                            entryCtl: _entryCtl,
+                            staggerDelay: 0.08,
+                            id: PaymentMethodId.card,
+                            selected: false,
+                            iconBg: const Color(0xFF2A2A2A),
+                            label: s.addDebitCreditCard,
+                            icon: const Icon(
+                              Icons.add_card_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            onTap: _addCard,
+                          ),
                     // Tap to Pay - NFC Contactless Payment
                     // Only visible on Android. iOS requires Apple's
                     // proximity-reader entitlement which is per-app and
@@ -268,10 +436,16 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       iconBg: const Color(0xFF0F1A12),
                       iconBorder:
                           const Color(0xFF22C55E).withValues(alpha: 0.45),
-                      label: 'Bank Account',
+                      label: _bankLast4 != null
+                          ? (_bankName != null
+                              ? '$_bankName •••• $_bankLast4'
+                              : 'Bank •••• $_bankLast4')
+                          : 'Bank Account',
                       icon: const Icon(Icons.account_balance_rounded,
                           color: Color(0xFF22C55E), size: 28),
-                      onTap: () => _openBankConnection(context),
+                      onTap: _bankLast4 != null
+                          ? () => _pick(PaymentMethodId.bank)
+                          : () => _openBankConnection(context),
                     ),
                     if (widget.showTestMode)
                       _PayCard(
@@ -323,15 +497,9 @@ class _Header extends StatelessWidget {
               onTap: onBack,
               customBorder: const CircleBorder(),
               child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.07),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.10),
-                  ),
-                ),
+                width: 40,
+                height: 40,
+                decoration: neuBox(radius: 14, pressed: true),
                 alignment: Alignment.center,
                 child: const Icon(Icons.arrow_back_rounded,
                     color: Colors.white, size: 18),
@@ -468,20 +636,16 @@ class _PayCardState extends State<_PayCard> {
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? const Color(0x14E8C547) // dorado muy suave
-                : _pressed
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : const Color(0xFF1A1A1F), // gris oscuro
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: widget.selected
-                  ? _gold.withValues(alpha: 0.6)
-                  : Colors.white.withValues(alpha: 0.10),
-              width: widget.selected ? 2 : 1,
-            ),
-          ),
+          // Neumorphic tile; selected gets the thin gold border (same
+          // treatment as the fleet cards), press sinks the surface.
+          decoration: widget.selected
+              ? neuBox(radius: 20).copyWith(
+                  border: Border.all(
+                    color: _gold.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
+                )
+              : neuBox(radius: 20, pressed: _pressed),
           child: Stack(
             children: [
               // Check en esquina superior derecha
@@ -495,17 +659,11 @@ class _PayCardState extends State<_PayCard> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Icono grande
+                    // Icon inside a pressed neumorphic well
                     Container(
                       width: 56,
                       height: 56,
-                      decoration: BoxDecoration(
-                        color: widget.iconBg,
-                        borderRadius: BorderRadius.circular(14),
-                        border: widget.iconBorder != null
-                            ? Border.all(color: widget.iconBorder!, width: 1.5)
-                            : null,
-                      ),
+                      decoration: neuBox(radius: 12, pressed: true),
                       alignment: Alignment.center,
                       child: widget.icon,
                     ),
@@ -663,4 +821,102 @@ class _GoogleGPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ─── Card brand badge — Visa / Mastercard / Amex / Discover ───
+// Compact brand chip shown inside the payment card tile when the rider has
+// a saved debit/credit card. Falls back to a generic card icon for unknown
+// brands.
+class _CardBrandBadge extends StatelessWidget {
+  final String? brand;
+
+  const _CardBrandBadge({required this.brand});
+
+  @override
+  Widget build(BuildContext context) {
+    switch ((brand ?? '').toLowerCase()) {
+      case 'visa':
+        return const _BrandText(
+          'VISA',
+          color: Color(0xFF1A56DB),
+          italic: true,
+        );
+      case 'mastercard':
+        return SizedBox(
+          width: 34,
+          height: 22,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                child: _Circle(const Color(0xFFEB001B)),
+              ),
+              Positioned(
+                right: 0,
+                child: _Circle(const Color(0xFFF79E1B)),
+              ),
+            ],
+          ),
+        );
+      case 'amex':
+      case 'american_express':
+      case 'american express':
+        return const _BrandText('AMEX', color: Color(0xFF2E77BC));
+      case 'discover':
+        return const _BrandText('DISC', color: Color(0xFFFF6000));
+      default:
+        return const Icon(
+          Icons.credit_card_rounded,
+          color: Colors.white,
+          size: 28,
+        );
+    }
+  }
+}
+
+class _BrandText extends StatelessWidget {
+  final String text;
+  final Color color;
+  final bool italic;
+
+  const _BrandText(this.text, {required this.color, this.italic = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+          fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Circle extends StatelessWidget {
+  final Color color;
+
+  const _Circle(this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.9),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
 }

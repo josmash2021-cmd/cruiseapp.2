@@ -1,17 +1,13 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:local_auth/local_auth.dart';
 import 'welcome_screen.dart';
-import 'welcome_back_screen.dart';
-import 'account_deactivated_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
-import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
@@ -304,18 +300,6 @@ class _SplashScreenState extends State<SplashScreen>
     // ── User has local session — route by cached role immediately ──
     final mode = await UserSession.getMode();
 
-    // ── Fetch the user's first name for the welcome-back splash ──
-    final sessionUser = await UserSession.getUser();
-    String firstName = sessionUser?['firstName'] ?? '';
-    if (firstName.isEmpty) {
-      final fbUser = FirebaseAuth.instance.currentUser;
-      final displayName = fbUser?.displayName;
-      if (displayName != null && displayName.isNotEmpty) {
-        firstName = displayName.split(' ').first;
-      }
-    }
-    if (firstName.isEmpty) firstName = 'de nuevo';
-
     if (mode == 'driver') {
       await UserSession.initPhotoNotifier();
 
@@ -326,7 +310,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (wasEverApproved) {
         debugPrint('[SplashScreen] Driver was previously approved — going to home');
         unawaited(_refreshApprovalStatusInBackground());
-        return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+        return const DriverHomeScreen();
       }
 
       // ── Read approval status from local cache first (instant) ──
@@ -335,7 +319,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (_isApprovedStatus(cachedStatus)) {
         // Verified → go straight to DriverHomeScreen
         unawaited(_backgroundProfileSync());
-        return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+        return const DriverHomeScreen();
       }
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
@@ -352,7 +336,7 @@ class _SplashScreenState extends State<SplashScreen>
           if (_isApprovedStatus(liveStatus)) {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+            return const DriverHomeScreen();
           } else if (liveStatus == 'rejected') {
             await LocalDataService.setDriverApprovalStatus('rejected');
             return const DriverPendingReviewScreen();
@@ -367,7 +351,7 @@ class _SplashScreenState extends State<SplashScreen>
           if (fsStatus == 'approved') {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+            return const DriverHomeScreen();
           }
         }
         // If API failed and we have no evidence of approval, show pending.
@@ -385,7 +369,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (fsStatus == 'approved') {
         await LocalDataService.setDriverApprovalStatus('approved');
         unawaited(_backgroundProfileSync());
-        return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+        return const DriverHomeScreen();
       }
       if (fsStatus == 'rejected') {
         await LocalDataService.setDriverApprovalStatus('rejected');
@@ -406,7 +390,7 @@ class _SplashScreenState extends State<SplashScreen>
 
         if (_isApprovedStatus(status)) {
           unawaited(_backgroundProfileSync());
-          return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+          return const DriverHomeScreen();
         } else {
           return const DriverPendingReviewScreen();
         }
@@ -421,7 +405,7 @@ class _SplashScreenState extends State<SplashScreen>
             debugPrint('[SplashScreen] getMe fallback indicates approved — letting driver in');
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return WelcomeBackScreen(firstName: firstName, destination: const DriverHomeScreen());
+            return const DriverHomeScreen();
           }
         } catch (_) {}
         // If we truly cannot determine status, show pending BUT log it.
@@ -435,7 +419,7 @@ class _SplashScreenState extends State<SplashScreen>
       // Fire background profile sync + account status check (no await)
       unawaited(_backgroundProfileSync());
 
-      return WelcomeBackScreen(firstName: firstName, destination: const HomeScreen());
+      return const HomeScreen();
     }
   }
 

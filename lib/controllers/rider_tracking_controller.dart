@@ -1835,7 +1835,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _saveRideState();
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const HomeScreen(forceExpandPanel: true),
+        pageBuilder: (_, __, ___) => const HomeScreen(),
         transitionsBuilder: (_, a, __, child) =>
             FadeTransition(opacity: a, child: child),
         transitionDuration: const Duration(milliseconds: 300),

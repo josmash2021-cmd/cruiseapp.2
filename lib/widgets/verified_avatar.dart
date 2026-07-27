@@ -17,6 +17,10 @@ class VerifiedAvatar extends StatelessWidget {
   final String? role;
   final bool isVerified;
 
+  /// Optional fade-in duration forwarded to [ProfileAvatar].
+  /// Null keeps the default behavior for all existing callers.
+  final Duration? fadeInDuration;
+
   const VerifiedAvatar({
     super.key,
     this.photoUrl,
@@ -26,6 +30,7 @@ class VerifiedAvatar extends StatelessWidget {
     this.uid,
     this.role,
     this.isVerified = false,
+    this.fadeInDuration,
   });
 
   @override
@@ -38,6 +43,7 @@ class VerifiedAvatar extends StatelessWidget {
       isVerified: isVerified,
       uid: uid,
       role: role,
+      fadeInDuration: fadeInDuration,
     );
   }
 }

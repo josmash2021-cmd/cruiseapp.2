@@ -41,11 +41,11 @@ import 'rider_tracking_screen.dart';
 import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/car_image_3d.dart';
+import '../widgets/neu_style.dart';
 import '../utils/responsive.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';
-import '../widgets/vehicle_tier_badge.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
@@ -457,6 +457,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
+  String? _savedBankLast4; // linked bank account (ACH) last 4
   bool _isProcessingPayment = false;
   // Hard timeout that frees the Request Ride / Pay button if the payment
   // pipeline hangs (Stripe SDK never returns, OS sheet stuck, network

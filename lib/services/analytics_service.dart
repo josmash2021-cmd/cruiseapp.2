@@ -1,16 +1,22 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Singleton analytics service wrapping Firebase Analytics.
 ///
 /// Provides typed methods for all key app events so screens don't
 /// need to know about Firebase directly.
+///
+/// Privacy: every event is gated behind the "Usage Analytics" toggle
+/// (`privacy_analytics` in SharedPreferences) — when disabled, all
+/// logging is a no-op and Firebase collection is turned off.
 class AnalyticsService {
   AnalyticsService._();
   static final AnalyticsService instance = AnalyticsService._();
 
   late final FirebaseAnalytics _analytics;
   bool _initialized = false;
+  bool _enabled = true;
 
   /// Initialize — call once from main.dart during startup.
   Future<void> init() async {
@@ -18,9 +24,28 @@ class AnalyticsService {
     try {
       _analytics = FirebaseAnalytics.instance;
       _initialized = true;
+      // Honor the persisted "Usage Analytics" privacy toggle so the
+      // choice survives across sessions.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        _enabled = prefs.getBool('privacy_analytics') ?? true;
+        await _analytics.setAnalyticsCollectionEnabled(_enabled);
+      } catch (_) {}
       debugPrint('[Analytics] Initialized');
     } catch (e) {
       debugPrint('[Analytics] Init failed: $e');
+    }
+  }
+
+  /// Master switch for the "Usage Analytics" privacy toggle.
+  /// Also forwards the flag to Firebase Analytics collection.
+  Future<void> setEnabled(bool value) async {
+    _enabled = value;
+    if (!_initialized) return;
+    try {
+      await _analytics.setAnalyticsCollectionEnabled(value);
+    } catch (e) {
+      debugPrint('[Analytics] setEnabled error: $e');
     }
   }
 
@@ -34,7 +59,7 @@ class AnalyticsService {
   // ── User identity ──────────────────────────────────────
 
   Future<void> setUserId(String? userId) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.setUserId(id: userId);
     } catch (e) {
@@ -43,7 +68,7 @@ class AnalyticsService {
   }
 
   Future<void> setUserType(String type) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.setUserProperty(name: 'user_type', value: type);
     } catch (e) {
@@ -52,7 +77,7 @@ class AnalyticsService {
   }
 
   Future<void> setCity(String city) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.setUserProperty(name: 'city', value: city);
     } catch (e) {
@@ -61,7 +86,7 @@ class AnalyticsService {
   }
 
   Future<void> setPreferredVehicle(String vehicle) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.setUserProperty(name: 'preferred_vehicle', value: vehicle);
     } catch (e) {
@@ -72,7 +97,7 @@ class AnalyticsService {
   // ── Screen views ───────────────────────────────────────
 
   Future<void> logScreenView(String screenName) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logScreenView(screenName: screenName);
     } catch (e) {
@@ -83,7 +108,7 @@ class AnalyticsService {
   // ── Auth events ────────────────────────────────────────
 
   Future<void> logSignUp(String method) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logSignUp(signUpMethod: method);
     } catch (e) {
@@ -92,7 +117,7 @@ class AnalyticsService {
   }
 
   Future<void> logLogin(String method) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logLogin(loginMethod: method);
     } catch (e) {
@@ -103,7 +128,7 @@ class AnalyticsService {
   // ── Ride events ────────────────────────────────────────
 
   Future<void> logRideRequested(String vehicleType, double fare) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'ride_requested',
@@ -123,7 +148,7 @@ class AnalyticsService {
     double distance,
     int durationMinutes,
   ) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'ride_completed',
@@ -140,7 +165,7 @@ class AnalyticsService {
   }
 
   Future<void> logRideCancelled(String reason, bool byDriver) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'ride_cancelled',
@@ -157,7 +182,7 @@ class AnalyticsService {
   // ── Driver events ──────────────────────────────────────
 
   Future<void> logDriverOnline() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'driver_online');
     } catch (e) {
@@ -166,7 +191,7 @@ class AnalyticsService {
   }
 
   Future<void> logDriverOffline() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'driver_offline');
     } catch (e) {
@@ -175,7 +200,7 @@ class AnalyticsService {
   }
 
   Future<void> logRideOffered() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'ride_offered');
     } catch (e) {
@@ -184,7 +209,7 @@ class AnalyticsService {
   }
 
   Future<void> logRideAccepted() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'ride_accepted');
     } catch (e) {
@@ -193,7 +218,7 @@ class AnalyticsService {
   }
 
   Future<void> logRideDeclined() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'ride_declined');
     } catch (e) {
@@ -204,7 +229,7 @@ class AnalyticsService {
   // ── Payment events ─────────────────────────────────────
 
   Future<void> logPaymentAdded(String method) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'payment_added',
@@ -218,7 +243,7 @@ class AnalyticsService {
   // ── Promo events ───────────────────────────────────────
 
   Future<void> logPromoApplied(String code) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'promo_applied',
@@ -232,7 +257,7 @@ class AnalyticsService {
   // ── Error tracking ─────────────────────────────────────
 
   Future<void> logError(String errorType, String message) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'app_error',
@@ -249,7 +274,7 @@ class AnalyticsService {
   // ── Background check ───────────────────────────────────
 
   Future<void> logBackgroundCheckInitiated() async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: 'background_check_initiated');
     } catch (e) {
@@ -258,7 +283,7 @@ class AnalyticsService {
   }
 
   Future<void> logBackgroundCheckCompleted(String status) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(
         name: 'background_check_completed',
@@ -272,7 +297,7 @@ class AnalyticsService {
   // ── Generic event ──────────────────────────────────────
 
   Future<void> logEvent(String name, {Map<String, Object>? parameters}) async {
-    if (!_initialized) return;
+    if (!_initialized || !_enabled) return;
     try {
       await _analytics.logEvent(name: name, parameters: parameters);
     } catch (e) {

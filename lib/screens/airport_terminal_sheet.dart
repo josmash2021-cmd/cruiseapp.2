@@ -10,6 +10,7 @@ import '../config/api_keys.dart';
 import '../data/airport_data.dart';
 import '../l10n/app_localizations.dart';
 import '../models/airport_models.dart';
+import '../widgets/neu_style.dart';
 
 export '../models/airport_models.dart';
 
@@ -39,8 +40,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   static const _blue      = Color(0xFF3B82F6);
   static const _green     = Color(0xFF22C55E);
   static const _red       = Color(0xFFEF4444);
-  static const _surfaceDark = Color(0xFF0F1419);
-  static const _cardDark    = Color(0xFF1A1D24);
+  // Surfaces follow the shared neumorphic palette (neu_style.dart).
+  static const _surfaceDark = neuBase;
+  static const _cardDark    = neuSurface;
 
   // ── animation ──
   late final AnimationController _animCtrl;
@@ -1419,14 +1421,10 @@ class _HeaderCircleBtnState extends State<_HeaderCircleBtn> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: const Cubic(0, 0, 0.58, 1),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: _pressed
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.transparent,
-          shape: BoxShape.circle,
-        ),
+        width: 40,
+        height: 40,
+        decoration: neuBox(radius: 14, pressed: _pressed),
+        alignment: Alignment.center,
         child: Icon(widget.icon, color: widget.iconColor, size: 20),
       ),
     );

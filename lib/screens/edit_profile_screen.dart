@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/firebase_storage_service.dart';
 import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/user_profile_photo.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -30,18 +31,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _loading = false;
   bool _saving = false;
 
+  /// Original values loaded from the session — the Save button only appears
+  /// when email/phone differ from these or a new photo was picked.
+  String _origEmail = '';
+  String _origPhone = '';
+
   /// Temp path of a newly-picked photo that hasn't been saved yet.
   /// Null means no new photo was picked in this session.
   String? _pendingPhotoPath;
 
+  bool get _hasChanges =>
+      _pendingPhotoPath != null ||
+      _emailCtrl.text.trim() != _origEmail.trim() ||
+      _phoneCtrl.text.trim() != _origPhone.trim();
+
+  void _onFieldChanged() => setState(() {});
+
   @override
   void initState() {
     super.initState();
+    _emailCtrl.addListener(_onFieldChanged);
+    _phoneCtrl.addListener(_onFieldChanged);
     _loadUser();
   }
 
   @override
   void dispose() {
+    _emailCtrl.removeListener(_onFieldChanged);
+    _phoneCtrl.removeListener(_onFieldChanged);
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _emailCtrl.dispose();
@@ -57,6 +74,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _lastNameCtrl.text = user?['lastName'] ?? '';
       _emailCtrl.text = user?['email'] ?? '';
       _phoneCtrl.text = user?['phone'] ?? '';
+      _origEmail = _emailCtrl.text;
+      _origPhone = _phoneCtrl.text;
       _photoPath = user?['photoPath'] ?? '';
       _photoUrl = user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
       _gender = user?['gender'] ?? '';
@@ -68,7 +87,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final c = AppColors.of(context);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: c.panel,
+      backgroundColor: neuBase,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -139,13 +158,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: c.isDark ? c.surface : const Color(0xFFF5F6FA),
-          borderRadius: BorderRadius.circular(14),
-        ),
+        decoration: neuBox(radius: 14),
         child: Row(
           children: [
-            Icon(icon, color: c.textPrimary, size: 22),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(icon, color: _gold, size: 18),
+            ),
             const SizedBox(width: 14),
             Text(
               label,
@@ -263,13 +284,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     if (_loading) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: neuBase,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           children: [
@@ -280,12 +301,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Icon(
                         Icons.arrow_back_rounded,
                         color: c.textPrimary,
-                        size: 24,
+                        size: 20,
                       ),
                     ),
                   ),
@@ -299,35 +322,56 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                   ),
                   const Spacer(),
-                  GestureDetector(
-                    onTap: _saving ? null : _save,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.black,
-                              ),
-                            )
-                          : Text(
-                              S.of(context).save,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1A1400),
-                              ),
-                            ),
+                  // Save only appears (animated) when there's a real change
+                  // in email, phone, or the profile photo.
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: FadeTransition(opacity: anim, child: child),
                     ),
+                    child: !_hasChanges
+                        ? const SizedBox.shrink(key: ValueKey('save_hidden'))
+                        : GestureDetector(
+                            key: const ValueKey('save_visible'),
+                            onTap: _saving ? null : _save,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _gold,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _gold.withValues(alpha: 0.3),
+                                    offset: const Offset(0, 4),
+                                    blurRadius: 12,
+                                  ),
+                                ],
+                              ),
+                              child: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.black,
+                                      ),
+                                    )
+                                  : Text(
+                                      S.of(context).save,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1A1400),
+                                      ),
+                                    ),
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -355,9 +399,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 Container(
                                   width: 100,
                                   height: 100,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: c.surface,
+                                  decoration: neuBox(radius: 50).copyWith(
                                     border: Border.all(
                                       color: _gold.withValues(alpha: 0.4),
                                       width: 2,
@@ -396,7 +438,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               decoration: BoxDecoration(
                                 color: _gold,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: c.bg, width: 2),
+                                border: Border.all(color: neuBase, width: 2),
                               ),
                               child: const Icon(
                                 Icons.camera_alt_rounded,
@@ -465,13 +507,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       opacity: readOnly ? 0.5 : 1.0,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-        ),
+        decoration: neuBox(radius: 14, pressed: true),
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -18,9 +18,9 @@ import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/tier_badge.dart';
 import '../utils/mapbox_safe.dart';
+import '../widgets/neu_style.dart';
 import '../services/map_controller_cache.dart';
 import 'airport_terminal_sheet.dart';
-import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'schedule_ride_flow.dart';
 
@@ -149,7 +149,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     final result = await showScheduleRideFlow(context);
 
     if (result == null || !mounted) return;
-    final (scheduledAt, isAirport) = result;
+    final (scheduledAt, isAirport, searchResult) = result;
 
     // ── Airport branch ────────────────────────────────────────────
     // When the user toggled "Airport trip" in the schedule picker, we
@@ -184,15 +184,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
 
     // ── Schedule (non-airport) branch ─────────────────────────────
-    // Step 2: Open search screen for destination. Pass scheduledAt so
-    // any pushReplacement to RideRequestScreen from inside the search
-    // (map picker handoff) keeps the Reserve Now context intact.
-    final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
-      sharedAxisZRoute(
-        PickupDropoffSearchScreen(scheduledAt: scheduledAt),
-      ),
-    );
-
+    // The flow already pushed the pickup/dropoff search ON TOP of the
+    // time picker (back goes to Select Time, not here). The confirmed
+    // addresses come back inside the flow record.
     if (searchResult == null || !mounted) return;
 
     final pickupDetails = searchResult['pickup'] as PlaceDetails?;
@@ -228,7 +222,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       floatingActionButton: _trips.isNotEmpty
           ? FloatingActionButton(
               onPressed: _startScheduleFlow,
@@ -243,16 +237,13 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
-            backgroundColor: Colors.black,
+            backgroundColor: neuBase,
             surfaceTintColor: Colors.transparent,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(
                 margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: neuBox(radius: 14, pressed: true),
                 child: const Icon(
                   Icons.arrow_back_ios_new_rounded,
                   color: Colors.white,
@@ -270,7 +261,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   letterSpacing: -0.3,
                 ),
               ),
-              background: Container(color: c.bg),
+              background: Container(color: neuBase),
             ),
           ),
 
@@ -728,9 +719,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       onTap: _hasCoords && status != 'completed' && status != 'canceled' ? _toggle : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1D24),
-          borderRadius: BorderRadius.circular(20),
+        decoration: neuBox(radius: 18).copyWith(
           border: Border.all(
             color: _expanded
                 ? _gold.withValues(alpha: 0.35)
@@ -738,13 +727,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                     ? const Color(0xFF4285F4).withValues(alpha: 0.25)
                     : Colors.white.withValues(alpha: 0.06),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Column(
           children: [

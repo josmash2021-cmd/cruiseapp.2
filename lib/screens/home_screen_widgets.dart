@@ -3,230 +3,10 @@ part of 'home_screen.dart';
 // ════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, cards
 // ════════════════════════════════════════════════════════════
+// Neumorphic style lives in lib/widgets/neu_style.dart (shared), imported
+// by home_screen.dart — use neuBase / neuBox here.
 
 extension _HomeScreenWidgets on _HomeScreenState {
-
-  // ════════════════════════════════════════════════════
-  //  M A P - F I R S T   H E L P E R S
-  // ════════════════════════════════════════════════════
-
-  // Full-screen Mapbox background — uses cached controller for instant load
-  // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
-  // (NYC) and move camera when GPS arrives. Prevents blank screen on slow GPS.
-  Widget _buildFullMap() {
-    // Default to NYC if no GPS yet — map shows immediately, camera moves later
-    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
-
-    // Only rebuild the map widget when the epoch changes.
-    // IMPORTANT: Do NOT include _currentLatLng in the cache key. The rider's
-    // GPS updates continuously and unrelated setState() calls (timers,
-    // listeners) would otherwise tear down the native Mapbox view and
-    // recreate it, destroying the annotation manager and stalling the dot.
-    // Camera position is updated via setCamera/flyTo, never by rebuilding.
-    if (_cachedMapWidget != null && _cachedMapEpoch == _mapEpoch) {
-      return _cachedMapWidget!;
-    }
-    _cachedMapEpoch = _mapEpoch;
-
-    // CRITICAL FIX: Use MapWidget with explicit widget options for compatibility
-    // Some devices fail with default renderer. Using textureView + fallback.
-    _cachedMapWidget = mapbox.MapWidget(
-      key: _mapKey,
-      styleUri: MapboxConfig.styleDark,
-      cameraOptions: mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(pos.longitude, pos.latitude),
-        ),
-        zoom: 15.0,
-      ),
-      // FIX: textureView works on more devices than surfaceView (default)
-      // surfaceView can crash on some Mali GPUs and older devices
-      textureView: true,
-      onMapCreated: (ctrl) async {
-        try {
-          _miniMapController = ctrl;
-          // Cache controller for reuse across screens
-          MapControllerCache.instance.cache(ctrl);
-
-          // The native view was just recreated, so any previous annotation
-          // belongs to the old manager. Reset it so we create a fresh one.
-          _miniMapAnnot = null;
-
-          // FIX: Disable all UI elements that might cause rendering issues
-          await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-          await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-          await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-          await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-
-          // FIX: Create annotation manager with error handling.
-          // Null out the old handle first so any concurrent gold-dot update
-          // returns early instead of using a stale/destroyed manager.
-          _miniMapAnnotMgr = null;
-          try {
-            _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-          } catch (e) {
-            if (kDebugMode) debugPrint('[Map] Failed to create annotation manager: $e');
-          }
-
-          // FIX: Apply layer properties only if annotation manager exists
-          if (_miniMapAnnotMgr != null) {
-            try {
-              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-              await ctrl.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
-            } catch (_) {}
-          }
-
-          // Explicitly disable Mapbox native location puck
-          await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-
-          // Create gold dot annotation immediately if position is already known
-          if (_currentLatLng != null) unawaited(_updateMiniMapAnnotation());
-
-          // Draw route if there's an active ride
-          if (_activeRide != null) {
-            unawaited(_drawRouteOnMap());
-          }
-        } catch (e) {
-          if (kDebugMode) debugPrint('[Map] onMapCreated error: $e');
-        }
-      },
-      onStyleLoadedListener: (_) async {
-        try {
-          if (_miniMapController != null) {
-            await _applyDarkNavyGoldTheme(_miniMapController!);
-            // FIX: Mapbox DESTROYS annotations + managers on style reload.
-            // We MUST recreate them, then redraw the dot. Without this,
-            // the gold dot disappears or stops moving after a style change.
-            _miniMapAnnot = null;
-            // Null the manager while recreating so concurrent updates don't
-            // touch the destroyed manager and create orphaned annotations.
-            _miniMapAnnotMgr = null;
-            try {
-              _miniMapAnnotMgr = await _miniMapController!.annotations.createPointAnnotationManager();
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-              await _miniMapController!.style.setStyleLayerProperty(_miniMapAnnotMgr!.id, 'icon-allow-overlap', true);
-            } catch (e) {
-              if (kDebugMode) debugPrint('[Map] Failed to recreate annotation manager on style load: $e');
-            }
-            // Recreate gold dot if we have a position
-            if (_currentLatLng != null) unawaited(_updateMiniMapAnnotation());
-            // Re-disable native puck in case style reset re-enabled it
-            try {
-              await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-            } catch (_) {}
-          }
-        } catch (e) {
-          if (kDebugMode) debugPrint('[Map] onStyleLoaded error: $e');
-        }
-      },
-      // FIX: onMapLoadErrorListener catches style/load errors
-      onMapLoadErrorListener: (err) {
-        if (kDebugMode) debugPrint('[Map] Load error: ${err.message} (type: ${err.type})');
-      },
-    );
-    return _cachedMapWidget!;
-  }
-
-  Future<Uint8List> _buildGoldPuckImage() async {
-    // Match GoldLocationDot style: 160px canvas, 18px dot radius, glow + halo + ring + core
-    const double canvasSize = 160.0;
-    const double dotR = 18.0;
-    const gold = Color(0xFFE8C547);
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(
-      recorder,
-      const Rect.fromLTWH(0, 0, canvasSize, canvasSize),
-    );
-    const center = Offset(canvasSize / 2, canvasSize / 2);
-
-    // Outer glow (static, no pulse)
-    canvas.drawCircle(
-      center,
-      dotR * 1.8,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.12)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-
-    // Middle halo
-    canvas.drawCircle(
-      center,
-      dotR * 1.3,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-    );
-
-    // White ring
-    canvas.drawCircle(
-      center,
-      dotR,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
-
-    // Gold core
-    canvas.drawCircle(
-      center,
-      dotR - 1.5,
-      Paint()..color = gold.withValues(alpha: 0.9),
-    );
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bytes!.buffer.asUint8List();
-  }
-
-  // "Where to?" / "Ride in progress" search bar floating over the map
-  Widget _buildWhereToBar() {
-    final active = _activeRide != null;
-    final searching = _pendingSearchTripId != null && !active;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOutCubic,
-      height: Responsive.h(48),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: active
-              ? _gold.withValues(alpha: 0.35)
-              : searching
-                  ? Colors.blue.withValues(alpha: 0.4)
-                  : Colors.white.withValues(alpha: 0.08),
-          width: (active || searching) ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: active
-                ? _gold.withValues(alpha: 0.10)
-                : searching
-                    ? Colors.blue.withValues(alpha: 0.10)
-                    : Colors.black.withValues(alpha: 0.5),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        switchInCurve: Curves.easeInOutCubic,
-        switchOutCurve: Curves.easeInOutCubic,
-        transitionBuilder: (child, anim) =>
-            FadeTransition(opacity: anim, child: child),
-        child: active
-            ? _buildRideActiveContent()
-            : searching
-                ? _buildSearchingDriverContent()
-                : _buildWhereToContent(),
-      ),
-    );
-  }
 
   // "Buscando conductor..." content — shown when trip is searching on reopen
   Widget _buildSearchingDriverContent() {
@@ -320,281 +100,166 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // Normal "Where to?" search bar content
-  Widget _buildWhereToContent() {
-    final locked = !_isVerified;
-    return GestureDetector(
-      key: const ValueKey('where_to'),
-      onTap: locked ? _showVerificationBlockedDialog : _openSearchThenRide,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          SizedBox(width: Responsive.w(16)),
-          Icon(
-            locked ? Icons.lock_rounded : Icons.search_rounded,
-            color: locked
-                ? Colors.white.withValues(alpha: 0.3)
-                : Colors.white.withValues(alpha: 0.5),
-            size: Responsive.sp(20),
-          ),
-          SizedBox(width: Responsive.w(10)),
-          Expanded(
-            child: Text(
-              S.of(context).whereTo,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: Responsive.sp(16),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          SizedBox(width: Responsive.w(12)),
-        ],
-      ),
-    );
-  }
-
-  // "Ride in progress" content — same card, gold accent
-  Widget _buildRideActiveContent() {
-    return GestureDetector(
-      key: const ValueKey('ride_active'),
-      onTap: _resumeActiveRide,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          const SizedBox(width: 10),
-          // Car icon inside gold circle
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: _gold, width: 1.5),
-            ),
-            child: Center(
-              child: Icon(Icons.directions_car_rounded, color: _gold, size: 16),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              S.of(context).rideInProgress,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: Icon(Icons.arrow_forward_ios_rounded,
-                color: _gold, size: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Draggable bottom sheet content
+  // Draggable bottom sheet content. The sheet is permanently locked to
+  // full screen, so the collapsed ↔ expanded crossfade is gone — everything
+  // renders directly in its expanded state.
   Widget _buildSheet(ScrollController sc, double botPad) {
     final screenW = MediaQuery.of(context).size.width;
     final topPad = MediaQuery.of(context).padding.top;
 
-    return AnimatedBuilder(
-      animation: _sheetController,
-      builder: (context, child) {
-        double size = _kMinSheet;
-        try { size = _sheetController.size; } catch (_) {}
-        final frac = ((size - 0.85) / (_kMaxSheet - 0.85)).clamp(0.0, 1.0);
-        final r = 28.0 * (1.0 - frac);
-        final topExtra = frac * topPad;
-
-        // ── Collapsed → expanded crossfade ───────────────────────
-        // collapseT = 1.0 when fully collapsed (mini bar), 0.0 when
-        // anywhere above the lower 30% of the drag range.
-        // Curve is sharp on purpose so the full sheet feels "snapped
-        // into view" rather than a slow muddy fade.
-        final dragRange = (_kMaxSheet - _kMinSheet);
-        final raw = ((size - _kMinSheet) / dragRange).clamp(0.0, 1.0);
-        final expandT = Curves.easeOutCubic.transform(
-          (raw / 0.18).clamp(0.0, 1.0),
-        );
-        final collapseT = 1.0 - expandT;
-
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.65),
-                blurRadius: 32,
-                offset: const Offset(0, -6),
+    return Container(
+      color: neuBase,
+      child: CustomScrollView(
+        controller: sc,
+        physics: _activeRide != null
+            ? const NeverScrollableScrollPhysics()
+            : const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(r)),
-            child: CustomScrollView(
-              controller: sc,
-              physics: _activeRide != null
-                  ? const NeverScrollableScrollPhysics()
-                  : const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-              slivers: [
-                SliverToBoxAdapter(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // ── Top safe-area spacer when fully expanded ──
-                  SizedBox(height: topExtra),
-                  // ── Drag handle ──
-                  const SizedBox(height: 10),
-                  Center(
-                    child: Container(
-                      width: 38,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-              // ── Greeting row (always visible in collapsed state) ──
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: RepaintBoundary(child: _buildTopBar()),
-              ),
-              SizedBox(height: 24 * expandT),
-
-              // ── Everything below the topbar fades in/out with the
-              // collapsed → expanded transition. While collapsed the
-              // content has 0 opacity AND ignores hits so the user
-              // can't accidentally tap the hidden Where-to? card.
-              Opacity(
-                opacity: expandT,
-                child: IgnorePointer(
-                  ignoring: collapseT > 0.5,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-
-              // ── Hero CTA ("Where to?" / "Ride in progress") ── ONE card only
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: RepaintBoundary(child: _buildHeroCTA()),
-              ),
-
-              // Verification content now shown inside the hero card
-
-              // ── Scheduled ride indicator (below Where to?) — fades in/out ──
-              if (_activeRide == null)
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, anim) =>
-                      FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, child: child)),
-                  child: _nextScheduledRide != null
-                      ? Padding(
-                          key: ValueKey('sched_${((_nextScheduledRide!['status'] as String?) ?? 'scheduled').toLowerCase()}'),
-                          padding: const EdgeInsets.only(left: 24, right: 24, top: 16),
-                          child: _buildScheduledRideIndicator(context),
-                        )
-                      : const SizedBox.shrink(key: ValueKey('no_scheduled')),
+        slivers: [
+          SliverToBoxAdapter(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Top safe-area spacer (sheet is always full-screen) ──
+            SizedBox(height: topPad),
+            // ── Drag handle ──
+            const SizedBox(height: 10),
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(2),
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
 
-              // ── Hide everything below when a ride is active ──
-              if (_activeRide == null) ...[
-              const SizedBox(height: 28),
+            // ── Greeting row ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: RepaintBoundary(child: _buildTopBar()),
+            ),
+            const SizedBox(height: 24),
 
-              // ── Circular action buttons ──
+            // ── Hero CTA ("Where to?" / searching / "Ride in progress") ── ONE card only
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: RepaintBoundary(child: _buildHeroCTA()),
+            ),
+
+            // ── Scheduled ride indicator (below hero) — fades in/out ──
+            if (_activeRide == null)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, child: child)),
+                child: _nextScheduledRide != null
+                    ? Padding(
+                        key: ValueKey('sched_${((_nextScheduledRide!['status'] as String?) ?? 'scheduled').toLowerCase()}'),
+                        padding: const EdgeInsets.only(left: 24, right: 24, top: 16),
+                        child: _buildScheduledRideIndicator(context),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('no_scheduled')),
+              ),
+
+            // ── Hide everything below when a ride is active ──
+            if (_activeRide == null) ...[
+            const SizedBox(height: 28),
+
+            // ── Circular action buttons ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: RepaintBoundary(child: _buildCircularActions()),
+            ),
+
+            const SizedBox(height: 36),
+
+            // ── Fleet header + cards ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _buildFleetHeader(),
+            ),
+              const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: RepaintBoundary(child: _buildCircularActions()),
+                child: RepaintBoundary(child: _buildFleetStack(screenW)),
               ),
 
               const SizedBox(height: 36),
 
-              // ── Fleet header + cards ──
+              // ── Quick access ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildFleetHeader(),
+                child: _buildSectionHeader(S.of(context).quickAccessTitle, null, null),
               ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: RepaintBoundary(child: _buildFleetStack(screenW)),
-                ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: RepaintBoundary(child: _buildQuickAccessGrid()),
+              ),
 
+              const SizedBox(height: 36),
+
+              // ── Your location (live mini map) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildSectionHeader(S.of(context).yourLocation, null, null),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: RepaintBoundary(child: _buildHomeMiniMapCard()),
+              ),
+
+              // ── Recent trips ──
+              if (_recentTrips.isNotEmpty) ...[
                 const SizedBox(height: 36),
-
-                // ── Quick access ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildSectionHeader(S.of(context).quickAccessTitle, null, null),
+                  child: _buildSectionHeader(
+                    S.of(context).recentActivity,
+                    null,
+                    null,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: RepaintBoundary(child: _buildQuickAccessGrid()),
+                  child: RepaintBoundary(child: _buildRecentTimeline()),
                 ),
-
-                // ── Recent trips ──
-                if (_recentTrips.isNotEmpty) ...[
-                  const SizedBox(height: 36),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _buildSectionHeader(
-                      S.of(context).recentActivity,
-                      null,
-                      null,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: RepaintBoundary(child: _buildRecentTimeline()),
-                  ),
-                ] else if (_loadingSavedData) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30),
-                    child: Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: _gold.withValues(alpha: 0.5),
-                          strokeWidth: 2,
-                        ),
+              ] else if (_loadingSavedData) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 30),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: _gold.withValues(alpha: 0.5),
+                        strokeWidth: 2,
                       ),
                     ),
                   ),
-                ],
-
-                  const SizedBox(height: 32),
-
-                  // ── Dock navigation ──
-                  _buildDockNav(context, botPad),
-                  SizedBox(height: botPad + 12),
-              ], // end if (_activeRide == null)
-
-              if (_activeRide != null)
-                const SizedBox(height: 20),
-                    ],
-                  ),  // close inner Column wrapped by Opacity/IgnorePointer
-                ),    // close IgnorePointer
-              ),      // close Opacity
-                ],
-              )),
+                ),
               ],
-            ),
-          ),
-        );
-      },
+
+                const SizedBox(height: 32),
+
+                // ── Dock navigation ──
+                _buildDockNav(context, botPad),
+                SizedBox(height: botPad + 12),
+            ], // end if (_activeRide == null)
+
+            if (_activeRide != null)
+              const SizedBox(height: 20),
+          ],
+          )),
+        ],
+      ),
     );
   }
 
@@ -606,27 +271,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
   Widget _buildTopBar() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textMain = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final initials = [
-      if (_firstName.isNotEmpty) _firstName[0],
-      if (_lastName.isNotEmpty) _lastName[0],
-    ].join().toUpperCase();
-    final displayInitial = initials.isNotEmpty ? initials : '?';
     final displayName = [
       if (_firstName.isNotEmpty) _firstName,
       if (_lastName.isNotEmpty) _lastName,
     ].join(' ');
-    final hasLocalPhoto =
-        _photoPath != null &&
-        _photoPath!.isNotEmpty &&
-        !_photoPath!.startsWith('http') &&
-        (kIsWeb || File(_photoPath!).existsSync());
-    final hasRemotePhoto =
-        (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http')) ||
-        UserSession.photoUrlNotifier.value.isNotEmpty;
-    final hasPhoto = hasLocalPhoto || hasRemotePhoto;
-    final remoteUrl = (_photoUrl != null && _photoUrl!.isNotEmpty && _photoUrl!.startsWith('http'))
-        ? _photoUrl!
-        : (UserSession.photoUrlNotifier.value.isNotEmpty ? UserSession.photoUrlNotifier.value : null);
 
     return Row(
       children: [
@@ -678,134 +326,22 @@ extension _HomeScreenWidgets on _HomeScreenState {
         ),
         const SizedBox(width: 12),
 
-        // Avatar
-        GestureDetector(
+        // Settings
+        _glassIconButton(
+          Icons.settings_rounded,
           onTap: () async {
             await Navigator.of(
               context,
             ).push(slideFromRightRoute(const AccountScreen()));
             _loadSavedData();
           },
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: Responsive.w(44),
-                height: Responsive.w(44),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  gradient: hasPhoto
-                      ? null
-                      : const LinearGradient(colors: [_gold, _goldLight]),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: hasPhoto
-                    ? (hasLocalPhoto && !kIsWeb
-                          ? Image.file(
-                              File(_photoPath!),
-                              fit: BoxFit.cover,
-                              width: Responsive.w(44),
-                              height: Responsive.w(44),
-                              cacheWidth: 200,
-                              gaplessPlayback: true,
-                              key: ValueKey('${_photoPath}_${UserSession.currentUid}'),
-                              frameBuilder:
-                                  (context, child, frame, wasSynchronouslyLoaded) {
-                                    if (wasSynchronouslyLoaded) return child;
-                                    return AnimatedOpacity(
-                                      opacity: frame == null ? 0.0 : 1.0,
-                                      duration: const Duration(milliseconds: 150),
-                                      curve: Curves.easeOutCubic,
-                                      child: child,
-                                    );
-                                  },
-                            )
-                          : CachedNetworkImage(
-                              imageUrl: remoteUrl ?? '',
-                              cacheKey: UserSession.currentUid.isNotEmpty
-                                  ? 'avatar_${UserSession.currentUid}'
-                                  : null,
-                              fit: BoxFit.cover,
-                              width: Responsive.w(44),
-                              height: Responsive.w(44),
-                              fadeInDuration: const Duration(milliseconds: 200),
-                              key: ValueKey('${remoteUrl}_${UserSession.currentUid}'),
-                              placeholder: (_, __) => Container(
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(colors: [_gold, _goldLight]),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    displayInitial,
-                                    style: const TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (_, __, ___) => Container(
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(colors: [_gold, _goldLight]),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    displayInitial,
-                                    style: const TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ))
-                    : Center(
-                        child: Text(
-                          displayInitial,
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-              ),
-              if (_isVerified)
-                Positioned(
-                  bottom: -1,
-                  right: -1,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFFFD700),
-                      border: Border.all(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: const Icon(Icons.check, color: Colors.black, size: 9),
-                  ),
-                ),
-            ],
-          ),
+          semanticLabel: 'Settings',
         ),
       ],
     );
   }
 
   Widget _glassIconButton(IconData icon, {VoidCallback? onTap, int badge = 0, String? semanticLabel}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
       child: Stack(
@@ -814,21 +350,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           Container(
             width: Responsive.w(44),
             height: Responsive.w(44),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              boxShadow: isDark
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 8,
-                      ),
-                    ],
-            ),
+            decoration: neuBox(radius: 22),
             child: Icon(
               icon,
               color: Colors.white.withValues(alpha: 0.4),
@@ -912,13 +434,15 @@ extension _HomeScreenWidgets on _HomeScreenState {
     }
   }
 
-  // ─── Hero CTA Card — transforms between "Where to?" and "Ride in progress" ───
+  // ─── Hero CTA Card — transforms between "Where to?" / searching / "Ride in progress" ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
+    final searching = _pendingSearchTripId != null && !active;
     final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final verificationBlocked = !_isVerified && !active;
+    final verificationBlocked =
+        !_isVerified && !active && _verificationResolved;
     final disabled = !active && !imminent && (zoneBlocked || verificationBlocked);
     return GestureDetector(
       onTap: () async {
@@ -926,6 +450,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
           _resumeActiveRide();
           return;
         }
+        // Searching state: no navigation (same as the old floating bar) —
+        // the cancel button inside the content handles its own tap.
+        if (searching) return;
         if (verificationBlocked) {
           if (_verificationStatus == 'pending') {
             _showVerificationBlockedDialog();
@@ -985,26 +512,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
           curve: Curves.easeInOutCubic,
           height: (active || imminent)
               ? Responsive.h(195)
-              : verificationBlocked
-                  ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
-                  : Responsive.h(155),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0E0F12),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: (active || imminent)
-                  ? _gold.withValues(alpha: 0.4)
-                  : Colors.white.withValues(alpha: 0.06),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
+              : searching
+                  ? Responsive.h(80)
+                  : verificationBlocked
+                      ? Responsive.h(_verificationStatus == 'pending' ? 130 : 175)
+                      : Responsive.h(155),
+          decoration: neuBox(radius: 28),
           child: Container(
             padding: const EdgeInsets.all(24),
             child: AnimatedSwitcher(
@@ -1015,9 +528,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   FadeTransition(opacity: anim, child: child),
               child: active
                   ? _buildHeroRideInProgress()
-                  : imminent
-                      ? _buildHeroUpcomingRide()
-                      : _buildHeroWhereToContent(isDark, disabled, zoneBlocked, verificationBlocked),
+                  : searching
+                      ? _buildSearchingDriverContent()
+                      : imminent
+                          ? _buildHeroUpcomingRide()
+                          : _buildHeroWhereToContent(isDark, disabled, zoneBlocked, verificationBlocked),
             ),
           ),
         ),
@@ -1158,40 +673,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 )
               else ...[
                 const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.all(3),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _nowLaterPill(
-                          S.of(context).nowLabel,
-                          Icons.bolt_rounded,
-                          _rideNow,
-                          () {
-                            if (!_rideNow) _setState(() => _rideNow = true);
-                          },
-                        ),
-                        _nowLaterPill(
-                          S.of(context).laterLabel,
-                          Icons.schedule_rounded,
-                          !_rideNow,
-                          () {
-                            if (_rideNow) {
-                              _setState(() => _rideNow = false);
-                              _showScheduleSheet();
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                _buildNowLaterSwitch(),
               ],
             ],
           ),
@@ -1589,7 +1071,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     )!,
                   ],
                 ).createShader(bounds),
-                child: Icon(Icons.bolt_rounded, color: Colors.white, size: 26),
+                child: Icon(Icons.electric_bolt_rounded, color: Colors.white, size: 26),
               );
             },
           ),
@@ -1618,19 +1100,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
             await _openSearchThenRide();
           },
         ),
-        // Clock — real clock animation with ticking hands
+        // Calendar — modern icon with a soft gold gradient
         _animatedCircleAction(
-          child: AnimatedBuilder(
-            animation: _clockRotateCtrl,
-            builder: (context, child) {
-              return SizedBox(
-                width: 26,
-                height: 26,
-                child: CustomPaint(
-                  painter: _ClockPainter(_clockRotateCtrl.value),
-                ),
-              );
-            },
+          child: ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFBE47A), Color(0xFFE8C547)],
+            ).createShader(bounds),
+            child: const Icon(
+              Icons.calendar_month_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
           ),
           label: S.of(context).schedule,
           disabled: active,
@@ -1647,7 +1129,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         colors: [Colors.grey.shade600, Colors.grey.shade500],
                       ).createShader(bounds),
                       child: const Icon(
-                        Icons.local_offer_rounded,
+                        Icons.percent_rounded,
                         color: Colors.white,
                         size: 26,
                       ),
@@ -1699,7 +1181,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
                       ).createShader(bounds),
                       child: const Icon(
-                        Icons.local_offer_rounded,
+                        Icons.percent_rounded,
                         color: Colors.white,
                         size: 26,
                       ),
@@ -1714,41 +1196,89 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  Widget _nowLaterPill(
-    String label,
-    IconData icon,
-    bool active,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? _gold : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 14,
-              color: active
-                  ? Colors.black
-                  : Colors.white.withValues(alpha: 0.45),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+  // ─── Now/Later segmented switch — pressed track + sliding gold thumb ───
+  Widget _buildNowLaterSwitch() {
+    const segW = 88.0;
+    const segH = 34.0;
+
+    Widget seg(String label, IconData icon, bool active, VoidCallback onTap) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: segW,
+          height: segH,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
                 color: active
                     ? Colors.black
-                    : Colors.white.withValues(alpha: 0.45),
+                    : Colors.white.withValues(alpha: 0.5),
               ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: active
+                      ? Colors.black
+                      : Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: neuBox(radius: 21, pressed: true),
+      padding: const EdgeInsets.all(4),
+      child: SizedBox(
+        width: segW * 2,
+        height: segH,
+        child: Stack(
+          children: [
+            // Sliding gold thumb
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              left: _rideNow ? 0 : segW,
+              top: 0,
+              bottom: 0,
+              width: segW,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(segH / 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Segments on top (labels stay tappable over the thumb)
+            Row(
+              children: [
+                seg(S.of(context).nowLabel, Icons.bolt_rounded, _rideNow, () {
+                  if (!_rideNow) _setState(() => _rideNow = true);
+                }),
+                seg(S.of(context).laterLabel, Icons.schedule_rounded,
+                    !_rideNow, () {
+                  if (_rideNow) {
+                    _setState(() => _rideNow = false);
+                    _showScheduleSheet();
+                  }
+                }),
+              ],
             ),
           ],
         ),
@@ -1768,37 +1298,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
         opacity: disabled ? 0.4 : 1.0,
         child: Column(
           children: [
+            // Raised neumorphic circle with an inset well centering the icon
             Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF4A4A4A),
-                    Color(0xFF3A3A3A),
-                    Color(0xFF2E2E2E),
-                    Color(0xFF3A3A3A),
-                  ],
-                  stops: [0.0, 0.3, 0.7, 1.0],
+              width: 64,
+              height: 64,
+              decoration: neuBox(radius: 32),
+              child: Center(
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: neuBox(radius: 22, pressed: true),
+                  child: Center(child: child),
                 ),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    blurRadius: 4,
-                    offset: const Offset(0, -1),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
               ),
-              child: child,
             ),
             const SizedBox(height: 8),
             Text(
@@ -1875,6 +1387,128 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
+  // ─── "Your location" live mini map card ───
+  // Follow-only map: gestures disabled so it never steals the sheet scroll.
+  // When _activeRide != null this card isn't rendered (conditional block in
+  // _buildSheet), so it costs nothing during a trip.
+  Widget _buildHomeMiniMapCard() {
+    // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
+    // during the first layout (bool.fromEnvironment non-const). On web show
+    // a static placeholder instead of the live map.
+    if (kIsWeb) {
+      return Container(
+        height: Responsive.h(190),
+        decoration: neuBox(radius: 24),
+        child: Center(
+          child: Icon(
+            Icons.map_outlined,
+            color: _gold.withValues(alpha: 0.5),
+            size: 40,
+          ),
+        ),
+      );
+    }
+
+    // Default to NYC if no GPS yet — the camera recenters when the fix
+    // arrives (throttled in the GPS stream listener).
+    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
+
+    return Container(
+      height: Responsive.h(190),
+      decoration: neuBox(radius: 24),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: mapbox.MapWidget(
+          key: const ValueKey('home_mini_map'),
+          styleUri: MapboxConfig.styleDark,
+          cameraOptions: mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude),
+            ),
+            zoom: 15.0,
+          ),
+          // textureView works on more devices than surfaceView (default)
+          textureView: true,
+          onMapCreated: (ctrl) async {
+            try {
+              _homeMiniMapCtrl = ctrl;
+              // The native view was just created — any previous annotation
+              // belongs to an old manager. Reset so we create a fresh one.
+              _homeDotAnnot = null;
+
+              await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+              await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+              await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+              await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+              // Follow-only: no gestures — the sheet scroll stays intact.
+              await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+                scrollEnabled: false,
+                pinchToZoomEnabled: false,
+                doubleTapToZoomInEnabled: false,
+                doubleTouchToZoomOutEnabled: false,
+                quickZoomEnabled: false,
+                rotateEnabled: false,
+                pitchEnabled: false,
+              ));
+
+              // Null the manager while creating so concurrent dot updates
+              // return early instead of touching a stale manager.
+              _homeDotAnnotMgr = null;
+              try {
+                _homeDotAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              } catch (e) {
+                if (kDebugMode) debugPrint('[HomeScreen] Mini map annotation manager failed: $e');
+              }
+              if (_homeDotAnnotMgr != null) {
+                try {
+                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-allow-overlap', true);
+                } catch (_) {}
+              }
+
+              // Native puck stays off — we draw the gold dot ourselves.
+              await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+
+              if (_currentLatLng != null) unawaited(_updateHomeDotAnnotation());
+            } catch (e) {
+              if (kDebugMode) debugPrint('[HomeScreen] Mini map onMapCreated error: $e');
+            }
+          },
+          onStyleLoadedListener: (_) async {
+            try {
+              final ctrl = _homeMiniMapCtrl;
+              if (ctrl == null) return;
+              await MapTheme.applyNavyGold(ctrl);
+              // Mapbox DESTROYS annotations + managers on style reload —
+              // recreate them, then redraw the dot.
+              _homeDotAnnot = null;
+              _homeDotAnnotMgr = null;
+              try {
+                _homeDotAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (e) {
+                if (kDebugMode) debugPrint('[HomeScreen] Mini map manager recreate failed: $e');
+              }
+              if (_currentLatLng != null) unawaited(_updateHomeDotAnnotation());
+              // Re-disable native puck in case the style reset re-enabled it
+              try {
+                await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+              } catch (_) {}
+            } catch (e) {
+              if (kDebugMode) debugPrint('[HomeScreen] Mini map onStyleLoaded error: $e');
+            }
+          },
+          onMapLoadErrorListener: (err) {
+            if (kDebugMode) debugPrint('[HomeScreen] Mini map load error: ${err.message} (type: ${err.type})');
+          },
+        ),
+      ),
+    );
+  }
+
   // ─── Fleet header ───
   Widget _buildFleetHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1918,7 +1552,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.vipDesc,
         'features': s.vipFeatures,
         'idx': 0,
-        'image': 'cruise_3.png',
+        'image': 'cruisert1.png',
       },
       {
         'tier': 'PREMIUM',
@@ -1926,7 +1560,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.premiumDesc,
         'features': s.premiumFeatures,
         'idx': 1,
-        'image': 'cruise_7.png',
+        'image': 'cruisert2.png',
       },
       {
         'tier': 'COMFORT',
@@ -1934,7 +1568,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.comfortDesc,
         'features': s.comfortFeatures,
         'idx': 2,
-        'image': 'cruise_6.png',
+        'image': 'cruisert3.png',
       },
     ];
 
@@ -1957,68 +1591,54 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: GestureDetector(
                   onTap: () => _openSearchThenRide(rideId: rideId),
                   child: Container(
-                    height: 168,
+                    height: 152,
                     clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: _gold.withValues(alpha: 0.30),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
+                    // Selected tier (PREMIUM) gets a thin gold border on top
+                    // of the neumorphic surface.
+                    decoration: tier == 'PREMIUM'
+                        ? neuBox(radius: 24).copyWith(
+                            border: Border.all(
+                              color: _gold.withValues(alpha: 0.45),
+                              width: 1,
+                            ),
+                          )
+                        : neuBox(radius: 24),
                     child: Stack(
                       children: [
-                        // Content
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Car image with 3D shadows
-                              SizedBox(
-                                width: 130,
-                                height: 90,
-                                child: CarImage3D(
-                                  assetPath: 'assets/images/${v['image']}',
-                                  cacheWidth: 360,
-                                  selected: isVIP,
-                                  fallback: Icon(
-                                    Icons.directions_car_rounded,
-                                    color: _gold.withValues(alpha: 0.5),
-                                    size: 40,
-                                  ),
-                                ),
+                        // Display name pinned to the top
+                        Positioned(
+                          top: 12,
+                          left: 8,
+                          right: 8,
+                          child: Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                        // Car image centered inside the card with breathing
+                        // room on the sides and a gap above the bottom edge.
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 16,
+                          child: SizedBox(
+                            height: 58,
+                            child: CarImage3D(
+                              assetPath: 'assets/images/${v['image']}',
+                              cacheWidth: 640,
+                              alignment: Alignment.bottomCenter,
+                              fallback: Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 40,
                               ),
-                              const SizedBox(height: 6),
-                              // Display name
-                              Text(
-                                displayName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              // Tier badge inside card, below name
-                              VehicleTierBadge(
-                                tier: isVIP
-                                    ? VehicleTier.vip
-                                    : tier == 'PREMIUM'
-                                        ? VehicleTier.premium
-                                        : VehicleTier.comfort,
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -2103,23 +1723,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     horizontal: 16,
                     vertical: 14,
                   ),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.04)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                    boxShadow: isDark
-                        ? null
-                        : [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
-                              blurRadius: 8,
-                            ),
-                          ],
-                  ),
+                  decoration: neuBox(radius: 16),
                   child: Row(
                     children: [
                       Container(
@@ -2195,17 +1799,20 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _gold.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _gold.withValues(alpha: 0.18)),
-        ),
+        decoration: neuBox(radius: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _gold, size: 22),
-            const SizedBox(height: 6),
+            // Icon inside a pressed neumorphic well, tinted with the
+            // tile's accent color.
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: Icon(icon, color: accent, size: 20),
+            ),
+            const SizedBox(height: 10),
             Text(
               title,
               style: const TextStyle(
@@ -2329,23 +1936,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 14),
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.04)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                      boxShadow: isDark
-                          ? null
-                          : [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 8,
-                              ),
-                            ],
-                    ),
+                    decoration: neuBox(radius: 18),
                     child: Row(
                       children: [
                         Expanded(
@@ -2403,175 +1994,20 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // ─── Live map card ───
-  Widget _buildLiveMapCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        height: 180,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        child: Stack(
-          children: [
-            if (_currentLatLng == null)
-              Container(
-                color: const Color(0xFF0D0E14),
-                child: Center(
-                  child: _locationError != null
-                      ? Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.location_off_rounded,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              size: 28,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _locationError!,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () {
-                                _setState(() => _locationError = null);
-                                _fetchCurrentLocation();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _gold.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  S.of(context).retry,
-                                  style: const TextStyle(
-                                    color: _gold,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : const CircularProgressIndicator(
-                          color: _gold,
-                          strokeWidth: 2,
-                        ),
-                ),
-              )
-            else
-              _cachedMiniMapWidget != null && _cachedMiniMapLatLng == _currentLatLng
-                  ? _cachedMiniMapWidget!
-                  : () {
-                      _cachedMiniMapLatLng = _currentLatLng;
-                      return _cachedMiniMapWidget = mapbox.MapWidget(
-                        styleUri: MapboxConfig.styleDark,
-                        cameraOptions: mapbox.CameraOptions(
-                          center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-                          zoom: 15.0,
-                        ),
-                        onMapCreated: (ctrl) async {
-                          _miniMapController = ctrl;
-                          ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                          ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                          ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                          ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                          _miniMapAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                        },
-                        onStyleLoadedListener: (_) async {
-                          if (_miniMapController != null) {
-                            await _applyDarkNavyGoldTheme(_miniMapController!);
-                            try {
-                              final puckImg = await _buildGoldPuckImage();
-                              await _miniMapController!.location.updateSettings(mapbox.LocationComponentSettings(
-                                enabled: true,
-                                pulsingEnabled: true,
-                                pulsingColor: const Color(0xFFE8C547).toARGB32(),
-                                pulsingMaxRadius: 20.0,
-                                locationPuck: mapbox.LocationPuck(
-                                  locationPuck2D: mapbox.LocationPuck2D(topImage: puckImg),
-                                ),
-                              ));
-                            } catch (_) {}
-                          }
-                        },
-                        gestureRecognizers: const {},
-                      );
-                    }(),
-            // Badge
-            Positioned(
-              bottom: 12,
-              left: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF0D0E14).withValues(alpha: 0.85)
-                      : Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
-                  ),
-                  boxShadow: isDark
-                      ? null
-                      : [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 8,
-                          ),
-                        ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.5),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      S.of(context).liveLocation,
-                      style: TextStyle(
-                        color: isDark ? Colors.white : const Color(0xFF1C1C1E),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  // ─── Scheduled ride indicator ───
+  /// Formats a scheduled-ride date without intl. The project never calls
+  /// initializeDateFormatting, so DateFormat(pattern, 'es') throws a
+  /// LocaleDataException — this local month table works in both languages.
+  String _formatRideDate(DateTime dt, bool isEs) {
+    const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthsEs = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    final m = isEs ? monthsEs[dt.month - 1] : monthsEn[dt.month - 1];
+    final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final mm = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour < 12 ? 'AM' : 'PM';
+    return isEs ? '${dt.day} de $m, $h12:$mm $ampm' : '$m ${dt.day}, $h12:$mm $ampm';
   }
 
-  // ─── Scheduled ride indicator ───
   Widget _buildScheduledRideIndicator(BuildContext ctx) {
     final ride = _nextScheduledRide!;
     final sa = ride['scheduled_at']?.toString() ?? '';
@@ -2589,11 +2025,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
             ? '${driverName.isNotEmpty ? '$driverName está' : 'Tu conductor está'} confirmado para tu viaje'
             : '${driverName.isNotEmpty ? '$driverName is' : 'Your driver is'} confirmed for your ride')
         : (isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride');
-    final dateStr = dt != null
-        ? DateFormat(isEs ? "d 'de' MMM, h:mm a" : 'MMM d, h:mm a',
-                isEs ? 'es' : 'en')
-            .format(dt.toLocal())
-        : '';
+    final dateStr = dt != null ? _formatRideDate(dt.toLocal(), isEs) : '';
 
     final accent = hasDriver ? const Color(0xFF4CAF50) : _gold;
 
@@ -2603,10 +2035,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: accent.withValues(alpha: 0.30), width: 1),
+        // Soft neumorphic surface; the green/gold accent stays on the
+        // border, icon and label.
+        decoration: neuBox(radius: 14).copyWith(
+          border: Border.all(color: accent.withValues(alpha: 0.25), width: 1),
         ),
         child: Row(
           children: [
@@ -2645,7 +2077,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // ─── Dock-style bottom nav with animated gold pill ───
   Widget _buildDockNav(BuildContext context, double bottomPad) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final s = S.of(context);
     final items = [
       (icon: Icons.explore_rounded, label: s.rideLabel),
@@ -2656,18 +2087,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     return Container(
       margin: EdgeInsets.fromLTRB(40, 0, 40, bottomPad + 16),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161820),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      decoration: neuBox(radius: 28),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: List.generate(items.length, (i) {

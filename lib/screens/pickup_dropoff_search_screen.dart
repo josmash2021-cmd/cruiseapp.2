@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +12,7 @@ import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
+import '../widgets/neu_style.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
 
@@ -558,7 +558,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: _bg,
+        backgroundColor: neuBase,
         resizeToAvoidBottomInset: true,
         body: Stack(
           children: [
@@ -641,47 +641,19 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         ),
         const SizedBox(width: 10),
 
-        // .vipRide__locPicker__fieldsWrap
-        //   background: rgba(14,14,20,.92);
-        //   border: 1px solid rgba(255,255,255,.08);
-        //   border-radius: 16px;
-        //   padding: 6px;
-        //   box-shadow: 0 8px 32px rgba(0,0,0,.5);
-        //   backdrop-filter: blur(20px);
+        // .vipRide__locPicker__fieldsWrap — restyled to the shared
+        // neumorphic surface. The gold dot + connector line inside are
+        // unchanged; the fields keep their subtle/transparent backgrounds.
         Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xEB0E0E14), // rgba(14,14,20,.92)
-                  borderRadius: BorderRadius.circular(16),
-                  // 1:1 with web — gold border + soft gold glow.
-                  border: Border.all(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.40),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.10),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.50),
-                      blurRadius: 32,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                // Stack so the dotted vertical line connecting the gold
-                // pickup dot to the white dropoff dot can be drawn
-                // independently of the field column. The line lives in
-                // the same horizontal column as the dots (left margin 18:
-                // 6px container padding + 12px field padding == dot column).
-                child: Stack(
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: neuBox(radius: 20),
+            // Stack so the dotted vertical line connecting the gold
+            // pickup dot to the white dropoff dot can be drawn
+            // independently of the field column. The line lives in
+            // the same horizontal column as the dots (left margin 18:
+            // 6px container padding + 12px field padding == dot column).
+            child: Stack(
                   children: [
                     Column(
                       children: [
@@ -764,8 +736,6 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                   ],
                 ),
               ),
-            ),
-          ),
         ),
       ],
     );
@@ -815,12 +785,14 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: active
-              ? Colors.white.withValues(alpha: 0.04)
-              : Colors.transparent,
-          borderRadius: radius,
-        ),
+        // Active field becomes a sunken neumorphic well (same language as
+        // the home address sheet); inactive stays transparent on the card.
+        decoration: active
+            ? neuBox(radius: 10, pressed: true)
+            : BoxDecoration(
+                color: Colors.transparent,
+                borderRadius: radius,
+              ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -1052,35 +1024,19 @@ class _CircleBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // .vipRide__locPicker__back
-    //   width:38; height:38; border-radius:50%;
-    //   background: rgba(12,12,18,.85);
-    //   border: 1px solid rgba(255,255,255,.12);
-    //   color: rgba(255,255,255,.85);
-    //   backdrop-filter: blur(12px);
+    // Pressed neumorphic circle (same language as account/address sheet).
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xD90C0C12),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              icon,
-              color: Colors.white.withValues(alpha: 0.85),
-              size: 18,
-            ),
-          ),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: neuBox(radius: 14, pressed: true),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          color: Colors.white.withValues(alpha: 0.85),
+          size: 18,
         ),
       ),
     );
@@ -1160,28 +1116,16 @@ class _ShortcutCardState extends State<_ShortcutCard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0x14E8C547), Color(0x05FFFFFF)],
-          ),
-          color: _pressed ? Colors.white.withValues(alpha: 0.04) : null,
-          border: Border.all(color: const Color(0x40E8C547)),
-          borderRadius: BorderRadius.circular(14),
-        ),
+        // Raised neumorphic card; sinks into its pressed variant on tap
+        // (press feedback preserved, only the skin changed).
+        decoration: neuBox(radius: 20, pressed: _pressed),
         child: Row(
           children: [
-            // shortcutIcon (premium variant): 48×48, radius 14,
-            // bg rgba(232,197,71,.18), border rgba(232,197,71,.35), gold
+            // Icon in a pressed neumorphic well, gold accent.
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0x2EE8C547),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0x59E8C547)),
-              ),
+              decoration: neuBox(radius: 14, pressed: true),
               alignment: Alignment.center,
               child: Icon(widget.icon, color: _gold, size: 22),
             ),
@@ -1255,17 +1199,9 @@ class _SavedChipState extends State<_SavedChip> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: _pressed
-                ? const Color(0x1FE8C547)
-                : Colors.white.withValues(alpha: 0.06),
-            border: Border.all(
-              color: _pressed
-                  ? const Color(0x66E8C547)
-                  : Colors.white.withValues(alpha: 0.08),
-            ),
-            borderRadius: BorderRadius.circular(100),
-          ),
+          // Neumorphic pill; sinks into its pressed variant on tap
+          // (AnimatedScale above is untouched).
+          decoration: neuBox(radius: 16, pressed: _pressed),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1319,12 +1255,9 @@ class _RecentRowState extends State<_RecentRow> {
         child: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
-              ),
+              width: 36,
+              height: 36,
+              decoration: neuBox(radius: 12, pressed: true),
               child: Icon(
                 Icons.schedule_rounded,
                 color: Colors.white.withValues(alpha: 0.55),
@@ -1447,12 +1380,9 @@ class _SuggestionRowState extends State<_SuggestionRow>
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0x1FE8C547),
-                ),
+                width: 36,
+                height: 36,
+                decoration: neuBox(radius: 12, pressed: true),
                 child: const Icon(Icons.place_rounded, color: _gold, size: 16),
               ),
               const SizedBox(width: 12),

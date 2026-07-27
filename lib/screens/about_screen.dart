@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/neu_style.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -50,7 +51,7 @@ class _AboutScreenState extends State<AboutScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -69,15 +70,7 @@ class _AboutScreenState extends State<AboutScreen> {
                       child: Container(
                         width: 40,
                         height: 40,
-                        decoration: BoxDecoration(
-                          color: c.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: c.isDark
-                              ? null
-                              : Border.all(
-                                  color: Colors.black.withValues(alpha: 0.06),
-                                ),
-                        ),
+                        decoration: neuBox(radius: 14, pressed: true),
                         child: Icon(
                           Icons.arrow_back_ios_new_rounded,
                           color: c.textPrimary,
@@ -171,18 +164,27 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              _infoItem(
-                c,
-                Icons.star_rounded,
-                S.of(context).rateApp,
-                onTap: () => _rateApp(),
-              ),
-              const SizedBox(height: 10),
-              _infoItem(
-                c,
-                Icons.share_rounded,
-                S.of(context).shareCruise,
-                onTap: () => _shareCruise(),
+              // Rate + Share side by side
+              Row(
+                children: [
+                  Expanded(
+                    child: _infoItem(
+                      c,
+                      Icons.star_rounded,
+                      S.of(context).rateApp,
+                      onTap: () => _rateApp(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _infoItem(
+                      c,
+                      Icons.share_rounded,
+                      S.of(context).shareCruise,
+                      onTap: () => _shareCruise(),
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 36),
@@ -211,17 +213,16 @@ class _AboutScreenState extends State<AboutScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: neuBox(radius: 18),
         child: Row(
           children: [
-            Icon(icon, color: c.textPrimary, size: 22),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(icon, color: _gold, size: 20),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
@@ -247,29 +248,41 @@ class _AboutScreenState extends State<AboutScreen> {
     }
   }
 
+  // App Store review link — opens the write-review form directly.
+  static const String _kAppStoreReviewUrl =
+      'https://apps.apple.com/app/id6760517086?action=write-review';
+  static const String _kAppStoreUrl =
+      'https://apps.apple.com/app/id6760517086';
+  // Google Play link — PENDING: replace once the Play Store listing is live.
+  static const String _kPlayStoreUrl = '';
+
   Future<void> _rateApp() async {
-    final storeUrl = AppPlatform.isIOS
-        ? 'https://apps.apple.com/app/id0000000000'
-        : 'https://play.google.com/store/apps/details?id=com.cruise_app';
-    final uri = Uri.parse(storeUrl);
+    if (!AppPlatform.isIOS) {
+      // Play Store link is still pending — show a friendly notice instead
+      // of opening a dead URL. Once _kPlayStoreUrl is set, it opens instead.
+      if (_kPlayStoreUrl.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).comingSoon)),
+        );
+        return;
+      }
+      final playUri = Uri.parse(_kPlayStoreUrl);
+      if (await canLaunchUrl(playUri)) {
+        await launchUrl(playUri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
+    final uri = Uri.parse(_kAppStoreReviewUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      final sc = AppColors.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).thankYou),
-          // Uses global snackBarTheme
-        ),
-      );
     }
   }
 
   Future<void> _shareCruise() async {
     final storeUrl = AppPlatform.isIOS
-        ? 'https://apps.apple.com/app/id0000000000'
-        : 'https://play.google.com/store/apps/details?id=com.cruise_app';
+        ? _kAppStoreUrl
+        : 'https://cruiseinride.com';
     final text = S.of(context).shareAppText.replaceAll(
       'https://cruiseride.com/download',
       storeUrl,

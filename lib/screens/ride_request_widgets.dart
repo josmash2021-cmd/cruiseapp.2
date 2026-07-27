@@ -236,26 +236,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color:
-                      const Color(0xFFE8C547).withValues(alpha: 0.10),
-                  blurRadius: 16,
-                  offset: const Offset(0, -2),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  blurRadius: 48,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
+            // Floating sheet on the shared neumorphic surface.
+            decoration: neuBox(radius: 24),
             child: SafeArea(
               top: false,
               child: Padding(
@@ -569,10 +551,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   String _carAssetForOption(String name) {
+    // Same three pre-cropped renders as the home "Choose a ride" cards.
     final key = name.trim().toLowerCase();
-    if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruise_3.png';
-    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruise_7.png';
-    return 'assets/images/cruise_6.png';
+    if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';
+    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruisert2.png';
+    return 'assets/images/cruisert3.png';
   }
 
   // Horizontal ride card - 1:1 with web design
@@ -942,32 +925,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
       padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE8C547).withValues(alpha: 0.45),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFE8C547).withValues(alpha: 0.14),
-            blurRadius: 22,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
+      decoration: neuBox(radius: 24),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Left: car render with 3D shadow behind the image ──
+          // ── Left: car render with 3D shadow (home look, no gold glow) ──
           SizedBox(
             width: 84,
             height: 60,
             child: CarImage3D(
               assetPath: _carAssetForOption(opt.name),
-              cacheWidth: 280,
-              selected: isVIP,
+              cacheWidth: 640,
+              alignment: Alignment.bottomCenter,
               fallback: Icon(
                 Icons.directions_car_rounded,
                 color: const Color(0xFFE8C547).withValues(alpha: 0.5),
@@ -1271,113 +1240,56 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
     final String carAsset = _carAssetForOption(opt.name);
 
-    return AnimatedBuilder(
-      animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
-      builder: (_, __) {
-        final t = selected ? _activeCardGlowCtrl.value : 0.0;
-
-        return Container(
-          // Responsive card height based on screen size
-          height: Responsive.vehicleCardHeight,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            // Match home screen: solid black card with gold border
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFFE8C547).withValues(alpha: 0.65)
-                  : const Color(0xFFE8C547).withValues(alpha: 0.30),
-              width: 1.5,
+    // Identical look to the home fleet cards: neumorphic surface, name on
+    // top, car hugging the bottom edge, no tier badge. Selected = thin
+    // gold border (same copyWith treatment as home's PREMIUM).
+    return Container(
+      // Responsive card height based on screen size
+      height: Responsive.vehicleCardHeight,
+      clipBehavior: Clip.antiAlias,
+      decoration: selected
+          ? neuBox(radius: 24).copyWith(
+              border: Border.all(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.45),
+                width: 1,
+              ),
+            )
+          : neuBox(radius: 24),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+        child: Column(
+          children: [
+            // Vehicle name on top — home screen style
+            Text(
+              displayName,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: Responsive.vehicleNameSize,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
             ),
-            boxShadow: [
-              // Gold glow — stronger when selected
-              BoxShadow(
-                color: const Color(0xFFE8C547)
-                    .withValues(alpha: selected ? 0.20 + 0.10 * t : 0.10),
-                blurRadius: selected ? 24 : 18,
-                spreadRadius: 2,
-              ),
-              // Deep bottom shadow (home screen style)
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // ── Content: 3D car + name + tier badge ──
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Car image with 3D shadows + gold glow when VIP
-                    SizedBox(
-                      width: Responsive.vehicleCarWidth,
-                      height: Responsive.vehicleCarHeight,
-                      child: CarImage3D(
-                        assetPath: carAsset,
-                        cacheWidth: 360,
-                        selected: isVIP,
-                        fallback: Icon(
-                          Icons.directions_car_rounded,
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    // Vehicle name — home screen style
-                    Text(
-                      displayName,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white,
-                        fontSize: Responsive.vehicleNameSize,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Tier badge — reusable widget with halo + sparkles
-                    VehicleTierBadge(
-                      tier: isVIP
-                          ? VehicleTier.vip
-                          : isPremium
-                              ? VehicleTier.premium
-                              : VehicleTier.comfort,
-                    ),
-                  ],
+            // Car render pinned to the bottom edge (3D black shadow,
+            // no gold glow — same as home).
+            Expanded(
+              child: CarImage3D(
+                assetPath: carAsset,
+                cacheWidth: 640,
+                alignment: Alignment.bottomCenter,
+                fallback: Icon(
+                  Icons.directions_car_rounded,
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                  size: 40,
                 ),
               ),
-              // Checkmark for selected card
-              if (selected)
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE8C547),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.black,
-                      size: 14,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2995,11 +2907,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     required VoidCallback onTap,
     required AppColors c,
   }) {
+    // Pressed neumorphic circle (same language as the other back buttons).
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Icon(icon, size: 24, color: Colors.white),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: neuBox(radius: 14, pressed: true),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 20, color: Colors.white),
       ),
     );
   }
@@ -3060,25 +2976,24 @@ class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
         curve: Curves.easeOut,
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: _pressed ? 0.10 : 0.06),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.10),
-          ),
-        ),
+        decoration: neuBox(radius: 16, pressed: _pressed),
         child: Row(
           children: [
-            // Icon container — web uses an inline icon at 26×26, we use
-            // the widget's logoBuilder so the Apple / Google / Card /
-            // Test Mode graphics stay identical to the payment picker.
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              child: SizedBox(
-                key: ValueKey('payLogo_${widget.selectedMethod}'),
-                child: widget.logoBuilder(widget.selectedMethod, 26),
+            // Icon in a pressed neumorphic well — the Apple / Google /
+            // Card / Test Mode graphics stay identical to the picker.
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 12, pressed: true),
+              alignment: Alignment.center,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: SizedBox(
+                  key: ValueKey('payLogo_${widget.selectedMethod}'),
+                  child: widget.logoBuilder(widget.selectedMethod, 26),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -3156,23 +3071,14 @@ class _WebRequestButtonState extends State<_WebRequestButton> {
             // padding: 16px;
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
             decoration: BoxDecoration(
-              // background: #E8C547 (solid, no gradient)
+              // Gold CTA — solid, with a soft gold shadow.
               color: const Color(0xFFE8C547),
-              // border-radius: 12px
               borderRadius: BorderRadius.circular(12),
-              // box-shadow:
-              //   0 2px 8px rgba(232,197,71,.25),
-              //   0 6px 20px rgba(0,0,0,.2);
-              boxShadow: const [
+              boxShadow: [
                 BoxShadow(
-                  color: Color(0x40E8C547),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-                BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 20,
-                  offset: Offset(0, 6),
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),

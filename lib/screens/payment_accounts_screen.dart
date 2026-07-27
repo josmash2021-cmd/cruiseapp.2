@@ -1,14 +1,18 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/error_service.dart';
+import '../services/haptic_service.dart';
 import '../services/local_data_service.dart';
+import '../widgets/neu_style.dart';
 import 'credit_card_screen.dart';
 
 /// Screen where users can link / manage their payment accounts
-/// (Google Pay, PayPal) and manage saved cards.
+/// (cards, bank account via ACH) and manage saved methods.
 class PaymentAccountsScreen extends StatefulWidget {
   const PaymentAccountsScreen({super.key});
 
@@ -16,7 +20,8 @@ class PaymentAccountsScreen extends StatefulWidget {
   State<PaymentAccountsScreen> createState() => _PaymentAccountsScreenState();
 }
 
-class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
+class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
+    with WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
 
   // Local state (SharedPreferences) — only persistent methods live here.
@@ -26,15 +31,37 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   String? _savedCardLast4;
   String? _savedCardBrand;
 
-  // Server-synced methods (cards only — bank account is "coming soon")
+  // Linked bank account (ACH) — when present the bank tile shows the
+  // bank name / last 4 instead of the linking prompt.
+  String? _bankLast4;
+  String? _bankName;
+
+  // Server-synced methods (cards + bank accounts)
   List<Map<String, dynamic>> _serverMethods = [];
   bool _loadingServer = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLinkedState();
     _loadServerMethods();
+    _loadBankInfo();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh bank info when returning from the linking browser flow.
+    if (state == AppLifecycleState.resumed) {
+      _loadBankInfo();
+      _loadServerMethods();
+    }
   }
 
   Future<void> _loadLinkedState() async {
@@ -75,11 +102,148 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
         methodType == 'bank_account';
   }
 
+  /// Loads the linked bank account from the backend and caches it
+  /// locally so the tile (and the ACH charge path) can use it offline.
+  Future<void> _loadBankInfo() async {
+    try {
+      final accounts = await ApiService.getBankAccounts();
+      if (!mounted) return;
+      if (accounts.isEmpty) return;
+      final first = accounts.first;
+      final pmId = first['stripe_pm_id'] as String?;
+      final last4 = first['last4'] as String?;
+      final bankName = first['bank_name'] as String?;
+      if (pmId != null) {
+        await LocalDataService.saveStripeBankPmId(pmId);
+        await LocalDataService.linkPaymentMethod('bank_account');
+      }
+      if (last4 != null) await LocalDataService.saveBankLast4(last4);
+      if (!mounted) return;
+      setState(() {
+        _bankLast4 = last4;
+        _bankName = bankName;
+      });
+    } catch (_) {
+      // Non-fatal — the tile keeps its "Bank Account" linking prompt.
+    }
+  }
+
+  bool _linkingBank = false;
+
+  /// Opens the native Stripe Financial Connections sheet to link a bank
+  /// account (ACH), then attaches it server-side so it can be charged.
+  Future<void> _openBankConnection() async {
+    if (_linkingBank) return; // double-tap guard
+    HapticService.selectionClick();
+    final s = S.of(context);
+
+    if (kIsWeb) {
+      // flutter_stripe's FC sheet is native-only; Stripe hosts no web URL
+      // for this flow (the session object only carries a client_secret).
+      _showBankError(s.bankLinkMobileOnly);
+      return;
+    }
+
+    _linkingBank = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: _gold),
+      ),
+    );
+
+    try {
+      final result = await ApiService.createFinancialConnectionsSession();
+      final clientSecret = result?['client_secret'] as String?;
+      if (!mounted) return;
+      // Dismiss the loading spinner before presenting the native sheet.
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      if (clientSecret == null) {
+        _showBankError(s.genericPaymentError);
+        return;
+      }
+
+      final collected =
+          await Stripe.instance.collectFinancialConnectionsAccounts(
+        clientSecret: clientSecret,
+      );
+      if (!mounted) return;
+
+      final accounts = collected.session.accounts;
+      if (accounts.isEmpty) return; // sheet closed without selecting
+      final attached = await ApiService.attachBankAccount(accounts.first.id);
+      if (!mounted) return;
+
+      final last4 = attached?['last4'] as String? ?? accounts.first.last4;
+      final bankName =
+          attached?['bank_name'] as String? ?? accounts.first.institutionName;
+      final pmId = attached?['stripe_pm_id'] as String?;
+      if (pmId != null) {
+        await LocalDataService.saveStripeBankPmId(pmId);
+        await LocalDataService.linkPaymentMethod('bank_account');
+      }
+      if (last4 != null) await LocalDataService.saveBankLast4(last4);
+      if (!mounted) return;
+      setState(() {
+        _bankLast4 = last4;
+        _bankName = bankName;
+      });
+      _showSnack(s.bankAccountLinked);
+      await _loadServerMethods();
+    } on StripeException catch (e) {
+      if (!mounted) return;
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      }
+      // User cancelled the native sheet — stay silent, that's fine.
+      final code = e.error.code.toString().toLowerCase();
+      if (!code.contains('cancel')) {
+        _showBankError(
+            e.error.localizedMessage ?? s.genericPaymentError);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      }
+      _showBankError('${s.genericPaymentError} (${e.toString()})');
+    } finally {
+      _linkingBank = false;
+    }
+  }
+
+  void _showBankError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red.shade800,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _deleteServerMethod(int id) async {
+    final target = _serverMethods.firstWhere(
+      (m) => m['id'] == id,
+      orElse: () => const {},
+    );
     try {
       await ApiService.deleteRiderPaymentMethod(id);
       if (!mounted) return;
       setState(() => _serverMethods.removeWhere((m) => m['id'] == id));
+      // If the deleted method was the bank account, wipe its local cache
+      // so no stale ACH PaymentMethod id survives.
+      if (target['method_type'] == 'bank_account') {
+        await LocalDataService.clearBankAccount();
+        if (!mounted) return;
+        setState(() {
+          _bankLast4 = null;
+          _bankName = null;
+        });
+      }
       _showSnack('Payment method removed');
     } catch (_) {
       if (!mounted) return;
@@ -94,74 +258,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     } catch (_) {
       _showSnack('Could not update default. Try again.');
     }
-  }
-
-  // ── Bank Account (ACH) ──
-  // Stub for now: shows an informational dialog. Full Stripe Financial
-  // Connections / Plaid integration ships in a follow-up commit; the
-  // entry point is wired so the UI is feature-complete.
-  Future<void> _linkBankAccount() async {
-    if (!mounted) return;
-    final c = AppColors.of(context);
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E).withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(Icons.account_balance_rounded,
-                  color: Color(0xFF22C55E), size: 22),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Bank Account',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Linking your bank account is coming soon. You\'ll be able to '
-          'connect your account via secure ACH and pay directly from your '
-          'balance.',
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            color: c.textSecondary,
-            fontSize: 13.5,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
-              'OK',
-              style: TextStyle(
-                color: Color(0xFFE8C547),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _linkCreditCard() async {
@@ -237,24 +333,22 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               // ── Back ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  width: 42,
+                  height: 42,
+                  decoration: neuBox(radius: 21),
+                  alignment: Alignment.center,
                   child: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: c.textPrimary,
@@ -285,13 +379,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 S.of(context).addPaymentMethod,
                 style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
               // Apple Pay / Google Pay are device wallets, not saved
               // methods. They show up automatically at checkout when the
               // device wallet is configured — there's nothing to "save"
-              // here. Only persistent methods (cards, bank, PayPal) live
-              // on this screen.
+              // here. Only persistent methods (cards, bank) live on this
+              // screen.
 
               // ── Credit / Debit Card ──
               _accountTile(
@@ -303,46 +397,46 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                 linked: _savedCardLast4 != null,
                 onTap: _linkCreditCard,
               ),
-              Divider(color: c.divider, height: 1),
+              const SizedBox(height: 12),
 
-              // ── Bank Account (ACH — coming soon dialog for now) ──
+              // ── Bank Account (ACH via Stripe Financial Connections) ──
               _accountTile(
                 c: c,
                 logoWidget: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  width: 40,
+                  height: 40,
+                  decoration: neuBox(radius: 12, pressed: true),
                   alignment: Alignment.center,
                   child: const Icon(Icons.account_balance_rounded,
                       color: Color(0xFF22C55E), size: 20),
                 ),
-                label: 'Bank Account',
-                linked: false,
-                onTap: _linkBankAccount,
+                label: _bankLast4 != null
+                    ? (_bankName != null
+                        ? '$_bankName •••• $_bankLast4'
+                        : 'Bank •••• $_bankLast4')
+                    : 'Bank Account',
+                linked: _bankLast4 != null,
+                onTap: _bankLast4 != null ? () {} : _openBankConnection,
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
               // ── Device-wallet explainer ──
-              // Replaces the old fake "Add Apple Pay / Add Google Pay"
-              // tiles. Communicates that those wallets are detected at
+              // Communicates that Apple Pay / Google Pay are detected at
               // checkout and don't need to be linked here.
               const _DeviceWalletNote(),
 
               // ── Saved methods from server ──
               if (_loadingServer) ...[
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2)),
               ] else if (_serverMethods.isNotEmpty) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
                 Text(
                   'Saved Methods',
                   style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 ..._serverMethods.map((m) {
                   final isDefault = m['is_default'] == true;
                   final type = m['method_type'] as String? ?? '';
@@ -361,38 +455,25 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                       icon = Icons.account_balance_wallet_rounded;
                       iconColor = const Color(0xFF003087);
                       break;
-                    case 'google_pay':
-                      icon = Icons.g_mobiledata_rounded;
-                      iconColor = const Color(0xFF4285F4);
-                      break;
-                    case 'apple_pay':
-                      icon = Icons.apple;
-                      iconColor = Colors.white;
-                      break;
                     default:
                       icon = Icons.payment_rounded;
                       iconColor = const Color(0xFF6B7280);
                   }
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
+                    margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: isDefault ? _gold.withValues(alpha: 0.08) : c.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isDefault ? _gold.withValues(alpha: 0.4) : c.divider,
-                        width: isDefault ? 1.5 : 1,
-                      ),
+                    decoration: neuBox(radius: 16).copyWith(
+                      border: isDefault
+                          ? Border.all(color: _gold.withValues(alpha: 0.45), width: 1.4)
+                          : Border.all(color: Colors.white.withValues(alpha: 0.04), width: 1),
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: iconColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                          width: 40,
+                          height: 40,
+                          decoration: neuBox(radius: 12, pressed: true),
+                          alignment: Alignment.center,
                           child: Icon(icon, color: iconColor, size: 20),
                         ),
                         const SizedBox(width: 12),
@@ -413,18 +494,21 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
                           GestureDetector(
                             onTap: () => _setDefaultServerMethod(m['id'] as int),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: _gold.withValues(alpha: 0.4)),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text('Set Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w600)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: neuBox(radius: 10, pressed: true),
+                              child: Text('Set Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
                             ),
                           ),
                         const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () => _deleteServerMethod(m['id'] as int),
-                          child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400, size: 20),
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: neuBox(radius: 17, pressed: true),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade400, size: 18),
+                          ),
                         ),
                       ],
                     ),
@@ -474,10 +558,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
       return Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          color: const Color(0xFF4285F4).withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: neuBox(radius: 12, pressed: true),
+        alignment: Alignment.center,
         child: const Icon(
           Icons.credit_card_rounded,
           color: Color(0xFF4285F4),
@@ -517,8 +599,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(radius: 16),
         child: Row(
           children: [
             logoWidget,
@@ -537,12 +620,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
-                  vertical: 4,
+                  vertical: 5,
                 ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
+                decoration: neuBox(radius: 12, pressed: true),
                 child: Text(
                   S.of(context).added,
                   style: const TextStyle(
@@ -555,19 +635,26 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen> {
             else
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+                  horizontal: 14,
+                  vertical: 7,
                 ),
                 decoration: BoxDecoration(
                   color: _gold,
                   borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.28),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Text(
                   S.of(context).addBtn,
                   style: const TextStyle(
                     color: Colors.black,
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -595,28 +682,15 @@ class _DeviceWalletNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: neuBox(radius: 16, pressed: true),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.smartphone_rounded,
-              color: Color(0xFFE8C547),
-              size: 20,
-            ),
+          const Icon(
+            Icons.smartphone_rounded,
+            color: Color(0xFFE8C547),
+            size: 20,
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -627,20 +701,19 @@ class _DeviceWalletNote extends StatelessWidget {
                   'Apple Pay & Google Pay',
                   style: TextStyle(
                     fontFamily: 'Poppins',
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 4),
+                SizedBox(height: 2),
                 Text(
-                  "Available automatically at checkout when your device "
-                  "wallet is set up. Nothing to add here — pick it when "
-                  "you request a ride.",
+                  'Nothing to add here — pick it at checkout when you '
+                  'request a ride.',
                   style: TextStyle(
                     fontFamily: 'Poppins',
-                    fontSize: 12.5,
-                    height: 1.4,
+                    fontSize: 12,
+                    height: 1.35,
                     color: Color(0xFFB0B0B6),
                   ),
                 ),

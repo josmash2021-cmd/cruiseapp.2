@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/neu_style.dart';
 import '../services/notification_service.dart';
 import '../services/user_session.dart';
 
@@ -79,6 +81,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   Future<void> _loadFirestorePrefs() async {
     if (_uid.isEmpty) return;
+    // Skip Firestore when there's no signed-in user — the read would fail
+    // with permission-denied. Local SharedPreferences state already shown.
+    if (FirebaseAuth.instance.currentUser == null) return;
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
@@ -105,8 +110,21 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('notif_${_uid}_$key', value);
 
-    // Save to Firestore
-    if (_uid.isNotEmpty) {
+    // Also write the flat keys NotificationService gates on.
+    const flatKeys = {
+      'master': 'notif_master',
+      'rideUpdates': 'notif_ride',
+      'promotions': 'notif_promo',
+      'safetyAlerts': 'notif_safety',
+      'payment': 'notif_payment',
+      'sounds': 'notif_sounds',
+      'vibration': 'notif_vibrate',
+    };
+    final flatKey = flatKeys[key];
+    if (flatKey != null) await prefs.setBool(flatKey, value);
+
+    // Save to Firestore — skipped when signed out (would permission-deny).
+    if (_uid.isNotEmpty && FirebaseAuth.instance.currentUser != null) {
       try {
         await FirebaseFirestore.instance
             .collection('users')
@@ -177,7 +195,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,15 +210,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     child: Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: c.isDark
-                            ? null
-                            : Border.all(
-                                color: Colors.black.withValues(alpha: 0.06),
-                              ),
-                      ),
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Icon(
                         Icons.arrow_back_ios_new_rounded,
                         color: c.textPrimary,
@@ -231,11 +241,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     // ── System permission status ──
                     Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: _systemEnabled
-                            ? _gold.withValues(alpha: 0.08)
-                            : const Color(0xFFFF5252).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(14),
+                      decoration: neuBox(radius: 18).copyWith(
                         border: Border.all(
                           color: _systemEnabled
                               ? _gold.withValues(alpha: 0.2)
@@ -244,14 +250,19 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            _systemEnabled
-                                ? Icons.notifications_active_rounded
-                                : Icons.notifications_off_rounded,
-                            color: _systemEnabled
-                                ? _gold
-                                : const Color(0xFFFF5252),
-                            size: 22,
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: neuBox(radius: 12, pressed: true),
+                            child: Icon(
+                              _systemEnabled
+                                  ? Icons.notifications_active_rounded
+                                  : Icons.notifications_off_rounded,
+                              color: _systemEnabled
+                                  ? _gold
+                                  : const Color(0xFFFF5252),
+                              size: 22,
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -409,13 +420,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: c.isDark
-            ? null
-            : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
+      decoration: neuBox(radius: 18),
       child: Row(
         children: [
           Expanded(

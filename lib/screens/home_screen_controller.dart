@@ -6,16 +6,6 @@ part of 'home_screen.dart';
 
 extension _HomeScreenController on _HomeScreenState {
 
-  void _onPhotoChanged() {
-    if (!mounted) return;
-    final path = UserSession.photoNotifier.value;
-    final url = UserSession.photoUrlNotifier.value;
-    _setState(() {
-      _photoPath = path.isNotEmpty ? path : null;
-      _photoUrl = url.isNotEmpty ? url : null;
-    });
-  }
-
   // --- Service Zone support ---
 
   void _listenServiceZones() {
@@ -137,6 +127,11 @@ extension _HomeScreenController on _HomeScreenState {
     try {
       final dashboard = await ApiService.getDashboard();
       if (dashboard == null || !mounted) return;
+      // Definitive answer received — the hero may now show the blocked
+      // state if the account is genuinely unverified.
+      if (!_verificationResolved) {
+        _setState(() => _verificationResolved = true);
+      }
       
       // Check verification status
       final verification = dashboard['verification'] as Map<String, dynamic>?;
@@ -268,8 +263,8 @@ extension _HomeScreenController on _HomeScreenState {
     ).then((pos) {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-      _throttledCameraRecenter();
+      _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+      _recenterHomeMiniMap();
     }).catchError((e) {
       if (kDebugMode) debugPrint('[GPS] getCurrentPosition error: $e');
     });
@@ -279,7 +274,7 @@ extension _HomeScreenController on _HomeScreenState {
     _locationSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 0, // Every GPS fix for fluid movement
+        distanceFilter: 0, // Every GPS fix
       ),
     ).listen(
       (Position p) {
@@ -287,14 +282,46 @@ extension _HomeScreenController on _HomeScreenState {
         _lastGpsFixAt = DateTime.now();
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
-        _miniDot.ensureRunning();
-        _miniDot.setTarget(ll.latitude, ll.longitude);
-        _throttledCameraRecenter();
+        // Feed the mini map dot + throttled follow camera (same hooks as
+        // the listener in _fetchCurrentLocation — the preloaded startup
+        // path runs its stream here).
+        _homeDot.ensureRunning();
+        _homeDot.setTarget(ll.latitude, ll.longitude);
+        _recenterHomeMiniMap();
       },
       onError: (e) {
         if (kDebugMode) debugPrint('[GPS] Position stream error: $e');
       },
     );
+  }
+
+  /// Start the watchdog that keeps the GPS stream healthy.
+  /// Call from initState and again on app resume.
+  void _startLocationWatchdogs() {
+    // Start the grace period now so the watchdog doesn't fire before the
+    // first GPS fix has had a chance to arrive.
+    _lastGpsFixAt = DateTime.now();
+
+    _gpsStreamWatchdog?.cancel();
+    _gpsStreamWatchdog = Timer.periodic(const Duration(seconds: _gpsWatchdogSec), (_) {
+      _checkGpsStreamHealth();
+    });
+  }
+
+  /// Stop the GPS watchdog. Call from dispose.
+  void _stopLocationWatchdogs() {
+    _gpsStreamWatchdog?.cancel();
+    _gpsStreamWatchdog = null;
+  }
+
+  /// If no GPS fix has arrived recently, restart the position stream.
+  /// Geolocator streams can die silently on some Android/iOS devices.
+  /// Only restarts if a stream was already started (i.e., permission granted).
+  void _checkGpsStreamHealth() {
+    if (!mounted || _locationSub == null || _fetchingLocation) return;
+    final elapsed = DateTime.now().difference(_lastGpsFixAt).inSeconds;
+    if (elapsed < _gpsWatchdogSec) return;
+    _fetchCurrentLocation();
   }
 
   // ─── Ride progress countdown ───
@@ -319,9 +346,11 @@ extension _HomeScreenController on _HomeScreenState {
       },
     );
 
-    // Draw route on home screen map + start driver tracking
-    if (_activeRide != null && _miniMapController != null) {
-      unawaited(_drawRouteOnMap());
+    // Prepare route progress math + start driver tracking. There is no map
+    // on home anymore — this only feeds the hero card progress bar.
+    final ride = _activeRide;
+    if (ride != null) {
+      _prepareRouteProgress(ride);
       _listenToDriverLocation();
     }
 
@@ -332,7 +361,7 @@ extension _HomeScreenController on _HomeScreenState {
   // ─── Driver location tracking for active trip ───
 
   void _listenToDriverLocation() {
-    if (_activeRide == null || _miniMapController == null) return;
+    if (_activeRide == null) return;
 
     // Cancel existing subscriptions and bump generation to discard stale callbacks
     _driverLocationSub?.cancel();
@@ -371,15 +400,10 @@ extension _HomeScreenController on _HomeScreenState {
 
         final newLat = (data['lat'] as num?)?.toDouble() ?? 0.0;
         final newLng = (data['lng'] as num?)?.toDouble() ?? 0.0;
-        final bearing = (data['bearing'] as num?)?.toDouble() ?? 0.0;
 
-        _setState(() {
-          _driverLocation = LatLng(newLat, newLng);
-          _driverBearing = bearing;
-        });
-
-        // Animate driver car to new position
-        _animateDriverCar(LatLng(newLat, newLng), bearing);
+        // Recompute hero-card route progress on every RTDB event (~1/sec).
+        // No 60fps interpolation ticker anymore — there is no map to animate.
+        _setState(() => _updateRouteProgress(LatLng(newLat, newLng)));
       }, onError: (e) {
         debugPrint('[DriverLoc] RTDB error: $e');
       });
@@ -404,116 +428,13 @@ extension _HomeScreenController on _HomeScreenState {
     });
   }
 
-  void _animateDriverCar(LatLng target, double bearing) {
-    _driverMotion.setTarget(target.latitude, target.longitude, bearing: bearing);
-    _ensureDriverMotionTicker();
-
-    // Create marker only if missing; continuous position updates are
-    // driven by the driver-motion Ticker at vsync (60-120 Hz).
-    if (_driverCarAnnot == null) {
-      _updateDriverMarker(target, bearing);
-    }
-  }
-
-  void _ensureDriverMotionTicker() {
-    if (_driverMotionTicker != null && _driverMotionTicker!.isActive) return;
-    _lastDriverMotionElapsed = Duration.zero;
-    _driverMotionTicker?.dispose();
-    _driverMotionTicker = createTicker((elapsed) {
-      final dtSec = _lastDriverMotionElapsed == Duration.zero
-          ? 0.0
-          : (elapsed - _lastDriverMotionElapsed).inMicroseconds / 1e6;
-      _lastDriverMotionElapsed = elapsed;
-
-      final changed = _driverMotion.tick(dtSec);
-      if (!changed || !mounted) return;
-
-      final annot = _driverCarAnnot;
-      final mgr = _miniMapCarMgr;
-      if (annot != null && mgr != null && _driverMotion.hasPosition) {
-        annot.geometry = mapbox.Point(
-          coordinates: mapbox.Position(_driverMotion.lng!, _driverMotion.lat!),
-        );
-        mgr.update(annot);
-      }
-
-      // Update route progress with the interpolated position
-      if (_driverMotion.hasPosition) {
-        _updateRouteProgress(LatLng(_driverMotion.lat!, _driverMotion.lng!));
-      }
-    })
-      ..start();
-  }
-
-  Future<void> _updateDriverMarker(LatLng position, double bearing) async {
-    final ctrl = _miniMapController;
-    if (ctrl == null) return;
-
-    try {
-      // Ensure car annotation manager exists
-      _miniMapCarMgr ??= await ctrl.annotations.createPointAnnotationManager();
-      final mgr = _miniMapCarMgr;
-      if (mgr == null) return;
-
-      // Load car image bytes (cached after first load)
-      if (_cachedCarBytes == null) {
-        final rideType = (_activeRide?.rideName ?? '').toLowerCase();
-        final carAsset = rideType == 'vip'
-            ? 'assets/images/cruisert1.png'
-            : rideType == 'premium'
-                ? 'assets/images/cruisert2.png'
-                : rideType == 'comfort'
-                    ? 'assets/images/cruisert3.png'
-                    : 'assets/images/cruisert2.png';
-        final byteData = await rootBundle.load(carAsset);
-        _cachedCarBytes = byteData.buffer.asUint8List();
-      }
-      final bytes = _cachedCarBytes!;
-
-      if (!isValidLatLng(position.latitude, position.longitude)) {
-        debugPrint('[HomeScreen] Skipping driver marker — invalid position: $position');
-        return;
-      }
-      // Use interpolated position from SmoothMotion if available; fallback to raw GPS.
-      final displayPos = (_driverMotion.hasPosition)
-          ? LatLng(_driverMotion.lat!, _driverMotion.lng!)
-          : position;
-
-      if (_driverCarAnnot != null) {
-        // Position updates are driven by the driver-motion Ticker at vsync.
-        // Only sync here if the ticker hasn't started yet (safety net).
-        if (_driverMotionTicker == null || !_driverMotionTicker!.isActive) {
-          _driverCarAnnot!.geometry = mapbox.Point(
-            coordinates: mapbox.Position(displayPos.longitude, displayPos.latitude),
-          );
-          mgr.update(_driverCarAnnot!);
-        }
-      } else {
-        // Create new annotation
-        _driverCarAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(
-            coordinates: mapbox.Position(displayPos.longitude, displayPos.latitude),
-          ),
-          image: bytes,
-          iconSize: 0.55,
-          iconOffset: [0, 0],
-          iconAnchor: mapbox.IconAnchor.CENTER,
-        ));
-      }
-    } catch (e) {
-      debugPrint('Error updating driver marker: $e');
-    }
-  }
-
-  /// Draw the gold route polyline on the home screen map.
-  Future<void> _drawRouteOnMap() async {
-    if (_rideRouteDrawn) return;
-    final ride = _activeRide;
-    final ctrl = _miniMapController;
-    if (ride == null || ctrl == null) return;
+  /// Cache route points + total distance for the hero card progress bar.
+  /// Pure math — the home no longer renders a map. Called once per ride
+  /// from [_startCountdown]; RTDB driver updates then feed
+  /// [_updateRouteProgress].
+  void _prepareRouteProgress(ActiveRideInfo ride) {
     if (ride.routePoints.isEmpty) return;
 
-    _rideRouteDrawn = true;
     _routeLatLngs = ride.routePoints.map((p) => LatLng(p[0], p[1])).toList();
 
     // Cap route endpoints to exact pin coordinates
@@ -522,129 +443,23 @@ extension _HomeScreenController on _HomeScreenState {
       _routeLatLngs[_routeLatLngs.length - 1] = LatLng(ride.dropoffLat, ride.dropoffLng);
     }
 
-    try {
-      // Create polyline annotation manager
-      _miniMapPolyMgr ??= await ctrl.annotations.createPolylineAnnotationManager();
-      final mgr = _miniMapPolyMgr;
-      if (mgr == null) return;
-
-      // Build coordinate list
-      final safeGeom = safeLineString(_routeLatLngs);
-      if (safeGeom == null) return;
-
-      // Draw gold route line
-      _tripRouteAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: safeGeom,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-
-      // Add dropoff pin at the end of the route
-      await _addDropoffPin(ride);
-
-      // Hide the gold location dot now that route is visible
-      unawaited(_updateMiniMapAnnotation());
-
-      // Fit camera to show the whole route
-      _fitCameraToRoute();
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error drawing route on home map: $e');
+    // Cache the total route length once — recomputing it on every RTDB
+    // event was wasted work (audit perf finding M7).
+    double total = 0;
+    for (int i = 0; i < _routeLatLngs.length - 1; i++) {
+      total += _haversine(_routeLatLngs[i], _routeLatLngs[i + 1]);
     }
-  }
-
-  /// Place a gold dropoff pin on the home map.
-  Future<void> _addDropoffPin(ActiveRideInfo ride) async {
-    final ctrl = _miniMapController;
-    if (ctrl == null) return;
-    if (ride.dropoffLat == 0 && ride.dropoffLng == 0) return;
-    if (!isValidLatLng(ride.dropoffLat, ride.dropoffLng)) return;
-
-    try {
-      final pinMgr = _miniMapAnnotMgr ??
-          await ctrl.annotations.createPointAnnotationManager();
-      final pinBytes = await buildGoldenPinBytes(
-        icon: Icons.location_on_rounded,
-        size: 52,
-      );
-      _dropoffPinAnnot = await pinMgr.create(mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(
-          coordinates: mapbox.Position(ride.dropoffLng, ride.dropoffLat),
-        ),
-        image: pinBytes,
-        iconSize: 0.7,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
-        iconOffset: [0, 0],
-      ));
-    } catch (e) {
-      debugPrint('Error adding dropoff pin: $e');
-    }
-  }
-
-  /// Fit the camera to show the full route with padding.
-  void _fitCameraToRoute() {
-    if (_routeLatLngs.isEmpty || _miniMapController == null) return;
-
-    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    for (final ll in _routeLatLngs) {
-      if (ll.latitude < minLat) minLat = ll.latitude;
-      if (ll.latitude > maxLat) maxLat = ll.latitude;
-      if (ll.longitude < minLng) minLng = ll.longitude;
-      if (ll.longitude > maxLng) maxLng = ll.longitude;
-    }
-
-    // Also include driver location if available
-    if (_driverLocation != null) {
-      final dl = _driverLocation!;
-      if (dl.latitude < minLat) minLat = dl.latitude;
-      if (dl.latitude > maxLat) maxLat = dl.latitude;
-      if (dl.longitude < minLng) minLng = dl.longitude;
-      if (dl.longitude > maxLng) maxLng = dl.longitude;
-    }
-
-    unawaited(_miniMapController!.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(
-            (minLng + maxLng) / 2,
-            (minLat + maxLat) / 2,
-          ),
-        ),
-        zoom: _calculateZoomForBounds(minLat, maxLat, minLng, maxLng),
-        pitch: 0,
-        bearing: 0,
-      ),
-      mapbox.MapAnimationOptions(duration: 800),
-    ));
-  }
-
-  double _calculateZoomForBounds(double minLat, double maxLat, double minLng, double maxLng) {
-    final latDiff = maxLat - minLat;
-    final lngDiff = maxLng - minLng;
-    final maxDiff = math.max(latDiff, lngDiff);
-    if (maxDiff <= 0) return 15.0;
-    // Approximate zoom: smaller bounds → higher zoom
-    final zoom = 14.0 - (math.log(maxDiff * 111) / math.ln2);
-    return zoom.clamp(10.0, 17.0);
+    _routeTotalDist = total;
   }
 
   /// Compute how far along the route the driver is (0.0→1.0).
   void _updateRouteProgress(LatLng driverPos) {
-    if (_routeLatLngs.length < 2) return;
+    if (_routeLatLngs.length < 2 || _routeTotalDist <= 0) return;
 
-    double totalDist = 0;
     double closestDist = double.infinity;
     double distAtClosest = 0;
     double runningDist = 0;
 
-    for (int i = 0; i < _routeLatLngs.length - 1; i++) {
-      final a = _routeLatLngs[i];
-      final b = _routeLatLngs[i + 1];
-      final segLen = _haversine(a, b);
-      totalDist += segLen;
-    }
-
-    runningDist = 0;
     for (int i = 0; i < _routeLatLngs.length - 1; i++) {
       final a = _routeLatLngs[i];
       final b = _routeLatLngs[i + 1];
@@ -660,12 +475,10 @@ extension _HomeScreenController on _HomeScreenState {
       runningDist += segLen;
     }
 
-    if (totalDist > 0) {
-      final newProgress = (distAtClosest / totalDist).clamp(0.0, 1.0);
-      // Only update if moving forward (prevent backward jumps)
-      if (newProgress >= _routeProgress) {
-        _routeProgress = newProgress;
-      }
+    final newProgress = (distAtClosest / _routeTotalDist).clamp(0.0, 1.0);
+    // Only update if moving forward (prevent backward jumps)
+    if (newProgress >= _routeProgress) {
+      _routeProgress = newProgress;
     }
   }
 
@@ -694,27 +507,6 @@ extension _HomeScreenController on _HomeScreenState {
     return LatLng(a.latitude + tc * dy, a.longitude + tc * dx);
   }
 
-  /// Clear all route annotations from the home screen map.
-  Future<void> _clearRouteFromMap() async {
-    try {
-      if (_tripRouteAnnot != null && _miniMapPolyMgr != null) {
-        await _miniMapPolyMgr!.delete(_tripRouteAnnot!);
-        _tripRouteAnnot = null;
-      }
-      if (_driverCarAnnot != null && _miniMapCarMgr != null) {
-        await _miniMapCarMgr!.delete(_driverCarAnnot!);
-        _driverCarAnnot = null;
-      }
-      if (_dropoffPinAnnot != null && _miniMapAnnotMgr != null) {
-        await _miniMapAnnotMgr!.delete(_dropoffPinAnnot!);
-        _dropoffPinAnnot = null;
-      }
-    } catch (_) {}
-    _rideRouteDrawn = false;
-    _routeProgress = 0.0;
-    _routeLatLngs = [];
-  }
-
   void _onTripCompleted() {
     if (!mounted) return;
 
@@ -728,18 +520,12 @@ extension _HomeScreenController on _HomeScreenState {
     _tripStatusSub?.cancel();
     _tripStatusSub = null;
     _trackedDriverId = null;
-    _driverMotionTicker?.stop();
-    _driverMotionTicker = null;
-    _driverMotion.reset();
     _countdownTimer?.cancel();
     _countdownTimer = null;
 
     // Fade out ride UI, then reset state
     _rideFadeCtrl.reverse().then((_) async {
       if (!mounted) return;
-
-      // Clear map annotations (route polyline, dropoff pin, driver car)
-      await _clearRouteFromMap();
 
       // Drop the cached active ride from local storage so the next
       // _loadSavedData() can't resurrect it. This is the path that
@@ -750,42 +536,14 @@ extension _HomeScreenController on _HomeScreenState {
         await LocalDataService.clearActiveRide();
       } catch (_) {}
 
-      // Reset map back to the home default frame BEFORE nulling the controller.
-      // The controller is still valid here; after setState rebuilds the MapWidget
-      // with a new ValueKey it will be destroyed.
-      final mapCtrl = _miniMapController;
-      if (mapCtrl != null && _currentLatLng != null) {
-        unawaited(mapCtrl.flyTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-              coordinates: mapbox.Position(
-                _currentLatLng!.longitude,
-                _currentLatLng!.latitude,
-              ),
-            ),
-            zoom: 15.0,
-            pitch: 0,
-            bearing: 0,
-          ),
-          mapbox.MapAnimationOptions(duration: 800),
-        ));
-      }
-
+      if (!mounted) return;
       _setState(() {
         _activeRide = null;
-        _driverLocation = null;
         _pendingSearchTripId = null;
         _didAutoResumeRide = false;
-        _rideRouteDrawn = false;
         _routeProgress = 0.0;
-        // Bump the map epoch so the MapWidget gets a fresh ValueKey
-        // and Flutter rebuilds the native view from scratch. Without
-        // this, after a cancel the Mapbox canvas sometimes renders
-        // as a flat grey layer (lost the dark-navy style) until the
-        // user manually pans/zooms.
-        _mapEpoch++;
-        _miniMapController = null;
-        _miniMapAnnotMgr = null;
+        _routeLatLngs = [];
+        _routeTotalDist = 0.0;
       });
 
       // Fade in normal content
@@ -885,7 +643,9 @@ extension _HomeScreenController on _HomeScreenState {
     _openingRideFlow = true;
     try {
       final result = await Navigator.of(context).push<Map<String, dynamic>>(
-        sharedAxisZRoute(
+        // Fluid slide-up + fade (same transition as the tracking screen and
+        // the address sheet) instead of the shared-axis zoom.
+        slideUpFadeRoute(
           PickupDropoffSearchScreen(
             initialPickupLat: _currentLatLng?.latitude,
             initialPickupLng: _currentLatLng?.longitude,
@@ -961,8 +721,6 @@ extension _HomeScreenController on _HomeScreenState {
       if (mounted) _openingRideFlow = false;
     }
   }
-
-  // Map styles now use shared MapStyles.dark from config/map_styles.dart
 
   void _openScheduleFlow() => _showScheduleSheet();
 
@@ -1116,9 +874,9 @@ extension _HomeScreenController on _HomeScreenState {
   /// Cross-check a locally cached active ride against the backend.
   /// If the backend says the trip is already cancelled or completed
   /// (typical when dispatch cancels remotely while the rider is in
-  /// home), wipe the cache, the in-memory state, and the home map
-  /// annotations so the rider lands on a clean canvas. Without this
-  /// check the stale cache would auto-resume a dead trip.
+  /// home), wipe the cache and the in-memory state so the rider lands
+  /// on a clean home. Without this check the stale cache would
+  /// auto-resume a dead trip.
   Future<void> _verifyActiveRideAgainstBackend(ActiveRideInfo cached) async {
     try {
       final tripId = cached.tripId;
@@ -1204,14 +962,17 @@ extension _HomeScreenController on _HomeScreenState {
             if (updated['driver_id'] != null) {
               _pendingSearchTimer?.cancel();
               _setState(() => _pendingSearchTripId = null);
+              // Release the auto-resume slot BEFORE re-entering — the entry
+              // guard returns early while the flag is still true.
+              _didAutoResumeRide = false;
               await _checkBackendActiveTrip();
             }
           } catch (_) {}
         });
         // Leave _didAutoResumeRide=true so the 6s polling loop is the
         // only one that can re-trigger _checkBackendActiveTrip — don't
-        // want a parallel path to race it. The polling loop resets the
-        // flag via _pendingSearchTripId=null on driver assigned.
+        // want a parallel path to race it. The polling loop releases the
+        // flag itself right before re-entering on driver assigned.
         return;
       }
 
@@ -1307,14 +1068,20 @@ extension _HomeScreenController on _HomeScreenState {
     required String title,
     required String hint,
   }) async {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _AddressAutocompleteSheet(
-        title: title,
-        hint: hint,
-        currentLatLng: _currentLatLng,
+    // Full-screen page with the project's fluid slide-up + fade transition
+    // (instead of the default modal sheet animation). The Material wrapper
+    // replaces the ancestor the modal route used to provide (TextField
+    // requires it).
+    return Navigator.of(context).push<String>(
+      slideUpFadeRoute<String>(
+        Material(
+          type: MaterialType.transparency,
+          child: _AddressAutocompleteSheet(
+            title: title,
+            hint: hint,
+            currentLatLng: _currentLatLng,
+          ),
+        ),
       ),
     );
   }

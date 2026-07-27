@@ -35,6 +35,10 @@ class ProfileAvatar extends StatelessWidget {
   /// Ensures rider and driver photos never mix.
   final String? role;
 
+  /// Optional fade-in duration forwarded to [UserProfilePhoto].
+  /// Null keeps the default behavior for all existing callers.
+  final Duration? fadeInDuration;
+
   const ProfileAvatar({
     super.key,
     this.imageUrl,
@@ -45,6 +49,7 @@ class ProfileAvatar extends StatelessWidget {
     this.borderColor,
     this.uid,
     this.role,
+    this.fadeInDuration,
   });
 
   @override
@@ -102,6 +107,7 @@ class ProfileAvatar extends StatelessWidget {
               uid: uid,
               role: role,
               noBorder: true,
+              fadeInDuration: fadeInDuration,
             ),
           ),
 

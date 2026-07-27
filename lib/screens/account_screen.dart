@@ -5,17 +5,16 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:local_auth/local_auth.dart';
-import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/animated_biometric_icon.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/screen_security_service.dart';
 import '../services/local_data_service.dart';
-import '../services/places_service.dart';
 import '../services/user_session.dart';
 import 'splash_screen.dart';
 import 'help_screen.dart';
@@ -45,7 +44,6 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
   static const _gold = Color(0xFFE8C547);
 
   Map<String, String>? _user;
-  List<FavoritePlace> _favorites = [];
   bool _loading = true;
   bool _isVerified = false;
   bool _emailVerified = false;
@@ -73,13 +71,11 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
   Future<void> _loadUser() async {
     // Show cached data INSTANTLY (no waiting for backend)
     final user = await UserSession.getUser();
-    final favs = await LocalDataService.getFavorites();
     final verified = await LocalDataService.isIdentityVerified();
-    
+
     if (!mounted) return;
     setState(() {
       _user = user;
-      _favorites = favs;
       _isVerified = verified;
       _loading = false;
     });
@@ -99,13 +95,6 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
     } catch (_) {
       // Silently ignore — cached data is still showing
     }
-  }
-
-  String? _savedAddress(String label) {
-    for (final f in _favorites) {
-      if (f.label.toLowerCase() == label.toLowerCase()) return f.address;
-    }
-    return null;
   }
 
   void _openSettings() async {
@@ -360,7 +349,7 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
 
     if (_loading) {
       return Scaffold(
-        backgroundColor: c.bg,
+        backgroundColor: neuBase,
         body: Center(
           child: CircularProgressIndicator(
             color: const Color(0xFFE8C547),
@@ -375,11 +364,9 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
     final fullName = (firstName != null && firstName.isNotEmpty)
         ? '$firstName $lastName'.trim()
         : (FirebaseAuth.instance.currentUser?.displayName ?? '');
-    final photoPath = _user?['photoPath'] ?? '';
-    final photoUrl = _user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -388,51 +375,78 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
             children: [
               const SizedBox(height: 8),
 
-              // ── Back button ──
+              // ── Back button — pressed neumorphic circle ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
                     Icons.arrow_back_rounded,
                     color: c.textPrimary,
-                    size: 24,
+                    size: 22,
                   ),
                 ),
               ),
               const SizedBox(height: 28),
 
-              // ── Name + Photo row ──
+              // ── Photo + Name row — avatar left, name centered beside it ──
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // Profile photo with verified badge — fed live by the
+                  // session notifiers (synchronous local state), so it
+                  // paints on the first frame and updates the instant the
+                  // photo changes, without a full _loadUser() round-trip.
+                  ValueListenableBuilder<String>(
+                    valueListenable: UserSession.photoNotifier,
+                    builder: (context, localPath, _) {
+                      return ValueListenableBuilder<String>(
+                        valueListenable: UserSession.photoUrlNotifier,
+                        builder: (context, remoteUrl, _) {
+                          final path = localPath.isNotEmpty
+                              ? localPath
+                              : (_user?['photoPath'] ?? '');
+                          final url = remoteUrl.isNotEmpty
+                              ? remoteUrl
+                              : (_user?['photoUrl'] ?? '');
+                          // Local file wins when it exists (instant,
+                          // gapless render); otherwise the remote URL
+                          // renders from the shared photo cache.
+                          final hasLocal = !kIsWeb &&
+                              path.isNotEmpty &&
+                              !path.startsWith('http') &&
+                              File(path).existsSync();
+                          return VerifiedAvatar(
+                            photoUrl: hasLocal ? '' : url,
+                            photoPath: path,
+                            radius: 35,
+                            fallbackName: fullName,
+                            uid: _user?['userId'],
+                            role: _user?['role'] ?? 'rider',
+                            isVerified: _isVerified,
+                            fadeInDuration: Duration.zero,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 18),
                   // Name — fills available width, auto-sizes for long names
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4, right: 16),
-                      child: Text(
-                        fullName,
-                        style: TextStyle(
-                          fontSize: fullName.length > 18 ? 28 : 34,
-                          fontWeight: FontWeight.w800,
-                          color: c.textPrimary,
-                          letterSpacing: -0.5,
-                          height: 1.15,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      fullName,
+                      style: TextStyle(
+                        fontSize: fullName.length > 18 ? 26 : 30,
+                        fontWeight: FontWeight.w800,
+                        color: c.textPrimary,
+                        letterSpacing: -0.5,
+                        height: 1.15,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  // Profile photo with verified badge
-                  VerifiedAvatar(
-                    photoUrl: photoUrl,
-                    photoPath: photoPath,
-                    radius: 35,
-                    fallbackName: fullName,
-                    uid: _user?['userId'],
-                    role: _user?['role'] ?? 'rider',
-                    isVerified: _isVerified,
                   ),
                 ],
               ),
@@ -440,34 +454,6 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
 
               // ── Menu grid ──
               _buildMenuGrid(c),
-
-              const SizedBox(height: 28),
-
-              // ── Favorites section ──
-              Text(
-                S.of(context).favoritesLabel,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildFavoriteItem(
-                c,
-                Icons.home_rounded,
-                S.of(context).homeLabel,
-                _savedAddress('Home'),
-              ),
-              const SizedBox(height: 10),
-              _buildFavoriteItem(
-                c,
-                Icons.work_rounded,
-                S.of(context).workLabel,
-                _savedAddress('Work'),
-              ),
-              const SizedBox(height: 10),
-              _buildFavoriteItem(c, Icons.star_rounded, S.of(context).placeLabel, null),
             ],
           ),
         ),
@@ -477,23 +463,23 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
 
   Widget _buildMenuGrid(AppColors c) {
     final items = [
-      _MenuItem('help', Icons.help_outline_rounded, S.of(context).help),
+      _MenuItem('help', Icons.support_agent_rounded, S.of(context).help),
       _MenuItem(
         'wallet',
-        Icons.account_balance_wallet_outlined,
+        Icons.account_balance_wallet_rounded,
         S.of(context).wallet,
       ),
-      _MenuItem('trips', Icons.history_rounded, S.of(context).yourTrips),
+      _MenuItem('trips', Icons.route_rounded, S.of(context).yourTrips),
       _MenuItem(
         'scheduled',
-        Icons.schedule_rounded,
+        Icons.event_available_rounded,
         S.of(context).scheduledRides,
       ),
-      _MenuItem('promos', Icons.local_offer_rounded, S.of(context).promoCodes),
-      _MenuItem('referral', Icons.card_giftcard_rounded, S.of(context).inviteFriendsTitle),
-      _MenuItem('safety', Icons.shield_outlined, S.of(context).safety),
-      _MenuItem('inbox', Icons.mail_outline_rounded, S.of(context).inbox),
-      _MenuItem('settings', Icons.settings_outlined, S.of(context).settings),
+      _MenuItem('promos', Icons.percent_rounded, S.of(context).promoCodes),
+      _MenuItem('referral', Icons.person_add_alt_1_rounded, S.of(context).inviteFriendsTitle),
+      _MenuItem('safety', Icons.health_and_safety_rounded, S.of(context).safety),
+      _MenuItem('inbox', Icons.inbox_rounded, S.of(context).inbox),
+      _MenuItem('settings', Icons.settings_rounded, S.of(context).settings),
     ];
 
     return Wrap(
@@ -551,16 +537,16 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
           child: Container(
             width: (MediaQuery.of(context).size.width - 48 - 12) / 2,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: c.isDark
-                  ? null
-                  : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-            ),
+            decoration: neuBox(radius: 20),
             child: Row(
               children: [
-                Icon(item.icon, color: _gold, size: 24),
+                // Icon inside a pressed neumorphic well
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(item.icon, color: _gold, size: 22),
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -579,97 +565,6 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
           ),
         );
       }).toList(),
-    );
-  }
-
-  void _onFavoriteTap(String label) async {
-    final c = AppColors.of(context);
-
-    final address = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _FavoriteAddressSheet(c: c, label: label),
-    );
-
-    if (address == null || address.isEmpty) return;
-
-    await LocalDataService.saveFavorite(
-      FavoritePlace(label: label, address: address),
-    );
-
-    if (!mounted) return;
-    // Reload favorites
-    final favs = await LocalDataService.getFavorites();
-    if (!mounted) return;
-    setState(() => _favorites = favs);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(S.of(context).addressSaved),
-        // Uses global snackBarTheme
-      ),
-    );
-  }
-
-  Widget _buildFavoriteItem(
-    AppColors c,
-    IconData icon,
-    String label,
-    String? savedAddr,
-  ) {
-    final hasSaved = savedAddr != null && savedAddr.isNotEmpty;
-    return GestureDetector(
-      onTap: () => _onFavoriteTap(label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: c.bg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: _gold, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    hasSaved ? label : S.of(context).addLabelFor(label),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
-                    ),
-                  ),
-                  if (hasSaved) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      savedAddr,
-                      style: TextStyle(fontSize: 12, color: c.textSecondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -758,7 +653,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -767,16 +662,13 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             children: [
               const SizedBox(height: 8),
 
-              // ── Back button ──
+              // ── Back button — pressed neumorphic circle ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: c.textPrimary,
@@ -809,7 +701,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   ).push(slideFromRightRoute(const EditProfileScreen()));
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _settingsItem(
                 c,
                 icon: Icons.notifications_outlined,
@@ -820,7 +712,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _settingsItem(
                 c,
                 icon: Icons.lock_outline_rounded,
@@ -831,7 +723,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   ).push(slideFromRightRoute(const PrivacyScreen()));
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _settingsItem(
                 c,
                 icon: Icons.accessibility_new_rounded,
@@ -841,7 +733,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                       .push(slideFromRightRoute(const AccessibilityScreen()));
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _settingsItem(
                 c,
                 icon: Icons.info_outline_rounded,
@@ -854,32 +746,29 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               ),
               const Spacer(),
 
-              // ── Sign Out button ──
+              // ── Sign Out button — neumorphic surface, red accent ──
               Padding(
                 padding: const EdgeInsets.only(bottom: 32),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFF5252),
-                      side: const BorderSide(
-                        color: Color(0xFFFF5252),
-                        width: 1.5,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                    ),
-                    onPressed: () => _signOut(context),
-                    icon: const Icon(Icons.logout_rounded, size: 22, color: Color(0xFFFF5252)),
-                    label: Text(
-                      S.of(context).logOut,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFFFF5252),
-                      ),
+                child: GestureDetector(
+                  onTap: () => _signOut(context),
+                  child: Container(
+                    width: double.infinity,
+                    height: 56,
+                    decoration: neuBox(radius: 18),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.logout_rounded, size: 22, color: Color(0xFFFF5252)),
+                        const SizedBox(width: 10),
+                        Text(
+                          S.of(context).logOut,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFFF5252),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -901,16 +790,16 @@ class _SettingsScreenState extends State<_SettingsScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-        ),
+        decoration: neuBox(radius: 18),
         child: Row(
           children: [
-            Icon(icon, color: c.textPrimary, size: 22),
+            // Icon inside a pressed neumorphic well, gold accent
+            Container(
+              width: 36,
+              height: 36,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(icon, color: const Color(0xFFE8C547), size: 20),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
@@ -976,238 +865,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       smoothFadeRoute(const SplashScreen(), durationMs: 600),
       (_) => false,
-    );
-  }
-}
-
-// ─── Google Places Autocomplete for Favorites ───────────────────────
-class _FavoriteAddressSheet extends StatefulWidget {
-  final AppColors c;
-  final String label;
-  const _FavoriteAddressSheet({required this.c, required this.label});
-
-  @override
-  State<_FavoriteAddressSheet> createState() => _FavoriteAddressSheetState();
-}
-
-class _FavoriteAddressSheetState extends State<_FavoriteAddressSheet> {
-  final _controller = TextEditingController();
-  final _places = PlacesService(ApiKeys.webServices);
-  Timer? _debounce;
-  List<PlaceSuggestion> _suggestions = [];
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    _debounce?.cancel();
-    if (query.trim().length < 2) {
-      setState(() {
-        _suggestions = [];
-        _loading = false;
-      });
-      return;
-    }
-    setState(() => _loading = true);
-    _debounce = Timer(const Duration(milliseconds: 400), () async {
-      try {
-        final results = await _places.autocomplete(query);
-        if (mounted) {
-          setState(() {
-            _suggestions = results;
-            _loading = false;
-          });
-        }
-      } catch (_) {
-        if (mounted) setState(() => _loading = false);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = widget.c;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: BoxDecoration(
-        color: c.panel,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 14),
-          // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Icon(
-                    Icons.arrow_back_rounded,
-                    color: c.textPrimary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    S.of(context).setLabelAddress(widget.label),
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          // Search field
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: c.border),
-              ),
-              child: TextField(
-                controller: _controller,
-                autofocus: true,
-                style: TextStyle(color: c.textPrimary, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: S.of(context).searchAddressHint,
-                  hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: c.textTertiary,
-                    size: 22,
-                  ),
-                  suffixIcon: _controller.text.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _controller.clear();
-                            setState(() {
-                              _suggestions = [];
-                              _loading = false;
-                            });
-                          },
-                          child: Icon(
-                            Icons.close_rounded,
-                            color: c.textTertiary,
-                            size: 20,
-                          ),
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                ),
-                onChanged: _onSearchChanged,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: Color(0xFFE8C547),
-                ),
-              ),
-            ),
-          // Suggestions
-          Expanded(
-            child: _suggestions.isEmpty && !_loading
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.place_outlined,
-                          color: c.textTertiary,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _controller.text.isEmpty
-                              ? S.of(context).typeToSearchForAddress
-                              : S.of(context).noResultsFound,
-                          style: TextStyle(color: c.textTertiary, fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.separated(
-                    padding: EdgeInsets.fromLTRB(12, 4, 12, bottomInset + 20),
-                    itemCount: _suggestions.length,
-                    separatorBuilder: (_, i) =>
-                        Divider(color: c.divider, height: 1, indent: 52),
-                    itemBuilder: (context, index) {
-                      final s = _suggestions[index];
-                      return ListTile(
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: c.border),
-                          ),
-                          child: Icon(
-                            s.icon,
-                            color: const Color(0xFFD4AF37),
-                            size: 20,
-                          ),
-                        ),
-                        title: Text(
-                          s.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        onTap: () => Navigator.of(context).pop(s.description),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -6,6 +7,7 @@ import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../widgets/dismiss_keyboard.dart';
+import '../widgets/neu_style.dart';
 
 class CreditCardScreen extends StatefulWidget {
   final String? firstName;
@@ -208,7 +210,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: DismissKeyboard(
         child: SafeArea(
           child: Padding(
@@ -216,18 +218,16 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
 
               // ── Back button ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  width: 42,
+                  height: 42,
+                  decoration: neuBox(radius: 21),
+                  alignment: Alignment.center,
                   child: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: c.textPrimary,
@@ -262,11 +262,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                     children: [
                       // ── Stripe secure card field with brand logo ──
                       Container(
-                        decoration: BoxDecoration(
-                          color: c.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: c.border),
-                        ),
+                        decoration: neuBox(radius: 16, pressed: true),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 4,
@@ -274,23 +270,50 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: CardField(
-                                enablePostalCode: false,
-                                style: TextStyle(color: c.textPrimary, fontSize: 16),
-                                decoration: InputDecoration(
-                                  border: InputBorder.none,
-                                  hintStyle: TextStyle(
-                                    color: c.textTertiary,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                onCardChanged: (details) {
-                                  setState(() {
-                                    _cardDetails = details;
-                                    _cardComplete = details?.complete ?? false;
-                                  });
-                                },
-                              ),
+                              // flutter_stripe's CardField is native-only —
+                              // on web it throws Platform._operatingSystem.
+                              // Show a clean placeholder instead; the "Add
+                              // card" button stays disabled because
+                              // _cardComplete never becomes true here.
+                              child: kIsWeb
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14, horizontal: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.credit_card_rounded,
+                                              color: c.textTertiary, size: 20),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              S.of(context).cardEntryMobileOnly,
+                                              style: TextStyle(
+                                                color: c.textTertiary,
+                                                fontSize: 13.5,
+                                                height: 1.35,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : CardField(
+                                      enablePostalCode: false,
+                                      style: TextStyle(color: c.textPrimary, fontSize: 16),
+                                      decoration: InputDecoration(
+                                        border: InputBorder.none,
+                                        hintStyle: TextStyle(
+                                          color: c.textTertiary,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      onCardChanged: (details) {
+                                        setState(() {
+                                          _cardDetails = details;
+                                          _cardComplete = details?.complete ?? false;
+                                        });
+                                      },
+                                    ),
                             ),
                           ],
                         ),
@@ -356,8 +379,17 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                       gradient: _canContinue
                           ? const LinearGradient(colors: [_gold, _goldLight])
                           : null,
-                      color: _canContinue ? null : c.surface,
+                      color: _canContinue ? null : neuPressed,
                       borderRadius: BorderRadius.circular(28),
+                      boxShadow: _canContinue
+                          ? [
+                              BoxShadow(
+                                color: _gold.withValues(alpha: 0.35),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -410,11 +442,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     TextCapitalization capitalization = TextCapitalization.none,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.border),
-      ),
+      decoration: neuBox(radius: 16, pressed: true),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: TextField(
         controller: controller,

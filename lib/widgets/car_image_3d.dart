@@ -16,6 +16,7 @@ class CarImage3D extends StatelessWidget {
   final Duration dimDuration;
   final Widget? fallback;
   final bool selected;
+  final AlignmentGeometry alignment;
 
   const CarImage3D({
     super.key,
@@ -25,6 +26,7 @@ class CarImage3D extends StatelessWidget {
     this.dimDuration = const Duration(milliseconds: 200),
     this.fallback,
     this.selected = false,
+    this.alignment = Alignment.center,
   });
 
   @override
@@ -40,6 +42,7 @@ class CarImage3D extends StatelessWidget {
       return Image(
         image: imageProvider,
         fit: BoxFit.contain,
+        alignment: alignment,
         filterQuality: FilterQuality.high,
         isAntiAlias: true,
         errorBuilder: (_, __, ___) =>

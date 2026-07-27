@@ -32,6 +32,7 @@ import 'airport_terminal_sheet.dart';
 import 'payment_accounts_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../widgets/neu_style.dart';
 
 class ScheduleBookingScreen extends StatefulWidget {
   final DateTime scheduledAt;
@@ -1023,7 +1024,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
     ).format(widget.scheduledAt);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: neuBase,
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
@@ -1031,7 +1032,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
             children: [
               // ── Header ──
               Container(
-                color: c.bg,
+                color: neuBase,
                 padding: EdgeInsets.only(
                   top: MediaQuery.of(context).padding.top + 8,
                   left: 16,
@@ -1046,11 +1047,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
                           child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            width: 40,
+                            height: 40,
+                            decoration: neuBox(radius: 14, pressed: true),
+                            alignment: Alignment.center,
                             child: const Icon(
                               Icons.arrow_back_ios_new_rounded,
                               color: Colors.white,
@@ -1104,13 +1104,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
                     // ── Address inputs ──
                     Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1D24),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.35),
-                        ),
-                      ),
+                      decoration: neuBox(radius: 16),
                       child: Column(
                         children: [
                           _addressField(
@@ -1291,12 +1285,10 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
               // ── Bottom panel ──
               Container(
-                decoration: BoxDecoration(
-                  color: c.mapPanel,
+                decoration: neuBox(radius: 24).copyWith(
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(24),
                   ),
-                  border: Border.all(color: c.border),
                 ),
                 child: SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(
@@ -1478,13 +1470,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                             horizontal: 14,
                             vertical: 12,
                           ),
-                          decoration: BoxDecoration(
-                            color: c.border,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.25),
-                            ),
-                          ),
+                          decoration: neuBox(radius: 16),
                           child: Row(
                             children: [
                               if (_selectedPaymentMethod == 'apple_pay' || _selectedPaymentMethod == 'google_pay')
@@ -1537,10 +1523,21 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
                       const SizedBox(height: 14),
 
-                      // Book button
+                      // Book button — gold CTA with soft gold shadow
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _gold.withValues(alpha: 0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _gold,
                             foregroundColor: Colors.black,
@@ -1582,6 +1579,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                                     ),
                                   ],
                                 ),
+                          ),
                         ),
                       ),
                     ],

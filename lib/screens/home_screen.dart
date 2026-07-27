@@ -1,15 +1,9 @@
 import 'dart:async';
-import 'dart:io' show File;
 import 'dart:math' as math;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
@@ -23,12 +17,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
-import '../utils/smooth_motion.dart';
 import 'airport_terminal_sheet.dart';
+import 'biometric_consent_screen.dart';
 import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
 import 'schedule_ride_flow.dart';
-import 'map_picker_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';
@@ -37,38 +30,29 @@ import 'trip_receipt_screen.dart';
 import 'account_screen.dart';
 import '../config/api_keys.dart';
 import '../config/app_theme.dart';
-import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/screen_security_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
-import '../services/map_controller_cache.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../l10n/app_localizations.dart';
-import 'package:intl/intl.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
-import '../widgets/vehicle_tier_badge.dart';
-import '../widgets/smart_map_pin.dart';
-import '../widgets/user_profile_photo.dart';
-import '../widgets/verified_avatar.dart';
 import '../widgets/offline_banner.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../utils/responsive.dart';
-import '../utils/name_helper.dart' as nh;
 
 part 'home_screen_controller.dart';
-part 'home_screen_map.dart';
 part 'home_screen_widgets.dart';
 
 class HomeScreen extends StatefulWidget {
-  final bool forceExpandPanel;
-  const HomeScreen({super.key, this.forceExpandPanel = false});
+  const HomeScreen({super.key});
 
   /// Bumped by main.dart FCM handler when a scheduled ride status changes
   /// (driver claimed, driver cancelled). HomeScreen listens and refreshes.
@@ -81,26 +65,17 @@ class HomeScreen extends StatefulWidget {
 
 const _gold = Color(0xFFE8C547);
 const _goldLight = Color(0xFFFBE47A);
-// Mini bar height ratio — collapses to ~110px on a typical phone (640px
-// viewport ⇒ 0.17 ≈ 109px). Just enough to show the drag handle, the
-// greeting + name on the left, and the bell + avatar on the right —
-// mirrors the driver "Finding trips" bar UX.
-const double _kMinSheet = 0.17;
-const double _kMaxSheet = 1.0; // Full screen when expanded
-const int _locAnimDurationMs = 1200; // smooth glide between updates
+const double _kMaxSheet = 1.0; // Sheet is always full screen
 
-// Self-healing watchdog constants — top-level so part files can reference them
+// Self-healing watchdog constant — top-level so part files can reference it
 // inside const expressions without relying on class static const visibility.
 const int _gpsWatchdogSec = 5;
-const int _dotDriftWatchdogSec = 3;
-const double _maxDotDriftMeters = 80.0;
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver, SecureScreenMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 
   late AnimationController _boltFlashCtrl;
-  late AnimationController _clockRotateCtrl;
   late AnimationController _promoShimmerCtrl;
   bool _promoUsed = false;
   int _promoTripsLeft = 0; // trips needed to unlock next promo
@@ -151,9 +126,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int? _pendingSearchTripId;
   Timer? _pendingSearchTimer;
 
-  // Panel lock — keeps sheet fully expanded while trip is active
-  bool _panelLocked = false;
-
   // Progress bar countdown state
   int _totalSeconds = 0;
   int _remainingSeconds = 0;
@@ -162,6 +134,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   // Verification state — eagerly loaded to prevent banner flash
   bool _isVerified = LocalDataService.isVerifiedSync;
   String _verificationStatus = LocalDataService.isVerifiedSync ? 'approved' : '';
+  // True once the verification state is actually known (local cache hit or a
+  // completed backend check). Until then the hero must NOT show the
+  // "not verified" blocked state — prevents the flash on fresh logins where
+  // the local cache is empty but the account is approved.
+  bool _verificationResolved = LocalDataService.isVerifiedSync;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _verificationSub;
   int _verificationRetryCount = 0;
   Timer? _verificationRetryTimer;
@@ -173,82 +150,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _stateCheckDone = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _zonesSub;
 
-  // ── Map-first draggable sheet ──
+  // ── Draggable sheet (permanently full-screen) ──
   final DraggableScrollableController _sheetController = DraggableScrollableController();
-  // Bump this counter to fully tear down + rebuild the MapWidget. Used
-  // after a trip cancellation when Mapbox's internal style state can
-  // get stuck and renders the canvas as a flat grey vector layer
-  // (no dark-navy background, no gold accents). A fresh widget with a
-  // new ValueKey forces re-creation of the underlying native view.
-  int _mapEpoch = 0;
-  Key get _mapKey => ValueKey('home_map_$_mapEpoch');
 
-  // Cache the map widget so setState on unrelated fields doesn't rebuild it
-  Widget? _cachedMapWidget;
-  int _cachedMapEpoch = -1;
-
-  // Cache mini map widget (driver tracking card)
-  Widget? _cachedMiniMapWidget;
-  LatLng? _cachedMiniMapLatLng;
-
-  // Throttle camera recentering so it doesn't fight the 60fps dot ticker.
-  DateTime _lastCameraRecenter = DateTime(0);
-
-  // Self-healing watchdogs — detect and recover from a stuck GPS stream
-  // or a dot that has drifted too far behind the raw GPS fix.
+  // Self-healing watchdog — detects and recovers from a stuck GPS stream.
   DateTime _lastGpsFixAt = DateTime(0);
   Timer? _gpsStreamWatchdog;
-  Timer? _dotDriftWatchdog;
 
   // User profile data
   String _firstName = '';
   String _lastName = '';
-  String? _photoPath;
-  String? _photoUrl;
 
   // ── Preloaded sound players ──
   final Map<String, AudioPlayer> _soundPlayers = {};
 
-  // Mini-map state
-  mapbox.MapboxMap? _miniMapController;
-  mapbox.PointAnnotationManager? _miniMapAnnotMgr;
-  mapbox.PointAnnotation? _miniMapAnnot;
-  bool _creatingMiniMapAnnot = false; // guard: prevents parallel annotation creation
+  // ── Location state (GPS — seeds pickup defaults + the live mini map) ──
   LatLng? _currentLatLng;
-  String? _locationError;
   bool _imagesPrecached = false;
   StreamSubscription<Position>? _locationSub;
   bool _fetchingLocation = false; // re-entry guard for _fetchCurrentLocation
-  final GoldLocationDot _miniDot = GoldLocationDot();
-  // ── Rider location dot (GoldLocationDot owns SmoothMotion + prediction) ──
-  // The dot's internal Ticker drives position interpolation at vsync.
-  // Camera follow is throttled in the GPS stream listener, not the ticker.
 
-  // ── Active trip driver tracking ──
-  LatLng? _driverLocation;
-  double _driverBearing = 0.0;
-  mapbox.PointAnnotation? _driverMarkerAnnot;
-  mapbox.PolylineAnnotation? _tripRouteAnnot;
+  // ── Home mini map ("Your location" card) ──
+  mapbox.MapboxMap? _homeMiniMapCtrl;
+  mapbox.PointAnnotationManager? _homeDotAnnotMgr;
+  mapbox.PointAnnotation? _homeDotAnnot;
+  bool _creatingHomeDotAnnot = false; // guard: prevents parallel annotation creation
+  final GoldLocationDot _homeDot = GoldLocationDot();
+  // Throttle camera recentering so it doesn't fight the dot ticker.
+  DateTime _lastMiniMapRecenter = DateTime(0);
+
+  // ── Active trip driver tracking (RTDB → hero card progress bar) ──
   StreamSubscription<DatabaseEvent>? _driverLocationSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripDocSub;
-  final SmoothMotion _driverMotion = SmoothMotion();
-  Ticker? _driverMotionTicker;
-  Duration _lastDriverMotionElapsed = Duration.zero;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tripStatusSub;
   String? _trackedDriverId;
   int _driverLocationGeneration = 0;
 
   DateTime? _tripStartTime;
 
-  // ── Live route on home map ──
-  mapbox.PolylineAnnotationManager? _miniMapPolyMgr;
-  mapbox.PointAnnotationManager? _miniMapCarMgr;
-  mapbox.PointAnnotation? _driverCarAnnot;
-  mapbox.PointAnnotation? _dropoffPinAnnot;
-  Uint8List? _cachedCarBytes; // avoid rootBundle.load on every driver update
-  bool _rideRouteDrawn = false;
+  // ── Route progress (pure math — feeds the hero card progress bar) ──
   double _routeProgress = 0.0; // 0→1 based on driver position along route
   List<LatLng> _routeLatLngs = []; // cached route points
+  double _routeTotalDist = 0.0; // cached total route length in meters
 
   // ── Ride completion fade ──
   late AnimationController _rideFadeCtrl;
@@ -260,81 +203,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
 
 
-  Future<void> _updateMiniMapAnnotation() async {
-    if (!mounted) return;
-    final mgr = _miniMapAnnotMgr;
-    if (mgr == null) return;
-
-    // Hide gold dot when an active ride route is drawn (route + car + dropoff shown instead)
-    if (_rideRouteDrawn && _activeRide != null) {
-      if (_miniMapAnnot != null) {
-        try { await mgr.delete(_miniMapAnnot!); } catch (_) {}
-        _miniMapAnnot = null;
-      }
-      return;
-    }
-
-    final lat = _miniDot.lat ?? _currentLatLng?.latitude;
-    final lng = _miniDot.lng ?? _currentLatLng?.longitude;
-    if (lat == null || lng == null) return;
-
-    final point = safePoint(lng, lat);
-    if (point == null) return;
-
-    final bytes = _miniDot.currentBytes;
-    if (bytes == null) return;
-
-    // First-time creation must be guarded — without it the per-frame
-    // ticker would attempt to create N annotations in parallel and we'd
-    // end up with stacked dots.
-    if (_miniMapAnnot == null) {
-      if (_creatingMiniMapAnnot) return;
-      _creatingMiniMapAnnot = true;
-      try {
-        // Defensive cleanup: if a previous update failed or a style reload
-        // left a stale annotation behind, delete all existing point
-        // annotations so we never draw two gold dots.
-        try { await mgr.deleteAll(); } catch (_) {}
-        _miniMapAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: point,
-          image: bytes,
-          iconSize: 1.05,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconOffset: [0, 0],
-        ));
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Map] Failed to create gold dot: $e');
-      } finally {
-        _creatingMiniMapAnnot = false;
-      }
-      return;
-    }
-
-    // Subsequent updates: write geometry in memory and fire Mapbox update
-    // without awaiting. Awaiting every frame serializes the 60fps ticker
-    // behind the platform channel and can stall the dot if an update hangs.
-    // NOTE: Only geometry is updated here. The image bytes are static, so
-    // setting them on every frame is unnecessary and wastes platform channel
-    // bandwidth. The image is set once during creation above.
-    final annot = _miniMapAnnot!;
-    try {
-      annot.geometry = point;
-      mgr.update(annot).catchError((e) {
-        // The update failed; remove the stale annotation from the map and
-        // force a recreate on the next tick. Otherwise the old annotation
-        // stays visible and we end up with stacked dots.
-        if (_miniMapAnnot == annot) {
-          _miniMapAnnot = null; // mark invalid immediately so next tick recreates
-          mgr.delete(annot).catchError((_) {}); // fire-and-forget cleanup
-        }
-        if (kDebugMode) debugPrint('[Map] Gold dot update failed: $e');
-      });
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Map] Gold dot geometry write failed: $e');
-      _miniMapAnnot = null;
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -343,11 +211,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _boltFlashCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
-    );
-    // Clock rotation only when needed (not always running)
-    _clockRotateCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
     );
     _promoShimmerCtrl = AnimationController(
       vsync: this,
@@ -366,6 +229,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _loadSavedData();
         _loadPromoUsed();
         _preloadSounds();
+        // Register/refresh the rider FCM token (covers fresh logins).
+        unawaited(NotificationService.registerTokenWithBackend());
       }
     });
     _fetchCurrentLocation();
@@ -375,24 +240,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         setState(() {
           _firstName = user['firstName'] ?? '';
           _lastName = user['lastName'] ?? '';
-          final path = user['photoPath'] ?? '';
-          _photoPath = path.isNotEmpty ? path : null;
-          final url = user['photoUrl'] ?? UserSession.photoUrlNotifier.value;
-          _photoUrl = url.isNotEmpty ? url : null;
         });
       }
     });
-    unawaited(_miniDot.build(this, () {
-      if (!mounted) return;
-      // The ticker advances the interpolated dot position. Only update the
-      // annotation here; camera recenter is throttled in the GPS stream
-      // listener to avoid saturating the platform channel.
-      // unawaited: the ticker is fire-and-forget; we don't want to block
-      // the 60fps animation waiting for the Mapbox platform channel.
-      unawaited(_updateMiniMapAnnotation());
-    }));
-    // Self-healing watchdogs: restart dead GPS streams and snap a stuck dot.
+    // Self-healing watchdog: restart dead GPS streams.
     _startLocationWatchdogs();
+    // Gold dot for the "Your location" mini map — the ticker drives
+    // annotation redraws; camera follow is throttled in the GPS listener.
+    unawaited(_homeDot.build(this, _updateHomeDotAnnotation));
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkDriversOnline();
@@ -416,14 +271,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       const Duration(seconds: 300),
       (_) => _checkAccountStatus(),
     );
-    UserSession.photoNotifier.addListener(_onPhotoChanged);
-    UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
     HomeScreen.scheduledRideRefresh.addListener(_onScheduledRideRefresh);
-
-    // If returning from tracking screen, lock panel open
-    if (widget.forceExpandPanel) {
-      _panelLocked = true;
-    }
   }
 
   @override
@@ -448,20 +296,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _accountStatusTimer?.cancel();
       _countdownTimer?.cancel();
       _imminentRideTimer?.cancel();
+      // Battery fix: fully release the GPS stream and its watchdog while
+      // backgrounded — otherwise Geolocator keeps the location radio awake.
       _locationSub?.cancel();
+      _locationSub = null;
+      _gpsStreamWatchdog?.cancel();
+      _gpsStreamWatchdog = null;
       // Pause animations to save CPU/GPU when backgrounded
-      _clockRotateCtrl.stop();
       _promoShimmerCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
       // Resume looping animations
-      _clockRotateCtrl.repeat();
       _promoShimmerCtrl.repeat();
       // FIX: Restart GPS stream — Geolocator stream can die in background
-      // on some Android/iOS devices. Re-establish it so the dot moves again.
+      // on some Android/iOS devices. Re-establish it after resume.
       _fetchCurrentLocation();
-      // FIX: Ensure the GoldLocationDot ticker is running after resume.
-      // Some Flutter versions fail to auto-resume tickers after background.
-      _miniDot.ensureRunning();
+      // Restart the GPS stream watchdog that was cancelled on pause.
+      _startLocationWatchdogs();
+      // Ensure the mini map dot ticker is running after resume.
+      _homeDot.ensureRunning();
       _checkDriversOnline();
       _driverCheckTimer?.cancel();
       _driverCheckTimer = Timer.periodic(
@@ -505,15 +357,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    UserSession.photoNotifier.removeListener(_onPhotoChanged);
-    UserSession.photoUrlNotifier.removeListener(_onPhotoChanged);
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
     _sheetController.dispose();
-    _miniDot.dispose();
-    _driverMotionTicker?.dispose();
-    _driverMotion.reset();
+    _homeDot.dispose();
     _boltFlashCtrl.dispose();
-    _clockRotateCtrl.dispose();
     _promoShimmerCtrl.dispose();
     _rideFadeCtrl.dispose();
     _driverCheckTimer?.cancel();
@@ -577,6 +424,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       return true;
     }
     if (!mounted) return false;
+    // Biometric consent gate (BIPA-style informed consent): show the
+    // dedicated consent screen ONCE before any liveness capture.
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return false;
+    if (prefs.getBool('biometric_consent_v1') != true) {
+      final consented = await Navigator.of(
+        context,
+      ).push<bool>(slideUpFadeRoute(const BiometricConsentScreen()));
+      if (consented != true) return false;
+      if (!mounted) return false;
+    }
     final result = await Navigator.of(
       context,
     ).push<bool>(slideUpFadeRoute(const IdentityVerificationScreen()));
@@ -598,14 +456,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (preloaded != null && mounted) {
         setState(() {
           _currentLatLng = LatLng(preloaded.latitude, preloaded.longitude);
-          _locationError = null;
         });
-        _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-        unawaited(_miniMapController?.flyTo(
-          mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
-          mapbox.MapAnimationOptions(duration: 400),
-        ));
-        unawaited(_updateMiniMapAnnotation());
+        // Snap the mini map dot to the first known position (no glide).
+        _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
         if (!_stateCheckDone) {
           _stateCheckDone = true;
           _checkUserStateZone(_currentLatLng!);
@@ -617,27 +470,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
       // 1. Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (mounted) {
-          setState(() => _locationError = S.of(context).locationServicesDisabled);
-        }
-        return;
-      }
+      if (!serviceEnabled) return;
 
       // 2. Check / request permission
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) {
-          if (mounted) {
-            setState(() => _locationError = S.of(context).locationPermissionDenied);
-          }
-          return;
-        }
+        if (perm == LocationPermission.denied) return;
       }
       if (perm == LocationPermission.deniedForever) {
         if (mounted) {
-          setState(() => _locationError = S.of(context).locationDeniedForever);
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -667,7 +509,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (lastKnown != null && mounted) {
         setState(() {
           _currentLatLng = LatLng(lastKnown.latitude, lastKnown.longitude);
-          _locationError = null;
         });
       }
 
@@ -681,15 +522,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       if (!mounted) return;
       setState(() {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
-        _locationError = null;
       });
-      // Set initial position without animation (first fix)
-      _miniDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-      unawaited(_miniMapController?.flyTo(
-        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude))),
-        mapbox.MapAnimationOptions(duration: 800),
-      ));
-      unawaited(_updateMiniMapAnnotation());
+      // Snap the mini map dot on the first accurate fix.
+      _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {
@@ -697,10 +532,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         _checkUserStateZone(_currentLatLng!);
       }
 
-      // Start continuous location stream for always-centered map.
-      // distanceFilter: 0 -> every GPS fix. This is required for fluid
-      // rider-dot movement when walking or in a car; SmoothMotion absorbs
-      // jitter and the ticker is paused when the rider is stationary.
+      // Start continuous location stream so _currentLatLng stays fresh
+      // (it seeds the default pickup). distanceFilter: 0 -> every GPS fix.
       _lastGpsFixAt = DateTime.now();
       _locationSub?.cancel();
       _locationSub =
@@ -714,21 +547,113 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _lastGpsFixAt = DateTime.now();
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
-            // Make sure the interpolation ticker is alive after each fix.
-            _miniDot.ensureRunning();
-            _miniDot.setTarget(ll.latitude, ll.longitude);
-            _throttledCameraRecenter();
-            // Force an immediate annotation update. The ticker normally drives
-            // this, but if the dot just snapped to its first target the ticker
-            // may return "no movement" and the annotation would never appear.
-            unawaited(_updateMiniMapAnnotation());
+            // Feed the mini map dot (SmoothMotion glides) + throttled
+            // follow camera — the platform channel stays unsaturated.
+            _homeDot.ensureRunning();
+            _homeDot.setTarget(ll.latitude, ll.longitude);
+            _recenterHomeMiniMap();
           });
-    } catch (e) {
-      if (mounted && _currentLatLng == null) {
-        setState(() => _locationError = S.of(context).unableToGetLocation);
-      }
+    } catch (_) {
+      // Location unavailable — the rider can still type a pickup manually.
     } finally {
       _fetchingLocation = false;
+    }
+  }
+
+  /// Redraw the gold dot on the "Your location" mini map. Driven by the
+  /// GoldLocationDot ticker (throttled to ~30fps internally).
+  /// Pattern v494: deleteAll() before create, and null the handle
+  /// immediately if an update fails so the next tick recreates it.
+  Future<void> _updateHomeDotAnnotation() async {
+    if (!mounted) return;
+    final mgr = _homeDotAnnotMgr;
+    if (mgr == null) return;
+
+    final lat = _homeDot.lat ?? _currentLatLng?.latitude;
+    final lng = _homeDot.lng ?? _currentLatLng?.longitude;
+    if (lat == null || lng == null) return;
+
+    final point = safePoint(lng, lat);
+    if (point == null) return;
+
+    final bytes = _homeDot.currentBytes;
+    if (bytes == null) return;
+
+    // First-time creation must be guarded — without it the per-frame
+    // ticker would attempt to create N annotations in parallel and we'd
+    // end up with stacked dots.
+    if (_homeDotAnnot == null) {
+      if (_creatingHomeDotAnnot) return;
+      _creatingHomeDotAnnot = true;
+      try {
+        // Defensive cleanup: delete any stale annotation left behind by a
+        // failed update or a style reload, so we never draw two gold dots.
+        try { await mgr.deleteAll(); } catch (_) {}
+        _homeDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: point,
+          image: bytes,
+          iconSize: 1.05,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+          iconOffset: [0, 0],
+        ));
+      } catch (e) {
+        if (kDebugMode) debugPrint('[HomeScreen] Mini map dot create failed: $e');
+      } finally {
+        _creatingHomeDotAnnot = false;
+      }
+      return;
+    }
+
+    // Subsequent updates: write geometry in memory and fire the Mapbox
+    // update without awaiting — the ticker must not stall on the platform
+    // channel. Only geometry changes; the image bytes are static.
+    final annot = _homeDotAnnot!;
+    try {
+      annot.geometry = point;
+      mgr.update(annot).catchError((e) {
+        // Update failed: null the handle immediately so the next tick
+        // recreates, and delete the stale annotation fire-and-forget.
+        // Otherwise the old dot stays visible and we get stacked dots.
+        if (_homeDotAnnot == annot) {
+          _homeDotAnnot = null;
+          mgr.delete(annot).catchError((_) {});
+        }
+        if (kDebugMode) debugPrint('[HomeScreen] Mini map dot update failed: $e');
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('[HomeScreen] Mini map dot geometry write failed: $e');
+      _homeDotAnnot = null;
+    }
+  }
+
+  /// Recenter the mini map camera on the rider at most once per [interval].
+  /// Uses the interpolated dot position so camera and annotation stay in
+  /// sync. easeTo keeps zoom/bearing/pitch constant — only the center glides.
+  void _recenterHomeMiniMap({Duration interval = const Duration(milliseconds: 500)}) {
+    if (!mounted || _homeMiniMapCtrl == null) return;
+    final lat = _homeDot.lat ?? _currentLatLng?.latitude;
+    final lng = _homeDot.lng ?? _currentLatLng?.longitude;
+    if (lat == null || lng == null) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastMiniMapRecenter) < interval) return;
+    _lastMiniMapRecenter = now;
+
+    final point = safePoint(lng, lat);
+    if (point == null) return;
+
+    try {
+      unawaited(_homeMiniMapCtrl!.easeTo(
+        mapbox.CameraOptions(
+          center: point,
+          zoom: 15.0,
+          pitch: 0,
+          bearing: 0,
+        ),
+        mapbox.MapAnimationOptions(duration: 250),
+      ));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[HomeScreen] Mini map recenter failed: $e');
     }
   }
 
@@ -1109,15 +1034,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _hasActivePromo = hasPromo;
       _activeRide = activeRide;
       _isVerified = verified;
+      // A local verified hit also counts as resolved.
+      _verificationResolved = _verificationResolved || verified;
       _nextScheduledRide = nextScheduled;
       _loadingSavedData = false;
       if (user != null) {
         _firstName = user['firstName'] ?? '';
         _lastName = user['lastName'] ?? '';
-        final path = user['photoPath'] ?? '';
-        _photoPath = path.isNotEmpty ? path : null;
-        final url = user['photoUrl'] ?? UserSession.photoUrlNotifier.value;
-        _photoUrl = url.isNotEmpty ? url : null;
         // Update verification status from cached user data
         final vs = user['verificationStatus'] ?? '';
         if (vs.isNotEmpty) _verificationStatus = vs;
@@ -1155,11 +1078,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     // Update imminent ride countdown
     _updateImminentRide();
-
-    // Panel lock: unlock if no active ride, keep locked otherwise
-    if (_panelLocked && activeRide == null) {
-      _unlockPanel();
-    }
   }
 
   /// Extracted so it can run in parallel with local reads.
@@ -1195,11 +1113,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   @override
   Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: FadeTransition(
         opacity: _rideFadeCtrl,
         child: Stack(
@@ -1209,54 +1126,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             top: 0, left: 0, right: 0,
             child: SafeArea(child: OfflineBanner()),
           ),
-          // ── Full-screen map — scales back as sheet rises ──
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _sheetController,
-              builder: (context, child) {
-                double frac = 0;
-                try {
-                  frac = ((_sheetController.size - _kMinSheet) /
-                          (_kMaxSheet - _kMinSheet))
-                      .clamp(0.0, 1.0);
-                } catch (_) {}
-                return Transform.translate(
-                  offset: Offset(0, frac * 20.0),
-                  child: Transform.scale(
-                    scale: 1.0 - frac * 0.06,
-                    alignment: Alignment.topCenter,
-                    child: child!,
-                  ),
-                );
-              },
-              child: RepaintBoundary(child: _buildFullMap()),
-            ),
-          ),
 
-          // ── "Where to?" search bar floating at top ──
-          Positioned(
-            top: topPad + 12,
-            left: 20,
-            right: 20,
-            child: _buildWhereToBar(),
-          ),
-
-          // ── Draggable bottom sheet ──
+          // ── Bottom sheet — permanently full-screen (no map behind it) ──
           RepaintBoundary(
             child: DraggableScrollableSheet(
               controller: _sheetController,
-              initialChildSize: _panelLocked ? _kMaxSheet : _kMinSheet,
-              minChildSize: _panelLocked ? _kMaxSheet : _kMinSheet,
-              maxChildSize: _activeRide != null && !_panelLocked
-                  ? _kMinSheet
-                  : _kMaxSheet,
+              initialChildSize: _kMaxSheet,
+              minChildSize: _kMaxSheet,
+              maxChildSize: _kMaxSheet,
               snap: true,
-              snapSizes: _panelLocked
-                  ? const [_kMaxSheet]
-                  : _activeRide != null
-                      ? const [_kMinSheet]
-                      : const [_kMinSheet, _kMaxSheet],
-              // No snapAnimationDuration — let Flutter use velocity-aware defaults
+              snapSizes: const [_kMaxSheet],
               builder: (ctx, scrollCtrl) =>
                   _buildSheet(scrollCtrl, bottomPad),
             ),
@@ -1280,21 +1159,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (_remainingSeconds <= 0) return 'Arriving...';
     final mins = (_remainingSeconds / 60).ceil();
     return '$mins min remaining';
-  }
-
-  /// Smoothly collapse the panel and restore normal drag behavior.
-  void _unlockPanel() {
-    if (!_panelLocked) return;
-    setState(() => _panelLocked = false);
-    // After rebuild with new minChildSize, animate to collapsed
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _sheetController.animateTo(
-        _kMinSheet,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutCubic,
-      );
-    });
   }
 
   void _requestRideToAddress(String address) async {
@@ -1381,14 +1245,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // Both Airport and Schedule now go through the calendar+time
       // picker FIRST. Difference: Airport jumps to AirportTerminalSheet
       // afterwards, Schedule jumps to pickup/dropoff search.
-      final result = await showScheduleRideFlow(context);
+      final result = await showScheduleRideFlow(
+        context,
+        initialPickupLat: _currentLatLng?.latitude,
+        initialPickupLng: _currentLatLng?.longitude,
+      );
 
       if (result == null || !mounted) {
         if (mounted) setState(() => _rideNow = true);
         return;
       }
 
-      final (scheduledAt, isAirportFromToggle) = result;
+      final (scheduledAt, isAirportFromToggle, searchResult) = result;
       // The Airport card forces the airport flow regardless of the
       // picker's internal toggle.
       final bool isAirportTrip = choice == 'airport' || isAirportFromToggle;
@@ -1424,23 +1292,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         return;
       }
 
-      // Schedule (non-airport) branch — pickup/dropoff search, then
-      // ride_request with scheduledAt. Pass scheduledAt + isAirportTrip
-      // through so if the user goes via the search screen's pickReplacement
-      // path (map picker), the context survives.
-      final searchResult =
-          await Navigator.of(context).push<Map<String, dynamic>>(
-        sharedAxisZRoute(
-          PickupDropoffSearchScreen(
-            initialPickupLat: _currentLatLng?.latitude,
-            initialPickupLng: _currentLatLng?.longitude,
-            scheduledAt: scheduledAt,
-            isAirportTrip: false,
-          ),
-        ),
-      );
-
-      if (searchResult == null || !mounted) {
+      // Schedule (non-airport) branch — the flow already pushed the
+      // pickup/dropoff search ON TOP of the time picker, so back goes
+      // to "Select Time" instead of home. The confirmed addresses come
+      // back inside the flow record.
+      if (searchResult == null) {
         if (mounted) setState(() => _rideNow = true);
         return;
       }
@@ -1847,15 +1703,15 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: BoxDecoration(
-        color: c.panel,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      height: MediaQuery.of(context).size.height,
+      decoration: const BoxDecoration(
+        color: neuBase,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // Handle
-          const SizedBox(height: 10),
+          // Handle (below the status bar now that the sheet is full-screen)
+          SizedBox(height: MediaQuery.of(context).padding.top + 10),
           Container(
             width: 40,
             height: 4,
@@ -1872,10 +1728,15 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
               children: [
                 GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
-                  child: Icon(
-                    Icons.arrow_back_rounded,
-                    color: c.textPrimary,
-                    size: 24,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: neuBox(radius: 14, pressed: true),
+                    child: Icon(
+                      Icons.arrow_back_rounded,
+                      color: c.textPrimary,
+                      size: 22,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1894,15 +1755,11 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
             ),
           ),
           const SizedBox(height: 14),
-          // Search field
+          // Search field — inset neumorphic well
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: c.border),
-              ),
+              decoration: neuBox(radius: 14, pressed: true),
               child: TextField(
                 controller: _controller,
                 autofocus: true,
@@ -1995,11 +1852,7 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
                         leading: Container(
                           width: 40,
                           height: 40,
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: c.border),
-                          ),
+                          decoration: neuBox(radius: 12, pressed: true),
                           child: Icon(
                             s.icon,
                             color: const Color(0xFFD4AF37),
@@ -2041,78 +1894,4 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
       ),
     );
   }
-}
-
-/// Custom painter that draws a real analog clock face with ticking hands.
-class _ClockPainter extends CustomPainter {
-  final double progress; // 0.0 to 1.0 (one full cycle = 6 seconds)
-
-  _ClockPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    const goldColor = Color(0xFFE8C547);
-    const goldLight = Color(0xFFFBE47A);
-
-    // Draw clock circle outline
-    final circlePaint = Paint()
-      ..color = goldColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-    canvas.drawCircle(center, radius - 1, circlePaint);
-
-    // Draw small hour markers
-    final tickPaint = Paint()
-      ..color = goldLight
-      ..strokeWidth = 1.2
-      ..strokeCap = StrokeCap.round;
-    for (int i = 0; i < 12; i++) {
-      final angle = (i * 30.0 - 90) * math.pi / 180;
-      final outer = Offset(
-        center.dx + (radius - 2.5) * math.cos(angle),
-        center.dy + (radius - 2.5) * math.sin(angle),
-      );
-      final inner = Offset(
-        center.dx + (radius - (i % 3 == 0 ? 5.5 : 4.0)) * math.cos(angle),
-        center.dy + (radius - (i % 3 == 0 ? 5.5 : 4.0)) * math.sin(angle),
-      );
-      canvas.drawLine(inner, outer, tickPaint);
-    }
-
-    // Minute hand — 1 full rotation per cycle
-    final minuteAngle = (progress * 360 - 90) * math.pi / 180;
-    final minuteLength = radius * 0.7;
-    final minuteEnd = Offset(
-      center.dx + minuteLength * math.cos(minuteAngle),
-      center.dy + minuteLength * math.sin(minuteAngle),
-    );
-    final minutePaint = Paint()
-      ..color = goldLight
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(center, minuteEnd, minutePaint);
-
-    // Hour hand — moves 1/12th per cycle
-    final hourAngle = (progress * 30 - 90) * math.pi / 180;
-    final hourLength = radius * 0.45;
-    final hourEnd = Offset(
-      center.dx + hourLength * math.cos(hourAngle),
-      center.dy + hourLength * math.sin(hourAngle),
-    );
-    final hourPaint = Paint()
-      ..color = goldColor
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(center, hourEnd, hourPaint);
-
-    // Center dot
-    final dotPaint = Paint()..color = goldLight;
-    canvas.drawCircle(center, 1.5, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(_ClockPainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }

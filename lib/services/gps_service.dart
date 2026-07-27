@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 
 import '../models/lat_lng.dart';
 import '../config/feature_flags.dart';
+import 'prefs_cache.dart';
 import 'socket_service.dart';
+import 'user_session.dart';
 
 bool _isPermissionDenied(Object e) {
   if (e is FirebaseException) {
@@ -216,9 +218,27 @@ class GpsService {
 
   // ── Upload methods ──────────────────────────────────────────────────
 
+  /// Privacy gate: when the active role is rider and the user turned off
+  /// Location Sharing (`privacy_location` == false), no position upload
+  /// leaves the device. Today GpsService only serves driver flows (the
+  /// rider never broadcasts live location anywhere), so this is a
+  /// defensive gate so any future rider-side upload honors the toggle.
+  /// Local GPS use (pickup, mini map) is unaffected.
+  Future<bool> _riderLocationSharingBlocked() async {
+    try {
+      final role = await UserSession.getMode();
+      if (role != 'rider') return false;
+      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+      return !(prefs.getBool('privacy_location') ?? true);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _uploadViaSocketIO({bool force = false}) async {
     if (_currentPos == null || _activeDriverId == null) return;
     if (!FeatureFlags.useSocketIO) return;
+    if (await _riderLocationSharingBlocked()) return;
 
     // If not connected, queue the latest position for flush on reconnect
     if (!SocketService.isConnected) {
@@ -266,6 +286,7 @@ class GpsService {
 
   Future<void> _uploadToFirebase() async {
     if (_currentPos == null || _activeDriverId == null) return;
+    if (await _riderLocationSharingBlocked()) return;
 
     // Skip if position truly unchanged AND last upload was very recent (< 2 s).
     // This is different from _lastRTDBAt because we track the position too.

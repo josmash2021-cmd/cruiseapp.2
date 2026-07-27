@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
+import '../widgets/neu_style.dart';
 import 'credit_card_screen.dart';
 import 'paypal_checkout_screen.dart';
 import 'profile_photo_screen.dart';
@@ -201,7 +202,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -210,16 +211,13 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
             children: [
               const SizedBox(height: 8),
 
-              // ── Back button ──
+              // ── Back button — pressed neumorphic circle ──
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: c.textPrimary,
@@ -308,13 +306,17 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: neuBox(radius: 20),
       child: Row(
         children: [
-          SizedBox(width: 36, height: 36, child: icon),
+          // Icon inside a pressed neumorphic well
+          Container(
+            width: 36,
+            height: 36,
+            decoration: neuBox(radius: 12, pressed: true),
+            alignment: Alignment.center,
+            child: icon,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(

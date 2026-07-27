@@ -14,6 +14,7 @@ import '../models/lat_lng.dart';
 import '../services/places_service.dart';
 import '../services/map_controller_cache.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../widgets/neu_style.dart';
 
 /// Full-screen map picker. User drags the map under a fixed center pin.
 /// Returns a Map with 'address' (String), 'lat' (double), 'lng' (double).
@@ -520,6 +521,7 @@ class _MapBackBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pressed neumorphic circle (same language as the other back buttons).
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -528,10 +530,7 @@ class _MapBackBtn extends StatelessWidget {
         child: Container(
           width: 40,
           height: 40,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5),
-            shape: BoxShape.circle,
-          ),
+          decoration: neuBox(radius: 14, pressed: true),
           alignment: Alignment.center,
           child: const Icon(Icons.arrow_back_rounded,
               color: Colors.white, size: 20),
@@ -552,11 +551,7 @@ class _MapTitlePill extends StatelessWidget {
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
-      decoration: BoxDecoration(
-        color: const Color(0xCC0A0E1A),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: const Color(0x33E8C547)),
-      ),
+      decoration: neuBox(radius: 20),
       child: Text(
         text,
         maxLines: 1,
@@ -616,21 +611,7 @@ class _FooterCardState extends State<_FooterCard> {
           22,
           20,
           22 + MediaQuery.of(context).padding.bottom),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 40,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.05),
-            spreadRadius: 1,
-          ),
-        ],
-      ),
+      decoration: neuBox(radius: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -658,18 +639,12 @@ class _FooterCardState extends State<_FooterCard> {
           ),
           const SizedBox(height: 14),
 
-          // Address card
+          // Address card — sunken neumorphic well, gold icon accent
           GestureDetector(
             onTap: widget.onRetry,
             child: Container(
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
+              decoration: neuBox(radius: 14, pressed: true),
               child: Row(
                 children: [
                   Container(
@@ -753,11 +728,11 @@ class _FooterCardState extends State<_FooterCard> {
                       ],
                     ),
                     borderRadius: BorderRadius.circular(100),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: Color(0x40E8C547),
-                        blurRadius: 16,
-                        offset: Offset(0, 4),
+                        color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),

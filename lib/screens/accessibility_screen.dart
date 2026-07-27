@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show accessibilityNotifier;
+import '../widgets/neu_style.dart';
 
 class AccessibilityScreen extends StatefulWidget {
   const AccessibilityScreen({super.key});
@@ -36,7 +37,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
     final n = accessibilityNotifier;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,13 +49,15 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Icon(Icons.arrow_back_rounded,
-                          color: c.textPrimary, size: 24),
+                          color: c.textPrimary, size: 20),
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 12),
                   Text(
                     l.accessibility,
                     style: TextStyle(
@@ -78,7 +81,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 14),
-                    decoration: _boxDecor(c),
+                    decoration: neuBox(radius: 18),
                     child: Column(
                       children: [
                         Row(
@@ -155,7 +158,7 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 8),
-                    decoration: _boxDecor(c),
+                    decoration: neuBox(radius: 18),
                     child: Column(
                       children: [
                         _colorBlindOption(c, 'none', l.colorBlindNone, n),
@@ -201,16 +204,6 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
     );
   }
 
-  BoxDecoration _boxDecor(AppColors c) {
-    return BoxDecoration(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(14),
-      border: c.isDark
-          ? null
-          : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-    );
-  }
-
   Widget _toggleItem(
     AppColors c, {
     required IconData icon,
@@ -221,10 +214,15 @@ class _AccessibilityScreenState extends State<AccessibilityScreen> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: _boxDecor(c),
+      decoration: neuBox(radius: 18),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: c.textPrimary),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: neuBox(radius: 12, pressed: true),
+            child: Icon(icon, size: 20, color: _gold),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

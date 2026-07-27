@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/neu_style.dart';
+import 'pickup_dropoff_search_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared constants & helpers
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
-const _bg = Color(0xFF08090C);
+const _bg = neuBase;
 
 const _months = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -17,9 +19,16 @@ const _months = [
 
 /// Entry point — opens the schedule flow and returns
 /// `(scheduledAt, isAirport)` or `null` if the user cancelled.
-Future<(DateTime, bool)?> showScheduleRideFlow(BuildContext context) {
-  return Navigator.of(context).push<(DateTime, bool)>(
-    slideUpFadeRoute(const _ScheduleDateScreen()),
+Future<(DateTime, bool, Map<String, dynamic>?)?> showScheduleRideFlow(
+  BuildContext context, {
+  double? initialPickupLat,
+  double? initialPickupLng,
+}) {
+  return Navigator.of(context).push<(DateTime, bool, Map<String, dynamic>?)>(
+    slideUpFadeRoute(_ScheduleDateScreen(
+      initialPickupLat: initialPickupLat,
+      initialPickupLng: initialPickupLng,
+    )),
   );
 }
 
@@ -28,7 +37,10 @@ Future<(DateTime, bool)?> showScheduleRideFlow(BuildContext context) {
 // ═══════════════════════════════════════════════════════════════════
 
 class _ScheduleDateScreen extends StatefulWidget {
-  const _ScheduleDateScreen();
+  final double? initialPickupLat;
+  final double? initialPickupLng;
+
+  const _ScheduleDateScreen({this.initialPickupLat, this.initialPickupLng});
 
   @override
   State<_ScheduleDateScreen> createState() => _ScheduleDateScreenState();
@@ -85,9 +97,15 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
   }
 
   Future<void> _goNext() async {
-    final result = await Navigator.of(context).push<(DateTime, bool)>(
+    final result =
+        await Navigator.of(context).push<(DateTime, bool, Map<String, dynamic>?)>(
       slideUpFadeRoute(
-        _ScheduleTimeScreen(date: _selected, isAirport: _isAirport),
+        _ScheduleTimeScreen(
+          date: _selected,
+          isAirport: _isAirport,
+          initialPickupLat: widget.initialPickupLat,
+          initialPickupLng: widget.initialPickupLng,
+        ),
       ),
     );
     if (result != null && mounted) {
@@ -467,7 +485,15 @@ class _DayCellState extends State<_DayCell>
 class _ScheduleTimeScreen extends StatefulWidget {
   final DateTime date;
   final bool isAirport;
-  const _ScheduleTimeScreen({required this.date, required this.isAirport});
+  final double? initialPickupLat;
+  final double? initialPickupLng;
+
+  const _ScheduleTimeScreen({
+    required this.date,
+    required this.isAirport,
+    this.initialPickupLat,
+    this.initialPickupLng,
+  });
 
   @override
   State<_ScheduleTimeScreen> createState() => _ScheduleTimeScreenState();
@@ -530,8 +556,36 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
     return DateTime(d.year, d.month, d.day, _totalMinutes ~/ 60, _totalMinutes % 60);
   }
 
-  void _confirm() {
-    Navigator.of(context).pop((_composed(), widget.isAirport));
+  Future<void> _confirm() async {
+    final scheduledAt = _composed();
+
+    // Airport branch pops as before — the terminal sheet comes next
+    // (handled by the caller), no pickup/dropoff search in between.
+    if (widget.isAirport) {
+      Navigator.of(context).pop((scheduledAt, true, null));
+      return;
+    }
+
+    // Non-airport: push the pickup/dropoff search ON TOP of this screen
+    // so pressing back returns HERE (Select Time) instead of dropping
+    // the user back to the home screen.
+    final searchResult = await Navigator.of(context).push<Map<String, dynamic>>(
+      slideUpFadeRoute(
+        PickupDropoffSearchScreen(
+          initialPickupLat: widget.initialPickupLat,
+          initialPickupLng: widget.initialPickupLng,
+          scheduledAt: scheduledAt,
+          isAirportTrip: false,
+        ),
+      ),
+    );
+
+    // Search finished (user confirmed addresses) → bubble everything up.
+    // searchResult == null means the user pressed back on the search —
+    // stay on this screen (that's the point of pushing instead of popping).
+    if (searchResult != null && mounted) {
+      Navigator.of(context).pop((scheduledAt, false, searchResult));
+    }
   }
 
   @override
@@ -568,34 +622,39 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
             const SizedBox(height: 4),
 
             // Quick-add chips
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  _QuickChip(
-                    label: '+30 min',
-                    active: false,
-                    onTap: () => _quickAdd(30),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickChip(
-                    label: isEs ? '+1 hr' : '+1 hr',
-                    active: false,
-                    onTap: () => _quickAdd(60),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickChip(
-                    label: isEs ? '+2 hr' : '+2 hr',
-                    active: false,
-                    onTap: () => _quickAdd(120),
-                  ),
-                ],
+            _FadeSlideIn(
+              delayMs: 0,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    _QuickChip(
+                      label: '+30 min',
+                      active: false,
+                      onTap: () => _quickAdd(30),
+                    ),
+                    const SizedBox(width: 8),
+                    _QuickChip(
+                      label: isEs ? '+1 hr' : '+1 hr',
+                      active: false,
+                      onTap: () => _quickAdd(60),
+                    ),
+                    const SizedBox(width: 8),
+                    _QuickChip(
+                      label: isEs ? '+2 hr' : '+2 hr',
+                      active: false,
+                      onTap: () => _quickAdd(120),
+                    ),
+                  ],
+                ),
               ),
             ),
 
             // Clock face
             Expanded(
-              child: Column(
+              child: _FadeSlideIn(
+                delayMs: 100,
+                child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _BigArrow(
@@ -622,13 +681,17 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
                       const SizedBox(width: 6),
                       _TimeBox(text: mText),
                       const SizedBox(width: 10),
-                      Text(
-                        pm ? 'PM' : 'AM',
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: _gold,
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Text(
+                          pm ? 'PM' : 'AM',
+                          key: ValueKey(pm),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: _gold,
+                          ),
                         ),
                       ),
                     ],
@@ -654,13 +717,17 @@ class _ScheduleTimeScreenState extends State<_ScheduleTimeScreen> {
                 ],
               ),
             ),
+            ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: _PrimaryButton(
-                label: s.confirmAndBook,
-                icon: Icons.check_rounded,
-                onTap: _confirm,
+            _FadeSlideIn(
+              delayMs: 280,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: _PrimaryButton(
+                  label: s.confirmAndBook,
+                  icon: Icons.check_rounded,
+                  onTap: _confirm,
+                ),
               ),
             ),
           ],
@@ -679,21 +746,37 @@ class _TimeBox extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(minWidth: 92),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0x14E8C547),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x33E8C547), width: 1),
-      ),
+      decoration: neuBox(radius: 14, pressed: true),
       alignment: Alignment.center,
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: 46,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-          height: 1.0,
-          letterSpacing: -1,
+      child: ClipRect(
+        // Rolling digits: the old number slides up out, the new one
+        // slides in from below (slot-machine feel).
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) {
+            final isNew = child.key == ValueKey(text);
+            return SlideTransition(
+              position: Tween(
+                begin: isNew ? const Offset(0, 0.55) : const Offset(0, -0.55),
+                end: Offset.zero,
+              ).animate(anim),
+              child: FadeTransition(opacity: anim, child: child),
+            );
+          },
+          child: Text(
+            text,
+            key: ValueKey(text),
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 46,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              height: 1.0,
+              letterSpacing: -1,
+            ),
+          ),
         ),
       ),
     );
@@ -725,16 +808,7 @@ class _BigArrowState extends State<_BigArrow> {
         child: Container(
           width: 72,
           height: 46,
-          decoration: BoxDecoration(
-            color: _pressed
-                ? const Color(0x33E8C547)
-                : const Color(0x1FE8C547),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: const Color(0x40E8C547),
-              width: 1,
-            ),
-          ),
+          decoration: neuBox(radius: 14, pressed: _pressed),
           alignment: Alignment.center,
           child: Icon(widget.icon, color: _gold, size: 28),
         ),
@@ -751,11 +825,7 @@ class _SummaryPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      decoration: BoxDecoration(
-        color: const Color(0x0AFFFFFF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
+      decoration: neuBox(radius: 12),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -801,12 +871,19 @@ class _Header extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white, size: 18),
-            splashRadius: 22,
+          // Back — pressed neumorphic circle
+          GestureDetector(
+            onTap: onBack,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              alignment: Alignment.center,
+              child: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white, size: 18),
+            ),
           ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -838,11 +915,7 @@ class _Header extends StatelessWidget {
           Container(
             width: 42,
             height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0x14E8C547),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0x33E8C547)),
-            ),
+            decoration: neuBox(radius: 12, pressed: true),
             child: Icon(trailingIcon, color: _gold, size: 20),
           ),
         ],
@@ -882,25 +955,19 @@ class _QuickChipState extends State<_QuickChip> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: widget.active
-                ? _gold
-                : const Color(0x14E8C547),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: widget.active ? _gold : const Color(0x38E8C547),
-              width: 1,
-            ),
-            boxShadow: widget.active
-                ? [
+          decoration: widget.active
+              ? BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
                     BoxShadow(
                       color: _gold.withValues(alpha: 0.4),
                       blurRadius: 10,
                       offset: const Offset(0, 2),
                     ),
-                  ]
-                : null,
-          ),
+                  ],
+                )
+              : neuBox(radius: 20, pressed: true),
           child: Text(
             widget.label,
             style: TextStyle(
@@ -1010,16 +1077,11 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
           decoration: BoxDecoration(
             color: _gold,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x40E8C547),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-              BoxShadow(
-                color: Color(0x33000000),
-                blurRadius: 20,
-                offset: Offset(0, 6),
+                color: _gold.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -1042,6 +1104,34 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Staggered entry — fade + gentle slide-up, used to choreograph the
+// Select Time screen sections (chips → clock → CTA) without any
+// perpetual animation.
+class _FadeSlideIn extends StatelessWidget {
+  final int delayMs;
+  final Widget child;
+
+  const _FadeSlideIn({required this.delayMs, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = 400 + delayMs;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: total),
+      curve: Interval(delayMs / total, 1, curve: Curves.easeOutCubic),
+      builder: (_, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 14 * (1 - value)),
+          child: child,
+        ),
+      ),
+      child: child,
     );
   }
 }

@@ -204,11 +204,13 @@ extension _RideRequestController on _RideRequestScreenState {
     final linked = await LocalDataService.getLinkedPaymentMethods();
     final last4 = await LocalDataService.getCreditCardLast4();
     final brand = await LocalDataService.getCreditCardBrand();
+    final bankLast4 = await LocalDataService.getBankLast4();
     if (!mounted) return;
     _setState(() {
       _linkedPaymentMethods = linked;
       _savedCardLast4 = last4;
       _savedCardBrand = brand;
+      _savedBankLast4 = bankLast4;
     });
     // Also try to restore payment methods from backend (survives reinstall)
     _restorePaymentMethodsFromBackend();
@@ -220,6 +222,30 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       final methods = await ApiService.getMyPaymentMethods();
       if (methods.isEmpty) return;
+
+      // ── Restore linked bank accounts (ACH) — method_type 'bank_account' ──
+      final bankAccounts =
+          methods.where((m) => m['method_type'] == 'bank_account').toList();
+      if (bankAccounts.isNotEmpty) {
+        final bank = bankAccounts.first;
+        final bankPmId = bank['stripe_pm_id'] as String?;
+        final bankDisplay = bank['display_name'] as String? ?? '';
+        final bankLast4 = _last4Re.firstMatch(bankDisplay)?.group(1);
+        if (bankPmId != null) {
+          await LocalDataService.saveStripeBankPmId(bankPmId);
+          if (bankLast4 != null) {
+            await LocalDataService.saveBankLast4(bankLast4);
+          }
+          await LocalDataService.linkPaymentMethod('bank_account');
+          if (mounted) {
+            _setState(() {
+              _linkedPaymentMethods.add('bank_account');
+              _savedBankLast4 = bankLast4;
+            });
+          }
+        }
+      }
+
       // Find the default stripe_card
       final stripeCards = methods.where((m) => m['method_type'] == 'stripe_card').toList();
       if (stripeCards.isEmpty) return;
@@ -363,10 +389,14 @@ extension _RideRequestController on _RideRequestScreenState {
         // watchdog caused races where the sheet stayed empty on iOS.
         //
         // Start cinematic + route draw as soon as any route is available.
-        // Estimated route (2 points) triggers markers+tilt; real route
-        // (>15 points) triggers the gold polyline draw.
+        // Estimated route (2 points — straight-line placeholder) triggers
+        // markers+tilt; the real road-snapped route (≥3 points, short OR
+        // long trip) triggers the gold polyline draw. The >15 threshold
+        // previously used here dropped short real routes (≤15 pts) that
+        // arrived after the cinematic — they were never drawn and the
+        // "Finding best route" spinner never stopped.
         if (s.route != null && s.pickup != null && s.dropoff != null) {
-          final isRealRoute = s.route!.points.length > 15;
+          final isRealRoute = s.route!.points.length >= 3;
           if (isRealRoute) _fetchingRoute = false;
 
           if (!_cinematicDone && !_cinematicRunning) {
@@ -1727,6 +1757,44 @@ extension _RideRequestController on _RideRequestScreenState {
     }
   }
 
+  /// ACH debit via the saved bank PaymentMethod — same server-confirmed
+  /// PaymentIntent path as the saved card, with two ACH differences:
+  /// no manual capture (Stripe settles ACH asynchronously, so we don't
+  /// pass holdOnly) and status 'processing' is accepted as payment
+  /// initiated (Stripe confirms the debit later — standard ACH flow).
+  Future<bool> _confirmBankAccount(int amountCents, RideOption option) async {
+    final pmId = await LocalDataService.getStripeBankPmId();
+    if (!mounted) return false;
+    if (pmId == null || pmId.isEmpty) {
+      // No bank on file — reopen the picker so the rider can link one.
+      await _showPaymentMethodPicker(AppColors.of(context), option);
+      return false;
+    }
+
+    try {
+      final piResult = await ApiService.createPaymentIntent(
+        amountCents: amountCents,
+        paymentMethodId: pmId,
+      );
+      _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
+      final clientSecret = piResult['client_secret'] as String?;
+      final status = piResult['status'] as String?;
+      if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
+
+      // Confirmed server-side.
+      if (status == 'succeeded') return true;
+      if (status == 'requires_capture') return true;
+      // ACH: debit initiated, Stripe settles asynchronously.
+      if (status == 'processing') return true;
+
+      return true;
+    } catch (e) {
+      debugPrint('[Bank] Saved bank account failed: $e');
+      // Same policy as saved cards: no silent fallback on payment failures.
+      rethrow;
+    }
+  }
+
   /// Creates a scheduled trip via the backend API and navigates to the scheduled rides list.
   Future<void> _createScheduledTrip() async {
     try {
@@ -2207,6 +2275,8 @@ extension _RideRequestController on _RideRequestScreenState {
         return await _confirmTapToPay(amountCents, option);
       } else if (_selectedPaymentMethod == 'paypal') {
         return await _confirmPayPal(amountCents);
+      } else if (_selectedPaymentMethod == 'bank_account') {
+        return await _confirmBankAccount(amountCents, option);
       } else {
         return await _confirmCard(amountCents);
       }
@@ -2432,9 +2502,12 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
       await LocalDataService.saveCreditCardLast4(last4);
       await LocalDataService.saveCreditCardBrand(brand);
       await LocalDataService.linkPaymentMethod('credit_card');
+      // The new card becomes the active payment method so the rider
+      // lands back on the vehicle sheet (photo 2) ready to Request —
+      // NOT on the Payment panel again (that made it show twice).
+      _setState(() => _selectedPaymentMethod = 'credit_card');
     }
     await _loadLinkedPayments();
-    if (mounted) _showPaymentSheet(c, option);
   }
 
   Future<void> _openPaymentAccountsAndReturn(
@@ -2466,6 +2539,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
       case 'credit_card':
         return _linkedPaymentMethods.contains('credit_card') &&
             _savedCardLast4 != null;
+      case 'bank_account':
+        return _linkedPaymentMethods.contains('bank_account');
       default:
         return _linkedPaymentMethods.isNotEmpty;
     }
@@ -2488,6 +2563,10 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         return loc.creditOrDebitCard;
       case 'paypal':
         return 'PayPal';
+      case 'bank_account':
+        return _savedBankLast4 != null
+            ? 'Bank •••• $_savedBankLast4'
+            : 'Bank Account';
       case 'test_mode':
         return loc.testModeLabel;
       default:

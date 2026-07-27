@@ -783,6 +783,10 @@ Future<void> heavyInit() async {
           final fcmToken = await messaging.getToken();
           if (kDebugMode) debugPrint('[FCM] token: $fcmToken');
 
+          // Register the token with the backend + keep it updated on
+          // rotation (covers restarts with an active session).
+          unawaited(NotificationService.registerTokenWithBackend());
+
           FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final type = message.data['type'] as String? ?? 'general';
             // For driver ride offers: always use clean title/body — never show price or address

@@ -38,6 +38,11 @@ class UserProfilePhoto extends StatefulWidget {
   /// which provides its own border).
   final bool noBorder;
 
+  /// Optional fade-in duration for the network image. Defaults to the
+  /// CachedNetworkImage default (500ms) so existing callers are unchanged;
+  /// pass [Duration.zero] for an instant, no-fade render.
+  final Duration? fadeInDuration;
+
   /// Custom cache manager with 30-day stale period for profile photos.
   static final _cacheManager = CacheManager(
     Config(
@@ -67,6 +72,7 @@ class UserProfilePhoto extends StatefulWidget {
     this.uid,
     this.role,
     this.noBorder = false,
+    this.fadeInDuration,
   });
 
   @override
@@ -178,6 +184,8 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
         width: widget.radius * 2,
         height: widget.radius * 2,
         fit: BoxFit.cover,
+        fadeInDuration:
+            widget.fadeInDuration ?? const Duration(milliseconds: 500),
         cacheManager: UserProfilePhoto._cacheManager,
         placeholder: (_, __) => _localOrInitials(),
         errorWidget: (_, __, ___) {
@@ -197,6 +205,8 @@ class _UserProfilePhotoState extends State<UserProfilePhoto> {
               memCacheWidth: (widget.radius * 2 * MediaQuery.devicePixelRatioOf(context)).round(),
               memCacheHeight: (widget.radius * 2 * MediaQuery.devicePixelRatioOf(context)).round(),
               fit: BoxFit.cover,
+              fadeInDuration:
+                  widget.fadeInDuration ?? const Duration(milliseconds: 500),
               cacheManager: UserProfilePhoto._cacheManager,
               placeholder: (_, __) => _localOrInitials(),
               errorWidget: (_, __, ___) => _localOrInitials(),

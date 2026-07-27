@@ -1,353 +1,276 @@
 # Terms of Service
 
-**Effective Date: December 2024**
+**Effective Date: July 26, 2026**
+**Last Updated: July 26, 2026**
 
-## 1. Agreement to Terms
+Welcome to Cruiseinride. These Terms of Service (the "Terms" or the "Agreement") constitute a legally binding agreement between you ("you," "user," "Rider," or "Driver") and **Cruiseinride LLC, an Alabama limited liability company, with its principal place of business in Birmingham, Alabama** ("Cruiseinride," "Company," "we," "us," or "our"), operator of the Cruiseinride mobile application (the "App") and the website **cruiseinride.com** (collectively, the "Service").
 
-By downloading, accessing, or using the Cruise mobile application (the "App") and related services (the "Service"), you agree to be bound by these Terms of Service (the "Agreement"). If you do not agree to these terms, do not use the Service.
+> **Brand note.** "Cruiseinride" is our legal and commercial brand and is used throughout this document. "Cruise" may be used informally as a short name for the App only; the standalone mark "Cruise" belongs to General Motors and is not our brand. All official correspondence uses addresses at **@cruiseinride.com**.
 
-Cruise ("Company," "we," "us," or "our") reserves the right to modify these terms at any time. Your continued use constitutes acceptance of modified terms.
+**PLEASE READ THESE TERMS CAREFULLY. THEY CONTAIN A BINDING ARBITRATION CLAUSE, A CLASS ACTION WAIVER, AND A JURY TRIAL WAIVER (SECTION 18) THAT AFFECT YOUR LEGAL RIGHTS.**
+
+By downloading, accessing, registering for, or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and by our Privacy Policy, which is incorporated by reference. If you do not agree, do not access or use the Service.
+
+---
+
+## 1. Nature of the Service — Marketplace, Not a Carrier
+
+1.1 **Cruiseinride is a technology platform, not a transportation company.** The Service provides a marketplace that connects independent riders seeking transportation with independent third-party drivers. Cruiseinride does not provide transportation, logistics, taxi, limousine, or common carrier services, and does not employ any drivers.
+
+1.2 **Pure marketplace — no company fleet.** Cruiseinride does not own, lease, or operate any vehicles. **Every ride on the platform is performed by an independent Driver using the Driver's own personal vehicle**, consistent with the definition of a "prearranged ride" under the Alabama Transportation Network Company Act (Act 2018-127, Ala. Code § 32-7C). Cruiseinride does not direct or control drivers' work, routes, schedules, or conduct. Any arrangement for a ride is solely between the Rider and the Driver.
+
+1.3 **Independent contractors.** All drivers who use the Service are independent contractors and not employees, agents, joint venturers, franchisees, or representatives of Cruiseinride.
+
+1.4 **APSC authorization.** Cruiseinride operates as a Transportation Network Company with a permit issued by the **Alabama Public Service Commission ("APSC")** pursuant to Act 2018-127 (Ala. Code § 32-7C) and the APSC rules at 770-X-12, and maintains compliance with that Act as described in Section 6.
+
+1.5 **No guarantee of service.** Cruiseinride does not guarantee the availability of drivers, wait times, the condition or suitability of any vehicle, the identity or conduct of any user, or that the Service will be uninterrupted, timely, secure, or error-free.
 
 ## 2. Eligibility
 
-- You must be at least 18 years old to use this Service
-- You must possess legal capacity to enter into this Agreement
-- You agree to use the Service only for lawful purposes
-- Riders and Drivers with suspended or terminated accounts may not re-register
+2.1 **Age.** You must be at least **18 years old** and capable of forming a binding contract to use the Service. Persons under 18 may not register for or use the Service. A minor may ride **only when accompanied by an adult**, and the accompanying adult is solely responsible for the minor's conduct and safety during the ride.
 
-## 3. Account Registration
+2.2 **Child restraints.** When Alabama's child restraint law (Ala. Code § 32-5-222) requires a child safety seat or booster, **the Rider is responsible for providing and installing it**. Drivers are not obligated to supply child restraint systems and may decline a ride when a required restraint is not provided.
 
-### 3.1 Your Responsibility
+2.3 **Drivers must:** (a) meet the minimum age required by applicable law; (b) hold a valid driver's license for the jurisdiction in which they operate; (c) maintain current vehicle registration and the minimum automobile liability insurance required by applicable law; (d) pass a background check administered by our third-party provider (Checkr, Inc.), as described in Section 5.5; and (e) complete identity verification, including document validation and facial liveness verification.
 
-You are responsible for:
-- Providing accurate, complete information
-- Maintaining confidentiality of your password
-- All activity on your account
-- Notifying us immediately of unauthorized access
+2.4 Users whose accounts have been suspended or terminated may not re-register or use the Service through another account.
 
-### 3.2 Account Suspension
+## 3. Accounts and Security
 
-We may suspend or terminate your account if you:
-- Provide false information
-- Violate these Terms
-- Engage in illegal activity
-- Receive multiple complaints
-- Fail background check requirements (drivers)
+3.1 You agree to provide accurate, current, and complete information and to keep it updated. You are responsible for all activity that occurs under your account and for maintaining the confidentiality of your credentials.
 
-### 3.3 Multiple Accounts
+3.2 You must notify us immediately at **support@cruiseinride.com** of any unauthorized use of your account or any other security breach. Cruiseinride is not liable for losses caused by unauthorized use of your credentials, except where required by law.
 
-Creating multiple accounts to circumvent suspensions is prohibited.
+3.3 Accounts are personal and non-transferable. You may not sell, lend, or share your account.
 
 ## 4. Riders' Terms
 
-### 4.1 Booking
+4.1 **Ride requests and fares.** Riders request rides through the App. Quoted fares are estimates and may vary based on route, traffic, demand (including dynamic or "surge" pricing, which will be disclosed before confirmation), tolls, wait time, and applicable taxes and fees. **Alabama local assessment:** fares for trips originating in Alabama may include the one percent (1%) assessment on the gross trip fare imposed by Ala. Code § 32-7C, which Cruiseinride reports and remits quarterly to the APSC (see Section 6.6).
 
-- You request a ride through the App
-- A Driver is matched based on availability and location
-- Both parties must confirm the ride
-- You agree to be at pickup location on time
-- No-shows may incur cancellation fees
+4.2 **Cancellations.** Rides canceled within 2 minutes of driver assignment are free. After 2 minutes, or in case of a no-show, a cancellation fee may apply as displayed in the App. **Cancellation fees are paid to the Driver** (less applicable payment-processing costs) to compensate time and fuel, and are generally non-refundable, except where required by law.
 
-### 4.2 Conduct During Ride
+4.3 **Scheduled rides.** Rides scheduled in advance are subject to driver availability. A scheduled ride that cannot be matched will be canceled without charge.
 
-You agree to:
-- Treat the Driver and vehicle with respect
-- Not consume alcohol or illegal substances
-- Not damage the vehicle
-- Not be abusive, discriminatory, or harassing
-- Not transport illegal goods
-- Have appropriate passenger count for vehicle type
+4.4 **Pre-ride disclosures.** Before you enter the vehicle, the App displays the **Driver's photo and first name, and the vehicle's make, model, and license plate**, as required by Ala. Code § 32-7C. Always verify the driver and vehicle match the App before boarding.
 
-### 4.3 Cancellation & Refunds
+4.5 **Electronic receipts.** Within **two (2) hours** after trip completion, the App issues an electronic receipt showing the **origin, destination, total time, total distance, total fare paid, and the Driver's first name**, as required by Ala. Code § 32-7C.
 
-- Cancellations within 2 minutes: No charge
-- Cancellations after 2 minutes: Cancellation fee applies
-- No-shows: Full ride charge applied
-- Driver cancellations: Full refund
-- Rider-initiated refunds subject to policy review
+4.6 **Payment.** You authorize Cruiseinride and its payment processor (Stripe, Inc.) to charge your designated payment method for fares, fees, tolls, cancellation charges, cleaning fees (in case of documented damage or excessive mess), and applicable taxes. Payment is processed automatically at trip completion. You are responsible for maintaining a valid payment method.
 
-### 4.4 Payment
+4.7 **Conduct.** Riders agree to treat drivers and vehicles with respect. Smoking, illegal substances, weapons, and abusive or discriminatory behavior are prohibited. Riders are liable for damage they cause to a vehicle.
 
-- Default payment method will be charged automatically
-- You authorize Stripe to process charges
-- Tax and platform fees included in quoted price
-- Receipts available in-app
-- Disputed charges must be reported within 30 days
+4.8 **Lost and found.** If you leave an item in a vehicle, contact Support (Settings > Support) and we will help coordinate with the Driver. Drivers are independent contractors and are not required to return items, but most will; a **reasonable return fee** may apply to compensate the Driver's time, payable as displayed in the App. Cruiseinride is not responsible for lost items.
 
-### 4.5 Rating & Reviews
+4.9 **Airport trips.** Trips to or from **Birmingham–Shuttlesworth International Airport (BHM)** are subject to the airport's rules for transportation network companies, including use of designated pickup and drop-off zones, airport permit requirements, and **airport fees or surcharges that may be passed through to the Rider** as displayed in the App.
 
-- Ratings are 1-5 stars
-- False or malicious reviews may result in account suspension
-- Ratings are visible to Drivers and platform admins
-- Both Rider and Driver rate each other
+4.10 **Dashcams and recording.** Drivers may use in-vehicle dashboard cameras ("dashcams") in accordance with applicable law. Alabama is a **one-party consent state for audio recording**, and drivers may therefore lawfully record audio and video inside their own vehicles. **By taking a ride, you acknowledge and consent that the ride may be recorded by the Driver's dashcam.** Dashcam footage belongs to the Driver and must be handled by the Driver in compliance with applicable law.
 
 ## 5. Drivers' Terms
 
-### 5.1 Eligibility & Requirements
+5.1 **Independent contractor relationship.** Nothing in these Terms creates an employment, agency, partnership, or joint venture relationship between you and Cruiseinride. You are not entitled to wages, benefits, workers' compensation, unemployment insurance, expense reimbursement, or any employment protections from Cruiseinride. You are solely responsible for your taxes, including self-employment taxes.
 
-Drivers must:
-- Be at least 21 years old (25+ in some jurisdictions)
-- Possess valid driver's license (active for 3+ years)
-- Have comprehensive auto insurance
-- Pass background check (via Checkr)
-- Register a valid vehicle (make/model/year/plate)
-- Maintain vehicle in safe working condition
-- Provide insurance proof valid for at least 16 months
+5.2 **Earnings.** Drivers earn a percentage of each fare according to their vehicle tier (Comfort: 60%, Premium: 65%, VIP: 70% of the fare), as displayed in the App. Tips are 100% for the driver. Cancellation fees collected from Riders are paid to the Driver, less applicable payment-processing costs. Rider refunds may reduce corresponding driver earnings.
 
-### 5.2 Background Check
+5.3 **Changes to platform commission.** Cruiseinride may adjust its platform fee or commission structure with **at least fourteen (14) days' prior notice through the App**. Your continued use of the Service after that notice period constitutes acceptance of the new rates.
 
-- Annual background checks required
-- Disqualifying factors: felonies, DUIs (within 7 years), dangerous driving
-- Reports processed via Checkr
-- Approval required before going online
-- Continued criminal activity results in termination
+5.4 **Obligations.** Drivers agree to: (a) maintain a safe, clean, legally compliant, and insured vehicle; (b) comply with all traffic laws and local licensing requirements; (c) not discriminate against any rider (Section 10); (d) comply with the Zero-Tolerance Drug and Alcohol Policy (Section 9); (e) maintain the confidentiality of rider information; (f) not solicit rides or payments outside the platform for trips originated through it; (g) maintain accurate location sharing while online; and (h) display the Cruiseinride trade dress as required by Section 6.3.
 
-### 5.3 Online Status
+5.5 **Background checks — annual screening and FCRA.** Continued access to the platform is conditioned on passing an **initial background check and a re-screening at least once every year**, administered by Checkr, Inc. Background checks are **"consumer reports" under the Fair Credit Reporting Act ("FCRA")**. In accordance with the FCRA: (a) we provide a **stand-alone disclosure** and obtain your **written authorization** in the App (via the background check consent screen) **before** ordering any report; (b) before taking any adverse action (including deactivation) based in whole or in part on a report, we will provide you a **pre-adverse action notice** with a copy of the report and the document **"A Summary of Your Rights Under the FCRA,"** and a **reasonable period to dispute** inaccurate or incomplete information with Checkr; and (c) if we proceed, we will send a final **adverse action notice** with the information required by the FCRA, including Checkr's contact details and your right to a free report and to dispute.
 
-- "Go Online" means you are ready to accept rides
-- "Go Offline" means you will receive no new ride offers
-- GPS location required while online
-- Within 2 hours of going online, you should accept/decline rides
+5.6 **Deactivation and appeal.** Cruiseinride may deactivate a Driver account based on background check results, safety reports, ratings below the platform threshold, document expiration, or fraud indicators. **Deactivations triggered by document expiration or fraud indicators include human review before they take effect.** A Driver may **appeal a deactivation** by contacting support@cruiseinride.com; appeals receive **human review and a response within fourteen (14) days**.
 
-### 5.4 Accepting Rides
+## 6. Alabama TNC Compliance (Act 2018-127 / APSC Rules 770-X-12)
 
-- Offers appear with Rider name, start/end, estimated fare
-- You have 30 seconds to accept/decline
-- Declining more than 3 consecutive rides may reset availability
-- Accepted rides cannot be canceled without penalty
+6.1 **Vehicle inspection.** Each Driver vehicle must pass a safety inspection performed by an **AATI- or ASE-certified mechanic** covering the safety points required by the APSC rules, **before the vehicle's first ride** on the platform and **at least once every year** thereafter. **No vehicle more than fifteen (15) model years old** may be used on the platform.
 
-### 5.5 Conduct During Ride
+6.2 **Insurance.** Drivers and Cruiseinride maintain the coverages described in Section 8, as required by Ala. Code § 32-7C.
 
-You agree to:
-- Follow navigation provided by app
-- Take safest, most direct route
-- Treat Rider with respect
-- Not consume alcohol or illegal substances
-- Maintain vehicle cleanliness
-- Not be abusive, discriminatory, or harassing
-- Arrive at pickup within estimated time
-- Communicate delays to Rider
+6.3 **Trade dress.** While online and available for rides, Drivers must display the **Cruiseinride emblem/logo** on their vehicle, **legible from fifty (50) feet during daylight and reflective or illuminated at night**, consistent with the trade dress design on file with the APSC.
 
-### 5.6 Safety & Security
+6.4 **Pre-ride disclosures and receipts.** The Service provides the rider-facing disclosures (Section 4.4) and electronic receipts (Section 4.5) required by Ala. Code § 32-7C.
 
-- Riders may cancel if you don't arrive within 5 minutes
-- Riders may report you for safety violations
-- Multiple reports trigger investigation
-- Termination possible for serious violations
+6.5 **Records and identifiers.** Cruiseinride retains **driver records and trip records for at least two (2) years**, as required by the APSC rules. Each trip is assigned a **unique trip identifier with its date**, and each Driver is assigned a **unique driver identifier**.
 
-### 5.7 Earnings & Payments
+6.6 **Local assessment.** Cruiseinride assesses, collects, reports, and remits to the APSC, **on a quarterly basis**, the **one percent (1%) assessment on the gross trip fare** of all trips originating in Alabama, as required by Ala. Code § 32-7C. This assessment may be included in the fare displayed to the Rider (Section 4.1).
 
-- Fares are calculated: (Base + Distance × Per-Mile-Rate + Duration × Per-Minute-Rate + Surge Multiplier)
-- Platform fee (25-30%) deducted from each ride
-- Tips are 100% Driver earnings
-- Ratings affect ride frequency (low-rated drivers get fewer offers)
-- Payouts via Stripe Connect to linked bank account
-- Weekly payouts on Mondays (T+5 business days)
-- Refunds to Riders reduce Driver earnings
+6.7 **Agent for service of process.** Cruiseinride maintains an **agent for service of legal process in the State of Alabama**, as required by Ala. Code § 32-7C.
 
-### 5.8 Prohibited Activities
+## 7. Payments, Credits, and Refunds
 
-Drivers may not:
-- Charge passengers additional fees beyond app fare
-- Request cash payments
-- Share earnings data publicly
-- Solicit off-app rides
-- Drive under influence
-- Operate vehicle in unsafe condition
-- Use app while driving (hands-free only)
-- Collect personal information beyond trip necessity
+7.1 **Processor.** All payment processing is performed by Stripe, Inc. Cruiseinride does not store complete card numbers. Your use of payment services is also subject to Stripe's terms.
 
-## 6. General Conduct & Community Standards
+7.2 **Refunds.** Refund requests are evaluated case-by-case through in-app Support. Approved refunds are issued to the original payment method. Charges for completed trips, cancellation fees, and cleaning fees are otherwise final.
 
-### 6.1 Prohibited Behavior
+7.3 **Promotional credits ("Cruise Cash").** Promotional or referral credits: (a) have no cash value; (b) are non-transferable and non-refundable; (c) may expire as indicated in the App; (d) may be revoked in cases of fraud, abuse, or error; and (e) cannot be redeemed except as ride fare credit.
 
-All users agree NOT to:
-- Violate any laws or regulations
-- Harass, threaten, or discriminate against others
-- Share illegal content
-- Attempt to hack, reverse-engineer, or disrupt the App
-- Create fraudulent accounts
-- Use fake payment methods
-- Engage in double-booking or fraud schemes
-- Solicit rides outside the platform
+7.4 **Chargebacks.** If you dispute a valid charge with your bank or card issuer, Cruiseinride may suspend your account pending resolution and charge any costs incurred as permitted by law.
 
-### 6.2 Zero Tolerance for Violence
+## 8. Insurance
 
-- Any violence or threats results in immediate termination
-- Police may be contacted
-- We cooperate with law enforcement
+8.1 **Driver online, no prearranged ride (Period 1).** While a Driver is logged into the App and available to receive requests but has not yet accepted a prearranged ride, Cruiseinride maintains automobile liability coverage that is **primary** as required by Ala. Code § 32-7C, in amounts of at least **$50,000 per person for death and bodily injury, $100,000 per incident for death and bodily injury, and $25,000 for property damage**.
 
-### 6.3 Drug & Alcohol Policy
+8.2 **Prearranged ride in progress (Periods 2 and 3).** From the moment a Driver accepts a prearranged ride until the ride ends, Cruiseinride maintains **primary automobile liability coverage of at least $1,000,000** for death, bodily injury, and property damage, as required by Ala. Code § 32-7C.
 
-- No intoxicated Riders
-- No impaired Drivers
-- No transport of illegal drugs
-- Violations result in account termination and police notification
+8.3 **First-dollar protection.** If a Driver's personal automobile policy does not apply, has lapsed, or denies coverage for an incident occurring during the periods described above, **Cruiseinride's coverage responds from the first dollar**, up to the limits stated in this Section and as required by law.
 
-## 7. Liability & Disclaimers
+8.4 **Driver responsibilities.** Drivers remain responsible for maintaining at least the minimum personal automobile insurance required in their jurisdiction at all times, for vehicle maintenance and safe operation, and for any accident caused by their conduct outside the coverage described in this Section.
 
-### 7.1 Insurance
+8.5 This Section describes the coverages Cruiseinride maintains to comply with applicable TNC law; it is a summary, not an insurance policy. Coverage is subject to the terms, conditions, and exclusions of the applicable policies.
 
-- Drivers must maintain personal auto insurance
-- We provide supplemental insurance during active trips
-- Riders must claim with Driver's insurance first
-- Company not liable for damages unless Company negligence proven
+## 9. Zero-Tolerance Drug and Alcohol Policy
 
-### 7.2 Service Availability
+9.1 **Policy.** Cruiseinride maintains a **zero-tolerance policy** for drug and alcohol use by Drivers while using the Service, in accordance with Ala. Code § 32-7C and APSC rules. A Driver may not provide rides while impaired by alcohol, illegal drugs, or impairing medication.
 
-- We do not guarantee uninterrupted service
-- We may suspend service for maintenance
-- No liability for service interruptions
-- No liability for surge pricing
+9.2 **Reporting mechanism.** Riders and other users may report a suspected impaired Driver at any time through **Settings > Support** in the App or at support@cruiseinride.com. This complaint mechanism is published in the App as required by Ala. Code § 32-7C.
 
-### 7.3 Rider Safety
+9.3 **Immediate suspension and investigation.** Upon receiving a complaint of drug or alcohol impairment, Cruiseinride will **immediately suspend the Driver's access to the platform** while the complaint is investigated. The investigation includes human review, a request for the Driver's response, and review of available trip, rating, and report data.
 
-- Company not responsible for Driver conduct
-- Riders use service at own risk
-- Report safety concerns immediately to support
-- We investigate reported violations
+9.4 **Corrective action.** If the investigation substantiates the complaint, the Driver's account is **permanently deactivated**. If it does not, access is restored promptly and the complaint is documented in the Driver's record. Drivers may use the appeal process in Section 5.6.
 
-### 7.4 Driver Liability
+## 10. Non-Discrimination and Accessibility
 
-- Drivers liable for vehicle damage
-- Drivers liable for Rider injuries due to Driver negligence
-- Drivers responsible for vehicle maintenance
-- Company not liable for Driver accidents (unless Company negligence)
+10.1 **No discrimination.** In accordance with the Civil Rights Act of 1964, the Americans with Disabilities Act ("ADA"), and Ala. Code § 32-7C, users and Drivers may not discriminate on the basis of race, color, religion, national origin, sex, sexual orientation, gender identity, disability, age, or any other status protected by law, in the provision or use of the Service.
 
-## 8. Dispute Resolution
+10.2 **No accessibility surcharges.** **Drivers may not charge or impose any additional fee, surcharge, or condition on Riders with disabilities**, including for the transport of mobility devices (wheelchairs, walkers, scooters), as required by the ADA and Ala. Code § 32-7C.
 
-### 8.1 Support Process
+10.3 **Service animals.** Drivers **must accept service animals** accompanying Riders, without exception, surcharge, or cleaning fee, as required by the ADA and Ala. Code § 32-7C. **A Driver who refuses a service animal is subject to immediate suspension and, upon review, permanent deactivation.** Allergies or personal preference are not valid grounds for refusal.
 
-1. Report issue in-app (Settings → Support)
-2. Provide detailed description with evidence
-3. Support team reviews within 24 hours
-4. Resolution discussed with both parties
-5. Final decision within 7 days
+10.4 Riders with disabilities may request accommodation or report discrimination through Settings > Support. Reports receive human review.
 
-### 8.2 Refund Requests
+## 11. Artificial Intelligence and Automated Features
 
-- Refunds granted for canceled trips within 2 minutes
-- Refunds granted if Driver never started navigation
-- Refunds denied for completed trips (subject to review)
-- Fraudulent refund requests result in account termination
+11.1 **Disclosure.** The Service uses artificial intelligence and machine learning technologies ("AI Features"), including: (a) **identity verification** — facial liveness detection and document scanning (OCR) processed on-device via Google ML Kit; (b) **customer support chatbot** — automated responses generated by large language models (including OpenAI); (c) **automated matching and dispatch** — algorithmic rider-driver assignment based on location, availability, and other factors; (d) **safety and integrity systems** — fraud detection, "ghost driver" detection, document expiration monitoring, and rating moderation.
 
-### 8.3 Arbitration
+11.2 **Consent.** By using the Service, you consent to automated processing of your data for these purposes, as detailed in our Privacy Policy.
 
-- Most disputes resolved through support
-- Unresolved disputes go to binding arbitration
-- Arbitration in neutral jurisdiction
-- Each party bears own legal costs
-- Arbitrator decision final and binding
+11.3 **No solely automated significant decisions.** Cruiseinride does not make decisions that produce legal effects or similarly significant effects on you (including account termination, payment disputes, or background check outcomes) **solely** through automated means. **Deactivations triggered by document expiration or fraud indicators also include human review before execution.** You may request human review of any AI-assisted decision by contacting support@cruiseinride.com.
 
-## 9. Intellectual Property
+11.4 **Limitations of AI.** AI-generated content (including support chat responses) may be inaccurate, incomplete, or outdated. It is provided for convenience only and does not constitute legal, financial, medical, or professional advice. Cruiseinride is not liable for actions taken in reliance on AI-generated content, except where prohibited by law.
 
-- All App content, features, code protected by copyright
-- You may not copy, reverse-engineer, or distribute App
-- Your profile content licensed to Company for service provision
-- You retain rights to your photos; Company has non-exclusive license
+11.5 **Biometric verification.** Facial liveness verification is used solely to confirm that the person registering or operating an account is a live human matching the submitted identification documents, as described in our Biometric Information Policy within the Privacy Policy.
 
-## 10. Limitation of Liability
+11.6 **No AI training on your content.** User content and personal data are used **only to operate and improve the Service**. **We do not use user content or personal data to train artificial intelligence or machine learning models without your separate, explicit consent.**
 
-**TO THE MAXIMUM EXTENT PERMITTED BY LAW:**
+## 12. Safety and Prohibited Conduct
 
-- Company not liable for indirect, incidental, special, consequential damages
-- Maximum liability: Amount paid by you in past 12 months (not to exceed $500)
-- Company not liable for third-party conduct (Drivers, Riders)
-- Company not liable for lost profits, data, or business opportunity
+12.1 You agree NOT to: (a) use the Service for any unlawful purpose; (b) harass, threaten, discriminate against, or harm any user; (c) provide false information or impersonate any person; (d) manipulate GPS or use location-spoofing tools; (e) reverse engineer, scrape, or interfere with the Service; (f) use the Service to transport goods or persons in violation of law; (g) carry weapons (except as lawful and disclosed where required), illegal drugs, or hazardous materials; (h) create multiple accounts; or (i) attempt to defraud the fare, referral, or promotional systems.
 
-## 11. Indemnification
+12.2 Drivers additionally agree to comply with the Zero-Tolerance Policy (Section 9) and to honor the dashcam recording rules applicable to them (Section 4.10).
 
-You agree to indemnify and hold harmless Company, its officers, employees, and agents from:
-- Claims arising from your use of the Service
-- Claims arising from your violation of these Terms
-- Claims from third parties related to your account
-- All associated costs and legal fees
+12.3 Violation of this section may result in immediate account termination and, where appropriate, referral to law enforcement.
 
-## 12. Termination
+## 13. Intellectual Property
 
-### 12.1 Company May Terminate If:
-- You violate these Terms
-- You engage in illegal activity
-- You fail background check requirements
-- You receive credible complaints
-- Safety risk determined
+13.1 The Service, including the App, design, logos, trademarks, text, and software, is owned by or licensed to Cruiseinride and protected by intellectual property laws. We grant you a limited, non-exclusive, non-transferable, revocable license to use the App for its intended personal (Rider) or commercial driving (Driver) purposes.
 
-### 12.2 Your Rights Upon Termination:
-- Terminate membership anytime in-app Settings
-- Receive payout of earnings minus outstanding charges
-- Refund of unused account credits (if applicable)
-- Data available for download (subject to privacy law)
+13.2 You may not copy, modify, distribute, sell, or lease any part of the Service, nor use Cruiseinride trademarks without prior written consent.
 
-### 12.3 Effect of Termination:
-- All rights and obligations cease
-- Cannot re-register without written permission
-- No refund of cancellation fees or charges incurred
+13.3 **User content license.** By submitting content (photos, documents, ratings, messages), you grant Cruiseinride a worldwide, non-exclusive, royalty-free license to host, process, and display that content **solely to operate and improve the Service**. **We do not use your content to train artificial intelligence models without your separate, explicit consent** (Section 11.6).
 
-## 13. Data & Privacy
+13.4 **DMCA.** Copyright infringement claims under the Digital Millennium Copyright Act should be sent to our designated DMCA agent at **legal@cruiseinride.com**, including the information required by 17 U.S.C. § 512(c)(3).
 
-- Your data subject to Privacy Policy
-- Company uses anonymized data for analytics
-- Location data collected only during active trips
-- Support chat data processed by AI (Claude/Anthropic)
+## 14. Third-Party Services
 
-## 14. Modification & Updates
+The Service integrates third-party providers, including Stripe (payments), Checkr (background checks), Twilio (SMS), Mapbox (maps), Google (Maps, ML Kit, Firebase), and OpenAI (AI support). Your use of those features may be subject to the providers' own terms and privacy policies. Cruiseinride is not responsible for third-party services, their availability, or their acts or omissions.
 
-- Company may update App and Services at any time
-- Updates may be mandatory
-- We will notify you of material changes via email/in-app notification
-- Continued use = acceptance of updates
+## 15. Disclaimers
 
-## 15. Severability
+15.1 THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED BY LAW, CRUISEINRIDE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND ANY WARRANTY ARISING FROM COURSE OF DEALING OR USAGE OF TRADE.
 
-If any provision is unenforceable, remaining provisions remain valid. The unenforceable provision will be modified to minimum extent necessary to make it enforceable.
+15.2 WITHOUT LIMITING THE FOREGOING, CRUISEINRIDE MAKES NO WARRANTY REGARDING: (a) THE CONDUCT, IDENTITY, DRIVING, OR VEHICLES OF DRIVERS OR RIDERS; (b) THE AVAILABILITY OR RELIABILITY OF THE SERVICE; OR (c) THE ACCURACY OF ESTIMATED ARRIVAL TIMES, FARES, OR ROUTES.
 
-## 16. Governing Law
+## 16. Limitation of Liability
 
-These Terms governed by laws of [Your Jurisdiction], without regard to conflict of law principles.
+16.1 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL CRUISEINRIDE, ITS DIRECTORS, OFFICERS, EMPLOYEES, OR AFFILIATES BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING LOST PROFITS, LOST DATA, OR LOSS OF GOODWILL, ARISING OUT OF OR RELATED TO: (a) YOUR USE OF OR INABILITY TO USE THE SERVICE; (b) THE CONDUCT OF ANY DRIVER, RIDER, OR THIRD PARTY; (c) ANY RIDE OBTAINED THROUGH THE SERVICE; OR (d) UNAUTHORIZED ACCESS TO YOUR ACCOUNT OR DATA.
 
-## 17. Contact & Support
+16.2 TO THE MAXIMUM EXTENT PERMITTED BY LAW, CRUISEINRIDE'S TOTAL AGGREGATE LIABILITY TO YOU FOR ALL CLAIMS ARISING FROM OR RELATED TO THE SERVICE SHALL NOT EXCEED THE GREATER OF: (a) THE TOTAL AMOUNTS PAID BY YOU TO CRUISEINRIDE (NET OF DRIVER EARNINGS) IN THE SIX (6) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM, OR (b) ONE HUNDRED U.S. DOLLARS (US $100).
 
-**For Questions About These Terms:**
-- In-App: Settings → Help & Support → Contact Us
-- Email: support@cruiseride.com
-- Phone: +1-844-CRUISE1
+16.3 **Express exception.** THE LIMITATIONS AND CAPS IN THIS SECTION **DO NOT APPLY TO PERSONAL INJURY OR DEATH, TO CRUISEINRIDE'S GROSS NEGLIGENCE OR WILLFUL MISCONDUCT, OR WHERE APPLICABLE LAW PROHIBITS SUCH LIMITATIONS** (including liability that cannot be limited by law, such as certain statutory TNC insurance obligations).
 
-**Legal Notices:**
-- Email: legal@cruiseride.com
+16.4 SOME JURISDICTIONS DO NOT ALLOW CERTAIN LIMITATIONS, SO PARTS OF THIS SECTION MAY NOT APPLY TO YOU. IN SUCH CASES, LIABILITY IS LIMITED TO THE FULLEST EXTENT PERMITTED BY LAW.
+
+## 17. Indemnification
+
+You agree to indemnify, defend, and hold harmless Cruiseinride, its affiliates, and their respective officers, directors, employees, and agents from and against any claims, demands, losses, damages, liabilities, costs, and expenses (including reasonable attorneys' fees) arising out of or related to: (a) your violation of these Terms; (b) your violation of any law or the rights of any third party; (c) your use or misuse of the Service; (d) content you submit; or (e) for Drivers, the operation, condition, or insurance status of your vehicle and any accident or incident occurring during a ride you provide.
+
+## 18. Dispute Resolution — Arbitration and Class Action Waiver
+
+18.1 **Informal resolution first.** Before filing any claim, you agree to contact us at support@cruiseinride.com and attempt to resolve the dispute informally for at least 30 days.
+
+18.2 **Binding arbitration.** Except as provided in Section 18.6, any dispute, claim, or controversy arising out of or relating to these Terms or the Service shall be resolved by **final and binding arbitration** administered by the American Arbitration Association ("AAA") under its Consumer Arbitration Rules. The arbitration shall be conducted in English, by a single arbitrator, in Birmingham, Alabama, or remotely by videoconference at your election. Judgment on the award may be entered in any court of competent jurisdiction.
+
+18.3 **CLASS ACTION WAIVER.** YOU AND CRUISEINRIDE AGREE THAT EACH MAY BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED, OR REPRESENTATIVE ACTION. THE ARBITRATOR MAY NOT CONSOLIDATE CLAIMS OF MORE THAN ONE PERSON.
+
+18.4 **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER THAN ARBITRATION, YOU AND CRUISEINRIDE EACH **WAIVE ANY RIGHT TO A TRIAL BY JURY**.
+
+18.5 **Mass-claim batching.** If **twenty-five (25) or more** similar claims are filed against Cruiseinride by or through the same or coordinated counsel, the parties agree to process them in **batches**, with **bellwether (test) cases arbitrated first** while the remaining claims are stayed; statutes of limitation and filing deadlines are **tolled** during the batching process; AAA filing and administrative fees are **prorated and allocated** as provided by the AAA's mass-arbitration procedures; and the parties will confer in good faith on an efficient schedule before any batch proceeds.
+
+18.6 **Exceptions.** Either party may: (a) bring an individual action in small claims court within the court's jurisdictional limits; or (b) seek injunctive or equitable relief in court for intellectual property infringement or misuse of the Service.
+
+18.7 **Drivers — FAA § 1 carve-out.** You and Cruiseinride acknowledge that Section 1 of the Federal Arbitration Act may exempt Drivers, as "transportation workers" engaged in interstate commerce, from the FAA's coverage. To the extent the FAA does not apply to a Driver claim, **the arbitration agreement between Cruiseinride and Drivers is governed by a separate driver arbitration agreement and, as a fallback, by the arbitration law of the applicable state** (including the Alabama Uniform Arbitration Act), and this Section applies to the fullest extent permitted by that law.
+
+18.8 **Opt-out.** You may opt out of this arbitration agreement by sending written notice to **legal@cruiseinride.com** within **30 days** of first accepting these Terms, including your name, account email, and a clear statement that you opt out of arbitration.
+
+18.9 **Time limit for claims.** Any claim arising from the Service must be filed within **one (1) year** after the claim arises, or it is permanently barred, to the extent permitted by law.
+
+## 19. Termination
+
+19.1 You may delete your account at any time through Settings > Privacy > Delete Account. Account deletion follows the process described in our Privacy Policy.
+
+19.2 Cruiseinride may suspend or terminate your access immediately, without prior notice, for violation of these Terms, fraud, safety concerns, illegal activity, or as required by law. **Suspensions and terminations based on document expiration or fraud indicators include human review before execution**, and Drivers may appeal under Section 5.6.
+
+19.3 Upon termination, your license to use the Service ends. Sections that by their nature should survive (including Sections 1, 5.1, 8, 13, 15, 16, 17, 18, and 22) survive termination.
+
+## 20. Apple App Store and Google Play Terms
+
+20.1 These Terms are between you and Cruiseinride only, not with Apple Inc. or Google LLC. Apple and Google are not responsible for the Service or its content. Your use of the App is also subject to the **App Store Usage Rules** (and, for Android, the Google Play Terms of Service).
+
+20.2 Apple and Google have no obligation to provide maintenance or support for the App, are not responsible for addressing any claims (including product liability, legal compliance, or consumer protection claims), and are not responsible for third-party infringement claims. **Cruiseinride, not Apple, is solely responsible for the App and for any warranty not effectively disclaimed** under Section 15, including any express or implied warranty that the App fails to conform to.
+
+20.3 Apple, and Apple's subsidiaries, are third-party beneficiaries of these Terms and may enforce them against you.
+
+20.4 You represent that you are not located in a country subject to a U.S. government embargo and are not on any U.S. government restricted-party list.
+
+## 21. Communications and SMS Consent (TCPA)
+
+21.1 **Transactional SMS.** By registering for the Service and providing your phone number, you **expressly consent to receive transactional text messages** from Cruiseinride and its providers (including Twilio), such as verification codes, trip status, driver arrival notices, receipts, and security alerts, at the number you provided, including messages sent by automated means.
+
+21.2 **Promotional SMS (separate opt-in).** We send promotional or marketing text messages **only if you separately opt in**, as offered in the App. Consent to promotional messages is **not required** to use the Service.
+
+21.3 **Opt-out and help.** You may revoke consent at any time: reply **STOP** to any message to cancel, or **HELP** for help. Message and data rates from your carrier may apply. Message frequency varies. Opting out of transactional SMS may prevent use of phone-based verification features.
+
+21.4 Consent records are kept as required by the Telephone Consumer Protection Act ("TCPA") and related rules.
+
+## 22. Governing Law and Venue
+
+These Terms are governed by the laws of the **State of Alabama** and applicable federal law of the United States, without regard to conflict-of-law principles. Subject to Section 18 (arbitration), the state and federal courts located in **Jefferson County, Alabama** shall have exclusive jurisdiction over any dispute that proceeds in court, and you consent to their venue and jurisdiction.
+
+## 23. Changes to These Terms
+
+We may modify these Terms at any time. Material changes will be notified through the App, by email, or by posting an updated version with a new Effective Date at least 7 days before they take effect. Your continued use of the Service after the effective date constitutes acceptance. If you do not agree, you must stop using the Service and delete your account.
+
+## 24. Miscellaneous
+
+24.1 **Entire agreement.** These Terms, together with the Privacy Policy, are the entire agreement between you and Cruiseinride regarding the Service.
+
+24.2 **Severability.** If any provision is held invalid or unenforceable, it will be enforced to the maximum extent permissible and the remainder will continue in full force.
+
+24.3 **No waiver.** Failure to enforce any provision is not a waiver of that or any other provision.
+
+24.4 **Assignment.** You may not assign these Terms without our consent. Cruiseinride may assign them freely, including in connection with a merger, acquisition, or sale of assets.
+
+24.5 **Force majeure.** Cruiseinride is not liable for failures caused by events beyond its reasonable control, including natural disasters, wars, strikes, pandemics, utility or network failures, or acts of government.
+
+24.6 **Notices.** We may notify you via the App, email, or SMS. Legal notices to Cruiseinride must be sent to **legal@cruiseinride.com**.
+
+## 25. Contact
+
+- **Support:** support@cruiseinride.com
+- **Legal:** legal@cruiseinride.com
+- **Privacy:** privacy@cruiseinride.com
+- **Data protection:** dpo@cruiseinride.com
+- **In-app:** Settings > Support
 
 ---
 
-## Appendix A: Fare Calculation
-
-**Base Fare + (Distance × Per-Mile Rate) + (Duration × Per-Minute Rate) × Surge Multiplier**
-
-Example (Comfort):
-- Base: $2.00
-- Distance: 5 miles × $1.50/mi = $7.50
-- Duration: 10 min × $0.25/min = $2.50
-- Subtotal: $12.00
-- Surge (1.5x during peak): $18.00
-- Platform Fee (25%): $4.50
-- Tax (8%): $1.44
-- **Total to Rider: $23.94**
-- **Driver Earnings: $14.25 (75% - platform fee)**
-
----
-
-## Appendix B: Refund Policy
-
-| Scenario | Refund | Notes |
-|----------|--------|-------|
-| Canceled within 2 min | 100% | No charge applied |
-| Canceled after 2 min | None (cancellation fee) | $5-$10 cancellation fee applies |
-| Driver canceled | 100% | Full refund to Rider |
-| No-show (Rider) | 100% charge | Rider charged full fare |
-| Trip not started | Eligible | Review required |
-| Damaged vehicle | No refund | Rider charged damage fee |
-| Safety incident | Case-by-case | Support team reviews |
-
----
-
-**Last Updated: December 2024**
-
-These Terms become effective on the date listed above.
+*By using Cruiseinride, you acknowledge that you have read and understood these Terms of Service and agree to be bound by them.*

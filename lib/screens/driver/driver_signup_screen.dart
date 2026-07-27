@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 
 import '../../config/page_transitions.dart';
@@ -13,6 +14,7 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../face_liveness_screen.dart';
+import '../biometric_consent_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'license_scanner_screen.dart';
 
@@ -747,6 +749,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // ── Biometric liveness ─────────────────────────────────────────────────────
 
   Future<void> _runBiometricCheck() async {
+    // Biometric consent gate (BIPA-style informed consent): show the
+    // dedicated consent screen ONCE before any liveness capture.
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    if (prefs.getBool('biometric_consent_v1') != true) {
+      final consented = await Navigator.of(context).push<bool>(
+        slideFromRightRoute(const BiometricConsentScreen()),
+      );
+      if (consented != true || !mounted) return;
+    }
     final result = await Navigator.of(context).push<Map<String, String?>?>(
       slideFromRightRoute(const FaceLivenessScreen()),
     );

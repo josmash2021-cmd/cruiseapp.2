@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
-    ChatMessage, DispatchOffer,
+    ChatMessage, DispatchOffer, PasswordResetToken,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
@@ -36,7 +36,7 @@ from config import (
     _otp_attempt_tracker, _MAX_OTP_ATTEMPTS, _OTP_ATTEMPT_WINDOW,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, TWILIO_SERVICE_SID,
     EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY,
-    firestore_sync, _HAS_FIRESTORE,
+    firestore_sync, _HAS_FIRESTORE, _TUNNEL_URL_FILE,
 )
 from utils.ssn_encryption import (
     encrypt_ssn, decrypt_ssn, get_ssn_last4, get_ssn_masked,
@@ -272,7 +272,9 @@ async def check_exists(body: CheckExistsIn, request: Request, db: AsyncSession =
     if body.role in ("rider", "driver"):
         query = query.where(User.role == body.role)
     result = await db.execute(query)
-    return {"exists": result.scalar_one_or_none() is not None}
+    # scalars().first() — scalar_one_or_none() would crash on duplicate
+    # accounts sharing the same email/phone.
+    return {"exists": result.scalars().first() is not None}
 
 @router.post("/auth/login", dependencies=[Depends(_verify_api_key)])
 async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)):
@@ -2580,11 +2582,15 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(429, "Too many reset attempts. Please try again in 1 hour.")
     _record_password_reset(identifier)
 
-    # Find user
+    # Find user. Duplicate accounts can share an email/phone (e.g. rider +
+    # driver, or legacy dupes) — scalar_one_or_none() would crash with
+    # MultipleResultsFound, so pick the oldest match deterministically.
     result = await db.execute(
-        select(User).where((User.email == identifier) | (User.phone == identifier))
+        select(User)
+        .where((User.email == identifier) | (User.phone == identifier))
+        .order_by(User.id)
     )
-    user = result.scalar_one_or_none()
+    user = result.scalars().first()
     if not user or not user.email:
         # Always return success to prevent email enumeration attacks
         return {"status": "ok", "message": "If the account exists, a reset link has been sent."}

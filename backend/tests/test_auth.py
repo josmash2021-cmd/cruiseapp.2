@@ -114,3 +114,36 @@ async def test_complete_login(client: AsyncClient, test_rider):
     assert "access_token" in data
     assert "refresh_token" in data
     assert data["user"]["id"] == expected_user_id
+
+
+async def test_forgot_password_with_duplicate_emails(client: AsyncClient, db, test_rider):
+    """Regression: accounts sharing one email must not crash forgot-password
+    with MultipleResultsFound — it picks the oldest match deterministically."""
+    from tests.conftest import _make_auth_headers
+    from main import User
+    import bcrypt as _bcrypt
+    from datetime import datetime, timezone
+
+    # Driver account with the SAME email as test_rider (rider@test.com) —
+    # the (email, role) unique constraint allows one account per role, so a
+    # rider + a driver can share an email. forgot-password has no role
+    # filter, so it used to crash on this.
+    dup = User(
+        first_name="Dup",
+        last_name="Rider",
+        email="rider@test.com",
+        phone="+11234567899",
+        password_hash=_bcrypt.hashpw("OtherPass1!".encode(), _bcrypt.gensalt()).decode(),
+        role="driver",
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(dup)
+    await db.commit()
+
+    resp = await client.post(
+        "/auth/forgot-password",
+        json={"identifier": "rider@test.com"},
+        headers=_make_auth_headers(),
+    )
+    assert resp.status_code == 200

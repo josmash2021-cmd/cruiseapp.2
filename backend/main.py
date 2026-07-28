@@ -516,6 +516,9 @@ else:
         "https://www.cruiseinride.com",
         "https://cruiseinride.com",
         "https://cruiseapp2-production.up.railway.app",
+        # Dispatch admin panel served locally with `flutter run -d web-server`
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
     ]
     if _is_debug_cors:
         _CORS_ORIGINS.extend(["http://localhost:3000", "http://localhost:8000"])
@@ -525,7 +528,7 @@ app.add_middleware(
     allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature"],
+    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],
 )
 
 # -- LAYER 2: Security Headers -------------------------

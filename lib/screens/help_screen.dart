@@ -9,6 +9,7 @@ import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
+import '../widgets/neu_style.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
@@ -226,7 +227,7 @@ class _HelpScreenState extends State<HelpScreen> {
     final searchResults = _filteredTopics;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -241,14 +242,11 @@ class _HelpScreenState extends State<HelpScreen> {
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
+                    Icons.arrow_back_rounded,
                     color: c.textPrimary,
-                    size: 18,
+                    size: 22,
                   ),
                 ),
               ),
@@ -282,13 +280,11 @@ class _HelpScreenState extends State<HelpScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(16),
+                decoration: neuBox(radius: 16, pressed: true).copyWith(
                   border: Border.all(
                     color: _query.isNotEmpty
                         ? _gold.withValues(alpha: 0.4)
-                        : Colors.transparent,
+                        : Colors.white.withValues(alpha: 0.04),
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(
@@ -376,7 +372,13 @@ class _HelpScreenState extends State<HelpScreen> {
             child: _contactSupportCard(c),
           );
         }
-        return _topicTile(c, results[i]);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Container(
+            decoration: neuBox(radius: 20),
+            child: _topicTile(c, results[i]),
+          ),
+        );
       },
     );
   }
@@ -418,11 +420,7 @@ class _HelpScreenState extends State<HelpScreen> {
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _gold.withValues(alpha: 0.2)),
-            ),
+            decoration: neuBox(radius: 20, pressed: true),
             child: Text(
               faq,
               style: const TextStyle(
@@ -441,70 +439,69 @@ class _HelpScreenState extends State<HelpScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Icon(cat.icon, color: _gold, size: 18),
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 10),
+          child: Text(
+            cat.title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: c.textTertiary,
             ),
-            const SizedBox(width: 10),
-            Text(
-              cat.title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: c.textPrimary,
-              ),
-            ),
-          ],
+          ),
         ),
-        const SizedBox(height: 12),
-        ...cat.items.map((item) => _topicTile(c, item)),
+        Container(
+          decoration: neuBox(radius: 20),
+          child: Column(
+            children: [
+              for (var i = 0; i < cat.items.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    indent: 68,
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
+                _topicTile(c, cat.items[i]),
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
 
   Widget _topicTile(AppColors c, _HelpTopic topic) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => _openTopicDetail(topic),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(14),
+    return GestureDetector(
+      onTap: () => _openTopicDetail(topic),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: Icon(topic.icon, color: _gold, size: 22),
             ),
-            child: Row(
-              children: [
-                Icon(topic.icon, color: c.textSecondary, size: 22),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    topic.title,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: c.textPrimary,
-                    ),
-                  ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                topic.title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: c.textTertiary,
-                  size: 20,
-                ),
-              ],
+              ),
             ),
-          ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: c.textTertiary,
+              size: 20,
+            ),
+          ],
         ),
       ),
     );
@@ -519,27 +516,13 @@ class _HelpScreenState extends State<HelpScreen> {
   Widget _contactSupportCard(AppColors c) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            _gold.withValues(alpha: 0.08),
-            _gold.withValues(alpha: 0.03),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _gold.withValues(alpha: 0.15)),
-      ),
+      decoration: neuBox(radius: 20),
       child: Column(
         children: [
           Container(
             width: 52,
             height: 52,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(16),
-            ),
+            decoration: neuBox(radius: 16, pressed: true),
             child: const Icon(
               Icons.headset_mic_rounded,
               color: _gold,
@@ -566,7 +549,6 @@ class _HelpScreenState extends State<HelpScreen> {
             children: [
               Expanded(
                 child: _contactBtn(
-                  c,
                   icon: Icons.email_outlined,
                   label: S.of(context).emailSupport,
                   onTap: () => _launchEmail(context),
@@ -575,7 +557,6 @@ class _HelpScreenState extends State<HelpScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: _contactBtn(
-                  c,
                   icon: Icons.chat_bubble_outline_rounded,
                   label: S.of(context).liveChat,
                   onTap: () => _openLiveChat(context, c),
@@ -588,8 +569,7 @@ class _HelpScreenState extends State<HelpScreen> {
     );
   }
 
-  Widget _contactBtn(
-    AppColors c, {
+  Widget _contactBtn({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -601,10 +581,7 @@ class _HelpScreenState extends State<HelpScreen> {
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(14),
-          ),
+          decoration: neuBox(radius: 14, pressed: true),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -612,10 +589,10 @@ class _HelpScreenState extends State<HelpScreen> {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
+                  color: _gold,
                 ),
               ),
             ],
@@ -628,13 +605,13 @@ class _HelpScreenState extends State<HelpScreen> {
   Widget _contactSupportButton(AppColors c) {
     return SizedBox(
       width: 200,
-      height: 48,
+      height: 54,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: _gold,
           foregroundColor: const Color(0xFF1A1400),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(18),
           ),
           elevation: 0,
         ),
@@ -680,7 +657,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           children: [
@@ -693,14 +670,11 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                     child: Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Icon(
-                        Icons.arrow_back_ios_new_rounded,
+                        Icons.arrow_back_rounded,
                         color: c.textPrimary,
-                        size: 18,
+                        size: 22,
                       ),
                     ),
                   ),
@@ -728,10 +702,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                     Container(
                       width: 56,
                       height: 56,
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      decoration: neuBox(radius: 16, pressed: true),
                       child: Icon(widget.topic.icon, color: _gold, size: 28),
                     ),
                     const SizedBox(height: 16),
@@ -759,10 +730,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      decoration: neuBox(radius: 16),
                       child: Column(
                         children: [
                           Text(
@@ -823,7 +791,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
-                      height: 52,
+                      height: 54,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _gold,
@@ -879,11 +847,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          decoration: BoxDecoration(
-            color: c.bg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: c.textTertiary.withValues(alpha: 0.2)),
-          ),
+          decoration: neuBox(radius: 12, pressed: true),
           child: Row(
             children: [
               Icon(icon, color: c.textSecondary, size: 20),
@@ -1487,7 +1451,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2A2A),
+        backgroundColor: neuSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           S.of(context).endChat,
@@ -1548,7 +1512,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0F),
+      backgroundColor: neuBase,
       resizeToAvoidBottomInset: true,
       appBar: _buildAppBar(),
       body: Column(
@@ -1589,7 +1553,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     return AppBar(
-      backgroundColor: const Color(0xFF0D0D0F),
+      backgroundColor: neuBase,
       elevation: 0,
       leading: IconButton(
         tooltip: S.of(context).back,
@@ -1811,11 +1775,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF13141A),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.12)),
-      ),
+      decoration: neuBox(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1904,13 +1864,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             onTap: () => _sendMessage(action['message']),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16171B),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.2),
-                ),
-              ),
+              decoration: neuBox(radius: 22, pressed: true),
               child: Text(
                 action['label']!,
                 style: const TextStyle(
@@ -2010,7 +1964,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                     ? null
                     : isDispatch
                         ? const Color(0xFF1E1A2E)
-                        : const Color(0xFF1C1D22),
+                        : neuSurface,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
@@ -2093,7 +2047,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           bottom: MediaQuery.of(context).padding.bottom + 14,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D0D0F),
+          color: neuBase,
           border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
         ),
         child: Column(
@@ -2139,7 +2093,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         bottom: MediaQuery.of(context).padding.bottom + 10,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D0D0F),
+        color: neuBase,
         border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
       ),
       child: Row(
@@ -2158,7 +2112,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 hintText: S.of(context).describeYourProblem,
                 hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.28)),
                 filled: true,
-                fillColor: const Color(0xFF16171B),
+                fillColor: neuPressed,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -2190,7 +2144,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                color: (_sending || _msgCtrl.text.trim().isEmpty) ? const Color(0xFF2A2A2E) : null,
+                color: (_sending || _msgCtrl.text.trim().isEmpty) ? neuSurface : null,
                 shape: BoxShape.circle,
                 boxShadow: (_sending || _msgCtrl.text.trim().isEmpty)
                     ? []

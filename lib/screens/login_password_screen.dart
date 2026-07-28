@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../widgets/dismiss_keyboard.dart';
+import '../widgets/neu_style.dart';
 import '../services/sms_service.dart';
 import '../services/analytics_service.dart';
 import '../services/google_auth_service.dart';
@@ -28,7 +29,6 @@ class LoginPasswordScreen extends StatefulWidget {
 
 class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
 
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -276,9 +276,9 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          decoration: const BoxDecoration(
+            color: neuBase,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           child: Column(
@@ -527,7 +527,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: neuBase,
       body: DismissKeyboard(
         child: SafeArea(
           child: SingleChildScrollView(
@@ -543,14 +543,11 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
+                    Icons.arrow_back_rounded,
                     color: c.textPrimary,
-                    size: 18,
+                    size: 22,
                   ),
                 ),
               ),
@@ -562,6 +559,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 style: GoogleFonts.poppins(
                   fontSize: 32,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
                   color: c.textPrimary,
                   height: 1.15,
                 ),
@@ -578,87 +576,37 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                 child: Column(
                   children: [
                     // ── Email/phone field ──
-                    Container(
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: c.border),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: TextField(
-                        controller: _emailCtrl,
-                        focusNode: _emailFocus,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [
-                          AutofillHints.email,
-                          AutofillHints.username,
-                        ],
-                        style: TextStyle(color: c.textPrimary, fontSize: 16),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          hintText: S.of(context).emailOrPhone,
-                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-                          prefixIcon: Icon(
-                            Icons.person_outline_rounded,
-                            color: c.textTertiary,
-                            size: 20,
-                          ),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 0,
-                          ),
-                        ),
-                      ),
+                    _buildField(
+                      c,
+                      controller: _emailCtrl,
+                      focusNode: _emailFocus,
+                      hint: S.of(context).emailOrPhone,
+                      icon: Icons.person_outline_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [
+                        AutofillHints.email,
+                        AutofillHints.username,
+                      ],
                     ),
                     const SizedBox(height: 16),
 
                     // ── Password field ──
-                    Container(
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: c.border),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: TextField(
-                        controller: _passCtrl,
-                        focusNode: _passFocus,
-                        obscureText: _obscure,
-                        autofillHints: const [AutofillHints.password],
-                        style: TextStyle(color: c.textPrimary, fontSize: 16),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          hintText: S.of(context).password,
-                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-                          prefixIcon: Icon(
-                            Icons.lock_outline_rounded,
-                            color: c.textTertiary,
-                            size: 20,
-                          ),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 0,
-                          ),
-                          suffixIcon: GestureDetector(
-                            onTap: () => setState(() => _obscure = !_obscure),
-                            child: Icon(
-                              _obscure
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: c.textTertiary,
-                              size: 20,
-                            ),
-                          ),
-                          suffixIconConstraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 0,
-                          ),
+                    _buildField(
+                      c,
+                      controller: _passCtrl,
+                      focusNode: _passFocus,
+                      hint: S.of(context).password,
+                      icon: Icons.lock_outline_rounded,
+                      obscure: _obscure,
+                      autofillHints: const [AutofillHints.password],
+                      suffix: GestureDetector(
+                        onTap: () => setState(() => _obscure = !_obscure),
+                        child: Icon(
+                          _obscure
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: c.textTertiary,
+                          size: 20,
                         ),
                       ),
                     ),
@@ -674,17 +622,17 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                         padding: const EdgeInsets.only(top: 12, left: 4),
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.error_outline_rounded,
-                              color: Colors.white.withValues(alpha: 0.6),
+                              color: Color(0xFFFF5252),
                               size: 16,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
                                 _errorText!,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
+                                style: const TextStyle(
+                                  color: Color(0xFFFF5252),
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -717,47 +665,36 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               const SizedBox(height: 28),
 
               // ── Sign in button ──
-              SizedBox(
-                width: double.infinity,
-                height: 56,
+              GestureDetector(
+                onTap: _canLogin && !_loading ? _login : null,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
-                  decoration: BoxDecoration(
-                    gradient: _canLogin
-                        ? const LinearGradient(colors: [_gold, _goldLight])
-                        : null,
-                    color: _canLogin ? null : c.surface,
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      foregroundColor: _canLogin
-                          ? const Color(0xFF1A1400)
-                          : c.textTertiary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                    ),
-                    onPressed: _canLogin ? _login : null,
-                    child: _loading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF1A1400),
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : Text(
-                            S.of(context).signIn,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
+                  width: double.infinity,
+                  height: 56,
+                  decoration: _canLogin
+                      ? BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(16),
+                        )
+                      : neuBox(radius: 16, pressed: true),
+                  alignment: Alignment.center,
+                  child: _loading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                            strokeWidth: 2.5,
                           ),
-                  ),
+                        )
+                      : Text(
+                          S.of(context).signIn,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: _canLogin ? Colors.black : c.textTertiary,
+                          ),
+                        ),
                 ),
               ),
 
@@ -766,7 +703,7 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               // ── Social Sign-In ──
               Row(
                 children: [
-                  Expanded(child: Divider(color: c.border, thickness: 1)),
+                  Expanded(child: Divider(color: c.divider, thickness: 1)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
@@ -778,30 +715,32 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                       ),
                     ),
                   ),
-                  Expanded(child: Divider(color: c.border, thickness: 1)),
+                  Expanded(child: Divider(color: c.divider, thickness: 1)),
                 ],
               ),
               const SizedBox(height: 16),
 
               // ── Google Sign-In ──
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: c.textPrimary,
-                    side: BorderSide(color: c.border, width: 1.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                  onPressed: _socialLoading ? null : _signInWithGoogle,
-                  icon: _socialLoading
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+              GestureDetector(
+                onTap: _socialLoading ? null : _signInWithGoogle,
+                child: Container(
+                  width: double.infinity,
+                  height: 54,
+                  decoration: neuBox(radius: 16, pressed: true),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_socialLoading)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: _gold,
+                            strokeWidth: 2,
+                          ),
                         )
-                      : SizedBox(
+                      else
+                        SizedBox(
                           width: 22,
                           height: 22,
                           child: Image.asset(
@@ -809,9 +748,16 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
                             fit: BoxFit.contain,
                           ),
                         ),
-                  label: Text(
-                    S.of(context).signInWithGoogle,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      const SizedBox(width: 10),
+                      Text(
+                        S.of(context).signInWithGoogle,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -819,22 +765,26 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
               // ── Apple Sign-In (iOS only) ──
               if (AppPlatform.isIOS) ...[
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: c.textPrimary,
-                      side: BorderSide(color: c.border, width: 1.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                    ),
-                    onPressed: _socialLoading ? null : _signInWithApple,
-                    icon: const Icon(Icons.apple, size: 24),
-                    label: Text(
-                      S.of(context).signInWithApple,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                GestureDetector(
+                  onTap: _socialLoading ? null : _signInWithApple,
+                  child: Container(
+                    width: double.infinity,
+                    height: 54,
+                    decoration: neuBox(radius: 16, pressed: true),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.apple, color: _gold, size: 24),
+                        const SizedBox(width: 10),
+                        Text(
+                          S.of(context).signInWithApple,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -847,6 +797,47 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  /// Neumorphic pressed-well text field (mirrors `driver_login_screen.dart`).
+  Widget _buildField(
+    AppColors c, {
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    FocusNode? focusNode,
+    bool obscure = false,
+    Widget? suffix,
+    TextInputType keyboardType = TextInputType.text,
+    Iterable<String>? autofillHints,
+  }) {
+    return Container(
+      decoration: neuBox(radius: 16, pressed: true),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: c.textTertiary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              obscureText: obscure,
+              keyboardType: keyboardType,
+              autofillHints: autofillHints,
+              style: TextStyle(color: c.textPrimary, fontSize: 16),
+              cursorColor: _gold,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+              ),
+            ),
+          ),
+          if (suffix != null) suffix,
+        ],
       ),
     );
   }
@@ -878,22 +869,16 @@ class _MethodTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colors.border),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: neuBox(radius: 18),
           child: Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                width: 40,
+                height: 40,
+                decoration: neuBox(radius: 14, pressed: true),
                 child: Icon(icon, color: gold, size: 22),
               ),
               const SizedBox(width: 14),
@@ -905,7 +890,7 @@ class _MethodTile extends StatelessWidget {
                       title,
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         color: colors.textPrimary,
                       ),
                     ),
@@ -913,8 +898,8 @@ class _MethodTile extends StatelessWidget {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 14,
-                        color: colors.textSecondary,
+                        fontSize: 12,
+                        color: colors.textTertiary,
                       ),
                     ),
                   ],

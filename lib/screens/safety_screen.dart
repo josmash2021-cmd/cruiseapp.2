@@ -7,6 +7,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
+import '../widgets/neu_style.dart';
 
 class SafetyScreen extends StatefulWidget {
   const SafetyScreen({super.key});
@@ -41,7 +42,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -56,19 +57,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: c.isDark
-                        ? null
-                        : Border.all(
-                            color: Colors.black.withValues(alpha: 0.06),
-                          ),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
+                    Icons.arrow_back_rounded,
                     color: c.textPrimary,
-                    size: 18,
+                    size: 22,
                   ),
                 ),
               ),
@@ -95,69 +88,67 @@ class _SafetyScreenState extends State<SafetyScreen> {
               const SizedBox(height: 24),
 
               // ── Safety features ──
-              Text(
-                S.of(context).safetyFeatures,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
+              _sectionHeader(c, S.of(context).safetyFeatures),
+
+              Container(
+                decoration: neuBox(radius: 20),
+                child: Column(
+                  children: [
+                    _featureRow(
+                      c,
+                      icon: Icons.share_location_rounded,
+                      title: S.of(context).shareMyTrip,
+                      subtitle: S.of(context).shareMyTripDesc,
+                      onTap: () => _shareTrip(context),
+                    ),
+                    _rowDivider(),
+                    _featureRow(
+                      c,
+                      icon: Icons.verified_user_outlined,
+                      title: S.of(context).verifyYourRide,
+                      subtitle: S.of(context).verifyYourRideDesc,
+                      onTap: () => _showVerifyTip(context, c),
+                    ),
+                    _rowDivider(),
+                    _featureRow(
+                      c,
+                      icon: Icons.pin_drop_outlined,
+                      title: S.of(context).trustedContacts,
+                      subtitle: S.of(context).trustedContactsDesc,
+                      onTap: () => _showTrustedContacts(context, c),
+                    ),
+                    _rowDivider(),
+                    _featureRow(
+                      c,
+                      icon: Icons.phone_in_talk_rounded,
+                      title: S.of(context).rideCheck,
+                      subtitle: S.of(context).rideCheckDesc,
+                      onTap: () => _showRideCheck(context, c),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-
-              _featureCard(
-                c,
-                icon: Icons.share_location_rounded,
-                title: S.of(context).shareMyTrip,
-                subtitle: S.of(context).shareMyTripDesc,
-                onTap: () => _shareTrip(context),
-              ),
-              const SizedBox(height: 10),
-              _featureCard(
-                c,
-                icon: Icons.verified_user_outlined,
-                title: S.of(context).verifyYourRide,
-                subtitle: S.of(context).verifyYourRideDesc,
-                onTap: () => _showVerifyTip(context, c),
-              ),
-              const SizedBox(height: 10),
-              _featureCard(
-                c,
-                icon: Icons.pin_drop_outlined,
-                title: S.of(context).trustedContacts,
-                subtitle: S.of(context).trustedContactsDesc,
-                onTap: () => _showTrustedContacts(context, c),
-              ),
-              const SizedBox(height: 10),
-              _featureCard(
-                c,
-                icon: Icons.phone_in_talk_rounded,
-                title: S.of(context).rideCheck,
-                subtitle: S.of(context).rideCheckDesc,
-                onTap: () => _showRideCheck(context, c),
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
               _policyInfoCard(c),
 
               const SizedBox(height: 28),
 
               // ── Safety tips ──
-              Text(
-                S.of(context).safetyTips,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
+              _sectionHeader(c, S.of(context).safetyTips),
+              Container(
+                decoration: neuBox(radius: 20),
+                child: Column(
+                  children: [
+                    _tipItem(c, '1', S.of(context).safetyTip1),
+                    _rowDivider(indent: 60),
+                    _tipItem(c, '2', S.of(context).safetyTip2),
+                    _rowDivider(indent: 60),
+                    _tipItem(c, '3', S.of(context).safetyTip3),
+                    _rowDivider(indent: 60),
+                    _tipItem(c, '4', S.of(context).safetyTip4),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              _tipItem(c, '1', S.of(context).safetyTip1),
-              const SizedBox(height: 8),
-              _tipItem(c, '2', S.of(context).safetyTip2),
-              const SizedBox(height: 8),
-              _tipItem(c, '3', S.of(context).safetyTip3),
-              const SizedBox(height: 8),
-              _tipItem(c, '4', S.of(context).safetyTip4),
 
               const SizedBox(height: 32),
             ],
@@ -167,15 +158,34 @@ class _SafetyScreenState extends State<SafetyScreen> {
     );
   }
 
+  Widget _sectionHeader(AppColors c, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 10),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+          color: c.textTertiary,
+        ),
+      ),
+    );
+  }
+
+  Widget _rowDivider({double indent = 68}) {
+    return Divider(
+      height: 1,
+      indent: indent,
+      color: Colors.white.withValues(alpha: 0.05),
+    );
+  }
+
   Widget _emergencyCard(AppColors c, BuildContext context) {
+    const red = Color(0xFFFF5252);
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFDC2626), Color(0xFFB91C1C)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: neuBox(radius: 20),
       child: Column(
         children: [
           Row(
@@ -183,13 +193,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
               Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                decoration: neuBox(radius: 14, pressed: true),
                 child: const Icon(
                   Icons.emergency_rounded,
-                  color: Colors.white,
+                  color: red,
                   size: 26,
                 ),
               ),
@@ -203,7 +210,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: c.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -211,7 +218,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                       S.of(context).call911Assistance,
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: c.textSecondary,
                       ),
                     ),
                   ],
@@ -229,13 +236,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   child: Container(
                     width: 44,
                     height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    decoration: neuBox(radius: 14, pressed: true),
                     child: const Icon(
                       Icons.call_rounded,
-                      color: Color(0xFFDC2626),
+                      color: red,
                       size: 22,
                     ),
                   ),
@@ -245,33 +249,38 @@ class _SafetyScreenState extends State<SafetyScreen> {
           ),
           if (_trustedContacts.isNotEmpty) ...[
             const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              height: 42,
-              child: ElevatedButton.icon(
-                onPressed: _isSendingSos ? null : _alertAllContacts,
-                icon: _isSendingSos
-                    ? const SizedBox(
+            GestureDetector(
+              onTap: _isSendingSos ? null : _alertAllContacts,
+              child: Container(
+                width: double.infinity,
+                height: 50,
+                decoration: neuBox(radius: 16, pressed: true),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_isSendingSos)
+                      const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFFDC2626),
+                          color: red,
                         ),
                       )
-                    : const Icon(Icons.sms_rounded, size: 18),
-                label: Text(
-                  _isSendingSos
-                      ? 'Sending...'
-                      : 'Alert ${_trustedContacts.length} contact${_trustedContacts.length > 1 ? 's' : ''}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFFDC2626),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                    else
+                      const Icon(Icons.sms_rounded, size: 18, color: red),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isSendingSos
+                          ? 'Sending...'
+                          : 'Alert ${_trustedContacts.length} contact${_trustedContacts.length > 1 ? 's' : ''}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: red,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -281,7 +290,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
     );
   }
 
-  Widget _featureCard(
+  Widget _featureRow(
     AppColors c, {
     required IconData icon,
     required String title,
@@ -290,24 +299,15 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: c.isDark
-              ? null
-              : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-        ),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
             Container(
               width: 40,
               height: 40,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: neuBox(radius: 14, pressed: true),
               child: Icon(icon, color: _gold, size: 22),
             ),
             const SizedBox(width: 14),
@@ -318,15 +318,15 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: c.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 13, color: c.textSecondary),
+                    style: TextStyle(fontSize: 12, color: c.textTertiary),
                   ),
                 ],
               ),
@@ -341,23 +341,14 @@ class _SafetyScreenState extends State<SafetyScreen> {
   Widget _policyInfoCard(AppColors c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: c.isDark
-            ? null
-            : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
+      decoration: neuBox(radius: 18),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            decoration: neuBox(radius: 14, pressed: true),
             child: const Icon(
               Icons.escalator_warning_rounded,
               color: _gold,
@@ -381,24 +372,14 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   Widget _tipItem(AppColors c, String number, String text) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: c.isDark
-            ? null
-            : Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
       child: Row(
         children: [
           Container(
             width: 30,
             height: 30,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
+            decoration: neuBox(radius: 10, pressed: true),
             child: Center(
               child: Text(
                 number,
@@ -509,9 +490,9 @@ class _SafetyScreenState extends State<SafetyScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -528,10 +509,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
             Container(
               width: 56,
               height: 56,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(16),
-              ),
+              decoration: neuBox(radius: 16, pressed: true),
               child: const Icon(
                 Icons.verified_user_rounded,
                 color: _gold,
@@ -564,14 +542,14 @@ class _SafetyScreenState extends State<SafetyScreen> {
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 54,
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _gold,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 child: const Text(
@@ -599,9 +577,9 @@ class _SafetyScreenState extends State<SafetyScreen> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(ctx).size.height * 0.7,
           ),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          decoration: const BoxDecoration(
+            color: neuBase,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -633,7 +611,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                       showDialog(
                         context: ctx,
                         builder: (dCtx) => AlertDialog(
-                          backgroundColor: c.surface,
+                          backgroundColor: neuSurface,
                           title: Text(
                             'Add contact',
                             style: TextStyle(color: c.textPrimary),
@@ -696,10 +674,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                         horizontal: 12,
                         vertical: 6,
                       ),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      decoration: neuBox(radius: 12, pressed: true),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -752,19 +727,13 @@ class _SafetyScreenState extends State<SafetyScreen> {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Container(
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: c.bg,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Row(
                         children: [
                           Container(
                             width: 40,
                             height: 40,
-                            decoration: BoxDecoration(
-                              color: _gold.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
+                            decoration: neuBox(radius: 20),
                             child: Center(
                               child: Text(
                                 name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -807,9 +776,9 @@ class _SafetyScreenState extends State<SafetyScreen> {
                               setSheetState(() {});
                               _saveContacts();
                             },
-                            child: Icon(
+                            child: const Icon(
                               Icons.remove_circle_outline,
-                              color: Colors.redAccent.withValues(alpha: 0.6),
+                              color: Color(0xFFFF5252),
                               size: 22,
                             ),
                           ),
@@ -829,9 +798,9 @@ class _SafetyScreenState extends State<SafetyScreen> {
   void _showRideCheck(BuildContext context, AppColors c) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: c.surface,
+      backgroundColor: neuBase,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (_) => Padding(
         padding: const EdgeInsets.all(24),
@@ -866,13 +835,13 @@ class _SafetyScreenState extends State<SafetyScreen> {
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 54,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _gold,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 onPressed: () {

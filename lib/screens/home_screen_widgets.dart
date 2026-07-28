@@ -178,6 +178,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
             const SizedBox(height: 36),
 
+            // ── Your live location (live mini map) ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _buildSectionHeader(S.of(context).yourLiveLocation, null, null),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: RepaintBoundary(child: _buildHomeMiniMapCard()),
+            ),
+
+            const SizedBox(height: 36),
+
             // ── Fleet header + cards ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -203,17 +216,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
 
               const SizedBox(height: 36),
-
-              // ── Your location (live mini map) ──
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildSectionHeader(S.of(context).yourLocation, null, null),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: RepaintBoundary(child: _buildHomeMiniMapCard()),
-              ),
 
               // ── Recent trips ──
               if (_recentTrips.isNotEmpty) ...[

@@ -425,14 +425,16 @@ class NotificationService {
 
   static void playOnlineSound() {
     if (_onlineSoundPlaying) return; // prevent double-play
+    // audioplayers on web has no low-latency path — the first play() janks
+    // the page for the whole clip length. Skip the cue on web entirely so
+    // Go Online stays fluid in the browser preview.
+    if (kIsWeb) return;
     _onlineSoundPlaying = true;
-    // Defer one frame so the caller's navigation transition (fade+scale
-    // PageRouteBuilder) starts BEFORE we cross the MethodChannel into
-    // the platform-side audio engine. Three separate audio calls all
-    // chained on the platform thread used to add up to ~1s of jank
-    // exactly when the new screen was supposed to be fading in — that
-    // was the visible freeze the driver felt the instant they tapped
-    // Go Online.
+    // Fire-and-forget on the next frame: the cue plays almost immediately
+    // after the tap, but the MethodChannel round-trip into the platform
+    // audio engine NEVER blocks the UI — the page keeps animating while
+    // the sound plays out. The asset is pre-warmed in init() (setSource +
+    // volume-0 resume/pause), so there is no first-play load stall either.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
@@ -440,9 +442,8 @@ class NotificationService {
           _onlineSoundPlaying = false;
           return;
         }
-        // Source is already pre-loaded in init(). Fire-and-forget —
-        // NEVER await the play() call because audioplayers' MethodChannel
-        // round-trip blocks the UI thread for 100-300ms on iOS.
+        // NEVER await play() — audioplayers' MethodChannel round-trip
+        // blocks the UI thread for 100-300ms on iOS.
         unawaited(_onlinePlayer.play(AssetSource('sounds/cruise_online.wav')));
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');

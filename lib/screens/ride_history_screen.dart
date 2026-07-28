@@ -5,6 +5,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
 import '../services/api_service.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/tier_badge.dart';
 import 'trip_receipt_screen.dart';
 
@@ -102,7 +103,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,14 +117,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
-                    size: 18,
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 22,
                   ),
                 ),
               ),
@@ -135,10 +133,10 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 S.of(context).yourTrips,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: c.textPrimary,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -182,10 +180,15 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.directions_car_rounded,
-            size: 64,
-            color: c.textTertiary.withValues(alpha: 0.3),
+          Container(
+            width: 96,
+            height: 96,
+            decoration: neuBox(radius: 24, pressed: true),
+            child: Icon(
+              Icons.directions_car_rounded,
+              size: 44,
+              color: _gold.withValues(alpha: 0.6),
+            ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -227,6 +230,14 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final date =
         '${months[d.month - 1]} ${d.day}, ${d.year} · $hour:${d.minute.toString().padLeft(2, '0')} $ampm';
 
+    final tier = TierInfo.from(trip.rideName);
+    final tierIcon = tier.isVIP
+        ? Icons.diamond_rounded
+        : tier.isPremium
+            ? Icons.star_rounded
+            : Icons.directions_car_rounded;
+    final tierColor = tier.isComfort ? const Color(0xFFC7C7D1) : _gold;
+
     return GestureDetector(
       onTap: () {
         Navigator.of(
@@ -235,155 +246,170 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       },
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1F),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.06),
-          ),
-        ),
+        decoration: neuBox(radius: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Date & Price ──
-            // Price split into "$" + amount + cents so the dollars
-            // dominate visually and the cents read as a superscript-ish
-            // suffix. White-on-black, no chip, no gold box.
+            // ── Header: tier icon + ride title + date · price ──
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    date,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF9A9AA0),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                _PriceText(raw: trip.price),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // ── Pickup ──
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.only(top: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
+                  width: 44,
+                  height: 44,
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(tierIcon, color: tierColor, size: 21),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    trip.pickup,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: const _ShimmerConnector(),
-            ),
-
-            // ── Dropoff ──
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  // White SQUARE for the dropoff (was a gold circle).
-                  // Pickup keeps its gold dot above; the change makes
-                  // the two endpoints visually distinct at a glance.
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.only(top: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.30),
-                        blurRadius: 4,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        TierInfo.displayTitle(trip.rideName),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: c.textPrimary,
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        date,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textTertiary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    trip.dropoff,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                const SizedBox(width: 10),
+                _PriceText(raw: trip.price),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // ── Ride type + details ──
+            const SizedBox(height: 14),
             Container(
               height: 1,
-              color: Colors.white.withValues(alpha: 0.06),
+              color: Colors.white.withValues(alpha: 0.05),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
+
+            // ── Route timeline: dot — connector — square rail ──
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Column(
+                    children: [
+                      const SizedBox(height: 5),
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.45),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Expanded(child: _RouteConnector()),
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.30),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          trip.pickup,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          trip.dropoff,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Footer: distance + duration chips · tap hint ──
             Row(
               children: [
-                TierBadge(rideName: trip.rideName),
+                _metricChip(c, Icons.straighten_rounded, trip.miles),
+                const SizedBox(width: 8),
+                _metricChip(c, Icons.schedule_rounded, trip.duration),
                 const Spacer(),
-                // Distance · duration with subtle icons. Brighter than
-                // before so it reads even on data with zero values.
                 Icon(
-                  Icons.straighten_rounded,
+                  Icons.arrow_forward_ios_rounded,
                   size: 13,
-                  color: Colors.white.withValues(alpha: 0.55),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  trip.miles,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFFCFCFD4),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Icon(
-                  Icons.schedule_rounded,
-                  size: 13,
-                  color: Colors.white.withValues(alpha: 0.55),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  trip.duration,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFFCFCFD4),
-                    fontWeight: FontWeight.w600,
-                  ),
+                  color: c.textTertiary,
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _metricChip(AppColors c, IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: neuBox(radius: 10, pressed: true),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: _gold),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: c.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -399,14 +425,15 @@ class _PriceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final match = _fareRe.firstMatch(raw.trim());
     if (match == null) {
       return Text(
         raw,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: c.textPrimary,
         ),
       );
     }
@@ -416,24 +443,24 @@ class _PriceText extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 3),
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
           child: Text(
             '\$',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: Color(0xFFCFCFD4),
+              color: c.textSecondary,
             ),
           ),
         ),
         const SizedBox(width: 1),
         Text(
           whole,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: c.textPrimary,
             letterSpacing: -0.5,
             height: 1.0,
           ),
@@ -442,10 +469,10 @@ class _PriceText extends StatelessWidget {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             '.$cents',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: Color(0xFFCFCFD4),
+              color: c.textSecondary,
             ),
           ),
         ),
@@ -454,18 +481,17 @@ class _PriceText extends StatelessWidget {
   }
 }
 
-/// Vertical shimmer connector between pickup and dropoff dots.
-/// 1.5 px wide, 18 px tall, gold gradient with a brighter highlight
-/// that travels top -> bottom on a 1.6 s loop. Subtle on idle, draws
-/// the eye to follow the pickup -> dropoff line.
-class _ShimmerConnector extends StatefulWidget {
-  const _ShimmerConnector();
+/// Animated route connector — dashed gold line with a glowing pulse
+/// traveling pickup -> dropoff on a 2 s loop. Painted so it stretches
+/// to exactly fill the gap between the endpoint shapes.
+class _RouteConnector extends StatefulWidget {
+  const _RouteConnector();
 
   @override
-  State<_ShimmerConnector> createState() => _ShimmerConnectorState();
+  State<_RouteConnector> createState() => _RouteConnectorState();
 }
 
-class _ShimmerConnectorState extends State<_ShimmerConnector>
+class _RouteConnectorState extends State<_RouteConnector>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
 
@@ -474,7 +500,7 @@ class _ShimmerConnectorState extends State<_ShimmerConnector>
     super.initState();
     _ctl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
   }
 
@@ -487,34 +513,56 @@ class _ShimmerConnectorState extends State<_ShimmerConnector>
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 1.5,
-      height: 18,
+      width: 12,
       child: AnimatedBuilder(
         animation: _ctl,
-        builder: (_, __) {
-          final t = _ctl.value;
-          // Highlight travels top -> bottom: stops shift each frame so
-          // the bright band slides through the gradient.
-          final start = (t - 0.15).clamp(0.0, 1.0);
-          final mid = t.clamp(0.0, 1.0);
-          final end = (t + 0.15).clamp(0.0, 1.0);
-          return Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: const [
-                  Color(0x55E8C547), // faint gold
-                  Color(0xFFFFFFFF), // white highlight band
-                  Color(0x55E8C547), // faint gold
-                ],
-                stops: [start, mid, end],
-              ),
-              borderRadius: BorderRadius.circular(1),
-            ),
-          );
-        },
+        builder: (_, __) => CustomPaint(
+          painter: _RouteConnectorPainter(t: _ctl.value),
+        ),
       ),
     );
   }
+}
+
+class _RouteConnectorPainter extends CustomPainter {
+  final double t;
+
+  _RouteConnectorPainter({required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = size.width / 2;
+    const inset = 1.0;
+
+    final dashPaint = Paint()
+      ..color = const Color(0x59E8C547)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const dashH = 3.5;
+    const gap = 3.5;
+    double y = inset;
+    while (y < size.height - inset) {
+      final end = (y + dashH).clamp(y, size.height - inset);
+      canvas.drawLine(Offset(x, y), Offset(x, end), dashPaint);
+      y += dashH + gap;
+    }
+
+    final eased = Curves.easeInOut.transform(t);
+    final cy = inset + (size.height - inset * 2) * eased;
+    final edgeFade =
+        (1.0 - ((t - 0.5).abs() * 2 - 0.7) / 0.3).clamp(0.0, 1.0);
+    final glowPaint = Paint()
+      ..color = const Color(0xFFE8C547).withValues(alpha: 0.9 * edgeFade)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(Offset(x, cy), 3.2, glowPaint);
+    canvas.drawCircle(
+      Offset(x, cy),
+      1.8,
+      Paint()..color = Colors.white.withValues(alpha: edgeFade),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RouteConnectorPainter oldDelegate) =>
+      oldDelegate.t != t;
 }

@@ -14,10 +14,21 @@ class CreatePasswordScreen extends StatefulWidget {
   final String email; // email or phone used to register
   final bool registeredWithEmail; // true if user used email to sign up
 
+  /// Rider data collected on the create-account page — forwarded to
+  /// NameScreen / EmailCollectScreen so nothing is re-asked.
+  final String? firstName;
+  final String? lastName;
+  final String? contactEmail;
+  final String? contactPhone;
+
   const CreatePasswordScreen({
     super.key,
     required this.email,
     this.registeredWithEmail = true,
+    this.firstName,
+    this.lastName,
+    this.contactEmail,
+    this.contactPhone,
   });
 
   @override
@@ -117,8 +128,11 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
         NameScreen(
           registeredWith: widget.email,
           registeredWithEmail: widget.registeredWithEmail,
-          firstName: pendingSocial?['firstName'],
-          lastName: pendingSocial?['lastName'],
+          // Page-1 signup data wins; fall back to social-auth names.
+          firstName: widget.firstName ?? pendingSocial?['firstName'],
+          lastName: widget.lastName ?? pendingSocial?['lastName'],
+          contactEmail: widget.contactEmail,
+          contactPhone: widget.contactPhone,
         ),
       ),
     );

@@ -423,10 +423,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   int _searchElapsedSec = 0;
   Timer? _searchElapsedTimer;
 
-  // ── Search camera cycling (synced with status text) ──
+  // ── Search camera (fixed full-route frame — no rotation) ──
   AnimationController? _searchCamCtrl;
-  Animation<double>? _searchPitchAnim;
-  Animation<double>? _searchBearingAnim;
 
   // ── Bottom sheet ──
   //

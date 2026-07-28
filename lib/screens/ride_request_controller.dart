@@ -2670,57 +2670,106 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
 
   /// Shows a confirmation dialog before canceling the ride search.
   void _confirmCancelSearching() {
-    final c = AppColors.of(context);
+    const gold = Color(0xFFE8C547);
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          S.of(context).cancelRideQuestion,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Text(
-          S.of(context).cancelRideMsg,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              S.of(context).keepWaiting,
-              style: TextStyle(color: c.gold, fontWeight: FontWeight.w600),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _cancelSearching();
-              // Navigate to home screen with fade transition
-              if (mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  smoothFadeRoute(const HomeScreen()),
-                  (_) => false,
-                );
-              }
-            },
-            child: Text(
-              S.of(context).yesCancelBtn,
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontWeight: FontWeight.w600,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+          decoration: neuBox(radius: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: neuBox(radius: 18, pressed: true),
+                child: const Icon(
+                  Icons.cancel_outlined,
+                  color: gold,
+                  size: 28,
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).cancelRideQuestion,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                S.of(context).cancelRideMsg,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(ctx).pop(),
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: neuBox(radius: 12, pressed: true),
+                        child: Text(
+                          S.of(context).keepWaiting,
+                          style: const TextStyle(
+                            color: gold,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _cancelSearching();
+                        // Navigate to home screen with fade transition
+                        if (mounted) {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            smoothFadeRoute(const HomeScreen()),
+                            (_) => false,
+                          );
+                        }
+                      },
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: gold,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          S.of(context).yesCancelBtn,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

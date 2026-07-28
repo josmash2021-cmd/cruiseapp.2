@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -8,6 +8,8 @@ import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../widgets/neu_style.dart';
 import '../../models/lat_lng.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
@@ -71,7 +73,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   static const _goldLight = Color(0xFFF5D990);
   // ignore: unused_field
   static const _surface = Color(0xFF1A1A1F);
-  static const _card = Color(0xFF1C1C1E);
 
   // ── Map ──
   mapbox.MapboxMap? _mapController;
@@ -96,14 +97,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   late Animation<double> _pulseAnim;
   late AnimationController _glossCtrl; // gloss shimmer sweep
   late AnimationController _statsCtrl;
-  // ignore: unused_field
   late Animation<double> _statsAnim;
   late AnimationController _fabCtrl;
   late Animation<double> _fabScale;
 
   // ── Bottom panel ──
-  static const double _panelCollapsedH = 76.0;
-  static const double _panelExpandedH = 380.0; // Increased for full content
+  // Base collapsed height fits the full content (status row + 3 stat cards +
+  // all 3 recommended rows) so nothing is clipped without dragging.
+  static const double _panelBaseH = 492.0;
+  // Extra height reserved while the scheduled-rides banner is shown above the
+  // header (finding-trips state). Without it the banner's ~46px eats into the
+  // scroll viewport and clips the bottom rows on devices with small insets.
+  static const double _panelBannerH = 50.0;
+  // Travel for the spring drag (must stay > 0 — drag deltas divide by it).
+  static const double _panelTravelH = 48.0;
+
+  bool get _scheduledBannerVisible =>
+      _isStillOnline && _activeTripData == null && _scheduledAvailableCount > 0;
+
+  double get _panelCollapsedH =>
+      _panelBaseH + (_scheduledBannerVisible ? _panelBannerH : 0);
+  double get _panelExpandedH => _panelCollapsedH + _panelTravelH;
   bool _dragging = false;
 
   // ── Inbox unread count ──
@@ -198,7 +212,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Stats panel entrance
     _statsCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 350),
     );
     _statsAnim = CurvedAnimation(
       parent: _statsCtrl,
@@ -1041,7 +1055,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: Stack(
         children: [
           // ── Full-screen map ──
@@ -1059,8 +1073,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.75),
-                    Colors.black.withValues(alpha: 0.0),
+                    neuBase.withValues(alpha: 0.85),
+                    neuBase.withValues(alpha: 0.0),
                   ],
                 ),
               ),
@@ -1103,6 +1117,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildMap() {
     // Use Google Maps on both iOS and Android
     final dc = DriverColors.of(context);
+    // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
+    // during the first layout. On web show a static placeholder instead.
+    if (kIsWeb) {
+      return Container(
+        decoration: neuBox(radius: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.map_outlined,
+                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                size: 44,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Map preview is not available on web',
+                style: TextStyle(
+                  color: dc.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
     // and move camera when GPS arrives. Prevents blank screen on slow GPS.
     final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
@@ -1223,16 +1264,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Greeting pill (pure black bg, no particles per the
-        // 2026-04-27 spec — particles only on Searching + Waiting).
+        // Greeting pill — raised neumorphic surface.
         Expanded(
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: Responsive.w(16), vertical: Responsive.h(10)),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: dc.divider),
-            ),
+            decoration: neuBox(radius: 28),
             child: Row(
               children: [
                 // Avatar with gold border
@@ -1256,7 +1292,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       Text(
                         _getGreeting(context),
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: dc.textSecondary,
                           fontSize: Responsive.sp(11),
                           fontWeight: FontWeight.w500,
                         ),
@@ -1264,7 +1300,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       Text(
                         _driverName,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: dc.text,
                           fontSize: Responsive.sp(15),
                           fontWeight: FontWeight.w800,
                         ),
@@ -1345,15 +1381,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         child: Container(
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                _gold.withValues(alpha: 0.15),
-                _gold.withValues(alpha: 0.08),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _gold.withValues(alpha: 0.35)),
+          decoration: neuBox(
+            radius: 16,
+            borderColor: _gold.withValues(alpha: 0.35),
           ),
           child: Row(
             children: [
@@ -1395,17 +1425,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           Container(
             width: Responsive.w(48),
             height: Responsive.w(48),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              shape: BoxShape.circle,
-              border: Border.all(color: dc.divider),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
+            decoration: neuBox(radius: 14, pressed: true),
             child: Icon(icon, color: dc.text, size: Responsive.sp(22)),
           ),
           if (badge != null)
@@ -1452,20 +1472,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Container(
         width: 48,
         height: 48,
-        decoration: BoxDecoration(
-          color: _card,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 12,
-            ),
-          ],
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Icon(
+        decoration: neuBox(radius: 14, pressed: true),
+        child: const Icon(
           Icons.my_location_rounded,
-          color: Colors.white.withValues(alpha: 0.7),
+          color: _gold,
           size: 22,
         ),
       ),
@@ -1476,6 +1486,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
   Widget _buildGoButton() {
+    final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: _isVerified
           ? _goOnline
@@ -1486,9 +1497,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         animation: Listenable.merge([_pulseAnim, _btnColorAnim, _glossCtrl]),
         builder: (_, __) {
           final p = _pulseAnim.value;
-          final colorT = _btnColorAnim.value;
           final g = _glossCtrl.value;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
+          // Disabled when docs missing or not verified — sunken neu well.
+          final enabled = _isVerified && docsOk;
 
           const goldTop1 = Color(0xFFF0D060);
           const goldTop2 = Color(0xFFF5DC7A);
@@ -1498,91 +1510,91 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           final botColor = goldBot;
           final glowColor = _gold;
 
-          // Disabled look when docs missing or not verified
-          final buttonOpacity = !_isVerified ? 0.55
-              : !docsOk ? 0.45
-              : 1.0;
+          final fgColor = enabled ? Colors.black87 : dc.textSecondary;
 
-          return Opacity(
-            opacity: buttonOpacity,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: Stack(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
-                          blurRadius: 16 + 8 * p,
-                          spreadRadius: 0,
-                          offset: const Offset(0, 3),
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.28),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [topColor, botColor],
-                      ),
-                    ),
-                    child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: _isNavigatingToOnline
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: Colors.black87,
-                              strokeWidth: 2,
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+                  decoration: enabled
+                      ? BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
+                              blurRadius: 16 + 8 * p,
+                              spreadRadius: 0,
+                              offset: const Offset(0, 3),
                             ),
-                          )
-                        : Icon(
-                            !docsOk
-                                ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
-                                : (_activeTripData != null || _isStillOnline)
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.power_settings_new_rounded,
-                            color: Colors.black87,
-                            size: 16,
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.28),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [topColor, botColor],
                           ),
+                        )
+                      : neuBox(radius: 16, pressed: true),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: enabled
+                              ? Colors.black.withValues(alpha: 0.15)
+                              : Colors.white.withValues(alpha: 0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isNavigatingToOnline
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: enabled ? Colors.black87 : _gold,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                !docsOk
+                                    ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
+                                    : (_activeTripData != null || _isStillOnline)
+                                        ? Icons.play_arrow_rounded
+                                        : Icons.power_settings_new_rounded,
+                                color: fgColor,
+                                size: 16,
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _isNavigatingToOnline
+                            ? 'GOING ONLINE...'
+                            : _isVerified
+                                ? (!docsOk
+                                    ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
+                                    : (_activeTripData != null || _isStillOnline)
+                                        ? S.of(context).resumeOnline
+                                        : S.of(context).goOnline)
+                                : S.of(context).verifyFirst,
+                        style: TextStyle(
+                          color: fgColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    _isNavigatingToOnline
-                        ? 'GOING ONLINE...'
-                        : _isVerified
-                            ? (!docsOk
-                                ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
-                                : (_activeTripData != null || _isStillOnline)
-                                    ? S.of(context).resumeOnline
-                                    : S.of(context).goOnline)
-                            : S.of(context).verifyFirst,
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-                  // ── Gloss shimmer sweep ──
+                ),
+                // ── Gloss shimmer sweep (enabled state only) ──
+                if (enabled)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Transform.translate(
@@ -1603,8 +1615,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
           );
         },
@@ -1627,18 +1638,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Container(
       height: panelH + pad.bottom,
       decoration: BoxDecoration(
-        // Pure black + gold particle field instead of dc.card (#1A1A1F)
-        // so the bottom panel matches the rest of the app's particle
-        // language (driver brand pass 2026-04-27).
-        color: Colors.black,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        // Raised neumorphic sheet — neuBox can't express top-only radius,
+        // so replicate its dual-shadow treatment on neuSurface.
+        color: neuSurface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
+            color: Colors.black.withValues(alpha: 0.55),
+            offset: const Offset(6, 6),
+            blurRadius: 14,
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.045),
+            offset: const Offset(-4, -4),
+            blurRadius: 10,
           ),
         ],
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.04)),
+        ),
       ),
       child: Column(
         children: [
@@ -1660,7 +1678,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: Colors.white.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1690,12 +1708,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: dc.text.withValues(alpha: 0.3),
+                          color: _isStillOnline
+                              ? const Color(0xFF34C759)
+                              : dc.text.withValues(alpha: 0.3),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1704,7 +1726,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             ? S.of(context).findingTrips
                             : S.of(context).youreOffline,
                         style: TextStyle(
-                          color: dc.text.withValues(alpha: 0.7),
+                          color: dc.text,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1719,21 +1741,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         slideFromRightRoute(const DriverTripHistoryScreen()),
                       );
                     },
-                    child: Icon(
-                      Icons.format_list_bulleted_rounded,
-                      color: dc.text.withValues(alpha: 0.6),
-                      size: 24,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
+                      child: Icon(
+                        Icons.format_list_bulleted_rounded,
+                        color: dc.textSecondary,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
             ),
-            // ── Expanded content ──
-            if (panelExtent > 0.02)
-              Expanded(
-                child: Opacity(
-                  opacity: panelExtent.clamp(0.0, 1.0),
+            // ── Panel content — always visible; collapsed shows all rows ──
+            Expanded(
+              child: FadeTransition(
+                opacity: _statsAnim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.05),
+                    end: Offset.zero,
+                  ).animate(_statsAnim),
                   child: SingleChildScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
@@ -1774,43 +1805,62 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       Text(
                         S.of(context).recommendedForYou,
                         style: TextStyle(
-                          color: dc.text,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          color: dc.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      // ── Recommendation items ──
-                      _recommendItem(
-                        Icons.bar_chart_rounded,
-                        S.of(context).seeEarningsTrends,
-                        () {
-                          Navigator.of(context).push(
-                            slideFromRightRoute(const DriverEarningsScreen()),
-                          );
-                        },
-                      ),
-                      _recommendItem(
-                        Icons.star_outline_rounded,
-                        S.of(context).seeUpcomingPromotions,
-                        () {
-                          Navigator.of(context).push(
-                            slideFromRightRoute(const DriverPromosScreen()),
-                          );
-                        },
-                      ),
-                      _recommendItem(
-                        Icons.schedule_rounded,
-                        S.of(context).seeDrivingTime,
-                        () {
-                          Navigator.of(context).push(
-                            slideFromRightRoute(const DriverAnalyticsScreen()),
-                          );
-                        },
+                      const SizedBox(height: 12),
+                      // ── Recommendation items — raised neu group ──
+                      Container(
+                        decoration: neuBox(radius: 20),
+                        child: Column(
+                          children: [
+                            _recommendItem(
+                              Icons.bar_chart_rounded,
+                              S.of(context).seeEarningsTrends,
+                              () {
+                                Navigator.of(context).push(
+                                  slideFromRightRoute(const DriverEarningsScreen()),
+                                );
+                              },
+                            ),
+                            Divider(
+                              height: 1,
+                              indent: 68,
+                              color: Colors.white.withValues(alpha: 0.05),
+                            ),
+                            _recommendItem(
+                              Icons.star_outline_rounded,
+                              S.of(context).seeUpcomingPromotions,
+                              () {
+                                Navigator.of(context).push(
+                                  slideFromRightRoute(const DriverPromosScreen()),
+                                );
+                              },
+                            ),
+                            Divider(
+                              height: 1,
+                              indent: 68,
+                              color: Colors.white.withValues(alpha: 0.05),
+                            ),
+                            _recommendItem(
+                              Icons.schedule_rounded,
+                              S.of(context).seeDrivingTime,
+                              () {
+                                Navigator.of(context).push(
+                                  slideFromRightRoute(const DriverAnalyticsScreen()),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                       SizedBox(height: pad.bottom + 16),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -1827,31 +1877,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         HapticService.selectionClick();
         onTap();
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: dc.divider),
-          ),
-        ),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, color: dc.text.withValues(alpha: 0.7), size: 22),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: Icon(icon, color: _gold, size: 22),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
                   color: dc.text,
-                  fontSize: 15,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: dc.text.withValues(alpha: 0.25),
-              size: 22,
+              color: dc.textSecondary,
+              size: 20,
             ),
           ],
         ),
@@ -1860,33 +1911,37 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _panelStat(IconData icon, String value, String label) {
+    final dc = DriverColors.of(context);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        ),
+        decoration: neuBox(radius: 18),
         child: Column(
           children: [
-            Icon(icon, color: _gold, size: 18),
-            const SizedBox(height: 6),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(icon, color: _gold, size: 18),
+            ),
+            const SizedBox(height: 8),
             Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: dc.text,
                 fontSize: 16,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.35),
-                fontSize: 11,
+                color: dc.textSecondary,
+                fontSize: 12,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

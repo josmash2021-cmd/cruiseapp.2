@@ -11,12 +11,20 @@ class NameScreen extends StatefulWidget {
   final String? firstName; // pre-filled from social auth (Google/Apple)
   final String? lastName;  // pre-filled from social auth (Google/Apple)
 
+  /// Contacts collected on the create-account page. When both are present
+  /// (together with the names) the whole chain auto-advances — nothing
+  /// needs to be re-asked.
+  final String? contactEmail;
+  final String? contactPhone;
+
   const NameScreen({
     super.key,
     required this.registeredWith,
     required this.registeredWithEmail,
     this.firstName,
     this.lastName,
+    this.contactEmail,
+    this.contactPhone,
   });
 
   @override
@@ -47,6 +55,29 @@ class _NameScreenState extends State<NameScreen> {
     _lastCtrl.addListener(_onChanged);
     // Validate initial state
     _onChanged();
+
+    // Page-1 signup already collected names + both contacts — skip this
+    // screen entirely and let the chain auto-advance.
+    if (widget.contactEmail != null &&
+        widget.contactPhone != null &&
+        _firstCtrl.text.trim().isNotEmpty &&
+        _lastCtrl.text.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          slideFromRightRoute(
+            EmailCollectScreen(
+              firstName: _firstCtrl.text.trim(),
+              lastName: _lastCtrl.text.trim(),
+              registeredWith: widget.registeredWith,
+              registeredWithEmail: widget.registeredWithEmail,
+              contactEmail: widget.contactEmail,
+              contactPhone: widget.contactPhone,
+            ),
+          ),
+        );
+      });
+    }
   }
 
   @override
@@ -73,6 +104,8 @@ class _NameScreenState extends State<NameScreen> {
           lastName: last,
           registeredWith: widget.registeredWith,
           registeredWithEmail: widget.registeredWithEmail,
+          contactEmail: widget.contactEmail,
+          contactPhone: widget.contactPhone,
         ),
       ),
     );

@@ -23,11 +23,13 @@ Future<(DateTime, bool, Map<String, dynamic>?)?> showScheduleRideFlow(
   BuildContext context, {
   double? initialPickupLat,
   double? initialPickupLng,
+  bool initialIsAirport = false,
 }) {
   return Navigator.of(context).push<(DateTime, bool, Map<String, dynamic>?)>(
     slideUpFadeRoute(_ScheduleDateScreen(
       initialPickupLat: initialPickupLat,
       initialPickupLng: initialPickupLng,
+      initialIsAirport: initialIsAirport,
     )),
   );
 }
@@ -39,8 +41,13 @@ Future<(DateTime, bool, Map<String, dynamic>?)?> showScheduleRideFlow(
 class _ScheduleDateScreen extends StatefulWidget {
   final double? initialPickupLat;
   final double? initialPickupLng;
+  final bool initialIsAirport;
 
-  const _ScheduleDateScreen({this.initialPickupLat, this.initialPickupLng});
+  const _ScheduleDateScreen({
+    this.initialPickupLat,
+    this.initialPickupLng,
+    this.initialIsAirport = false,
+  });
 
   @override
   State<_ScheduleDateScreen> createState() => _ScheduleDateScreenState();
@@ -57,6 +64,7 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
     final now = DateTime.now();
     _selected = DateTime(now.year, now.month, now.day);
     _viewMonth = DateTime(now.year, now.month, 1);
+    _isAirport = widget.initialIsAirport;
   }
 
   bool _isPast(DateTime d) {

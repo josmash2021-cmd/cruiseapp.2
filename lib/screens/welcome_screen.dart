@@ -1,10 +1,13 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
+import '../widgets/neu_style.dart';
 import 'login_screen.dart';
 import 'login_password_screen.dart';
+import 'driver/driver_signup_screen.dart';
 import 'driver/driver_login_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -22,6 +25,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   late Animation<double> _logoFade;
   late Animation<double> _textFade;
   late Animation<double> _btnFade;
+  late Animation<Offset> _logoSlide;
+  late Animation<Offset> _textSlide;
   late Animation<Offset> _btnSlide;
 
   late VideoPlayerController _videoCtrl;
@@ -48,6 +53,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       parent: _ctrl,
       curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
     );
+    _logoSlide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _ctrl,
+            curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+          ),
+        );
+    _textSlide = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _ctrl,
+            curve: const Interval(0.3, 0.65, curve: Curves.easeOutCubic),
+          ),
+        );
     _btnSlide = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
         .animate(
           CurvedAnimation(
@@ -132,15 +151,18 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const SizedBox(height: 36),
 
                   // ── CRUISE title (centered) ──
-                  FadeTransition(
-                    opacity: _logoFade,
-                    child: Text(
-                      'CRUISE',
-                      style: GoogleFonts.cinzel(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: _gold,
-                        letterSpacing: 8,
+                  SlideTransition(
+                    position: _logoSlide,
+                    child: FadeTransition(
+                      opacity: _logoFade,
+                      child: Text(
+                        'CRUISE',
+                        style: GoogleFonts.cinzel(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: _gold,
+                          letterSpacing: 8,
+                        ),
                       ),
                     ),
                   ),
@@ -160,17 +182,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const Spacer(flex: 2),
 
                   // ── Headline (centered) ──
-                  FadeTransition(
-                    opacity: _textFade,
-                    child: Text(
-                      S.of(context).welcomeHeadline,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.1,
-                        letterSpacing: -0.5,
+                  SlideTransition(
+                    position: _textSlide,
+                    child: FadeTransition(
+                      opacity: _textFade,
+                      child: Text(
+                        S.of(context).welcomeHeadline,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.1,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
                   ),
@@ -178,86 +203,54 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const SizedBox(height: 8),
 
                   // ── Subheadline (small, centered) ──
-                  FadeTransition(
-                    opacity: _textFade,
-                    child: Text(
-                      S.of(context).welcomeSubheadline,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.white60,
-                        fontWeight: FontWeight.w400,
+                  SlideTransition(
+                    position: _textSlide,
+                    child: FadeTransition(
+                      opacity: _textFade,
+                      child: Text(
+                        S.of(context).welcomeSubheadline,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white60,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
                   ),
 
                   const Spacer(flex: 2),
 
-                  // ── Get started button (gold filled) ──
+                  // ── Get started button (gold neumorphic) ──
                   SlideTransition(
                     position: _btnSlide,
                     child: FadeTransition(
                       opacity: _btnFade,
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _gold,
-                            foregroundColor: const Color(0xFF1A1400),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                          ),
-                          onPressed: () {
-                            Navigator.of(context)
-                                .push(slideUpFadeRoute(const LoginScreen()));
-                          },
-                          child: Text(
-                            S.of(context).getStarted,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
+                      child: _NeuPressButton(
+                        label: S.of(context).getStarted,
+                        gold: true,
+                        onTap: () {
+                          Navigator.of(context)
+                              .push(slideUpFadeRoute(const LoginScreen()));
+                        },
                       ),
                     ),
                   ),
 
                   const SizedBox(height: 12),
 
-                  // ── Already have account? button (outlined) ──
+                  // ── Already have account? button (dark neumorphic) ──
                   SlideTransition(
                     position: _btnSlide,
                     child: FadeTransition(
                       opacity: _btnFade,
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1.2),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                          ),
-                          onPressed: () {
-                            Navigator.of(context)
-                                .push(slideUpFadeRoute(const LoginPasswordScreen()));
-                          },
-                          child: Text(
-                            S.of(context).alreadyHaveAccount,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ),
+                      child: _NeuPressButton(
+                        label: S.of(context).alreadyHaveAccount,
+                        gold: false,
+                        onTap: () {
+                          Navigator.of(context).push(
+                              slideUpFadeRoute(const LoginPasswordScreen()));
+                        },
                       ),
                     ),
                   ),
@@ -268,10 +261,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   FadeTransition(
                     opacity: _btnFade,
                     child: GestureDetector(
-                      onTap: () {
-                        Navigator.of(context)
-                            .push(slideUpFadeRoute(const DriverLoginScreen()));
-                      },
                       child: RichText(
                         text: TextSpan(
                           style: const TextStyle(fontSize: 14, color: Colors.white54),
@@ -283,6 +272,22 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 color: _gold,
                                 fontWeight: FontWeight.w700,
                               ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () => Navigator.of(context).push(
+                                      slideUpFadeRoute(const DriverSignupScreen()),
+                                    ),
+                            ),
+                            const TextSpan(text: ' or '),
+                            TextSpan(
+                              text: 'sign in',
+                              style: TextStyle(
+                                color: _gold,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () => Navigator.of(context).push(
+                                      slideUpFadeRoute(const DriverLoginScreen()),
+                                    ),
                             ),
                           ],
                         ),
@@ -336,4 +341,95 @@ class _DiamondSeparatorPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Pill button with a neumorphic press effect.
+/// [gold] = raised gold gradient (dark text); otherwise raised dark
+/// neumorphic surface (white text). Pressing scales down and softens
+/// the shadow (sunken feel).
+class _NeuPressButton extends StatefulWidget {
+  final String label;
+  final bool gold;
+  final VoidCallback onTap;
+
+  const _NeuPressButton({
+    required this.label,
+    required this.gold,
+    required this.onTap,
+  });
+
+  @override
+  State<_NeuPressButton> createState() => _NeuPressButtonState();
+}
+
+class _NeuPressButtonState extends State<_NeuPressButton> {
+  static const _gold = Color(0xFFE8C547);
+  static const _goldLight = Color(0xFFF5DC7A);
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final decoration = widget.gold
+        ? BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _pressed
+                  ? const [Color(0xFFD9B53C), _gold]
+                  : const [_goldLight, _gold],
+            ),
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: _pressed
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      offset: const Offset(2, 2),
+                      blurRadius: 5,
+                      spreadRadius: -2,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      offset: const Offset(6, 6),
+                      blurRadius: 14,
+                    ),
+                    BoxShadow(
+                      color: _goldLight.withValues(alpha: 0.55),
+                      offset: const Offset(-3, -3),
+                      blurRadius: 8,
+                    ),
+                  ],
+          )
+        : neuBox(radius: 30, pressed: _pressed);
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: double.infinity,
+          height: 56,
+          decoration: decoration,
+          alignment: Alignment.center,
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: widget.gold ? 17 : 16,
+              fontWeight: widget.gold ? FontWeight.w700 : FontWeight.w600,
+              letterSpacing: 0.2,
+              color: widget.gold
+                  ? const Color(0xFF1A1400)
+                  : Colors.white.withValues(alpha: 0.85),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

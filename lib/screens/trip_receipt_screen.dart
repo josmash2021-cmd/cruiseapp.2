@@ -19,9 +19,16 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
 
+  // Dark-neumorphism palette: one base surface, deep shadows bottom-right,
+  // faint highlight top-left.
+  static const _bg = Color(0xFF101014);
+  static const _surface = Color(0xFF17171D);
+
   late AnimationController _entryController;
   late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
   Map<String, dynamic>? _fareBreakdown;
+  bool _breakdownLoading = true;
 
   @override
   void initState() {
@@ -34,6 +41,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
       parent: _entryController,
       curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
     );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.04),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entryController,
+      curve: Curves.easeOutCubic,
+    ));
     _entryController.forward();
     _loadFareBreakdown();
   }
@@ -48,14 +62,23 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
 
   Future<void> _loadFareBreakdown() async {
     final tid = trip.tripId;
-    if (tid == null) return;
+    if (tid == null) {
+      _breakdownLoading = false;
+      return;
+    }
     try {
       final data = await ApiService.getFareBreakdown(tid);
-      if (mounted) setState(() => _fareBreakdown = data);
+      if (mounted) {
+        setState(() {
+          _fareBreakdown = data;
+          _breakdownLoading = false;
+        });
+      }
     } catch (e) {
       // Fare breakdown is optional — silently ignore errors in production,
       // but log in debug for troubleshooting
       debugPrint('[TripReceipt] Failed to load fare breakdown: $e');
+      if (mounted) setState(() => _breakdownLoading = false);
     }
   }
 
@@ -85,15 +108,43 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     return '0 min';
   }
 
+  /// What the passenger actually paid — backend `total` (trip.fare) wins,
+  /// local trip price is the fallback.
+  String get _paidTotal {
+    final t = (_fareBreakdown?['total'] as num?)?.toDouble();
+    if (t != null && t > 0) return '\$${t.toStringAsFixed(2)}';
+    return trip.price;
+  }
+
+  BoxDecoration _neu({double radius = 24}) => BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.045)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.60),
+            offset: const Offset(7, 7),
+            blurRadius: 16,
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.05),
+            offset: const Offset(-5, -5),
+            blurRadius: 12,
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _bg,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
-          child: Column(
+          child: SlideTransition(
+            position: _slideAnim,
+            child: Column(
               children: [
                 Expanded(
                   child: ListView(
@@ -106,12 +157,9 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           GestureDetector(
                             onTap: () => Navigator.of(context).pop(),
                             child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A1F),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              width: 44,
+                              height: 44,
+                              decoration: _neu(radius: 14),
                               child: const Icon(
                                 Icons.arrow_back_ios_new_rounded,
                                 color: Colors.white,
@@ -121,7 +169,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           ),
                         ],
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
                       // ── TITLE ──
                       Text(
@@ -133,227 +181,291 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           letterSpacing: -0.5,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _fareBreakdown?['receipt_number'] ?? '#CR-${trip.tripId ?? 0}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: c.textTertiary,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
-                      // ── TOTAL AMOUNT CARD (matches the rest of the
-                      // black/gold theme — was a tier-colored gradient
-                      // that fought the dark UI). ──
+                      // ── INVOICE CARD ──
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 32, horizontal: 24),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: _gold.withValues(alpha: 0.30),
-                            width: 1.2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _gold.withValues(alpha: 0.10),
-                              blurRadius: 22,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
+                        padding: const EdgeInsets.all(22),
+                        decoration: _neu(radius: 26),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Status badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 5),
-                              decoration: BoxDecoration(
-                                color:
-                                    _gold.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: _gold.withValues(alpha: 0.35),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    color: _gold,
-                                    size: 13,
+                            // Invoice header: brand + PAID stamp
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'CRUISE',
+                                        style: TextStyle(
+                                          color: _gold,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _fareBreakdown?['receipt_number'] ??
+                                            '#CR-${trip.tripId ?? 0}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: c.textTertiary,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _formatDate(trip.createdAt),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: c.textTertiary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 5),
+                                ),
+                                // PAID stamp — invoice style
+                                Transform.rotate(
+                                  angle: -0.10,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _gold.withValues(alpha: 0.85),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      S.of(context).statusPaid,
+                                      style: const TextStyle(
+                                        color: _gold,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 3,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Total paid + tier
+                            Center(
+                              child: Column(
+                                children: [
                                   Text(
-                                    S.of(context).completedOnDate(
-                                        _formatDate(trip.createdAt)),
+                                    _paidTotal,
                                     style: const TextStyle(
                                       color: _gold,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
+                                      fontSize: 46,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    S.of(context).paidByPassengerLabel,
+                                    style: TextStyle(
+                                      color: c.textTertiary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TierBadge(rideName: trip.rideName),
+                                ],
+                              ),
+                            ),
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: _DashedDivider(color: c.divider),
+                            ),
+
+                            // ── ROUTE (miles + duration chips in header) ──
+                            Row(
+                              children: [
+                                Text(
+                                  S.of(context).routeHeader,
+                                  style: TextStyle(
+                                    color: c.textTertiary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                const Spacer(),
+                                _routeChip(c, Icons.straighten_rounded, _effectiveMiles),
+                                const SizedBox(width: 8),
+                                _routeChip(c, Icons.schedule_rounded, _effectiveDuration),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Timeline: dot — connector — square in a
+                            // stretched left rail so the line physically
+                            // touches both endpoint shapes.
+                            IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Column(
+                                    children: [
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: _gold,
+                                          borderRadius:
+                                              BorderRadius.circular(5),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: _gold.withValues(
+                                                  alpha: 0.45),
+                                              blurRadius: 6,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Expanded(child: _RouteConnector()),
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(2),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.white.withValues(
+                                                  alpha: 0.30),
+                                              blurRadius: 4,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _routeBlock(
+                                          c,
+                                          label: S.of(context).pickupTagLabel,
+                                          address: trip.pickup,
+                                        ),
+                                        const SizedBox(height: 22),
+                                        _routeBlock(
+                                          c,
+                                          label: S.of(context).dropoffTagLabel,
+                                          address: trip.dropoff,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 18),
-                            // Total amount in gold
-                            Text(
-                              trip.price,
-                              style: const TextStyle(
-                                color: _gold,
-                                fontSize: 44,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -1,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            // Tier badge (now 1:1 with Choose a Vehicle)
-                            TierBadge(rideName: trip.rideName),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
 
-                      // ── TRIP DETAILS CARD ──
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: c.panel,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: c.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              S.of(context).tripDetailsHeader,
-                              style: TextStyle(
-                                color: c.textTertiary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _detailRow(c, Icons.straighten_rounded, S.of(context).distance, _effectiveMiles),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Divider(color: c.divider, height: 1),
-                            ),
-                            _detailRow(c, Icons.schedule_rounded, S.of(context).duration, _effectiveDuration),
-                            if (_fareBreakdown?['driver_first_name'] != null) ...[
+                            // ── PAYMENT SUMMARY — skeleton shimmer while
+                            // loading, then a smooth swap to the real lines ──
+                            if (_breakdownLoading || _fareBreakdown != null) ...[
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Divider(color: c.divider, height: 1),
+                                padding: const EdgeInsets.symmetric(vertical: 20),
+                                child: _DashedDivider(color: c.divider),
                               ),
-                              _detailRow(c, Icons.person_rounded, S.of(context).driverLabel, _fareBreakdown!['driver_first_name'] as String),
-                            ],
-                            if (_fareBreakdown?['payment_method'] != null) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Divider(color: c.divider, height: 1),
-                              ),
-                              _detailRow(c, Icons.credit_card_rounded, S.of(context).paymentLabel, _fareBreakdown!['payment_method'] as String),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // ── FARE BREAKDOWN ──
-                      if (_fareBreakdown != null)
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: c.panel,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: c.border),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
                               Text(
                                 S.of(context).fareBreakdownHeader,
                                 style: TextStyle(
                                   color: c.textTertiary,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.2,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              _breakdownRow(c, S.of(context).baseFareLabel, '\$${(_fareBreakdown!['base_fare'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
-                              _breakdownRow(c, S.of(context).mileageLabel('${(_fareBreakdown!['distance_miles'] as num?)?.toStringAsFixed(1) ?? '0'} mi'), '\$${(_fareBreakdown!['mileage_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
-                              _breakdownRow(c, S.of(context).timeFareLabel('${(_fareBreakdown!['duration_minutes'] as num?)?.toInt() ?? 0} min'), '\$${(_fareBreakdown!['time_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
-                              if ((_fareBreakdown!['surge_multiplier'] as num?) != null && (_fareBreakdown!['surge_multiplier'] as num) > 1.0)
-                                _breakdownRow(c, S.of(context).surgeLabel('${(_fareBreakdown!['surge_multiplier'] as num).toStringAsFixed(1)}x'), '+\$${(_fareBreakdown!['surge_extra'] as num?)?.toStringAsFixed(2) ?? '0.00'}', highlight: true),
-                              if ((_fareBreakdown!['wait_time_charge'] as num?) != null && (_fareBreakdown!['wait_time_charge'] as num) > 0)
-                                _breakdownRow(c, S.of(context).waitTimeLabel('${(_fareBreakdown!['wait_time_minutes'] as num?)?.toInt() ?? 0} min'), '\$${(_fareBreakdown!['wait_time_charge'] as num).toStringAsFixed(2)}'),
-                              if ((_fareBreakdown!['tip_amount'] as num?) != null && (_fareBreakdown!['tip_amount'] as num) > 0)
-                                _breakdownRow(c, S.of(context).tipLabel, '\$${(_fareBreakdown!['tip_amount'] as num).toStringAsFixed(2)}'),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 12, bottom: 4),
-                                child: Divider(color: c.divider, height: 1),
+                              const SizedBox(height: 14),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 350),
+                                curve: Curves.easeOut,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 400),
+                                  child: _breakdownLoading
+                                      ? const _BreakdownSkeleton(
+                                          key: ValueKey('skeleton'))
+                                      : Column(
+                                          key: const ValueKey('rows'),
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: _buildBreakdownRows(c),
+                                        ),
+                                ),
                               ),
-                              const SizedBox(height: 4),
+                              if (!_breakdownLoading) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12, bottom: 14),
+                                child: _DashedDivider(color: c.divider),
+                              ),
                               Row(
                                 children: [
-                                  Text(S.of(context).totalLabel, style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+                                  Text(
+                                    S.of(context).totalLabel,
+                                    style: TextStyle(
+                                      color: c.textPrimary,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                   const Spacer(),
-                                  Text(trip.price, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
+                                  Text(
+                                    _paidTotal,
+                                    style: const TextStyle(
+                                      color: _gold,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                                 ],
                               ),
+                              if (_fareBreakdown?['payment_method'] != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.credit_card_rounded,
+                                        color: c.textTertiary, size: 15),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      S.of(context).paymentMethodLabel,
+                                      style: TextStyle(
+                                          color: c.textSecondary, fontSize: 13),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _fareBreakdown!['payment_method'] as String,
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              ],
                             ],
-                          ),
-                        ),
-
-                      if (_fareBreakdown != null) const SizedBox(height: 12),
-
-                      // ── ROUTE CARD ──
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: c.panel,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: c.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              S.of(context).routeHeader,
-                              style: TextStyle(
-                                color: c.textTertiary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _routePoint(
-                              c,
-                              isPickup: true,
-                              label: S.of(context).pickupTagLabel,
-                              address: trip.pickup,
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: const _ShimmerConnector(),
-                            ),
-                            _routePoint(
-                              c,
-                              isPickup: false,
-                              label: S.of(context).dropoffTagLabel,
-                              address: trip.dropoff,
-                            ),
                           ],
                         ),
                       ),
@@ -402,93 +514,168 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
               ],
             ),
           ),
+          ),
         ),
     );
   }
 
-  Widget _detailRow(AppColors c, IconData icon, String label, String value) {
-    return Row(
+  /// Payment lines, cent-exact so the visible rows always add up to the
+  /// Total rendered below: Trip fare + extras + Tax + Tip = Total.
+  List<Widget> _buildBreakdownRows(AppColors c) {
+    final fb = _fareBreakdown!;
+    int centsOf(String key) => (((fb[key] as num?) ?? 0) * 100).round();
+    String money(int cents) => '\$${(cents / 100).toStringAsFixed(2)}';
+
+    // Extra charges, each shown as its own line when present.
+    final extras = <({String label, int cents, bool highlight})>[];
+    final surgeMult = (fb['surge_multiplier'] as num?) ?? 1.0;
+    if (surgeMult > 1.0 && centsOf('surge_extra') > 0) {
+      extras.add((
+        label: S.of(context).surgeLabel(surgeMult.toStringAsFixed(1) + 'x'),
+        cents: centsOf('surge_extra'),
+        highlight: true,
+      ));
+    }
+    if (centsOf('wait_time_charge') > 0) {
+      extras.add((
+        label: S.of(context).waitTimeLabel(
+            '${((fb['wait_time_minutes'] as num?) ?? 0).toInt()} min'),
+        cents: centsOf('wait_time_charge'),
+        highlight: false,
+      ));
+    }
+    if (centsOf('scheduled_surcharge') > 0) {
+      extras.add((
+        label: S.of(context).scheduledFeeLabel,
+        cents: centsOf('scheduled_surcharge'),
+        highlight: false,
+      ));
+    }
+    if (centsOf('airport_fee') > 0) {
+      extras.add((
+        label: S.of(context).airportSurchargeLabel,
+        cents: centsOf('airport_fee'),
+        highlight: false,
+      ));
+    }
+    if (centsOf('meet_greet_fee') > 0) {
+      extras.add((
+        label: S.of(context).meetGreetLabel,
+        cents: centsOf('meet_greet_fee'),
+        highlight: false,
+      ));
+    }
+    if (centsOf('cancellation_fee') > 0) {
+      extras.add((
+        label: S.of(context).cancellationFeeLabel,
+        cents: centsOf('cancellation_fee'),
+        highlight: false,
+      ));
+    }
+
+    final extrasC = extras.fold<int>(0, (sum, e) => sum + e.cents);
+    final tipC = centsOf('tip_amount');
+    var totalC = centsOf('total');
+    if (totalC <= 0) {
+      // Fallback: reconstruct the total from its components.
+      totalC = centsOf('base_fare') +
+          centsOf('mileage_charge') +
+          centsOf('time_charge') +
+          extrasC +
+          tipC;
+    }
+    // Trip fare = whatever remains after extras and tip, so the visible
+    // lines always reconcile with the Total line below.
+    final remaining = totalC - extrasC - tipC;
+    final tripFareC = remaining > 0 ? remaining : 0;
+
+    final rows = <Widget>[
+      _breakdownRow(c, S.of(context).tripFareLabel, money(tripFareC)),
+      for (final e in extras)
+        _breakdownRow(
+          c,
+          e.label,
+          '${e.highlight ? '+' : ''}${money(e.cents)}',
+          highlight: e.highlight,
+        ),
+    ];
+
+    // Tip line is always visible so the receipt shows whether the
+    // passenger left one or not.
+    if (tipC > 0) {
+      rows.add(_breakdownRow(c, S.of(context).tipLabel, money(tipC)));
+    } else {
+      rows.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                S.of(context).tipLabel,
+                style: TextStyle(color: c.textSecondary, fontSize: 13),
+              ),
+            ),
+            Text(
+              S.of(context).noTipLabel,
+              style: TextStyle(
+                color: c.textTertiary,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+    return rows;
+  }
+
+  Widget _routeChip(AppColors c, IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: _neu(radius: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: _gold, size: 12),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _routeBlock(
+    AppColors c, {
+    required String label,
+    required String address,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: c.textTertiary, size: 16),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(color: c.textSecondary, fontSize: 14),
+        Text(
+          label,
+          style: TextStyle(
+            color: c.textTertiary,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
           ),
         ),
+        const SizedBox(height: 3),
         Text(
-          value,
+          address,
           style: TextStyle(
             color: c.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _routePoint(
-    AppColors c, {
-    required bool isPickup,
-    required String label,
-    required String address,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Pickup = gold dot. Dropoff = white square (matches Your Trips
-        // card so endpoints are visually distinct at a glance).
-        isPickup
-            ? Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(
-                  color: _gold,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-              )
-            : Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.30),
-                      blurRadius: 4,
-                    ),
-                  ],
-                ),
-              ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: c.textTertiary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                address,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ),
         ),
       ],
@@ -545,18 +732,44 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   }
 }
 
-/// Vertical shimmer connector between pickup and dropoff dots — same
-/// component used in [RideHistoryScreen]. 1.5 px wide, 18 px tall, gold
-/// gradient with a brighter highlight that travels top -> bottom on a
-/// 1.6 s loop.
-class _ShimmerConnector extends StatefulWidget {
-  const _ShimmerConnector();
+/// Dashed horizontal divider — gives the receipt its invoice "tear line".
+class _DashedDivider extends StatelessWidget {
+  final Color color;
+
+  const _DashedDivider({required this.color});
 
   @override
-  State<_ShimmerConnector> createState() => _ShimmerConnectorState();
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const dashWidth = 6.0;
+        const dashSpace = 4.0;
+        final count =
+            (constraints.maxWidth / (dashWidth + dashSpace)).floor();
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(
+            count,
+            (_) => Container(width: dashWidth, height: 1, color: color),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _ShimmerConnectorState extends State<_ShimmerConnector>
+/// Animated route connector — a dashed gold line with a glowing pulse
+/// that travels pickup -> dropoff on a 2 s loop (easeInOut), fading in
+/// and out at the ends. Painted so it stretches to exactly fill the gap
+/// between the endpoint shapes.
+class _RouteConnector extends StatefulWidget {
+  const _RouteConnector();
+
+  @override
+  State<_RouteConnector> createState() => _RouteConnectorState();
+}
+
+class _RouteConnectorState extends State<_RouteConnector>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
 
@@ -565,7 +778,7 @@ class _ShimmerConnectorState extends State<_ShimmerConnector>
     super.initState();
     _ctl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
   }
 
@@ -578,33 +791,167 @@ class _ShimmerConnectorState extends State<_ShimmerConnector>
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 1.5,
-      height: 18,
+      width: 12,
       child: AnimatedBuilder(
         animation: _ctl,
-        builder: (_, __) {
-          final t = _ctl.value;
-          final start = (t - 0.15).clamp(0.0, 1.0);
-          final mid = t.clamp(0.0, 1.0);
-          final end = (t + 0.15).clamp(0.0, 1.0);
-          return Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: const [
-                  Color(0x55E8C547),
-                  Color(0xFFFFFFFF),
-                  Color(0x55E8C547),
-                ],
-                stops: [start, mid, end],
-              ),
-              borderRadius: BorderRadius.circular(1),
-            ),
-          );
-        },
+        builder: (_, __) => CustomPaint(
+          painter: _RouteConnectorPainter(t: _ctl.value),
+        ),
       ),
     );
   }
 }
 
+class _RouteConnectorPainter extends CustomPainter {
+  final double t;
+
+  _RouteConnectorPainter({required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = size.width / 2;
+    const inset = 1.0;
+
+    // Dashed base line
+    final dashPaint = Paint()
+      ..color = const Color(0x59E8C547)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const dashH = 3.5;
+    const gap = 3.5;
+    double y = inset;
+    while (y < size.height - inset) {
+      final end = (y + dashH).clamp(y, size.height - inset);
+      canvas.drawLine(Offset(x, y), Offset(x, end), dashPaint);
+      y += dashH + gap;
+    }
+
+    // Traveling glow pulse, eased, fading near the ends
+    final eased = Curves.easeInOut.transform(t);
+    final cy = inset + (size.height - inset * 2) * eased;
+    final edgeFade =
+        (1.0 - ((t - 0.5).abs() * 2 - 0.7) / 0.3).clamp(0.0, 1.0);
+    final glowPaint = Paint()
+      ..color = const Color(0xFFE8C547).withValues(alpha: 0.9 * edgeFade)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(Offset(x, cy), 3.2, glowPaint);
+    canvas.drawCircle(
+      Offset(x, cy),
+      1.8,
+      Paint()..color = Colors.white.withValues(alpha: edgeFade),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RouteConnectorPainter oldDelegate) =>
+      oldDelegate.t != t;
+}
+
+/// Shimmer skeleton shown while the fare breakdown loads — three fake
+/// label/amount lines plus a total line, with a highlight band sweeping
+/// left -> right on a 1.4 s loop.
+class _BreakdownSkeleton extends StatefulWidget {
+  const _BreakdownSkeleton({super.key});
+
+  @override
+  State<_BreakdownSkeleton> createState() => _BreakdownSkeletonState();
+}
+
+class _BreakdownSkeletonState extends State<_BreakdownSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctl,
+      builder: (_, __) {
+        final t = _ctl.value;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            return Column(
+              children: [
+                _skeletonRow(t, w, labelWidth: 0.38),
+                const SizedBox(height: 12),
+                _skeletonRow(t, w, labelWidth: 0.22),
+                const SizedBox(height: 12),
+                _skeletonRow(t, w, labelWidth: 0.30),
+                const SizedBox(height: 18),
+                _skeletonRow(t, w,
+                    labelWidth: 0.26, amountWidth: 64, height: 15),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _skeletonRow(
+    double t,
+    double maxWidth, {
+    required double labelWidth,
+    double amountWidth = 48,
+    double height = 12,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: maxWidth * labelWidth,
+          child: _SkeletonBar(t: t, height: height),
+        ),
+        const Spacer(),
+        SizedBox(
+          width: amountWidth,
+          child: _SkeletonBar(t: t, height: height),
+        ),
+      ],
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  final double t;
+  final double height;
+
+  const _SkeletonBar({required this.t, required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    final start = (t - 0.25).clamp(0.0, 1.0);
+    final mid = t.clamp(0.0, 1.0);
+    final end = (t + 0.25).clamp(0.0, 1.0);
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [
+            Color(0x0DFFFFFF),
+            Color(0x22FFFFFF),
+            Color(0x0DFFFFFF),
+          ],
+          stops: [start, mid, end],
+        ),
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+    );
+  }
+}

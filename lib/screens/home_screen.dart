@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
 import 'airport_terminal_sheet.dart';
+import 'airport_direction_screen.dart';
 import 'biometric_consent_screen.dart';
 import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
@@ -1242,9 +1243,61 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         return;
       }
 
-      // Both Airport and Schedule now go through the calendar+time
-      // picker FIRST. Difference: Airport jumps to AirportTerminalSheet
-      // afterwards, Schedule jumps to pickup/dropoff search.
+      // ── Airport branch: direction picker FIRST (Take me TO / Pick me
+      // up FROM), then date & time, then the airport terminal sheet. ──
+      if (choice == 'airport') {
+        final direction = await Navigator.of(context).push<AirportDirection>(
+          slideUpFadeRoute(const AirportDirectionScreen()),
+        );
+        if (direction == null || !mounted) {
+          if (mounted) setState(() => _rideNow = true);
+          return;
+        }
+
+        final airportTime = await showScheduleRideFlow(
+          context,
+          initialPickupLat: _currentLatLng?.latitude,
+          initialPickupLng: _currentLatLng?.longitude,
+          initialIsAirport: true,
+        );
+        if (airportTime == null || !mounted) {
+          if (mounted) setState(() => _rideNow = true);
+          return;
+        }
+        final (scheduledAt, _, _) = airportTime;
+
+        if (!await _ensureVerified()) return;
+        if (!mounted) return;
+
+        final airportResult = await showModalBottomSheet<AirportSelection>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          useSafeArea: true,
+          builder: (_) => AirportTerminalSheet(
+            isDark: AppColors.of(context).isDark,
+            initialDirection: direction,
+          ),
+        );
+        if (airportResult == null || !mounted) {
+          if (mounted) setState(() => _rideNow = true);
+          return;
+        }
+        Navigator.of(context).push(
+          slideUpFadeRoute(
+            RideRequestScreen(
+              scheduledAt: scheduledAt,
+              isAirportTrip: true,
+              airportSelection: airportResult,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // ── Schedule branch: calendar + time picker first, then the
+      // pickup/dropoff search (or the airport sheet if the user flipped
+      // the airport toggle inside the calendar). ──
       final result = await showScheduleRideFlow(
         context,
         initialPickupLat: _currentLatLng?.latitude,
@@ -1257,9 +1310,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
 
       final (scheduledAt, isAirportFromToggle, searchResult) = result;
-      // The Airport card forces the airport flow regardless of the
-      // picker's internal toggle.
-      final bool isAirportTrip = choice == 'airport' || isAirportFromToggle;
+      final bool isAirportTrip = isAirportFromToggle;
 
       if (!await _ensureVerified()) return;
       if (!mounted) return;

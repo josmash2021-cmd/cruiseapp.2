@@ -1180,6 +1180,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         if (val is Map) msgs.add(Map<String, dynamic>.from(val));
       }
       if (msgs.isEmpty) return;
+      // Only archive the trip chat if the RIDER wrote at least once —
+      // trips where the rider never messaged the driver leave no inbox record.
+      final riderWrote = msgs.any((m) => (m['senderRole'] ?? '') == 'rider');
+      if (!riderWrote) return;
       msgs.sort((a, b) =>
           (a['timestamp'] as int? ?? 0).compareTo(b['timestamp'] as int? ?? 0));
       await FirebaseFirestore.instance
@@ -1195,8 +1199,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         'lastMessage': msgs.last['text'] ?? '',
         'messageCount': msgs.length,
         'createdAt': FieldValue.serverTimestamp(),
+        // Trip-chat records auto-delete 2 hours after the trip ends.
         'expiresAt': Timestamp.fromDate(
-            DateTime.now().add(const Duration(hours: 5))),
+            DateTime.now().add(const Duration(hours: 2))),
         'messages': msgs,
       });
     } catch (e) {

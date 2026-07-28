@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/neu_style.dart';
 
 /// Spectacular "Confirming your ride." screen with radar pulse rings,
 /// orbiting dots, floating particles, shimmer text, and a gleaming
@@ -51,6 +52,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   late final AnimationController _progressCtrl; // 4000 ms – progress bar (repeating)
   late final AnimationController _shimmerCtrl;  // 2000 ms – text shimmer
   late final AnimationController _barGleamCtrl; // 1200 ms – progress bar gleam
+  late final AnimationController _exitCtrl;     // 450 ms – animated exit (fade+scale)
 
   // ── derived animations for 4 radar rings ──
   late final Animation<double> _ring1, _ring2, _ring3, _ring4;
@@ -141,6 +143,12 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat();
 
+    // ── 8. Animated exit (fade + slight zoom before popping) ──
+    _exitCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+
     // Policy 2026-04-11: this screen is ONLY for the payment-authorization
     // phase. It shows a single "Confirming your ride..." label while the
     // Stripe paymentCallback runs, then pops on success so the
@@ -151,32 +159,19 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     _textPhase = 0; // always "Confirming your ride…"
 
     // When driver is matched, complete the progress bar to 100% first,
-    // then pop. This ensures the bar never resets mid-animation — it
-    // always finishes smoothly before transitioning to the next screen.
+    // then exit with the fade+zoom animation. This ensures the bar never
+    // resets mid-animation — it always finishes smoothly before
+    // transitioning to the next screen.
     if (widget.driverFound != null) {
       _driverFoundCb = () {
         if (widget.driverFound!.value && mounted && !_popping) {
-          _popping = true;
-          final remaining = 1.0 - _progressCtrl.value;
-          if (remaining > 0.01) {
-            // Bar is still filling — animate to completion quickly (300ms)
-            _progressCtrl.animateTo(1.0, duration: const Duration(milliseconds: 300), curve: Curves.easeOutQuart)
-                .then((_) {
-              if (mounted) Navigator.of(context).pop();
-            });
-          } else {
-            // Bar already at 100% — pop immediately
-            Navigator.of(context).pop();
-          }
+          _finishAndPop();
         }
       };
       widget.driverFound!.addListener(_driverFoundCb!);
       if (widget.driverFound!.value && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_popping) {
-            _popping = true;
-            Navigator.of(context).pop();
-          }
+          if (mounted && !_popping) _finishAndPop();
         });
       }
     }
@@ -197,11 +192,11 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
           if (!ok) {
             // User explicitly cancelled from payment sheet.
             widget.onCancel?.call();
-            Navigator.of(context).pop(true);
+            _finishAndPop(true);
           } else {
             // Payment succeeded — caller picks up and transitions the
             // parent screen into waiting-for-driver mode.
-            Navigator.of(context).pop(false);
+            _finishAndPop(false);
           }
         } catch (_) {
           if (mounted) _handleDeclined();
@@ -213,17 +208,8 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     // 10 s, complete the bar and pop so the user isn't stuck.
     _searchTimeoutTimer = Timer(const Duration(seconds: 10), () {
       if (mounted && !_popping) {
-        _popping = true;
         debugPrint('[SearchingDriverScreen] Timeout reached (10s) - completing bar and popping');
-        final remaining = 1.0 - _progressCtrl.value;
-        if (remaining > 0.01) {
-          _progressCtrl.animateTo(1.0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutQuart)
-              .then((_) {
-            if (mounted) Navigator.of(context).pop(false);
-          });
-        } else {
-          Navigator.of(context).pop(false);
-        }
+        _finishAndPop(false);
       }
     });
   }
@@ -241,10 +227,37 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     _progressCtrl.dispose();
     _shimmerCtrl.dispose();
     _barGleamCtrl.dispose();
+    _exitCtrl.dispose();
     for (final c in _twinkleControllers) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Coordinated animated exit: finish the progress bar, fade+zoom the
+  /// splash out, then pop so the underlying map (waiting-for-driver card)
+  /// is revealed smoothly instead of an abrupt cut.
+  Future<void> _finishAndPop([bool? result, bool completeBar = true]) async {
+    if (_popping) return;
+    _popping = true;
+    if (completeBar) {
+      final remaining = 1.0 - _progressCtrl.value;
+      if (remaining > 0.01) {
+        try {
+          await _progressCtrl.animateTo(
+            1.0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutQuart,
+          );
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    try {
+      await _exitCtrl.forward();
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pop(result);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -260,7 +273,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     _declinedPopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (!mounted) return;
       widget.onPaymentDeclined?.call();
-      Navigator.of(context).pop();
+      _finishAndPop(null, false);
     });
   }
 
@@ -268,53 +281,102 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFc8a951), width: 1),
-        ),
-        title: Text(
-          S.of(context).cancelRideQuestion,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          S.of(context).cancelRideMsg,
-          style: const TextStyle(color: Colors.grey, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              S.of(context).keepWaiting,
-              style: const TextStyle(color: Color(0xFFc8a951)),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFc8a951),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+          decoration: neuBox(radius: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: neuBox(radius: 18, pressed: true),
+                child: const Icon(
+                  Icons.cancel_outlined,
+                  color: _gold,
+                  size: 28,
+                ),
               ),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);            // close dialog
-              widget.onCancel?.call();      // run cancel logic in controller
-              Navigator.of(context).pop(true); // pop this screen with cancelled=true
-            },
-            child: Text(
-              S.of(context).yesCancelBtn,
-              style: const TextStyle(color: Colors.black),
-            ),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).cancelRideQuestion,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                S.of(context).cancelRideMsg,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  // Keep waiting — pressed neumorphic well, gold text
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: neuBox(radius: 12, pressed: true),
+                        child: Text(
+                          S.of(context).keepWaiting,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Yes, cancel — solid gold primary
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.pop(ctx); // close dialog
+                        widget.onCancel
+                            ?.call(); // run cancel logic in controller
+                        Navigator.of(
+                          context,
+                        ).pop(true); // pop this screen with cancelled=true
+                      },
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          S.of(context).yesCancelBtn,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -323,7 +385,18 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      child: Scaffold(
+      child: AnimatedBuilder(
+        animation: _exitCtrl,
+        builder: (context, child) {
+          // Exit animation: fade out with a slight zoom-in, then the route's
+          // own reverse fade hands off to the map (waiting-for-driver card).
+          final t = Curves.easeInCubic.transform(_exitCtrl.value);
+          return Opacity(
+            opacity: 1.0 - t,
+            child: Transform.scale(scale: 1.0 + t * 0.06, child: child),
+          );
+        },
+        child: Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
@@ -414,7 +487,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
           ),
         ],
       ),
-    ));
+        ),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════

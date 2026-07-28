@@ -6,9 +6,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/verified_avatar.dart';
+import 'help_screen.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -39,7 +42,7 @@ class _InboxScreenState extends State<InboxScreen>
     final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,14 +57,11 @@ class _InboxScreenState extends State<InboxScreen>
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
+                    Icons.arrow_back_rounded,
                     color: c.textPrimary,
-                    size: 18,
+                    size: 22,
                   ),
                 ),
               ),
@@ -87,22 +87,12 @@ class _InboxScreenState extends State<InboxScreen>
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
                 height: 44,
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: neuBox(radius: 14, pressed: true),
                 child: TabBar(
                   controller: _tabCtrl,
                   indicator: BoxDecoration(
-                    color: const Color(0xFF2A2D38),
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+                    color: neuSurface,
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   indicatorPadding: const EdgeInsets.all(3),
@@ -242,10 +232,15 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.notifications_off_outlined,
-              color: c.textTertiary,
-              size: 56,
+            Container(
+              width: 88,
+              height: 88,
+              decoration: neuBox(radius: 24, pressed: true),
+              child: Icon(
+                Icons.notifications_off_outlined,
+                color: c.textTertiary,
+                size: 36,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -303,13 +298,10 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 20),
                   margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
+                  decoration: neuBox(radius: 18),
+                  child: const Icon(
                     Icons.delete_outline_rounded,
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: Color(0xFFFF5252),
                   ),
                 ),
                 onDismissed: (_) => _dismiss(i),
@@ -317,28 +309,17 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: item.read
-                          ? null
-                          : Border.all(color: _gold.withValues(alpha: 0.3)),
-                    ),
+                    decoration: neuBox(radius: 18),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           width: 40,
                           height: 40,
-                          decoration: BoxDecoration(
-                            color: !item.read
-                                ? _gold.withValues(alpha: 0.12)
-                                : c.bg,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          decoration: neuBox(radius: 14, pressed: true),
                           child: Icon(
                             _iconForType(item.type),
-                            color: !item.read ? _gold : c.textSecondary,
+                            color: !item.read ? _gold : c.textTertiary,
                             size: 22,
                           ),
                         ),
@@ -425,12 +406,42 @@ class _MessagesTabState extends State<_MessagesTab> {
   StreamSubscription? _chatSub;
   List<Map<String, dynamic>> _chats = [];
   bool _loading = true;
+  bool _hasSupportChat = false;
 
   @override
   void initState() {
     super.initState();
     _cleanExpiredChats();
     _attachListener();
+    _loadSupportChat();
+  }
+
+  /// The Messages tab also surfaces the rider's support conversation (if
+  /// one exists) as a pinned row above the trip chats.
+  Future<void> _loadSupportChat() async {
+    try {
+      final chats = await ApiService.getSupportChats();
+      // Only count chats that actually have messages — an empty auto-created
+      // chat is not a conversation the rider "has".
+      for (final chat in chats) {
+        final count = chat['message_count'] ?? chat['messageCount'] ?? 0;
+        final hasMsgs = (count is num && count > 0) ||
+            (chat['last_message'] ?? chat['lastMessage'] ?? '')
+                .toString()
+                .isNotEmpty;
+        if (hasMsgs) {
+          if (mounted) setState(() => _hasSupportChat = true);
+          return;
+        }
+      }
+      // Fallback: any existing chat counts if the backend doesn't expose
+      // counts/previews (an open support chat is a conversation).
+      if (chats.isNotEmpty && mounted) {
+        setState(() => _hasSupportChat = true);
+      }
+    } catch (e) {
+      debugPrint('[Inbox] support chats load error: $e');
+    }
   }
 
   @override
@@ -522,6 +533,63 @@ class _MessagesTabState extends State<_MessagesTab> {
     );
   }
 
+  /// Pinned row for the rider's support conversation — opens the same
+  /// support chat used from Help (history persists in the backend).
+  Widget _buildSupportRow(AppColors c, S s) {
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.of(
+          context,
+        ).push(slideFromRightRoute(const CruiseSupportChatScreen()));
+        _loadSupportChat(); // refresh in case a chat was created or closed
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(radius: 18),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: const Icon(
+                Icons.support_agent_rounded,
+                color: _gold,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.cruiseSupport,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    s.supportConversationDesc,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: c.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -531,14 +599,23 @@ class _MessagesTabState extends State<_MessagesTab> {
       return const Center(child: CircularProgressIndicator(color: _gold));
     }
 
-    if (_chats.isEmpty) {
+    if (_chats.isEmpty && !_hasSupportChat) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey.shade600),
+              Container(
+                width: 88,
+                height: 88,
+                decoration: neuBox(radius: 24, pressed: true),
+                child: const Icon(
+                  Icons.chat_bubble_outline,
+                  size: 36,
+                  color: _gold,
+                ),
+              ),
               const SizedBox(height: 16),
               Text(
                 s.noMessagesYet,
@@ -562,8 +639,13 @@ class _MessagesTabState extends State<_MessagesTab> {
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      itemCount: _chats.length,
+      itemCount: _chats.length + (_hasSupportChat ? 1 : 0),
       itemBuilder: (ctx, i) {
+        // Pinned support conversation row above the trip chats.
+        if (_hasSupportChat) {
+          if (i == 0) return _buildSupportRow(c, s);
+          i -= 1;
+        }
         final chat = _chats[i];
         final driverName = chat['driverName'] as String? ?? 'Driver';
         final lastMsg = chat['lastMessage'] as String? ?? '';
@@ -577,10 +659,7 @@ class _MessagesTabState extends State<_MessagesTab> {
           child: Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(14),
-            ),
+            decoration: neuBox(radius: 18),
             child: Row(
               children: [
                 // Driver avatar
@@ -686,12 +765,12 @@ class _ConversationDetailScreen extends StatelessWidget {
         ((a['timestamp'] as int?) ?? 0).compareTo((b['timestamp'] as int?) ?? 0));
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: c.textPrimary, size: 18),
+          icon: Icon(Icons.arrow_back_rounded, color: c.textPrimary, size: 22),
           onPressed: () => Navigator.pop(context),
           tooltip: 'Back',
         ),
@@ -733,7 +812,7 @@ class _ConversationDetailScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: isDriver
-                          ? c.surface
+                          ? neuSurface
                           : _gold.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(14),

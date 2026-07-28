@@ -74,11 +74,35 @@ class TierInfo {
     if (isPremium) return const [Color(0xFFE8C547), Color(0xFFF5D990)];
     return const [Color(0xFFB0B0B0), Color(0xFFE8E8E8)];
   }
+
+  /// Human-readable ride title from the raw vehicle_type value.
+  /// "black premium" -> "Black Premium", "vip" -> "VIP".
+  /// Legacy backend values map to the 3 canonical services
+  /// (VIP / Premium / Comfort): "sedan" -> "Comfort", etc.
+  static String displayTitle(String rideName) {
+    const legacyAliases = {
+      'sedan': 'Comfort',
+      'standard': 'Comfort',
+      'economy': 'Comfort',
+      'fusion': 'Comfort',
+      'camry': 'Premium',
+      'suburban': 'VIP',
+    };
+    final key = rideName.trim().toLowerCase();
+    final alias = legacyAliases[key];
+    if (alias != null) return alias;
+    final words = key.split(RegExp(r'[\s_\-]+'));
+    return words.map((w) {
+      if (w.isEmpty) return w;
+      if (w == 'vip' || w == 'suv') return w.toUpperCase();
+      return w[0].toUpperCase() + w.substring(1);
+    }).join(' ');
+  }
 }
 
-/// Static fixed-size badge (78x22) — matches the Choose a Vehicle
-/// horizontal card 1:1 (ride_request_widgets.dart). No shimmer / pulse;
-/// same colors and glyphs across all surfaces.
+/// Auto-width badge showing the real ride title (e.g. "Black Premium",
+/// "Standard") with the tier's colors/glyph: VIP=black-on-gold-border-
+/// with-diamond, PREMIUM=gold-with-star, COMFORT=silver-with-sparkle.
 class TierBadge extends StatelessWidget {
   final String rideName;
 
@@ -93,52 +117,49 @@ class TierBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tier = TierInfo.from(rideName);
-    return SizedBox(
-      width: 78,
-      height: 22,
-      child: Container(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: tier.bgGradient,
-          ),
-          borderRadius: BorderRadius.circular(6),
-          border: tier.isVIP
-              ? Border.all(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                  width: 1,
-                )
-              : null,
+    return Container(
+      height: 24,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: tier.bgGradient,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (tier.icon != null)
-              Icon(tier.icon, size: 9, color: tier.textColor)
-            else
-              Text(
-                tier.glyph ?? '',
-                style: TextStyle(
-                  color: tier.textColor,
-                  fontSize: 8,
-                  height: 1,
-                ),
-              ),
-            const SizedBox(width: 3),
+        borderRadius: BorderRadius.circular(7),
+        border: tier.isVIP
+            ? Border.all(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.3),
+                width: 1,
+              )
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tier.icon != null)
+            Icon(tier.icon, size: 10, color: tier.textColor)
+          else
             Text(
-              tier.label,
+              tier.glyph ?? '',
               style: TextStyle(
                 color: tier.textColor,
-                fontSize: 8,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.64,
+                fontSize: 9,
+                height: 1,
               ),
             ),
-          ],
-        ),
+          const SizedBox(width: 4),
+          Text(
+            TierInfo.displayTitle(rideName),
+            style: TextStyle(
+              color: tier.textColor,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }

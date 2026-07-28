@@ -452,8 +452,38 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
               ),
               const SizedBox(height: 28),
 
-              // ── Menu grid ──
-              _buildMenuGrid(c),
+              // ── Menu sections (grouped, neumorphic) ──
+              _buildMenuSections(c),
+
+              // ── Log Out — neumorphic surface, red accent ──
+              GestureDetector(
+                onTap: () => _confirmAndSignOut(context),
+                child: Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: neuBox(radius: 18),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.logout_rounded,
+                        size: 22,
+                        color: Color(0xFFFF5252),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        S.of(context).logOut,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFFF5252),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
             ],
           ),
         ),
@@ -461,112 +491,364 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
     );
   }
 
-  Widget _buildMenuGrid(AppColors c) {
-    final items = [
-      _MenuItem('help', Icons.support_agent_rounded, S.of(context).help),
-      _MenuItem(
-        'wallet',
-        Icons.account_balance_wallet_rounded,
-        S.of(context).wallet,
-      ),
-      _MenuItem('trips', Icons.route_rounded, S.of(context).yourTrips),
-      _MenuItem(
-        'scheduled',
-        Icons.event_available_rounded,
-        S.of(context).scheduledRides,
-      ),
-      _MenuItem('promos', Icons.percent_rounded, S.of(context).promoCodes),
-      _MenuItem('referral', Icons.person_add_alt_1_rounded, S.of(context).inviteFriendsTitle),
-      _MenuItem('safety', Icons.health_and_safety_rounded, S.of(context).safety),
-      _MenuItem('inbox', Icons.inbox_rounded, S.of(context).inbox),
-      _MenuItem('settings', Icons.settings_rounded, S.of(context).settings),
+  void _onMenuTap(String id) {
+    switch (id) {
+      case 'support':
+        Navigator.of(context).push(
+          slideFromRightRoute(const _SupportHubScreen()),
+        );
+        break;
+      case 'wallet':
+        Navigator.of(context).push(slideFromRightRoute(const WalletScreen()));
+        break;
+      case 'trips':
+        Navigator.of(
+          context,
+        ).push(slideFromRightRoute(const RideHistoryScreen()));
+        break;
+      case 'scheduled':
+        Navigator.of(
+          context,
+        ).push(slideFromRightRoute(const ScheduledRidesScreen()));
+        break;
+      case 'promos':
+        Navigator.of(
+          context,
+        ).push(slideFromRightRoute(const PromoCodeScreen()));
+        break;
+      case 'referral':
+        Navigator.of(
+          context,
+        ).push(slideFromRightRoute(const ReferralScreen()));
+        break;
+      case 'inbox':
+        Navigator.of(context).push(slideFromRightRoute(const InboxScreen()));
+        break;
+      case 'settings':
+        _openSettings();
+        break;
+    }
+  }
+
+  Widget _buildMenuSections(AppColors c) {
+    final s = S.of(context);
+    final sections = [
+      _MenuSection(s.accountSectionRides, [
+        _MenuItem('trips', Icons.route_rounded, s.yourTrips),
+        _MenuItem('scheduled', Icons.event_available_rounded, s.scheduledRides),
+      ]),
+      _MenuSection(s.accountSectionPayments, [
+        _MenuItem('wallet', Icons.account_balance_wallet_rounded, s.wallet),
+        _MenuItem('promos', Icons.percent_rounded, s.promoCodes),
+        _MenuItem(
+          'referral',
+          Icons.person_add_alt_1_rounded,
+          s.inviteFriendsTitle,
+        ),
+      ]),
+      _MenuSection(s.accountSectionSupport, [
+        _MenuItem('support', Icons.support_agent_rounded, s.helpAndSafety),
+        _MenuItem('inbox', Icons.inbox_rounded, s.inbox),
+      ]),
+      _MenuSection(s.accountSectionAccount, [
+        _MenuItem('settings', Icons.settings_rounded, s.settings),
+      ]),
     ];
 
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: items.map((item) {
-        return GestureDetector(
-          onTap: () async {
-            switch (item.id) {
-              case 'help':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const HelpScreen()));
-                break;
-              case 'wallet':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const WalletScreen()));
-                break;
-              case 'trips':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const RideHistoryScreen()));
-                break;
-              case 'scheduled':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const ScheduledRidesScreen()));
-                break;
-              case 'promos':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const PromoCodeScreen()));
-                break;
-              case 'referral':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const ReferralScreen()));
-                break;
-              case 'safety':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const SafetyScreen()));
-                break;
-              case 'inbox':
-                Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const InboxScreen()));
-                break;
-              case 'settings':
-                _openSettings();
-                break;
-            }
-          },
-          child: Container(
-            width: (MediaQuery.of(context).size.width - 48 - 12) / 2,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final section in sections) ...[
+          // ── Section header ──
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 10),
+            child: Text(
+              section.title.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+                color: c.textTertiary,
+              ),
+            ),
+          ),
+          // ── Raised neumorphic card holding the section rows ──
+          Container(
             decoration: neuBox(radius: 20),
-            child: Row(
+            child: Column(
               children: [
-                // Icon inside a pressed neumorphic well
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: neuBox(radius: 14, pressed: true),
-                  child: Icon(item.icon, color: _gold, size: 22),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    item.label,
+                for (var i = 0; i < section.items.length; i++) ...[
+                  if (i > 0)
+                    Divider(
+                      height: 1,
+                      indent: 68,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  _NeuMenuRow(
+                    icon: section.items[i].icon,
+                    label: section.items[i].label,
+                    onTap: () => _onMenuTap(section.items[i].id),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+        ],
+      ],
+    );
+  }
+}
+
+/// Full-width neumorphic menu row: icon in a pressed well, label, chevron.
+/// Shared by the account sections and the support hub.
+class _NeuMenuRow extends StatelessWidget {
+  static const _gold = Color(0xFFE8C547);
+
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final VoidCallback onTap;
+
+  const _NeuMenuRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: Icon(icon, color: _gold, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: c.textPrimary,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: TextStyle(fontSize: 12, color: c.textTertiary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: c.textTertiary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Hub that groups rider support: Help Center + Safety Center in one place.
+class _SupportHubScreen extends StatelessWidget {
+  const _SupportHubScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final s = S.of(context);
+
+    return Scaffold(
+      backgroundColor: neuBase,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: c.textPrimary,
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                s.helpAndSafety,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: c.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Container(
+                decoration: neuBox(radius: 20),
+                child: Column(
+                  children: [
+                    _NeuMenuRow(
+                      icon: Icons.support_agent_rounded,
+                      label: s.helpCenter,
+                      subtitle: s.helpCenterDesc,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const HelpScreen())),
+                    ),
+                    Divider(
+                      height: 1,
+                      indent: 68,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                    _NeuMenuRow(
+                      icon: Icons.health_and_safety_rounded,
+                      label: s.safetyCenter,
+                      subtitle: s.safetyCenterDesc,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).push(slideFromRightRoute(const SafetyScreen())),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared sign-out flow: confirmation dialog → UserSession.logout() →
+/// back to Splash. Used by the Account screen Log Out button and the
+/// Settings screen sign-out row.
+Future<void> _confirmAndSignOut(BuildContext context) async {
+  const red = Color(0xFFFF5252);
+  const gold = Color(0xFFE8C547);
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+        decoration: neuBox(radius: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: neuBox(radius: 18, pressed: true),
+              child: const Icon(Icons.logout_rounded, color: red, size: 26),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              S.of(context).signOutTitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              S.of(context).signOutConfirmation,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                // Cancel — pressed neumorphic well, gold text
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(ctx).pop(false),
+                    child: Container(
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: neuBox(radius: 12, pressed: true),
+                      child: Text(
+                        S.of(context).cancel,
+                        style: const TextStyle(
+                          color: gold,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Sign Out — solid red destructive action
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(ctx).pop(true),
+                    child: Container(
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        S.of(context).signOutButton,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        );
-      }).toList(),
-    );
-  }
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (confirm != true) return;
+
+  await UserSession.logout();
+
+  if (!context.mounted) return;
+  Navigator.of(context).pushAndRemoveUntil(
+    smoothFadeRoute(const SplashScreen(), durationMs: 600),
+    (_) => false,
+  );
 }
 
 class _MenuItem {
@@ -574,6 +856,12 @@ class _MenuItem {
   final IconData icon;
   final String label;
   const _MenuItem(this.id, this.icon, this.label);
+}
+
+class _MenuSection {
+  final String title;
+  final List<_MenuItem> items;
+  const _MenuSection(this.title, this.items);
 }
 
 // ─────────────────────────────────────────────
@@ -818,55 +1106,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     );
   }
 
-  void _signOut(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.of(context).surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          S.of(context).signOutTitle,
-          style: TextStyle(
-            color: AppColors.of(context).textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Text(
-          S.of(context).signOutConfirmation,
-          style: TextStyle(color: AppColors.of(context).textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(
-              S.of(context).cancel,
-              style: TextStyle(color: AppColors.of(context).textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              S.of(context).signOutButton,
-              style: const TextStyle(
-                color: Color(0xFFE8C547),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    await UserSession.logout();
-
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      smoothFadeRoute(const SplashScreen(), durationMs: 600),
-      (_) => false,
-    );
-  }
+  void _signOut(BuildContext context) => _confirmAndSignOut(context);
 }
 
 // ────────────────────────────────────────────────────────────────────

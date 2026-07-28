@@ -129,6 +129,9 @@ class S {
   String get lastName => _es ? 'Apellido' : 'Last Name';
   String get alreadyHaveAccount =>
       _es ? '¿Ya tienes una cuenta?' : 'Already have an account?';
+  String get verifyingTerms => _es
+      ? 'Verificando términos…'
+      : 'Verifying terms…';
 
   // ── Email Collect Screen ──────────────────────────────────────────────────
   String greetSharePhone(String name) => _es
@@ -288,6 +291,20 @@ class S {
   String get privacy => _es ? 'Privacidad' : 'Privacy';
   String get safety => _es ? 'Seguridad' : 'Safety';
   String get help => _es ? 'Ayuda' : 'Help';
+  String get helpAndSafety => _es ? 'Ayuda y Seguridad' : 'Help & Safety';
+  String get helpCenter => _es ? 'Centro de ayuda' : 'Help Center';
+  String get helpCenterDesc => _es
+      ? 'Preguntas frecuentes, soporte y contacto'
+      : 'FAQs, support and contact';
+  String get safetyCenterDesc => _es
+      ? 'Herramientas de seguridad y contactos de confianza'
+      : 'Safety tools and trusted contacts';
+  String get accountSectionRides => _es ? 'Viajes' : 'Rides';
+  String get accountSectionPayments =>
+      _es ? 'Pagos y recompensas' : 'Payments & Rewards';
+  String get accountSectionSupport =>
+      _es ? 'Soporte y seguridad' : 'Support & Safety';
+  String get accountSectionAccount => _es ? 'Cuenta' : 'Account';
   String get about => _es ? 'Acerca de' : 'About';
   String get logOut => _es ? 'Cerrar sesión' : 'Log out';
   String get logOutConfirm => _es
@@ -831,6 +848,9 @@ class S {
   String get searchHelpTopics =>
       _es ? 'Buscar temas de ayuda...' : 'Search for help topics...';
   String get contactSupport => _es ? 'Contactar Soporte' : 'Contact Support';
+  String get supportConversationDesc => _es
+      ? 'Tus mensajes con el equipo de soporte'
+      : 'Your messages with the support team';
   String get emailSupport => _es ? 'Correo Electrónico' : 'Email';
   String get callSupport => _es ? 'Llamar' : 'Call';
   String get noResultsFound =>
@@ -1616,6 +1636,12 @@ class S {
   String get offRoute => _es ? 'Fuera de ruta' : 'Off route';
   String get routeOverview => _es ? 'RESUMEN DE RUTA' : 'ROUTE OVERVIEW';
   String get yourLocation => _es ? 'Tu ubicación' : 'Your Location';
+  String get yourLiveLocation =>
+      _es ? 'Tu ubicación en vivo' : 'Your live location';
+  String get simulateArrival => _es ? 'Simular llegada' : 'Simulate arrival';
+  String get submit => _es ? 'Enviar' : 'Submit';
+  String get confirmPayment => _es ? 'Confirmar pago' : 'Confirm Payment';
+  String get payNow => _es ? 'Pagar ahora' : 'Pay Now';
   String get currentPosition => _es ? 'Posición actual' : 'Current position';
   String get pickupLabel => _es ? 'Recogida' : 'Pickup';
   String get dropOffLabel => _es ? 'Destino' : 'Drop-off';
@@ -2498,6 +2524,45 @@ class S {
   String get readContractorAgreement => _es
       ? 'Leer el Acuerdo de Contratista Independiente'
       : 'Read the Independent Contractor Agreement';
+  String get agreeBackgroundCheckText => _es
+      ? 'He leído y acepto el documento de Divulgación y Autorización de Verificación de Antecedentes (FCRA).'
+      : 'I have read and agree to the Background Check Disclosure and Authorization (FCRA).';
+  String get agreePrivacyPolicyText => _es
+      ? 'He leído y acepto la Política de Privacidad y las políticas de la app y la compañía.'
+      : 'I have read and agree to the Privacy Policy and the app and company policies.';
+  String get readDriverTermsDoc => _es
+      ? 'Leer los Términos de Servicio'
+      : 'Read the Terms of Service';
+  String get readBackgroundCheckDoc => _es
+      ? 'Leer el documento de verificación de antecedentes'
+      : 'Read the background check document';
+  String get readPrivacyPolicyDoc => _es
+      ? 'Leer la Política de Privacidad'
+      : 'Read the Privacy Policy';
+  String get readAllDocsCheckbox => _es
+      ? 'He leído los siguientes documentos:'
+      : 'I have read the following documents:';
+  String get acceptAllDocsCheckbox => _es
+      ? 'Acepto y estoy de acuerdo con los siguientes documentos:'
+      : 'I accept and agree with the following documents:';
+  String get acceptDocsAboveText => _es
+      ? 'Acepto y estoy de acuerdo con los documentos anteriores.'
+      : 'I accept and agree with the documents above.';
+  String get readAcceptAllDocsText => _es
+      ? 'He leído, acepto y estoy de acuerdo con los términos, condiciones y políticas.'
+      : 'I have read, accept, and agree with the terms, conditions, and policies.';
+  String get docLinkDriverTerms => _es
+      ? 'Términos de Servicio para Conductores'
+      : 'Driver Terms of Service';
+  String get docLinkBackgroundCheck => _es
+      ? 'Divulgación y Autorización de Verificación de Antecedentes'
+      : 'Background Check Disclosure & Authorization';
+  String get docLinkPrivacyPolicy => _es
+      ? 'Política de Privacidad y políticas de la compañía'
+      : 'Privacy Policy & company policies';
+  String get docLinkContractor => _es
+      ? 'Acuerdo de Contratista Independiente'
+      : 'Independent Contractor Agreement';
   String get driverTermsOfServiceMenu => _es
       ? 'Términos de Servicio para Conductores'
       : 'Driver Terms of Service';
@@ -3637,6 +3702,15 @@ class S {
       : 'An account with this $method is already registered. Would you like to log in instead?';
   String get logInBtn => _es ? 'Iniciar Sesión' : 'Log In';
   String get createAccountTitle => _es ? 'Crear cuenta' : 'Create account';
+  String get createAccountSubtitle => _es
+      ? 'Ingresa tus datos para registrarte.'
+      : 'Enter your details to sign up.';
+  String get acceptTermsDocuments => _es
+      ? 'He leído y acepto los Términos de Servicio y todos los documentos legales.'
+      : 'I have read and accept the Terms of Service and all legal documents.';
+  String get acceptPrivacyData => _es
+      ? 'Acepto la Política de Privacidad y el tratamiento de mis datos personales.'
+      : 'I accept the Privacy Policy and the processing of my personal data.';
   String get enterPhoneToSignUp => _es ? 'Ingresa tu número de teléfono para registrarte.' : 'Enter your phone number to sign up.';
   String get enterEmailToSignUp => _es ? 'Ingresa tu email para registrarte.' : 'Enter your email to sign up.';
   String get emailAddressHint => _es ? 'Dirección de email' : 'Email address';
@@ -3677,7 +3751,7 @@ class S {
   String receiptSentToEmail(String email) => _es ? 'Recibo enviado a $email' : 'Receipt sent to $email';
   String completedOnDate(String date) => _es ? 'Completado · $date' : 'Completed · $date';
   String get tripDetailsHeader => _es ? 'Detalles del Viaje' : 'Trip Details';
-  String get fareBreakdownHeader => _es ? 'Desglose de Tarifa' : 'Fare Breakdown';
+  String get fareBreakdownHeader => _es ? 'Resumen de Pago' : 'Payment Summary';
   String get baseFareLabel => _es ? 'Tarifa base' : 'Base fare';
   String mileageLabel(String dist) => _es ? 'Distancia ($dist)' : 'Mileage ($dist)';
   String timeFareLabel(String time) => _es ? 'Tiempo ($time)' : 'Time ($time)';
@@ -3689,6 +3763,14 @@ class S {
   String get shareBtn => _es ? 'Compartir' : 'Share';
   String get sentLabel => _es ? 'Enviado' : 'Sent';
   String get thankYouForRiding => _es ? 'Gracias por viajar con Cruise' : 'Thank you for riding with Cruise';
+  String get paidByPassengerLabel => _es ? 'Pagado por el pasajero' : 'Paid by passenger';
+  String get subtotalLabel => 'Subtotal';
+  String get scheduledFeeLabel => _es ? 'Cargo por viaje programado' : 'Scheduled ride fee';
+  String get meetGreetLabel => 'Meet & Greet';
+  String get cancellationFeeLabel => _es ? 'Cargo por cancelación' : 'Cancellation fee';
+  String get floridaTaxLabel => _es ? 'Impuesto' : 'Tax';
+  String get tripFareLabel => _es ? 'Tarifa del viaje' : 'Trip fare';
+  String get noTipLabel => _es ? 'Sin propina' : 'No tip';
 
   // ── Emergency Dialog (driver) ─────────────────────────────────────────────
   String get emergencyHelpTitle => _es ? '¿Necesitas ayuda de emergencia?' : 'Need emergency help?';

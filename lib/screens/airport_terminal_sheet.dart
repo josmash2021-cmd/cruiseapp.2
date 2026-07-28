@@ -24,14 +24,23 @@ export '../models/airport_models.dart';
 /// Step 3: Flight number + confirm
 class AirportTerminalSheet extends StatefulWidget {
   final bool isDark;
-  const AirportTerminalSheet({super.key, required this.isDark});
+
+  /// When provided (airport flow from [AirportDirectionScreen]), the
+  /// direction step is skipped and the sheet starts at the airport list.
+  final AirportDirection? initialDirection;
+
+  const AirportTerminalSheet({
+    super.key,
+    required this.isDark,
+    this.initialDirection,
+  });
 
   @override
   State<AirportTerminalSheet> createState() => _AirportTerminalSheetState();
 }
 
 class _AirportTerminalSheetState extends State<AirportTerminalSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static final _airportCodeRe = RegExp(r'\b([A-Z]{3})\b');
 
   // ── colours ── Premium gold palette matching web
@@ -40,21 +49,20 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   static const _blue      = Color(0xFF3B82F6);
   static const _green     = Color(0xFF22C55E);
   static const _red       = Color(0xFFEF4444);
-  // Surfaces follow the shared neumorphic palette (neu_style.dart).
-  static const _surfaceDark = neuBase;
-  static const _cardDark    = neuSurface;
 
   // ── animation ──
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeOut;
   late final Animation<double> _fadeIn;
+  // Slow repeating sweep for the active progress segment.
+  late final AnimationController _shimmerCtl;
 
   // ── state ──
   int _step = 0; // 0=direction 1=airport 2=details 3=confirm
 
-  // ── video background ──
-  VideoPlayerController? _videoController;
-  bool _isVideoInitialized = false;
+  // ── video background (direction step only) ──
+  VideoPlayerController? _video;
+  bool _videoReady = false;
 
   AirportDirection? _direction;
   AirportInfo?      _selectedAirport;
@@ -88,6 +96,11 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    _shimmerCtl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+    _initVideo();
     _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _animCtrl,
@@ -100,41 +113,54 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
         curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
       ),
     );
-    // Initialize video background for step 0
-    _initVideo();
+    // When the direction was picked on AirportDirectionScreen, skip the
+    // in-sheet direction step and start at the airport list.
+    if (widget.initialDirection != null) {
+      _direction = widget.initialDirection;
+      _step = 1;
+    }
   }
 
-  void _initVideo() async {
+  Future<void> _initVideo() async {
     try {
-      _videoController = VideoPlayerController.asset('assets/videos/airport_bg.mp4');
-      await _videoController!.initialize();
-      _videoController!.setLooping(true);
-      _videoController!.setVolume(0);
+      _video = VideoPlayerController.asset('assets/videos/airport_bg.mp4');
+      await _video!.initialize();
+      await _video!.setLooping(true);
+      await _video!.setVolume(0);
       if (mounted) {
-        setState(() => _isVideoInitialized = true);
-        _videoController!.play();
+        setState(() => _videoReady = true);
+        if (_step == 0) _video!.play();
       }
     } catch (_) {
-      // Video not available, continue without it
+      // Video unavailable — the neuBase background stays as fallback.
+    }
+  }
+
+  /// Play the background video only on the direction step.
+  void _syncVideoToStep() {
+    if (!_videoReady) return;
+    if (_step == 0) {
+      _video?.play();
+    } else {
+      _video?.pause();
     }
   }
 
   @override
   void dispose() {
     _animCtrl.dispose();
+    _shimmerCtl.dispose();
+    _video?.dispose();
     _flightCtrl.dispose();
     _searchCtrl.dispose();
     _airportListScrollCtrl.dispose();
     _debounce?.cancel();
-    _videoController?.dispose();
     super.dispose();
   }
 
   // ─────────────────────────────────────────────
   //  Theme helpers
   // ─────────────────────────────────────────────
-  Color get _bg         => widget.isDark ? _surfaceDark : Colors.white;
-  Color get _surface    => widget.isDark ? _cardDark : const Color(0xFFF5F5F5);
   Color get _textPrimary   => widget.isDark ? Colors.white : const Color(0xFF0F1419);
   Color get _textSecondary => widget.isDark ? Colors.white.withValues(alpha: 0.55) : const Color(0xFF6B7280);
   Color get _border     => widget.isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black12;
@@ -145,9 +171,13 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   void _advance() {
     setState(() => _step++);
     _animCtrl.forward(from: 0);
+    _syncVideoToStep();
   }
 
   void _goBack() {
+    // Step 1 → step 0 (direction picker) even when the direction came
+    // pre-selected: back should return to the previous page of the
+    // flow, never drop the rider straight to home. Back at step 0 pops.
     if (_step == 0) {
       Navigator.of(context).pop();
       return;
@@ -163,6 +193,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     }
     setState(() => _step--);
     _animCtrl.reverse(from: 1);
+    _syncVideoToStep();
   }
 
   void _selectDirection(AirportDirection dir) {
@@ -307,44 +338,35 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   // Fullscreen sheet for ALL steps — 1:1 with web vrApt--full
   Widget _buildFullscreenSheet(BuildContext context, double keyboardHeight) {
-    final mq = MediaQuery.of(context);
     final isStep0 = _step == 0;
 
-    // Status bar inset — read from the root View so it's always correct,
-    // even when this widget is mounted inside showModalBottomSheet (which
-    // can collapse the local MediaQuery padding to 0). Fallback to local mq
-    // and finally to a 44pt default for notched iPhones.
-    final double rootTopInset =
-        MediaQueryData.fromView(View.of(context)).padding.top;
-    final double topInset = rootTopInset > 0
-        ? rootTopInset
-        : (mq.viewPadding.top > 0
-            ? mq.viewPadding.top
-            : (mq.padding.top > 0 ? mq.padding.top : 44.0));
-
+    // The modal sheet already respects the status bar (useSafeArea:
+    // true), so no manual top inset here — adding one left a visible
+    // dead gap above the header.
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video background (visible in all steps) — edge-to-edge, behind status bar
-        if (_isVideoInitialized && _videoController != null)
+        // Neumorphic base background.
+        const SizedBox.expand(
+          child: ColoredBox(color: neuBase),
+        ),
+        // Video background on the direction step only.
+        if (_step == 0 && _videoReady && _video != null) ...[
           SizedBox.expand(
             child: FittedBox(
               fit: BoxFit.cover,
               child: SizedBox(
-                width: _videoController!.value.size.width,
-                height: _videoController!.value.size.height,
-                child: VideoPlayer(_videoController!),
+                width: _video!.value.size.width,
+                height: _video!.value.size.height,
+                child: VideoPlayer(_video!),
               ),
             ),
           ),
-        // Dark overlay (scrim) — matches web's .vrApt__bgOverlay
-        Container(
-          color: Colors.black.withValues(alpha: _isVideoInitialized ? 0.78 : 0.88),
-        ),
-        // Main content column — pushed below the status bar so the system
-        // clock/battery never overlap the back button or title.
+          ColoredBox(color: Colors.black.withValues(alpha: 0.78)),
+        ],
+        // Main content column.
         Padding(
-          padding: EdgeInsets.only(top: topInset),
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
               // Header row: Back button (step > 0) or Close (step 0) + Title
@@ -390,7 +412,25 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                           ),
                         ),
                     ] else
-                      const Spacer(),
+                      // Step 0 — centered "Airport Ride" title (same as
+                      // the standalone direction screen).
+                      Expanded(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 40),
+                            child: Text(
+                              S.of(context).airportRideTitle,
+                              style: const TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -400,16 +440,31 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: _buildProgressDots(),
                 ),
-              // Step content
+              // Step content — fade + gentle vertical slide so steps
+              // never swap abruptly.
               Expanded(
                 child: AnimatedBuilder(
                   animation: _animCtrl,
-                  builder: (_, child) => Opacity(
-                    opacity: _animCtrl.isAnimating
-                        ? (_animCtrl.value < 0.4 ? _fadeOut.value : _fadeIn.value)
-                        : 1.0,
-                    child: child,
-                  ),
+                  builder: (_, child) {
+                    final animating = _animCtrl.isAnimating;
+                    final fadingOut =
+                        animating && _animCtrl.value < 0.4;
+                    final opacity = animating
+                        ? (fadingOut ? _fadeOut.value : _fadeIn.value)
+                        : 1.0;
+                    final dy = animating
+                        ? (fadingOut
+                            ? -10 * (1 - _fadeOut.value)
+                            : 14 * (1 - _fadeIn.value))
+                        : 0.0;
+                    return Opacity(
+                      opacity: opacity,
+                      child: Transform.translate(
+                        offset: Offset(0, dy),
+                        child: child,
+                      ),
+                    );
+                  },
                   child: _buildStep(),
                 ),
               ),
@@ -543,28 +598,48 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
 
   Widget _buildProgressDots() {
     // .vrApt__progress (css:143-158): padding 0 16px 16px.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Row(
-        children: List.generate(4, (i) {
-          final active   = i == _step;
-          final complete = i < _step;
-          return Expanded(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              height: 3,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
-                color: complete
-                    ? _blue
-                    : active
-                        ? _blue.withValues(alpha: 0.6)
-                        : _border,
-              ),
-            ),
-          );
-        }),
-      ),
+    // Active segment carries a slow shimmer sweep so it reads alive.
+    return AnimatedBuilder(
+      animation: _shimmerCtl,
+      builder: (context, _) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            children: List.generate(4, (i) {
+              final active   = i == _step;
+              final complete = i < _step;
+              return Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  height: 3,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: complete
+                        ? _blue
+                        : active
+                            ? null
+                            : _border,
+                    gradient: active
+                        ? LinearGradient(
+                            colors: [
+                              _blue.withValues(alpha: 0.35),
+                              _blue,
+                              _blue.withValues(alpha: 0.35),
+                            ],
+                            stops: [
+                              (_shimmerCtl.value - 0.3).clamp(0.0, 1.0),
+                              _shimmerCtl.value,
+                              (_shimmerCtl.value + 0.3).clamp(0.0, 1.0),
+                            ],
+                          )
+                        : null,
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      },
     );
   }
 
@@ -584,25 +659,25 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   //  STEP 0 — Direction Picker (1:1 with web - vertical cards)
   // ─────────────────────────────────────────────
   Widget _buildDirectionPicker() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
         children: [
+          const Spacer(flex: 2),
           _buildDirectionCardVertical(
             direction: AirportDirection.toAirport,
             title: S.of(context).takeMeToAirport,
             subtitle: S.of(context).flyingOutSubtitle,
             isToAirport: true,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 28),
           _buildDirectionCardVertical(
             direction: AirportDirection.fromAirport,
             title: S.of(context).pickMeUpFromAirport,
             subtitle: S.of(context).justLandedSubtitle,
             isToAirport: false,
           ),
+          const Spacer(flex: 3),
         ],
       ),
     );
@@ -685,11 +760,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
             // .vrApt__searchBox (css:263-272): padding 12px 14px, gap 10px,
             // bg surface, radius 14, border .10, margin-bottom 12px.
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _border),
-            ),
+            decoration: neuBox(radius: 14, pressed: true),
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
@@ -764,30 +835,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          // Subtle gradient like web
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0x0AFFFFFF), // rgba(255,255,255,.04)
-              Color(0x05FFFFFF), // rgba(255,255,255,.02)
-            ],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.07),
-            width: 1,
-          ),
-          // Subtle glow
-          boxShadow: [
-            BoxShadow(
-              color: Colors.white.withValues(alpha: 0.03),
-              blurRadius: 20,
-              spreadRadius: -5,
-            ),
-          ],
-        ),
+        decoration: neuBox(radius: 16),
         child: Row(
           children: [
             // Airport code in premium gold badge
@@ -856,27 +904,6 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 ],
               ),
             ),
-            // Badge de precio dorado (si aplica)
-            if (a.flatRateSurcharge != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.15), 
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  '+\$${a.flatRateSurcharge!.toStringAsFixed(0)}', 
-                  style: const TextStyle(
-                    color: Color(0xFFE8C547), 
-                    fontSize: 12, 
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
             const SizedBox(width: 10),
             // Flecha al final
             Icon(
@@ -897,7 +924,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _border)),
+        decoration: neuBox(radius: 16),
         child: Row(
           children: [
             Container(
@@ -991,11 +1018,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                     horizontal: selected ? 15.5 : 16,
                     vertical: selected ? 13.5 : 14,
                   ),
-                  decoration: BoxDecoration(
-                    color: selected ? _gold.withValues(alpha: 0.08) : _surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: selected ? _gold : _border, width: selected ? 1.5 : 1),
-                  ),
+                  decoration: selected
+                      ? neuBox(radius: 14, borderColor: _gold, borderWidth: 1.5)
+                      : neuBox(radius: 14),
                   child: Row(
                     children: [
                       // .vrApt__airlineIcon (vip-apt-sheet.css:448-458):
@@ -1045,11 +1070,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   Widget _buildUnknownAirportFallback() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _gold.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _gold.withValues(alpha: 0.2)),
-      ),
+      decoration: neuBox(radius: 14, borderColor: _gold.withValues(alpha: 0.2)),
       child: Column(
         children: [
           Icon(Icons.info_outline_rounded, color: _gold, size: 24),
@@ -1117,11 +1138,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                     horizontal: selected ? 13.5 : 14,
                     vertical: selected ? 9.5 : 10,
                   ),
-                  decoration: BoxDecoration(
-                    color: selected ? _gold.withValues(alpha: 0.08) : _surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: selected ? _gold : _border, width: selected ? 1.5 : 1),
-                  ),
+                  decoration: selected
+                      ? neuBox(radius: 12, borderColor: _gold, borderWidth: 1.5)
+                      : neuBox(radius: 12),
                   child: Text(t.name,
                     style: TextStyle(color: selected ? _gold : _textPrimary, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 13)),
                 ),
@@ -1164,17 +1183,13 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                             // .vrApt__doorTile: padding 14 → 13.5 selected
                             // (border 1→1.5 compensation).
                             padding: EdgeInsets.all(selected ? 13.5 : 14),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? _gold.withValues(alpha: 0.08)
-                                  : _surface,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: selected
-                                      ? _gold.withValues(alpha: 0.45)
-                                      : _border,
-                                  width: selected ? 1.5 : 1),
-                            ),
+                            decoration: selected
+                                ? neuBox(
+                                    radius: 14,
+                                    borderColor: _gold.withValues(alpha: 0.45),
+                                    borderWidth: 1.5,
+                                  )
+                                : neuBox(radius: 14),
                             child: Row(
                               children: [
                                 Icon(Icons.pin_drop_rounded,
@@ -1216,7 +1231,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
     final isFrom  = _direction == AirportDirection.fromAirport;
     final dirColor = isFrom ? _green : _blue;
 
-    return SingleChildScrollView(
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
@@ -1225,10 +1243,9 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           // Summary card
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: dirColor.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: dirColor.withValues(alpha: 0.18)),
+            decoration: neuBox(
+              radius: 16,
+              borderColor: dirColor.withValues(alpha: 0.18),
             ),
             // .vrApt__summaryRow (vip-apt-sheet.css:619-632):
             //   padding: 4px 0 per row — compact spacing, no gaps.
@@ -1236,21 +1253,19 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               children: [
                 _summaryRow(Icons.flight_rounded, S.of(context).airport, '${ap.code} — ${ap.name}', dirColor),
                 if (_selectedTerminal != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
                   _summaryRow(Icons.door_front_door_outlined, S.of(context).terminalLabel, _selectedTerminal!.name, dirColor),
                 ],
                 if (_selectedAirline != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
                   _summaryRow(Icons.airplanemode_active_rounded, S.of(context).airlineLabel, _selectedAirline!, dirColor),
                 ],
                 if (_selectedArrivalDoor != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
                   _summaryRow(Icons.pin_drop_rounded, S.of(context).arrivalDoorLabel, _selectedArrivalDoor!, dirColor),
                 ],
-                if (ap.flatRateSurcharge != null) ...[
-                  const SizedBox(height: 4),
-                  _summaryRow(Icons.attach_money_rounded, S.of(context).airportSurchargeLabel, '+\$${ap.flatRateSurcharge!.toStringAsFixed(2)}', _gold),
-                ],
+                // Airport surcharge is charged but intentionally NOT
+                // shown to the rider on this page.
               ],
             ),
           ),
@@ -1259,10 +1274,7 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           // Direction note
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: dirColor.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            decoration: neuBox(radius: 12, pressed: true),
             child: Row(
               children: [
                 Icon(isFrom ? Icons.hail_rounded : Icons.place_rounded, color: dirColor, size: 18),
@@ -1289,10 +1301,10 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _flightError ? _red.withValues(alpha: 0.6) : _border),
+            decoration: neuBox(
+              radius: 14,
+              pressed: true,
+              borderColor: _flightError ? _red.withValues(alpha: 0.6) : null,
             ),
             child: TextField(
               controller: _flightCtrl,
@@ -1314,12 +1326,16 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
           ],
           const SizedBox(height: 6),
           Text(S.of(context).flightTrackingNote, style: TextStyle(color: _textSecondary, fontSize: 12)),
-          const SizedBox(height: 24),
+        ],
+      ),
+          ),
+        ),
 
-          // Confirm button — .vrApt__confirmBtn:active { transform:
-          // scale(.985) } (vip-apt-sheet.css:715). Wrap in _PressScale
-          // to match that press feedback.
-          _PressScale(
+        // Confirm button pinned at the bottom — same placement as every
+        // other screen in the flow.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: _PressScale(
             onTap: _confirm,
             child: Container(
               width: double.infinity, height: 54,
@@ -1328,8 +1344,6 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(color: (isFrom ? _green : _gold).withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
               ),
-              // .vrApt__confirmBtn (vip-apt-sheet.css:716-725): text only,
-              // no leading icon. Keep the button minimal like the web.
               child: Center(
                 child: Text(
                   isFrom ? S.of(context).confirmAirportPickupBtn : S.of(context).confirmAirportDropOff,
@@ -1338,19 +1352,18 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildAirportBadge(AirportInfo ap) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0e0e12), // Dark background like web
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _gold.withValues(alpha: 0.45)),
-        boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 2))],
+      decoration: neuBox(
+        radius: 14,
+        pressed: true,
+        borderColor: _gold.withValues(alpha: 0.45),
       ),
       child: Row(
         children: [
@@ -1367,11 +1380,40 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   Widget _summaryRow(IconData icon, String label, String value, Color iconColor) {
     return Row(
       children: [
-        Icon(icon, color: iconColor, size: 18),
-        const SizedBox(width: 10),
-        Text('$label: ', style: TextStyle(color: _textSecondary, fontSize: 13)),
+        Container(
+          width: 32,
+          height: 32,
+          decoration: neuBox(radius: 10, pressed: true),
+          child: Icon(icon, color: iconColor, size: 16),
+        ),
+        const SizedBox(width: 12),
         Expanded(
-          child: Text(value, style: TextStyle(color: _textPrimary, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: _textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1536,31 +1578,9 @@ class _AnimatedPlaneIconState extends State<_AnimatedPlaneIcon>
             : -1.5 * math.sin(t * 2 * math.pi); // Tilt other way
 
         return Container(
-          width: 190,
-          height: 190,
-          decoration: BoxDecoration(
-            // Glass effect like web
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: gold.withValues(alpha: 0.18),
-              width: 1,
-            ),
-            boxShadow: [
-              // Outer shadow
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-              // Gold glow ring
-              BoxShadow(
-                color: gold.withValues(alpha: 0.06),
-                blurRadius: 0,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
+          width: 150,
+          height: 150,
+          decoration: neuBox(radius: 22, pressed: true),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: Stack(

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
+import '../../widgets/neu_style.dart';
 import '../forgot_password_screen.dart';
 import '../login_password_screen.dart';
 import 'driver_signup_screen.dart';
@@ -252,50 +254,30 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
+    final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(
           children: [
             // ── Top bar ──
             Container(
-              padding: EdgeInsets.only(top: pad.top + 8, left: 4, right: 16),
+              padding: EdgeInsets.only(top: pad.top + 8, left: 16, right: 16),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _gold.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.directions_car_filled_rounded,
-                          color: _gold,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          S.of(context).driverBadge,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        color: c.textPrimary,
+                        size: 22,
+                      ),
                     ),
                   ),
                 ],
@@ -318,7 +300,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           style: GoogleFonts.poppins(
                             fontSize: 32,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            letterSpacing: -0.5,
+                            color: c.textPrimary,
                             height: 1.15,
                           ),
                         ),
@@ -327,7 +310,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           S.of(context).signInToEarn,
                           style: GoogleFonts.inter(
                             fontSize: 15,
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: c.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 40),
@@ -337,16 +320,18 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           child: Column(
                             children: [
                               _buildField(
+                                c,
                                 controller: _emailCtrl,
-                                label: S.of(context).emailOrPhone,
+                                hint: S.of(context).emailOrPhone,
                                 icon: Icons.person_outline_rounded,
                                 keyboardType: TextInputType.emailAddress,
                                 autofillHints: const [AutofillHints.email, AutofillHints.username],
                               ),
                               const SizedBox(height: 18),
                               _buildField(
+                                c,
                                 controller: _passCtrl,
-                                label: S.of(context).passwordLabel,
+                                hint: S.of(context).passwordLabel,
                                 icon: Icons.lock_outline_rounded,
                                 obscure: _obscure,
                                 autofillHints: const [AutofillHints.password],
@@ -355,7 +340,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                     _obscure
                                         ? Icons.visibility_off_outlined
                                         : Icons.visibility_outlined,
-                                    color: Colors.white38,
+                                    color: c.textTertiary,
                                     size: 20,
                                   ),
                                   onPressed: () =>
@@ -402,26 +387,18 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         const SizedBox(height: 36),
 
                         // ── Login button ──
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: ElevatedButton(
-                            onPressed: _canLogin && !_loading
-                                ? _handleLogin
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _canLogin
-                                  ? _gold
-                                  : Colors.white12,
-                              foregroundColor: Colors.black,
-                              disabledBackgroundColor: Colors.white12,
-                              disabledForegroundColor: Colors.white24,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              elevation: _canLogin ? 4 : 0,
-                              shadowColor: _gold.withValues(alpha: 0.4),
-                            ),
+                        GestureDetector(
+                          onTap: _canLogin && !_loading ? _handleLogin : null,
+                          child: Container(
+                            width: double.infinity,
+                            height: 56,
+                            decoration: _canLogin
+                                ? BoxDecoration(
+                                    color: _gold,
+                                    borderRadius: BorderRadius.circular(16),
+                                  )
+                                : neuBox(radius: 16, pressed: true),
+                            alignment: Alignment.center,
                             child: _loading
                                 ? const SizedBox(
                                     width: 22,
@@ -436,6 +413,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                     style: TextStyle(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
+                                      color: _canLogin
+                                          ? Colors.black
+                                          : c.textTertiary,
                                     ),
                                   ),
                           ),
@@ -448,7 +428,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                           children: [
                             Expanded(
                               child: Divider(
-                                color: Colors.white12,
+                                color: c.divider,
                                 thickness: 1,
                               ),
                             ),
@@ -459,14 +439,14 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                               child: Text(
                                 S.of(context).orDivider,
                                 style: TextStyle(
-                                  color: Colors.white38,
+                                  color: c.textTertiary,
                                   fontSize: 13,
                                 ),
                               ),
                             ),
                             Expanded(
                               child: Divider(
-                                color: Colors.white12,
+                                color: c.divider,
                                 thickness: 1,
                               ),
                             ),
@@ -476,34 +456,34 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         const SizedBox(height: 32),
 
                         // ── Sign up to drive ──
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                slideFromRightRoute(const DriverSignupScreen()),
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.person_add_alt_1_rounded,
-                              size: 20,
-                            ),
-                            label: Text(
-                              S.of(context).signUpToDrive,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _gold,
-                              side: BorderSide(
-                                color: _gold.withValues(alpha: 0.5),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              slideFromRightRoute(const DriverSignupScreen()),
+                            );
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            height: 54,
+                            decoration: neuBox(radius: 16, pressed: true),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.person_add_alt_1_rounded,
+                                  color: _gold,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  S.of(context).signUpToDrive,
+                                  style: const TextStyle(
+                                    color: _gold,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -521,16 +501,16 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                                 text: S.of(context).lookingToRide,
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.white54,
+                                  color: c.textSecondary,
                                 ),
                                 children: [
                                   TextSpan(
                                     text: S.of(context).switchToRider,
-                                    style: TextStyle(
-                                      color: Colors.white,
+                                    style: const TextStyle(
+                                      color: _gold,
                                       fontWeight: FontWeight.w700,
                                       decoration: TextDecoration.underline,
-                                      decorationColor: Colors.white,
+                                      decorationColor: _gold,
                                     ),
                                   ),
                                 ],
@@ -553,41 +533,42 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
     );
   }
 
-  Widget _buildField({
+  /// Neumorphic pressed-well text field (mirrors the rider create-account
+  /// fields in `login_screen.dart`).
+  Widget _buildField(
+    AppColors c, {
     required TextEditingController controller,
-    required String label,
+    required String hint,
     required IconData icon,
     bool obscure = false,
     Widget? suffix,
     TextInputType keyboardType = TextInputType.text,
     Iterable<String>? autofillHints,
   }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      autofillHints: autofillHints,
-      style: const TextStyle(color: Colors.white, fontSize: 16),
-      cursorColor: _gold,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.white38, fontSize: 15),
-        prefixIcon: Icon(icon, color: _gold, size: 20),
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.white12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: _gold, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 18,
-        ),
+    return Container(
+      decoration: neuBox(radius: 16, pressed: true),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: c.textTertiary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              obscureText: obscure,
+              keyboardType: keyboardType,
+              autofillHints: autofillHints,
+              style: TextStyle(color: c.textPrimary, fontSize: 16),
+              cursorColor: _gold,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+              ),
+            ),
+          ),
+          if (suffix != null) suffix,
+        ],
       ),
     );
   }

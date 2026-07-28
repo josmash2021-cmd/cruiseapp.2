@@ -2,19 +2,24 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 
+import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
+import '../../widgets/neu_style.dart';
 import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
+import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'license_scanner_screen.dart';
@@ -43,7 +48,6 @@ class DriverSignupScreen extends StatefulWidget {
 class _DriverSignupScreenState extends State<DriverSignupScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
 
   static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
   static final _digitRe = RegExp(r'[0-9]');
@@ -276,6 +280,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscurePass = true;
+  final _confirmPassCtrl = TextEditingController();
+  bool _obscureConfirm = true;
 
   // Date of birth — drivers must be at least 21 (server re-validates).
   DateTime? _dob;
@@ -310,10 +316,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   bool _obscureSsn = true;
 
   // ── Step 3: Review ─────────────────────────────────────────────────────────
-  bool _agreedTerms = false;
-  // Separate explicit acceptance of the Independent Contractor Agreement —
-  // required by Fla. Stat. § 627.748(9)(d) (written IC agreement).
-  bool _agreedContractor = false;
+  // Single consolidated legal consent, shown right above the Continue
+  // button on step 0.
+  bool _agreedAll = false;
+  bool _verifyingConsent = false;
   bool _submitting = false;
 
   @override
@@ -375,6 +381,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _phoneCtrl.dispose();
     _passwordCtrl.removeListener(_onPasswordChanged);
     _passwordCtrl.dispose();
+    _confirmPassCtrl.dispose();
     _makeCtrl.dispose();
     _modelCtrl.dispose();
     _yearCtrl.dispose();
@@ -397,6 +404,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _passwordCtrl.text.contains(_digitRe) &&
             _passwordCtrl.text.contains(_upperRe) &&
             _passwordCtrl.text.contains(_specialRe) &&
+            _confirmPassCtrl.text == _passwordCtrl.text &&
+            _agreedAll &&
             _emailError == null &&
             _phoneError == null &&
             !_checkingEmail &&
@@ -417,10 +426,22 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             _biometricDone &&
             _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
       case 3:
-        return _agreedTerms && _agreedContractor;
+        // Legal consents were collected on step 0 (below the password).
+        return true;
       default:
         return false;
     }
+  }
+
+  /// Step-0 Continue: hold a 2-second "verifying terms" state while we
+  /// confirm the legal consent is accepted, then advance.
+  Future<void> _continueFromStep0() async {
+    if (_verifyingConsent) return;
+    setState(() => _verifyingConsent = true);
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    setState(() => _verifyingConsent = false);
+    if (_agreedAll) _next();
   }
 
   void _next() {
@@ -558,17 +579,18 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _inlineFieldStatus(String? error, bool checking) {
+    final c = AppColors.of(context);
     if (!checking && error == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 6, left: 4),
       child: Row(
         children: [
           if (checking)
-            const SizedBox(
+            SizedBox(
               width: 12,
               height: 12,
               child: CircularProgressIndicator(
-                  strokeWidth: 1.5, color: Colors.white38),
+                  strokeWidth: 1.5, color: c.textTertiary),
             )
           else
             const Icon(Icons.error_outline_rounded,
@@ -578,7 +600,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             child: Text(
               checking ? 'Checking...' : error!,
               style: TextStyle(
-                color: checking ? Colors.white38 : Colors.redAccent,
+                color: checking ? c.textTertiary : Colors.redAccent,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -590,6 +612,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _driverStrengthRow(String label, bool met) {
+    final c = AppColors.of(context);
     return Row(
       children: [
         AnimatedSwitcher(
@@ -602,7 +625,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             met ? Icons.check_circle_rounded : Icons.circle_outlined,
             key: ValueKey(met),
             size: 16,
-            color: met ? _gold : Colors.white38,
+            color: met ? _gold : c.textTertiary,
           ),
         ),
         const SizedBox(width: 8),
@@ -610,7 +633,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           duration: const Duration(milliseconds: 250),
           style: TextStyle(
             fontSize: 13,
-            color: met ? _gold : Colors.white38,
+            color: met ? _gold : c.textTertiary,
             fontWeight: met ? FontWeight.w600 : FontWeight.w400,
           ),
           child: Text(label),
@@ -661,7 +684,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1C),
+        backgroundColor: neuSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -674,8 +697,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             Expanded(
               child: Text(
                 S.of(context).photoNotClear,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: AppColors.of(ctx).textPrimary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -685,7 +708,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         content: Text(
           S.of(context).imageQualityTooLow,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.7),
+            color: AppColors.of(ctx).textSecondary,
             fontSize: 14,
           ),
         ),
@@ -706,9 +729,11 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
+      builder: (ctx) {
+        final c = AppColors.of(ctx);
+        return Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
+          color: neuBase,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
@@ -728,8 +753,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               const SizedBox(height: 16),
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: c.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -757,7 +782,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ],
           ),
         ),
-      ),
+      );
+      },
     );
   }
 
@@ -766,22 +792,20 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     required String label,
     required VoidCallback onTap,
   }) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(14),
-        ),
+        decoration: neuBox(radius: 14, pressed: true),
         child: Row(
           children: [
             Icon(icon, color: _gold, size: 22),
             const SizedBox(width: 14),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
@@ -973,26 +997,36 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
+    final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       resizeToAvoidBottomInset: true,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(
           children: [
             Container(
-              padding: EdgeInsets.only(top: pad.top + 6, left: 4, right: 16),
+              padding: EdgeInsets.only(top: pad.top + 8, left: 16, right: 16),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: _back,
+                  GestureDetector(
+                    onTap: _back,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        color: c.textPrimary,
+                        size: 22,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   Text(
                     S.of(context).stepOf(_step + 1, _totalSteps),
-                    style: const TextStyle(
-                      color: Colors.white54,
+                    style: TextStyle(
+                      color: c.textTertiary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1001,12 +1035,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: (_step + 1) / _totalSteps,
-                  backgroundColor: Colors.white10,
+                  backgroundColor: neuPressed,
                   valueColor: const AlwaysStoppedAnimation(_gold),
                   minHeight: 4,
                 ),
@@ -1024,6 +1058,58 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 ],
               ),
             ),
+            // ── Single legal consent above the Continue button ──
+            if (_step == 0 &&
+                MediaQuery.of(context).viewInsets.bottom == 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(28, 8, 28, 0),
+                child: GestureDetector(
+                  onTap: () => setState(() => _agreedAll = !_agreedAll),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 22,
+                        height: 22,
+                        margin: const EdgeInsets.only(top: 1),
+                        decoration: BoxDecoration(
+                          color: _agreedAll ? _gold : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: _agreedAll ? _gold : c.textTertiary,
+                            width: 2,
+                          ),
+                        ),
+                        child: _agreedAll
+                            ? const Icon(Icons.check, size: 16, color: Colors.black)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      // Consent sentence with the doc links INLINE right
+                      // after "…policies." — same color as the body text.
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            style: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 13,
+                              height: 1.55,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${S.of(context).readAcceptAllDocsText} ',
+                              ),
+                              ..._docLinkSpans(c),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Container(
               padding: EdgeInsets.only(
                 left: 28,
@@ -1033,22 +1119,20 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     ? 12 
                     : MediaQuery.of(context).padding.bottom + 12,
               ),
-              child: SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: _canProceed && !_submitting ? _next : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _canProceed ? _gold : Colors.white12,
-                    foregroundColor: Colors.black,
-                    disabledBackgroundColor: Colors.white12,
-                    disabledForegroundColor: Colors.white24,
-                    elevation: _canProceed ? 4 : 0,
-                    shadowColor: _gold.withValues(alpha: 0.4),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
+              child: GestureDetector(
+                onTap: _canProceed && !_submitting && !_verifyingConsent
+                    ? (_step == 0 ? _continueFromStep0 : _next)
+                    : null,
+                child: Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: _canProceed
+                      ? BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(16),
+                        )
+                      : neuBox(radius: 16, pressed: true),
+                  alignment: Alignment.center,
                   child: _submitting
                       ? const SizedBox(
                           width: 22,
@@ -1058,20 +1142,46 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                             color: Colors.black,
                           ),
                         )
-                      : FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            _step == _totalSteps - 1
-                                ? S.of(context).submitApplication
-                                : S.of(context).continueButton,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
+                      : _verifyingConsent
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  S.of(context).verifyingTerms,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                _step == _totalSteps - 1
+                                    ? S.of(context).submitApplication
+                                    : S.of(context).continueButton,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: _canProceed
+                                      ? Colors.black
+                                      : c.textTertiary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
                 ),
               ),
             ),
@@ -1086,6 +1196,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildPersonalInfo() {
+    final c = AppColors.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
@@ -1182,7 +1293,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           const SizedBox(height: 16),
           _field(
             ctrl: _passwordCtrl,
-            label: S.of(context).passwordRequirements,
+            label: S.of(context).passwordLabel,
             icon: Icons.lock_outline_rounded,
             obscure: _obscurePass,
             suffix: IconButton(
@@ -1190,38 +1301,70 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 _obscurePass
                     ? Icons.visibility_off_outlined
                     : Icons.visibility_outlined,
-                color: Colors.white38,
+                color: c.textTertiary,
                 size: 20,
               ),
               onPressed: () => setState(() => _obscurePass = !_obscurePass),
             ),
           ),
-          // ── Password requirements checklist ──
+          const SizedBox(height: 16),
+          _field(
+            ctrl: _confirmPassCtrl,
+            label: S.of(context).confirmPassword,
+            icon: Icons.lock_outline_rounded,
+            obscure: _obscureConfirm,
+            suffix: IconButton(
+              icon: Icon(
+                _obscureConfirm
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: c.textTertiary,
+                size: 20,
+              ),
+              onPressed: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
+            ),
+          ),
+          // ── Password requirements checklist — 2 per column ──
           Padding(
             padding: const EdgeInsets.only(top: 14, left: 4),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _driverStrengthRow(
-                    'At least 8 characters',
-                    _passwordCtrl.text.length >= 8),
-                const SizedBox(height: 6),
-                _driverStrengthRow(
-                    'Contains a number',
-                    _passwordCtrl.text.contains(_digitRe)),
-                const SizedBox(height: 6),
-                _driverStrengthRow(
-                    'An uppercase letter',
-                    _passwordCtrl.text.contains(_upperRe)),
-                const SizedBox(height: 6),
-                _driverStrengthRow(
-                    r'A special character (!@#$' "'" r's etc.)',
-                    _passwordCtrl.text.contains(
-                        _specialRe)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _driverStrengthRow(
+                          'At least 8 characters',
+                          _passwordCtrl.text.length >= 8),
+                      const SizedBox(height: 6),
+                      _driverStrengthRow(
+                          'Contains a number',
+                          _passwordCtrl.text.contains(_digitRe)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _driverStrengthRow(
+                          'An uppercase letter',
+                          _passwordCtrl.text.contains(_upperRe)),
+                      const SizedBox(height: 6),
+                      _driverStrengthRow(
+                          r'A special character (!@#$' "'" r's etc.)',
+                          _passwordCtrl.text.contains(
+                              _specialRe)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -1230,6 +1373,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   /// Date-of-birth picker tile (Step 0). Shows the 21+ requirement and an
   /// inline error when the selected date makes the driver underage.
   Widget _buildDobPicker() {
+    final c = AppColors.of(context);
     final dob = _dob;
     final tooYoung = dob != null && (_driverAge ?? 0) < _minDriverAge;
     final label = dob == null
@@ -1242,34 +1386,32 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           onTap: _pickDob,
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: tooYoung ? Colors.redAccent : Colors.white12,
-                width: tooYoung ? 1.5 : 1.0,
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: neuBox(
+              radius: 16,
+              pressed: true,
+              borderColor: tooYoung ? Colors.redAccent : null,
+              borderWidth: tooYoung ? 1.5 : 1,
             ),
             child: Row(
               children: [
                 Icon(
                   Icons.cake_outlined,
-                  color: tooYoung ? Colors.redAccent : _gold,
+                  color: tooYoung ? Colors.redAccent : c.textTertiary,
                   size: 20,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     label,
                     style: TextStyle(
-                      color: dob == null ? Colors.white38 : Colors.white,
-                      fontSize: dob == null ? 14 : 16,
+                      color: dob == null ? c.textTertiary : c.textPrimary,
+                      fontSize: dob == null ? 15 : 16,
                     ),
                   ),
                 ),
-                const Icon(Icons.calendar_today_outlined,
-                    color: Colors.white38, size: 18),
+                Icon(Icons.calendar_today_outlined,
+                    color: c.textTertiary, size: 18),
               ],
             ),
           ),
@@ -1283,7 +1425,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             style: TextStyle(
               color: tooYoung
                   ? Colors.redAccent
-                  : Colors.white.withValues(alpha: 0.45),
+                  : c.textTertiary,
               fontSize: 12,
               height: 1.3,
             ),
@@ -1464,17 +1606,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _buildSsnSection() {
+    final c = AppColors.of(context);
     final ssnFilled = _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ssnFilled
-            ? _gold.withValues(alpha: 0.08)
-            : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: ssnFilled ? _gold.withValues(alpha: 0.4) : Colors.white12,
-        ),
+      decoration: neuBox(
+        radius: 18,
+        borderColor: ssnFilled ? _gold.withValues(alpha: 0.4) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1484,15 +1622,15 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(
-                  color: ssnFilled
-                      ? _gold.withValues(alpha: 0.2)
-                      : Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                decoration: ssnFilled
+                    ? BoxDecoration(
+                        color: _gold.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      )
+                    : neuBox(radius: 12, pressed: true),
                 child: Icon(
                   Icons.security_rounded,
-                  color: ssnFilled ? _gold : Colors.white38,
+                  color: ssnFilled ? _gold : c.textTertiary,
                   size: 20,
                 ),
               ),
@@ -1505,8 +1643,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                       S.of(context).ssnLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: c.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1517,7 +1655,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                           ? S.of(context).ssnEntered
                           : S.of(context).enterSsn,
                       style: TextStyle(
-                        color: ssnFilled ? _gold : Colors.white38,
+                        color: ssnFilled ? _gold : c.textTertiary,
                         fontSize: 11,
                       ),
                     ),
@@ -1542,59 +1680,56 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           ),
           if (!ssnFilled) ...[
             const SizedBox(height: 14),
-            TextField(
-              controller: _ssnCtrl,
-              obscureText: _obscureSsn,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                _SsnFormatter(),
-              ],
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                letterSpacing: 2,
-              ),
-              cursorColor: _gold,
-              // Auto-trigger Checkr as soon as 9 digits are complete
-              onChanged: (val) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'XXX-XX-XXXX',
-                hintStyle: const TextStyle(
-                  color: Colors.white24,
-                  letterSpacing: 1,
-                ),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _gold, width: 1.5),
-                ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureSsn
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: Colors.white38,
-                    size: 20,
+            Container(
+              decoration: neuBox(radius: 12, pressed: true),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ssnCtrl,
+                      obscureText: _obscureSsn,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        _SsnFormatter(),
+                      ],
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 18,
+                        letterSpacing: 2,
+                      ),
+                      cursorColor: _gold,
+                      // Auto-trigger Checkr as soon as 9 digits are complete
+                      onChanged: (val) => setState(() {}),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'XXX-XX-XXXX',
+                        hintStyle: TextStyle(
+                          color: c.textTertiary,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
                   ),
-                  onPressed: () => setState(() => _obscureSsn = !_obscureSsn),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
+                  IconButton(
+                    icon: Icon(
+                      _obscureSsn
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: c.textTertiary,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(() => _obscureSsn = !_obscureSsn),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
             Text(
               S.of(context).ssnEncryptedNote,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.3),
+                color: c.textTertiary,
                 fontSize: 11,
               ),
             ),
@@ -1605,37 +1740,31 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _buildBiometricTile() {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: _runBiometricCheck,
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _biometricDone
-              ? _gold.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _biometricDone
-                ? _gold.withValues(alpha: 0.4)
-                : Colors.white12,
-          ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: neuBox(
+          radius: 18,
+          borderColor: _biometricDone ? _gold.withValues(alpha: 0.4) : null,
         ),
         child: Row(
           children: [
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: _biometricDone
-                    ? _gold.withValues(alpha: 0.2)
-                    : Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: _biometricDone
+                  ? BoxDecoration(
+                      color: _gold.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    )
+                  : neuBox(radius: 12, pressed: true),
               child: Icon(
                 _biometricDone
                     ? Icons.face_retouching_natural_rounded
                     : Icons.face_rounded,
-                color: _biometricDone ? _gold : Colors.white38,
+                color: _biometricDone ? _gold : c.textTertiary,
                 size: 26,
               ),
             ),
@@ -1648,8 +1777,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     S.of(context).biometricFaceCheck,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: c.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1660,7 +1789,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                         ? S.of(context).faceLivenessVerified
                         : S.of(context).biometricInstructions,
                     style: TextStyle(
-                      color: _biometricDone ? _gold : Colors.white38,
+                      color: _biometricDone ? _gold : c.textTertiary,
                       fontSize: 11,
                     ),
                   ),
@@ -1674,9 +1803,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             if (_biometricDone)
               const Icon(Icons.check_circle_rounded, color: _gold, size: 22)
             else
-              const Icon(
+              Icon(
                 Icons.play_circle_outline_rounded,
-                color: Colors.white24,
+                color: c.textTertiary,
                 size: 24,
               ),
           ],
@@ -1698,6 +1827,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
       (S.of(context).faceCheckLabel, _biometricDone),
     ];
     final done = items.where((i) => i.$2).length;
+    final c = AppColors.of(context);
     return Column(
       children: [
         Row(
@@ -1706,7 +1836,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             Text(
               S.of(context).documentsComplete,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: c.textTertiary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -1726,7 +1856,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: done / items.length,
-            backgroundColor: Colors.white10,
+            backgroundColor: neuPressed,
             valueColor: const AlwaysStoppedAnimation(_gold),
             minHeight: 5,
           ),
@@ -1766,7 +1896,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           _reviewItem(S.of(context).plateLabel, _plateCtrl.text.trim()),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Divider(color: Colors.white.withValues(alpha: 0.08)),
+            child: Divider(color: Colors.white.withValues(alpha: 0.05)),
           ),
           _reviewItem(
             S.of(context).licenseFrontLabel,
@@ -1805,107 +1935,134 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 : S.of(context).notCompletedStatus,
           ),
           const SizedBox(height: 24),
-
-          GestureDetector(
-            onTap: () => setState(() => _agreedTerms = !_agreedTerms),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: _agreedTerms ? _gold : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: _agreedTerms ? _gold : Colors.white24,
-                      width: 2,
-                    ),
-                  ),
-                  child: _agreedTerms
-                      ? const Icon(Icons.check, size: 16, color: Colors.black)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    S.of(context).agreeTermsText,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Independent Contractor Agreement (separate written
-          // acceptance — Fla. Stat. § 627.748(9)(d)) ──
-          GestureDetector(
-            onTap: () => setState(() => _agreedContractor = !_agreedContractor),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: _agreedContractor ? _gold : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: _agreedContractor ? _gold : Colors.white24,
-                      width: 2,
-                    ),
-                  ),
-                  child: _agreedContractor
-                      ? const Icon(Icons.check, size: 16, color: Colors.black)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    S.of(context).agreeContractorText,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.only(left: 34),
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).push(
-                slideFromRightRoute(const DriverAgreementScreen()),
-              ),
-              behavior: HitTestBehavior.opaque,
-              child: Text(
-                S.of(context).readContractorAgreement,
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  decoration: TextDecoration.underline,
-                  decorationColor: _gold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
           _infoBox(S.of(context).applicationReviewNote),
           const SizedBox(height: 40),
         ],
+      ),
+    );
+  }
+
+  /// The 4 legal document links, listed under each consent checkbox.
+  /// Doc links as INLINE spans appended right after the consent sentence —
+  /// rendered in the SAME color as the body text (not gold), keeping only
+  /// the underline as the link affordance.
+  ///
+  /// Only TWO links, straight to the document content (no intermediate
+  /// acceptance pages): Terms of Service (direct text) and Privacy Policy
+  /// (direct screen). The FCRA disclosure and the Contractor Agreement are
+  /// accepted in their own dedicated steps later in the flow.
+  List<InlineSpan> _docLinkSpans(AppColors c) {
+    final docs = <(String, VoidCallback)>[
+      (S.of(context).docLinkDriverTerms, _showDriverTermsDoc),
+      (
+        S.of(context).docLinkPrivacyPolicy,
+        () => Navigator.of(context).push(
+              scaleExpandRoute(const PrivacyPolicyScreen(), durationMs: 420),
+            ),
+      ),
+    ];
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < docs.length; i++) {
+      spans.add(TextSpan(
+        text: docs[i].$1,
+        style: TextStyle(
+          color: c.textSecondary,
+          fontWeight: FontWeight.w600,
+          decoration: TextDecoration.underline,
+          decorationColor: c.textSecondary,
+        ),
+        recognizer: TapGestureRecognizer()..onTap = docs[i].$2,
+      ));
+      if (i < docs.length - 1) {
+        spans.add(TextSpan(
+          text: '  ·  ',
+          style: TextStyle(color: c.textTertiary),
+        ));
+      }
+    }
+    return spans;
+  }
+
+  /// Cached driver-terms document (content_markdown) for the direct viewer.
+  Map<String, dynamic>? _driverTermsDoc;
+  bool _loadingTermsDoc = false;
+
+  /// Show the Driver Terms of Service TEXT directly in a neumorphic dialog
+  /// — read-only, no acceptance UI in the middle of the flow.
+  Future<void> _showDriverTermsDoc() async {
+    if (_loadingTermsDoc) return;
+    setState(() => _loadingTermsDoc = true);
+    try {
+      _driverTermsDoc ??= await ApiService.fetchDriverTermsOfService();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _loadingTermsDoc = false);
+    final content = _driverTermsDoc?['content_markdown']?.toString() ?? '';
+    final version = _driverTermsDoc?['version']?.toString() ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 18, 12, 20),
+          decoration: neuBox(radius: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Cruiseinride Driver Terms of Service',
+                      style: TextStyle(
+                        color: Color(0xFFE8C547),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: neuBox(radius: 10, pressed: true),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white54,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (version.isNotEmpty)
+                Text(
+                  'Version $version',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 12,
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(
+                    content.isEmpty ? 'Document unavailable.' : content,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1915,19 +2072,18 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _pageTitle(String title, String subtitle) {
+    final c = AppColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ShaderMask(
-          shaderCallback: (r) =>
-              const LinearGradient(colors: [_goldLight, _gold]).createShader(r),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+            color: c.textPrimary,
+            height: 1.15,
           ),
         ),
         const SizedBox(height: 6),
@@ -1935,7 +2091,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           subtitle,
           style: TextStyle(
             fontSize: 14,
-            color: Colors.white.withValues(alpha: 0.5),
+            color: c.textSecondary,
           ),
         ),
       ],
@@ -1950,31 +2106,27 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     required bool required_,
     required VoidCallback onTap,
   }) {
+    final c = AppColors.of(context);
     final done = filePath != null;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: done
-              ? _gold.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: done ? _gold.withValues(alpha: 0.4) : Colors.white12,
-          ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: neuBox(
+          radius: 18,
+          borderColor: done ? _gold.withValues(alpha: 0.4) : null,
         ),
         child: Row(
           children: [
             Container(
               width: 50,
               height: 50,
-              decoration: BoxDecoration(
-                color: done
-                    ? _gold.withValues(alpha: 0.18)
-                    : Colors.white.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              decoration: done
+                  ? BoxDecoration(
+                      color: _gold.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                    )
+                  : neuBox(radius: 12, pressed: true),
               clipBehavior: Clip.antiAlias,
               child: done
                   ? (kIsWeb
@@ -1986,7 +2138,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                             height: 50,
                             errorBuilder: (_, __, ___) => Icon(icon, color: _gold, size: 22),
                           ))
-                  : Icon(icon, color: done ? _gold : Colors.white38, size: 22),
+                  : Icon(icon, color: c.textTertiary, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1997,8 +2149,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: c.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -2008,7 +2160,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     subtitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: done ? _gold : Colors.white38, fontSize: 11),
+                    style: TextStyle(color: done ? _gold : c.textTertiary, fontSize: 11),
                   ),
                   if (required_ && !done) ...[
                     const SizedBox(height: 6),
@@ -2020,7 +2172,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             const SizedBox(width: 8),
             Icon(
               done ? Icons.check_circle_rounded : Icons.cloud_upload_outlined,
-              color: done ? _gold : Colors.white24,
+              color: done ? _gold : c.textTertiary,
               size: 22,
             ),
           ],
@@ -2032,42 +2184,43 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   Widget _badge(String text) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.12),
+      color: neuPressed,
       borderRadius: BorderRadius.circular(4),
     ),
     child: Text(
       text,
-      style: const TextStyle(color: Colors.white70, fontSize: 10),
+      style: TextStyle(
+          color: AppColors.of(context).textSecondary, fontSize: 10),
     ),
   );
 
-  Widget _infoBox(String text) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: _gold.withValues(alpha: 0.07),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _gold.withValues(alpha: 0.2)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.info_outline_rounded, color: _gold, size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 13,
-              height: 1.4,
+  Widget _infoBox(String text) {
+    final c = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: neuBox(radius: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, color: _gold, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: c.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
   Widget _reviewItem(String label, String value) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -2077,8 +2230,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             width: 100,
             child: Text(
               label,
-              style: const TextStyle(
-                color: Colors.white38,
+              style: TextStyle(
+                color: c.textTertiary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -2087,7 +2240,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           Expanded(
             child: Text(
               value.isEmpty ? '\u2014' : value,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: c.textPrimary, fontSize: 14),
             ),
           ),
         ],
@@ -2102,6 +2255,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     required List<String> options,
     ValueChanged<String>? onSelected,
   }) {
+    final c = AppColors.of(context);
     return Autocomplete<String>(
       optionsBuilder: (v) {
         if (v.text.isEmpty) return options;
@@ -2122,30 +2276,28 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             setState(() {});
           }
         });
-        return TextField(
-          controller: textCtrl,
-          focusNode: focusNode,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
-          cursorColor: _gold,
-          decoration: InputDecoration(
-            labelText: label,
-            labelStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-            prefixIcon: Icon(icon, color: _gold, size: 20),
-            counterText: '',
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Colors.white12),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: _gold, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 18,
-            ),
+        return Container(
+          decoration: neuBox(radius: 16, pressed: true),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          child: Row(
+            children: [
+              Icon(icon, color: c.textTertiary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: textCtrl,
+                  focusNode: focusNode,
+                  style: TextStyle(color: c.textPrimary, fontSize: 16),
+                  cursorColor: _gold,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: label,
+                    hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
+                    counterText: '',
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -2153,7 +2305,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         return Align(
           alignment: Alignment.topLeft,
           child: Material(
-            color: const Color(0xFF1E1E2C),
+            color: neuSurface,
             borderRadius: BorderRadius.circular(12),
             elevation: 8,
             child: ConstrainedBox(
@@ -2192,44 +2344,43 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     bool capitalize = false,
     String? errorText,
   }) {
+    final c = AppColors.of(context);
     final hasError = errorText != null;
-    return TextField(
-      controller: ctrl,
-      obscureText: obscure,
-      keyboardType: keyboard,
-      textCapitalization: capitalize
-          ? TextCapitalization.characters
-          : TextCapitalization.none,
-      maxLength: maxLength,
-      onChanged: (_) => setState(() {}),
-      style: const TextStyle(color: Colors.white, fontSize: 16),
-      cursorColor: _gold,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.white38, fontSize: 14),
-        prefixIcon: Icon(icon, color: hasError ? Colors.redAccent : _gold, size: 20),
-        suffixIcon: suffix,
-        counterText: '',
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: hasError ? Colors.redAccent : Colors.white12,
-            width: hasError ? 1.5 : 1.0,
+    return Container(
+      decoration: neuBox(
+        radius: 16,
+        pressed: true,
+        borderColor: hasError ? Colors.redAccent : null,
+        borderWidth: hasError ? 1.5 : 1,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon,
+              color: hasError ? Colors.redAccent : c.textTertiary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              obscureText: obscure,
+              keyboardType: keyboard,
+              textCapitalization: capitalize
+                  ? TextCapitalization.characters
+                  : TextCapitalization.none,
+              maxLength: maxLength,
+              onChanged: (_) => setState(() {}),
+              style: TextStyle(color: c.textPrimary, fontSize: 16),
+              cursorColor: _gold,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: label,
+                hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
+                counterText: '',
+              ),
+            ),
           ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: hasError ? Colors.redAccent : _gold,
-            width: hasError ? 2 : 1.5,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 18,
-        ),
+          if (suffix != null) suffix,
+        ],
       ),
     );
   }

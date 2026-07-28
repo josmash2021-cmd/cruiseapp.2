@@ -220,6 +220,26 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       }
     }
 
+    // Log terms/privacy consent server-side (E-SIGN record: version, UTC
+    // timestamp, IP, user agent) now that the account exists and the JWT
+    // is stored. The create-account page requires both checkboxes.
+    if (userId != null) {
+      try {
+        await ApiService.recordConsent(
+          consentType: 'terms',
+          action: 'accepted',
+          version: '1.0',
+        );
+        await ApiService.recordConsent(
+          consentType: 'privacy',
+          action: 'accepted',
+          version: '2.0',
+        );
+      } catch (e) {
+        debugPrint('⚠️ Consent logging failed (non-blocking): $e');
+      }
+    }
+
     // Copy photo to permanent storage (temp picker path gets deleted)
     String? permanentPhotoPath = widget.photoPath;
     if (widget.photoPath != null && widget.photoPath!.isNotEmpty) {

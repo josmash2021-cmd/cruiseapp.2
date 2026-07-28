@@ -647,7 +647,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// the full cinematic camera sequence, which felt like a hard "reset"
   /// in the middle of the search. Now we keep whatever cinematic state
   /// is on screen and just make sure the pin labels + route are
-  /// rendered, then let the slow continuous bearing rotation
+  /// rendered, then let the fixed full-route frame at 50° pitch
   /// (_animateSearchCameraToAngle) take over.
   void _replayCinematicIfRouteAvailable() {
     final route = _ctrl.state.route;
@@ -870,49 +870,58 @@ extension _RideRequestMap on _RideRequestScreenState {
     ));
   }
 
-  /// Smoothly transition the map camera to the angle preset matching [idx].
-  /// Used to be called every 10s with hard angle jumps, which made the
-  /// map feel like it was "resetting" mid-search. Now we ignore the idx
-  /// entirely and just kick off — once — a slow continuous rotation that
-  /// loops forever while the rider is in searchingDriver phase. The
-  /// pitch is held at a fixed cinematic value so only the bearing drifts.
+  /// Frame the FULL route on screen with a fixed 50° cinematic pitch — NO
+  /// rotation. Called when entering the searchingDriver phase; eases once
+  /// to the route-fitting frame and holds it there while dispatch searches
+  /// for a driver. (Replaces the old 360° ambient bearing drift.)
   void _animateSearchCameraToAngle(int idx) {
     if (_mapCtrl == null || !mounted) return;
 
-    // Already running? Don't restart — that's exactly what produced
-    // the jarring "reset" feeling.
-    if (_searchCamCtrl != null && _searchCamCtrl!.isAnimating) return;
-
-    const double pitch = 50.0;
-    final double startBearing =
-        _searchBearingAnim?.value ?? _bearingAnim?.value ?? _randomBearing;
-
-    _searchCamCtrl?.removeListener(_applySearchCamera);
+    // Kill any in-flight search camera controller (legacy rotation).
     _searchCamCtrl?.dispose();
+    _searchCamCtrl = null;
 
-    // 60 s for a full 360° turn — slow, ambient, premium feel.
-    _searchCamCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 60),
-    );
-    _searchPitchAnim = AlwaysStoppedAnimation<double>(pitch);
-    _searchBearingAnim = Tween<double>(
-      begin: startBearing,
-      end: startBearing + 360.0,
-    ).animate(CurvedAnimation(
-      parent: _searchCamCtrl!,
-      curve: Curves.linear,
-    ));
-    _searchCamCtrl!.addListener(_applySearchCamera);
-    _searchCamCtrl!.repeat();
-  }
+    final route = _ctrl.state.route;
+    if (route == null || route.points.isEmpty) return;
 
-  void _applySearchCamera() {
-    if (_mapCtrl == null || !mounted) return;
-    _mapCtrl!.setCamera(mapbox.CameraOptions(
-      pitch: _searchPitchAnim?.value,
-      bearing: _searchBearingAnim?.value,
-    ));
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in route.points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    final mq = MediaQuery.of(context);
+    // Keep the whole route visible above the searching-status card.
+    final bottomInset =
+        (mq.size.height * 0.38).clamp(280.0, 400.0) + mq.padding.bottom;
+
+    _mapCtrl!
+        .cameraForCoordinatesPadding(
+      [
+        mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+      ],
+      mapbox.CameraOptions(pitch: 50.0, bearing: _randomBearing),
+      mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
+      null,
+      null,
+    )
+        .then((cam) {
+      if (!mounted || _mapCtrl == null) return;
+      _mapCtrl!.flyTo(
+        mapbox.CameraOptions(
+          center: cam.center,
+          zoom: cam.zoom,
+          pitch: 50.0,
+          bearing: _randomBearing,
+        ),
+        mapbox.MapAnimationOptions(duration: 1200),
+      );
+    }).catchError((e) {
+      debugPrint('[SearchCam] frame full route failed: $e');
+    });
   }
 
   void _startPinPop() {

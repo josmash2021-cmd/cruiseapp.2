@@ -3,6 +3,7 @@ import '../services/haptic_service.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../widgets/neu_style.dart';
 
 /// Forgot password — enter email, receive reset link by email.
 class ForgotPasswordScreen extends StatefulWidget {
@@ -14,7 +15,8 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
+  static const _errorRed = Color(0xFFFF5252);
+  static const _successGreen = Color(0xFF66BB6A);
 
   final _identCtrl = TextEditingController();
 
@@ -65,7 +67,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -80,14 +82,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(
                     Icons.arrow_back_rounded,
-                    color: Colors.white,
-                    size: 20,
+                    color: c.textPrimary,
+                    size: 22,
                   ),
                 ),
               ),
@@ -96,10 +95,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               // ── Title ──
               Text(
                 S.of(context).forgotPasswordTitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -107,7 +106,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Text(
                 S.of(context).forgotSubtitle,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: c.textSecondary,
                   fontSize: 15,
                   height: 1.4,
                 ),
@@ -132,17 +131,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           padding: const EdgeInsets.only(top: 12, left: 4),
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.error_outline_rounded,
-                                color: Colors.white.withValues(alpha: 0.6),
+                                color: _errorRed,
                                 size: 16,
                               ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   _errorText!,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
+                                  style: const TextStyle(
+                                    color: _errorRed,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -156,47 +155,36 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 28),
 
                 // ── Submit button ──
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
+                GestureDetector(
+                  onTap: (_loading || !_canSubmit) ? null : _requestReset,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
+                    width: double.infinity,
+                    height: 56,
                     decoration: BoxDecoration(
-                      gradient: _canSubmit
-                          ? const LinearGradient(colors: [_gold, _goldLight])
-                          : null,
-                      color: _canSubmit ? null : c.surface,
-                      borderRadius: BorderRadius.circular(28),
+                      color: _canSubmit ? _gold : neuPressed,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _requestReset,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        foregroundColor: _canSubmit
-                            ? const Color(0xFF1A1400)
-                            : c.textTertiary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                      ),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: _gold,
-                                strokeWidth: 2.5,
-                              ),
-                            )
-                          : Text(
-                              S.of(context).sendResetLink,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                              ),
+                    alignment: Alignment.center,
+                    child: _loading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 2.5,
                             ),
-                    ),
+                          )
+                        : Text(
+                            S.of(context).sendResetLink,
+                            style: TextStyle(
+                              color: _canSubmit
+                                  ? Colors.black
+                                  : c.textTertiary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -206,18 +194,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 24),
                 Container(
                   padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D32).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFF2E7D32).withValues(alpha: 0.3),
-                    ),
-                  ),
+                  decoration: neuBox(radius: 18),
                   child: Row(
                     children: [
                       const Icon(
                         Icons.mark_email_read_rounded,
-                        color: Color(0xFF66BB6A),
+                        color: _successGreen,
                         size: 28,
                       ),
                       const SizedBox(width: 14),
@@ -225,7 +207,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         child: Text(
                           S.of(context).resetLinkSent,
                           style: const TextStyle(
-                            color: Color(0xFF66BB6A),
+                            color: _successGreen,
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                             height: 1.4,
@@ -236,15 +218,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Center(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                // ── Back to sign in (secondary) ──
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: double.infinity,
+                    height: 54,
+                    decoration: neuBox(radius: 16, pressed: true),
+                    alignment: Alignment.center,
                     child: Text(
                       S.of(context).backToSignIn,
                       style: const TextStyle(
                         color: _gold,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -266,30 +253,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: (_) => setState(() {}),
-        keyboardType: keyboardType,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: hint,
-          hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
-          prefixIcon: Icon(icon, color: c.textTertiary, size: 20),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 36,
-            minHeight: 0,
+      decoration: neuBox(radius: 16, pressed: true),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: c.textTertiary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: (_) => setState(() {}),
+              keyboardType: keyboardType,
+              style: TextStyle(color: c.textPrimary, fontSize: 16),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: TextStyle(color: c.textTertiary, fontSize: 16),
+              ),
+            ),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-        ),
+        ],
       ),
     );
   }

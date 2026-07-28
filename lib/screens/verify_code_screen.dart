@@ -19,6 +19,13 @@ class VerifyCodeScreen extends StatefulWidget {
   /// CreatePasswordScreen — used by the social registration flow.
   final void Function(bool verified)? onVerified;
 
+  /// Rider data collected on the create-account page — forwarded through the
+  /// onboarding chain (password → name → contacts) so nothing is re-asked.
+  final String? firstName;
+  final String? lastName;
+  final String? contactEmail;
+  final String? contactPhone;
+
   const VerifyCodeScreen({
     super.key,
     required this.email,
@@ -26,6 +33,10 @@ class VerifyCodeScreen extends StatefulWidget {
     this.useVerifyApi = false,
     this.useBackendVerify = false,
     this.onVerified,
+    this.firstName,
+    this.lastName,
+    this.contactEmail,
+    this.contactPhone,
   });
 
   @override
@@ -125,6 +136,10 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
             CreatePasswordScreen(
               email: widget.email,
               registeredWithEmail: widget.email.contains('@'),
+              firstName: widget.firstName,
+              lastName: widget.lastName,
+              contactEmail: widget.contactEmail,
+              contactPhone: widget.contactPhone,
             ),
           ),
         );

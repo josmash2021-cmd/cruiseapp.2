@@ -36,7 +36,6 @@ class ScheduledRidesScreen extends StatefulWidget {
 class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFFBE47A);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -227,41 +226,53 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           ? FloatingActionButton(
               onPressed: _startScheduleFlow,
               backgroundColor: _gold,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: const Icon(Icons.add_rounded, color: Colors.black87, size: 28),
             )
           : null,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // â”€â”€ Premium App Bar â”€â”€
-          SliverAppBar(
-            expandedHeight: 140,
-            pinned: true,
-            backgroundColor: neuBase,
-            surfaceTintColor: Colors.transparent,
-            leading: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                margin: const EdgeInsets.all(8),
-                decoration: neuBox(radius: 14, pressed: true),
-                child: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
+          // -- Header: back button + screen title --
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                MediaQuery.of(context).padding.top + 8,
+                24,
+                0,
               ),
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: Text(
-                S.of(context).scheduledRides,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        color: c.textPrimary,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    S.of(context).scheduledRides,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
               ),
-              background: Container(color: neuBase),
             ),
           ),
 
@@ -283,7 +294,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   children: [
                     Icon(
                       Icons.error_outline_rounded,
-                      color: Colors.white24,
+                      color: c.textTertiary,
                       size: 48,
                     ),
                     const SizedBox(height: 12),
@@ -298,7 +309,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             SliverFillRemaining(child: _emptyState(c))
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) => FadeTransition(
@@ -327,10 +338,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(24),
-            ),
+            decoration: neuBox(radius: 24, pressed: true),
             child: const Icon(
               Icons.calendar_today_rounded,
               color: _gold,
@@ -356,17 +364,20 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           GestureDetector(
             onTap: _startScheduleFlow,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              height: 54,
+              padding: const EdgeInsets.symmetric(horizontal: 28),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_gold, _goldLight]),
-                borderRadius: BorderRadius.circular(14),
+                color: _gold,
+                borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(
-                S.of(context).scheduleARide,
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
+              child: Center(
+                child: Text(
+                  S.of(context).scheduleARide,
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
                 ),
               ),
             ),
@@ -380,11 +391,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     return GestureDetector(
       onTap: _loadTrips,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: _gold.withValues(alpha: 0.4)),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: neuBox(radius: 14),
         child: const Text(
           'Retry',
           style: TextStyle(color: _gold, fontWeight: FontWeight.w600),
@@ -719,7 +727,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       onTap: _hasCoords && status != 'completed' && status != 'canceled' ? _toggle : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
-        decoration: neuBox(radius: 18).copyWith(
+        decoration: neuBox(radius: 20).copyWith(
           border: Border.all(
             color: _expanded
                 ? _gold.withValues(alpha: 0.35)
@@ -731,37 +739,24 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         child: Column(
           children: [
             // â”€â”€ Header with date and badges â”€â”€
-            Container(
+            Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              decoration: BoxDecoration(
-                color: isAirport
-                    ? const Color(0xFF4285F4).withValues(alpha: 0.06)
-                    : _gold.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.vertical(
-                  top: const Radius.circular(20),
-                  bottom: _expanded ? Radius.zero : Radius.zero,
-                ),
-              ),
               child: Row(
                 children: [
                   if (scheduledAt != null) ...[
                     Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isAirport
-                            ? const Color(0xFF4285F4).withValues(alpha: 0.12)
-                            : _gold.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      width: 40,
+                      height: 40,
+                      decoration: neuBox(radius: 14, pressed: true),
                       child: Icon(
                         isAirport
                             ? Icons.flight_takeoff_rounded
                             : Icons.schedule_rounded,
                         color: isAirport ? const Color(0xFF4285F4) : _gold,
-                        size: 20,
+                        size: 22,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -896,15 +891,11 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                     const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                      ),
+                      decoration: neuBox(radius: 12, pressed: true),
                       child: Text(
                         '\$ ${fare.toStringAsFixed(2)}',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: _gold,
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.3,
@@ -971,21 +962,17 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.check_circle_rounded,
-                          color: Colors.white.withValues(alpha: 0.35), size: 18),
+                          color: c.textTertiary, size: 18),
                       const SizedBox(width: 8),
                       Text(
                         'Ride Completed',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: c.textTertiary,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1030,13 +1017,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                     onTap: _handleCancel,
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF5252).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFFF5252).withValues(alpha: 0.2),
-                        ),
-                      ),
+                      decoration: neuBox(radius: 14),
                       child: const Center(
                         child: Text(
                           'Cancel Ride',
@@ -1057,11 +1038,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -1288,10 +1265,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   Widget _infoChip(IconData icon, String text, AppColors c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: neuBox(radius: 10, pressed: true),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

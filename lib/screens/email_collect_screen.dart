@@ -11,12 +11,19 @@ class EmailCollectScreen extends StatefulWidget {
   final String registeredWith; // email or phone used to register
   final bool registeredWithEmail; // true = already has email, ask phone
 
+  /// Contacts collected on the create-account page. When both are present
+  /// this screen auto-advances — there is nothing left to ask.
+  final String? contactEmail;
+  final String? contactPhone;
+
   const EmailCollectScreen({
     super.key,
     required this.firstName,
     required this.lastName,
     required this.registeredWith,
     required this.registeredWithEmail,
+    this.contactEmail,
+    this.contactPhone,
   });
 
   @override
@@ -37,6 +44,24 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
   void initState() {
     super.initState();
     _inputCtrl.addListener(_onChanged);
+
+    // Page-1 signup already collected both contacts — skip this screen and
+    // continue straight to notifications with the complete profile.
+    if (widget.contactEmail != null && widget.contactPhone != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          slideFromRightRoute(
+            NotificationsScreen(
+              firstName: widget.firstName,
+              lastName: widget.lastName,
+              email: widget.contactEmail!,
+              phone: widget.contactPhone!,
+            ),
+          ),
+        );
+      });
+    }
   }
 
   @override

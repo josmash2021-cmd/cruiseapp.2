@@ -3450,16 +3450,35 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: child,
           ),
           child: Container(
+          // Raised neumorphic sheet. neuBox() can't be used directly here —
+          // the corner radius animates with the drag fraction — so the neu
+          // tokens and its shadow pair are applied by hand.
           decoration: BoxDecoration(
-            color: surface,
+            color: isDark ? neuSurface : surface,
             borderRadius: radius,
-            boxShadow: [
-              BoxShadow(
-                color: shadowC,
-                blurRadius: 20,
-                offset: const Offset(0, -4),
-              ),
-            ],
+            border: isDark
+                ? Border.all(color: Colors.white.withValues(alpha: 0.04))
+                : null,
+            boxShadow: isDark
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      offset: const Offset(6, 6),
+                      blurRadius: 14,
+                    ),
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.045),
+                      offset: const Offset(-4, -4),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: shadowC,
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -3472,13 +3491,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 color: textMuted.withValues(alpha: 0.5),
                 size: 16,
               ),
-              // Header row
+              // Header row — icons sit in sunken neu wells
               SizedBox(
-                height: 28,
+                height: 34,
                 child: Row(
                   children: [
-                    const SizedBox(width: 16),
-                    Icon(Icons.tune_rounded, color: textMuted, size: 20),
+                    const SizedBox(width: 14),
+                    _panelWell(Icons.tune_rounded, isDark, textMuted),
                     const Spacer(),
                     Text(
                       S.of(context).findingTrips,
@@ -3489,12 +3508,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ),
                     ),
                     const Spacer(),
-                    Icon(
+                    _panelWell(
                       Icons.format_list_bulleted_rounded,
-                      color: textMuted,
-                      size: 20,
+                      isDark,
+                      textMuted,
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                   ],
                 ),
               ),
@@ -3523,47 +3542,72 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _panelItem(
-                          Icons.bar_chart_rounded,
-                          S.of(context).seeEarningsTrends,
-                          panelItemIcon,
-                          panelItemText,
-                          panelItemChevron,
-                          () {
-                            Navigator.push(
-                              context,
-                              slideFromRightRoute(const DriverEarningsScreen()),
-                            );
-                          },
-                        ),
-                        _panelItem(
-                          Icons.star_outline_rounded,
-                          S.of(context).seeUpcomingPromotions,
-                          panelItemIcon,
-                          panelItemText,
-                          panelItemChevron,
-                          () {
-                            Navigator.push(
-                              context,
-                              slideFromRightRoute(const DriverPromosScreen()),
-                            );
-                          },
-                        ),
-                        _panelItem(
-                          Icons.access_time_rounded,
-                          S.of(context).seeDrivingTime,
-                          panelItemIcon,
-                          panelItemText,
-                          panelItemChevron,
-                          () {
-                            Navigator.push(
-                              context,
-                              slideFromRightRoute(const DriverAnalyticsScreen()),
-                            );
-                          },
+                        // Recommendations — sunken neu group inside the
+                        // raised panel, hairline-divided.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Container(
+                            decoration: isDark
+                                ? neuBox(radius: 18, pressed: true)
+                                : BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.03),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                            child: Column(
+                              children: [
+                                _panelItem(
+                                  Icons.bar_chart_rounded,
+                                  S.of(context).seeEarningsTrends,
+                                  panelItemIcon,
+                                  panelItemText,
+                                  panelItemChevron,
+                                  () {
+                                    Navigator.push(
+                                      context,
+                                      slideFromRightRoute(
+                                        const DriverEarningsScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                Divider(height: 1, indent: 65, color: borderC),
+                                _panelItem(
+                                  Icons.star_outline_rounded,
+                                  S.of(context).seeUpcomingPromotions,
+                                  panelItemIcon,
+                                  panelItemText,
+                                  panelItemChevron,
+                                  () {
+                                    Navigator.push(
+                                      context,
+                                      slideFromRightRoute(
+                                        const DriverPromosScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                Divider(height: 1, indent: 65, color: borderC),
+                                _panelItem(
+                                  Icons.access_time_rounded,
+                                  S.of(context).seeDrivingTime,
+                                  panelItemIcon,
+                                  panelItemText,
+                                  panelItemChevron,
+                                  () {
+                                    Navigator.push(
+                                      context,
+                                      slideFromRightRoute(
+                                        const DriverAnalyticsScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 20),
-                        // GO OFFLINE button
+                        // GO OFFLINE button — raised neu disc, red accent
                         Center(
                           child: GestureDetector(
                             onTap: _goOffline,
@@ -3572,18 +3616,27 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                                 Container(
                                   width: 62,
                                   height: 62,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: const Color(
-                                      0xFFCC3333,
-                                    ).withValues(alpha: 0.15),
-                                    border: Border.all(
-                                      color: const Color(
-                                        0xFFCC3333,
-                                      ).withValues(alpha: 0.3),
-                                      width: 2,
-                                    ),
-                                  ),
+                                  alignment: Alignment.center,
+                                  decoration: isDark
+                                      ? neuBox(
+                                          radius: 31,
+                                          borderColor: const Color(
+                                            0xFFCC3333,
+                                          ).withValues(alpha: 0.35),
+                                          borderWidth: 1.5,
+                                        )
+                                      : BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(
+                                            0xFFCC3333,
+                                          ).withValues(alpha: 0.15),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFFCC3333,
+                                            ).withValues(alpha: 0.3),
+                                            width: 2,
+                                          ),
+                                        ),
                                   child: const Icon(
                                     Icons.pan_tool_rounded,
                                     color: Color(0xFFCC3333),
@@ -3619,6 +3672,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
+  /// Small sunken neu well holding a single icon (panel header controls).
+  Widget _panelWell(IconData ic, bool isDark, Color iconC) {
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: isDark
+          ? neuBox(radius: 11, pressed: true)
+          : BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(11),
+            ),
+      child: Icon(ic, color: iconC, size: 19),
+    );
+  }
+
   Widget _panelItem(
     IconData ic,
     String txt,
@@ -3627,25 +3696,45 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color chevronC,
     VoidCallback tap,
   ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        onTap: () {
-          HapticService.selectionClick();
-          tap();
-        },
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-        leading: Icon(ic, color: iconC, size: 22),
-        title: Text(
-          txt,
-          style: TextStyle(
-            color: textC,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: () {
+        HapticService.selectionClick();
+        tap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: isDark
+                  ? neuBox(radius: 13, pressed: true)
+                  : BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+              child: Icon(ic, color: _gold, size: 20),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Text(
+                txt,
+                style: TextStyle(
+                  color: textC,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: chevronC, size: 20),
+          ],
         ),
-        trailing: Icon(Icons.chevron_right_rounded, color: chevronC, size: 20),
       ),
     );
   }

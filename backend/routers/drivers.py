@@ -1152,6 +1152,89 @@ async def add_debit_card_payout(
 #  PLAID  (stub)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+@router.post("/drivers/payout-methods/bank-account", dependencies=[Depends(_verify_api_key)])
+async def add_bank_account_payout(
+    body: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a bank account as an external_account on the driver's Stripe
+    Connect account so the weekly Tuesday ACH payout has a destination.
+
+    The client collects the account through the Stripe Financial
+    Connections sheet (``Stripe.instance.collectBankAccountToken``) and
+    sends only the resulting ``bank_token`` (``btok_...``). Account and
+    routing numbers never reach our servers.
+
+    Mirrors ``add_debit_card_payout`` — the Stripe external_account id is
+    appended to display_name as ``[ext:ba_xxx]`` so the delete flow can
+    detach it cleanly.
+    """
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Only drivers can add payout methods")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+
+    bank_token = (body.get("bank_token") or "").strip()
+    set_default = bool(body.get("set_default", False))
+    if not bank_token:
+        raise HTTPException(400, "bank_token required (collect it client-side)")
+
+    # Auto-create the Connect account if the driver doesn't have one yet.
+    if not user.stripe_connect_id:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            account = _stripe.Account.create(
+                type="express",
+                email=user.email or "",
+                capabilities={"transfers": {"requested": True}},
+            )
+            user.stripe_connect_id = account["id"]
+            await db.commit()
+            logging.info(
+                "[StripeConnect] Auto-created account %s for driver %s",
+                account["id"], user.id,
+            )
+        except Exception as e:
+            logging.error("[StripeConnect] Auto-create failed for driver %s: %s", user.id, e)
+            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:120]}")
+
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        ext = _stripe.Account.create_external_account(
+            user.stripe_connect_id,
+            external_account=bank_token,
+            default_for_currency=set_default,
+        )
+        ext_id = ext.get("id") or ""
+        bank_name = (ext.get("bank_name") or "Bank").title()
+        last4 = ext.get("last4") or "----"
+        display = f"{bank_name} ····{last4}  [ext:{ext_id}]"
+    except Exception as e:
+        logging.error("[StripeBankAccount] %s", e)
+        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+
+    if set_default:
+        await _clear_other_defaults(db, user.id)
+    pm = PayoutMethod(
+        user_id=user.id,
+        method_type="bank_account",
+        display_name=display,
+        is_default=set_default,
+    )
+    db.add(pm)
+    await db.commit()
+    await db.refresh(pm)
+    return {
+        "id": pm.id,
+        "method_type": pm.method_type,
+        "display_name": pm.display_name,
+        "is_default": pm.is_default,
+    }
+
+
 @router.post("/plaid/create-link-token", dependencies=[Depends(_verify_api_key)])
 async def create_plaid_link_token(user: User = Depends(_get_current_user)):
     return {"link_token": f"link-sandbox-{secrets.token_hex(16)}"}

@@ -1,29 +1,33 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import '../../services/haptic_service.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
-import 'package:url_launcher/url_launcher.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/haptic_service.dart';
+import '../../widgets/neu_style.dart';
 
 /// Payout Methods screen — Stripe Connect-powered, real end-to-end.
 ///
-/// Two ways to add a destination for cashouts:
+/// Two destinations the driver can attach to their Connect account:
 ///
-///   1. **Connect bank account** — opens Stripe Connect Express
-///      onboarding (hosted flow). Stripe handles bank-account capture,
-///      identity verification, and creates the external_account on the
-///      Connect account. We poll status every 3-10s for up to 5 min and
-///      record the row when both ``charges_enabled`` AND
-///      ``payouts_enabled`` flip to true.
+///   1. **Connect bank account** — opens the Stripe Financial Connections
+///      sheet via the native SDK (`collectBankAccountToken`) using the
+///      `client_secret` minted by `POST /drivers/financial-connections`.
+///      Stripe returns a `btok_...`; the backend attaches it as an
+///      external_account, which is where the weekly Tuesday ACH payout
+///      lands. Account and routing numbers never reach our servers.
 ///
-///   2. **Add debit card** — uses the Stripe Flutter SDK
-///      (``flutter_stripe``) to tokenize the PAN client-side. We send
-///      only the resulting ``card_token`` (e.g. ``tok_visa``) to the
-///      backend, which attaches it to the driver's Connect account as
-///      an external_account for **instant cashouts**. The raw PAN
-///      never reaches our servers.
+///   2. **Add debit card** — a `CardField` sheet tokenizes the PAN
+///      client-side (`createToken` with `currency: usd`, which is what
+///      marks the token as usable for payouts). We send only the
+///      `tok_...`, which the backend attaches as an external_account for
+///      **instant cashouts**. The raw PAN never reaches our servers.
 ///
-/// Defaults: backend atomically clears other defaults whenever a row is
+/// Both flows are native-only — `flutter_stripe` has no web implementation,
+/// so on web the buttons explain that instead of throwing.
+///
+/// Defaults: the backend atomically clears other defaults whenever a row is
 /// promoted, so the cashout flow always sees exactly one default row.
 class PayoutMethodsScreen extends StatefulWidget {
   const PayoutMethodsScreen({super.key});
@@ -34,11 +38,13 @@ class PayoutMethodsScreen extends StatefulWidget {
 
 class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   static const _gold = Color(0xFFD4A843);
-  static const _card = Color(0xFF1C1C1E);
+  static const _green = Color(0xFF4CAF50);
+  static const _danger = Color(0xFFFF5252);
+  static const _text = Colors.white;
 
   List<Map<String, dynamic>> _methods = [];
   bool _loading = true;
-  bool _linkingBank = false;
+  bool _busy = false; // any Stripe/back-end call in flight
   String? _loadError;
 
   @override
@@ -48,20 +54,23 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   }
 
   Future<void> _loadMethods() async {
-    final errorMsg = S.of(context).couldNotLoadPaymentMethods;
-    String? error;
+    List<Map<String, dynamic>>? loaded;
+    bool failed = false;
     try {
-      _methods = await ApiService.getPayoutMethods();
+      loaded = await ApiService.getPayoutMethods();
     } catch (e) {
       debugPrint('[PayoutMethods] _loadMethods error: $e');
-      error = errorMsg;
+      failed = true;
     }
-    if (mounted) {
-      setState(() {
-        _loading = false;
-        _loadError = error;
-      });
-    }
+    if (!mounted) return;
+    // The error string is resolved AFTER the await on purpose: _loadMethods
+    // is called from initState, and S.of() does an inherited-widget lookup,
+    // which throws if it runs before initState has completed.
+    setState(() {
+      if (loaded != null) _methods = loaded;
+      _loading = false;
+      _loadError = failed ? S.of(context).couldNotLoadPaymentMethods : null;
+    });
   }
 
   bool get _hasDebitCard =>
@@ -75,14 +84,37 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     return raw.substring(0, idx).trim();
   }
 
+  void _snack(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+          style: TextStyle(
+            color: error ? Colors.white : Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: error ? _danger : _gold,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  BUILD
+  // ═══════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Header ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
               child: Stack(
@@ -95,22 +127,20 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       child: Container(
                         width: 40,
                         height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          shape: BoxShape.circle,
-                        ),
+                        alignment: Alignment.center,
+                        decoration: neuBox(radius: 14, pressed: true),
                         child: const Icon(
                           Icons.arrow_back_rounded,
-                          color: Colors.white,
+                          color: _text,
                           size: 20,
                         ),
                       ),
                     ),
                   ),
                   Text(
-                    S.of(context).payoutMethodsTitle,
+                    s.payoutMethodsTitle,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: _text,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
@@ -119,32 +149,21 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // ── Instant cashout explainer — raised neu card ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _gold.withValues(alpha: 0.12),
-                      _gold.withValues(alpha: 0.03),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _gold.withValues(alpha: 0.15)),
-                ),
+                padding: const EdgeInsets.all(18),
+                decoration: neuBox(radius: 22),
                 child: Row(
                   children: [
                     Container(
                       width: 48,
                       height: 48,
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      alignment: Alignment.center,
+                      decoration: neuBox(radius: 15, pressed: true),
                       child: const Icon(
                         Icons.flash_on_rounded,
                         color: _gold,
@@ -157,16 +176,16 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            S.of(context).instantCashout,
+                            s.instantCashout,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: _text,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            S.of(context).plaidLinkDescription,
+                            s.plaidLinkDescription,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.45),
                               fontSize: 12,
@@ -181,14 +200,16 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // ── Section header ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
                   Text(
-                    S.of(context).linkedAccounts,
+                    s.linkedAccounts,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: _text,
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
@@ -206,6 +227,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(height: 10),
+
+            // ── Security note — sunken strip ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -213,24 +236,18 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                   horizontal: 14,
                   vertical: 10,
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.05),
-                  ),
-                ),
+                decoration: neuBox(radius: 14, pressed: true),
                 child: Row(
                   children: [
                     Icon(
                       Icons.lock_rounded,
-                      color: const Color(0xFF4CAF50).withValues(alpha: 0.7),
+                      color: _green.withValues(alpha: 0.7),
                       size: 16,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        S.of(context).plaidSecurityNote,
+                        s.plaidSecurityNote,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.35),
                           fontSize: 11,
@@ -243,6 +260,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(height: 14),
+
+            // ── List / empty / error ──
             Expanded(
               child: _loading
                   ? const Center(
@@ -255,74 +274,39 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                   ? _buildError(_loadError!)
                   : _methods.isEmpty
                   ? _buildEmpty()
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      itemCount: _methods.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) => _buildMethodCard(_methods[i]),
+                  : RefreshIndicator(
+                      color: _gold,
+                      backgroundColor: neuSurface,
+                      onRefresh: _loadMethods,
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _methods.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _buildMethodCard(_methods[i]),
+                      ),
                     ),
             ),
+
+            // ── Actions ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
               child: Column(
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _linkingBank ? null : _connectBankAccount,
-                      icon: _linkingBank
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.black,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(Icons.account_balance_rounded, size: 20),
-                      label: Text(
-                        _linkingBank
-                            ? S.of(context).connectingLabel
-                            : S.of(context).connectBankAccount,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                    ),
+                  _primaryButton(
+                    icon: Icons.account_balance_rounded,
+                    label: s.connectBankAccount,
+                    busyLabel: s.connectingLabel,
+                    onTap: _connectBankAccount,
                   ),
                   if (!_hasDebitCard) ...[
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: OutlinedButton.icon(
-                        onPressed: _linkingBank ? null : _connectDebitCard,
-                        icon: const Icon(Icons.credit_card_rounded, size: 20),
-                        label: Text(
-                          S.of(context).addDebitCard,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _gold,
-                          side: BorderSide(color: _gold.withValues(alpha: 0.3)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                      ),
+                    const SizedBox(height: 10),
+                    _secondaryButton(
+                      icon: Icons.credit_card_rounded,
+                      label: s.addDebitCard,
+                      onTap: _connectDebitCard,
                     ),
                   ],
                 ],
@@ -334,7 +318,106 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     );
   }
 
+  /// Gold filled primary action, raised.
+  Widget _primaryButton({
+    required IconData icon,
+    required String label,
+    required String busyLabel,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: _busy ? null : onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: _busy ? 0.6 : 1,
+        child: Container(
+          width: double.infinity,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _gold,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                offset: const Offset(5, 5),
+                blurRadius: 12,
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.05),
+                offset: const Offset(-4, -4),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_busy)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.black,
+                    strokeWidth: 2,
+                  ),
+                )
+              else
+                Icon(icon, size: 20, color: Colors.black),
+              const SizedBox(width: 10),
+              Text(
+                _busy ? busyLabel : label,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Raised neu surface with gold label.
+  Widget _secondaryButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: _busy ? null : onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: _busy ? 0.5 : 1,
+        child: Container(
+          width: double.infinity,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: neuBox(radius: 18),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: _gold),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmpty() {
+    final s = S.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -342,28 +425,26 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(24),
-            ),
+            alignment: Alignment.center,
+            decoration: neuBox(radius: 26, pressed: true),
             child: Icon(
               Icons.account_balance_rounded,
-              color: _gold.withValues(alpha: 0.3),
+              color: _gold.withValues(alpha: 0.45),
               size: 36,
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            S.of(context).noPayoutMethods,
+            s.noPayoutMethods,
             style: const TextStyle(
-              color: Colors.white,
+              color: _text,
               fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            S.of(context).connectBankForCashouts,
+            s.connectBankForCashouts,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
               fontSize: 13,
@@ -374,10 +455,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(20),
-            ),
+            decoration: neuBox(radius: 20, pressed: true),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -388,7 +466,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  S.of(context).poweredByPlaid,
+                  s.poweredByPlaid,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 11,
@@ -410,8 +488,17 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded,
-                color: Colors.redAccent.withValues(alpha: 0.7), size: 40),
+            Container(
+              width: 72,
+              height: 72,
+              alignment: Alignment.center,
+              decoration: neuBox(radius: 24, pressed: true),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: _danger.withValues(alpha: 0.8),
+                size: 34,
+              ),
+            ),
             const SizedBox(height: 16),
             Text(
               message,
@@ -423,12 +510,31 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            TextButton.icon(
-              onPressed: _loadMethods,
-              icon: const Icon(Icons.refresh_rounded, color: _gold, size: 18),
-              label: Text(
-                S.of(context).retry,
-                style: const TextStyle(color: _gold, fontWeight: FontWeight.w700),
+            GestureDetector(
+              onTap: () {
+                setState(() => _loading = true);
+                _loadMethods();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: neuBox(radius: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.refresh_rounded, color: _gold, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      S.of(context).retry,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -551,138 +657,134 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   }
 
   Widget _buildMethodCard(Map<String, dynamic> method) {
+    final s = S.of(context);
     final type = method['method_type'] ?? 'bank_account';
     final rawDisplay = (method['display_name'] ?? 'Bank account').toString();
     final display = _cleanDisplay(rawDisplay);
     final isDefault = method['is_default'] == true;
     final id = method['id'];
-    Widget leadingIcon;
-    if (type == 'debit_card') {
-      leadingIcon = _brandIcon(_brandFromDisplay(display), size: 32);
-    } else {
-      leadingIcon = const Icon(
-        Icons.account_balance_rounded,
-        color: Color(0xFF4CAF50),
-        size: 24,
-      );
-    }
+    final isCard = type == 'debit_card';
+
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(18),
-        border: isDefault
-            ? Border.all(color: _gold.withValues(alpha: 0.3))
-            : null,
+      padding: const EdgeInsets.all(16),
+      decoration: neuBox(
+        radius: 20,
+        borderColor: isDefault ? _gold.withValues(alpha: 0.45) : null,
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: type == 'debit_card'
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFF4CAF50).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(child: leadingIcon),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        display,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: neuBox(radius: 15, pressed: true),
+                child: isCard
+                    ? _brandIcon(_brandFromDisplay(display), size: 30)
+                    : const Icon(
+                        Icons.account_balance_rounded,
+                        color: _green,
+                        size: 24,
                       ),
-                    ),
-                    if (isDefault)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _gold.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          S.of(context).defaultBadge,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            display,
+                            style: const TextStyle(
+                              color: _text,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (isDefault)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _gold.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              s.defaultBadge,
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isCard ? s.instantCashout : s.bankTransferType,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 12,
                       ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  type == 'debit_card'
-                      ? S.of(context).instantCashout
-                      : S.of(context).bankTransferType,
-                  style: TextStyle(
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _confirmDelete(id, display),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: neuBox(radius: 13, pressed: true),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
                     color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 12,
+                    size: 18,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          if (!isDefault)
+          // Full-width action so the label can't be clipped on narrow phones
+          // the way the old inline chip was.
+          if (!isDefault) ...[
+            const SizedBox(height: 12),
             GestureDetector(
               onTap: () => _setDefault(id),
               child: Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _gold.withValues(alpha: 0.35)),
-                ),
-                child: const Text(
-                  'Set Default',
-                  style: TextStyle(
+                width: double.infinity,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: neuBox(radius: 13, pressed: true),
+                child: Text(
+                  s.setDefault,
+                  style: const TextStyle(
                     color: _gold,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ),
-          GestureDetector(
-            onTap: () => _confirmDelete(id, display),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.delete_outline_rounded,
-                color: Colors.white.withValues(alpha: 0.3),
-                size: 18,
-              ),
-            ),
-          ),
+          ],
         ],
       ),
     );
   }
 
+  // ═══════════════════════════════════════════════════
+  //  ACTIONS
+  // ═══════════════════════════════════════════════════
   Future<void> _setDefault(dynamic id) async {
     HapticService.lightImpact();
     try {
@@ -690,303 +792,218 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         id is int ? id : int.parse(id.toString()),
       );
       await _loadMethods();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).failedToAddMethod),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+    } catch (e) {
+      debugPrint('[Payout] _setDefault error: $e');
+      if (!mounted) return;
+      _snack(S.of(context).failedToSetDefault, error: true);
     }
   }
 
+  /// Link a bank account through the Stripe Financial Connections sheet.
+  ///
+  /// The backend mints a Financial Connections session and returns its
+  /// `client_secret` — it has no hosted URL, so this must go through the
+  /// native SDK. Stripe hands back a `btok_...` which the backend attaches
+  /// as the Connect external_account that weekly payouts are sent to.
   Future<void> _connectBankAccount() async {
     HapticService.mediumImpact();
-    setState(() => _linkingBank = true);
+    if (kIsWeb) {
+      _snack(S.of(context).bankLinkMobileOnly, error: true);
+      return;
+    }
+    setState(() => _busy = true);
     try {
-      // Use Stripe Financial Connections for fast bank linking (no KYC)
       final session = await ApiService.createDriverFinancialConnectionsSession();
       if (!mounted) return;
-      final url = session['url'] as String?;
-      if (url == null || url.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bank linking is temporarily unavailable.'),
-            duration: Duration(seconds: 4),
-          ),
-        );
+
+      final clientSecret = (session['client_secret'] ?? '').toString();
+      if (clientSecret.isEmpty) {
+        _snack(S.of(context).failedToAddMethod, error: true);
         return;
       }
 
-      // Open Financial Connections in an in-app WebView so the driver
-      // stays inside the app during bank selection.
-      final result = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => _BankLinkWebView(url: url),
-        ),
+      final result = await stripe.Stripe.instance.collectBankAccountToken(
+        clientSecret: clientSecret,
       );
+      if (!mounted) return;
 
-      if (result == true && mounted) {
-        // User completed the bank linking flow
-        final acctId = (session['stripe_account_id'] ?? '').toString();
-        final tail = acctId.length > 4
-            ? acctId.substring(acctId.length - 4)
-            : acctId;
-        await _addBankMethod('Bank account ····$tail');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Bank account linked successfully.'),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
+      final bankToken = result.token.id ?? '';
+      if (bankToken.isEmpty) {
+        // Sheet completed without producing a token (e.g. the driver backed
+        // out on the final step). Nothing to attach.
+        return;
       }
-      if (mounted) await _loadMethods();
+
+      await ApiService.addBankAccountPayout(
+        bankToken: bankToken,
+        setDefault: _methods.isEmpty,
+      );
+      if (!mounted) return;
+      _snack(S.of(context).bankAccountLinked);
+      await _loadMethods();
+    } on stripe.StripeException catch (e) {
+      if (e.error.code == stripe.FailureCode.Canceled) return; // user dismissed
+      debugPrint('[Payout] Bank link Stripe error: ${e.error}');
+      if (!mounted) return;
+      _snack(
+        e.error.localizedMessage ?? S.of(context).failedToAddMethod,
+        error: true,
+      );
     } catch (e) {
       debugPrint('[Payout] Bank link error: $e');
-      if (mounted) {
-        final msg = e is ApiException ? e.message : S.of(context).failedToAddMethod;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _linkingBank = false);
-    }
-  }
-
-  Future<void> _addBankMethod(String displayName) async {
-    try {
-      await ApiService.addPayoutMethod(
-        methodType: 'bank_account',
-        displayName: displayName,
-        setDefault: _methods.isEmpty,
+      if (!mounted) return;
+      _snack(
+        e is ApiException ? e.message : S.of(context).failedToAddMethod,
+        error: true,
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).bankAccountLinked),
-            backgroundColor: _gold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[Payout] _addBankMethod error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).failedToAddMethod),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// Open the Stripe Flutter SDK card sheet, tokenize the PAN, then send
-  /// the resulting card_token to our backend so it can be attached as a
-  /// Stripe Connect external_account. The raw PAN never reaches our
-  /// servers.
+  /// Collect a debit card and attach it as an external_account for instant
+  /// cashouts. The `CardField` sheet buffers the PAN inside the Stripe SDK;
+  /// `createToken` turns that buffer into a `tok_...`. Only the token
+  /// leaves the device.
   Future<void> _connectDebitCard() async {
     HapticService.mediumImpact();
-    setState(() => _linkingBank = true);
-    try {
-      // Stripe.instance.createToken with CardTokenParams.
-      // The Stripe SDK raises a native sheet when called the first time
-      // in a session if no card is buffered. For drivers we use the
-      // embedded CardField approach in the Wallet flow already, so here
-      // we present a SetupIntent-style sheet.
-      final tokenResult = await stripe.Stripe.instance.createToken(
-        const stripe.CreateTokenParams.card(
-          params: stripe.CardTokenParams(
-            type: stripe.TokenType.Card,
-          ),
-        ),
-      );
-      final tokenId = tokenResult.id;
-      if (tokenId.isEmpty) {
-        throw Exception('Empty card token from Stripe');
-      }
+    if (kIsWeb) {
+      _snack(S.of(context).cardEntryMobileOnly, error: true);
+      return;
+    }
 
+    final cardToken = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _AddDebitCardSheet(),
+    );
+    if (cardToken == null || cardToken.isEmpty || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
       await ApiService.addDebitCardPayout(
-        cardToken: tokenId,
+        cardToken: cardToken,
         setDefault: _methods.isEmpty,
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).debitCardAdded),
-            backgroundColor: _gold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-      if (mounted) await _loadMethods();
-    } on stripe.StripeException catch (e) {
-      if (e.error.code == stripe.FailureCode.Canceled) {
-        // User dismissed the card sheet — silent no-op.
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              e.error.localizedMessage ?? S.of(context).failedToAddMethod,
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      if (!mounted) return;
+      _snack(S.of(context).debitCardAdded);
+      await _loadMethods();
     } catch (e) {
       debugPrint('[Payout] addDebitCard error: $e');
-      if (mounted) {
-        final msg = e is ApiException
-            ? e.message
-            : (e.toString().contains('Stripe error:')
-                ? e.toString().split('Stripe error:').last.trim()
-                : S.of(context).failedToAddMethod);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      if (!mounted) return;
+      _snack(
+        e is ApiException ? e.message : S.of(context).failedToAddMethod,
+        error: true,
+      );
     } finally {
-      if (mounted) setState(() => _linkingBank = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   void _confirmDelete(dynamic id, String name) {
+    final s = S.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(28),
         decoration: const BoxDecoration(
-          color: _card,
+          color: neuBase,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.red.withValues(alpha: 0.7),
-              size: 42,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              S.of(context).removePayoutMethod,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+              const SizedBox(height: 24),
+              Container(
+                width: 64,
+                height: 64,
+                alignment: Alignment.center,
+                decoration: neuBox(radius: 22, pressed: true),
+                child: Icon(
+                  Icons.warning_amber_rounded,
+                  color: _danger.withValues(alpha: 0.85),
+                  size: 32,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              S.of(context).confirmRemoveMethod(name),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 14,
+              const SizedBox(height: 16),
+              Text(
+                s.removePayoutMethod,
+                style: const TextStyle(
+                  color: _text,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.15),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: Text(
-                        S.of(context).cancel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
+              const SizedBox(height: 8),
+              Text(
+                s.confirmRemoveMethod(name),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Container(
+                        height: 50,
+                        alignment: Alignment.center,
+                        decoration: neuBox(radius: 16),
+                        child: Text(
+                          s.cancel,
+                          style: const TextStyle(
+                            color: _text,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: () async {
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
                         Navigator.pop(ctx);
                         await _deleteMethod(id);
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.withValues(alpha: 0.8),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        height: 50,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _danger.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                      ),
-                      child: Text(
-                        S.of(context).removeLabel,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        child: Text(
+                          s.removeLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -997,117 +1014,299 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       await ApiService.deletePayoutMethod(
         id is int ? id : int.parse(id.toString()),
       );
-      if (mounted) setState(() => _methods.removeWhere((m) => m['id'] == id));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).payoutMethodRemoved),
-            backgroundColor: _gold,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).failedToRemoveMethod),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      if (!mounted) return;
+      _snack(S.of(context).payoutMethodRemoved);
+      // Reload rather than removing locally: deleting the default makes the
+      // backend promote another row, and that new default has to show up.
+      await _loadMethods();
+    } catch (e) {
+      debugPrint('[Payout] _deleteMethod error: $e');
+      if (!mounted) return;
+      _snack(S.of(context).failedToRemoveMethod, error: true);
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Bank Link WebView (Stripe Financial Connections)
+//  ADD DEBIT CARD SHEET
 // ═══════════════════════════════════════════════════════════════
-class _BankLinkWebView extends StatefulWidget {
-  final String url;
-  const _BankLinkWebView({required this.url});
+
+/// Collects a debit card and returns the Stripe token id (`tok_...`).
+///
+/// `createToken` reads the card details buffered by the mounted
+/// [stripe.CardField] — without a live field on screen there is nothing to
+/// tokenize, which is why this has to be its own sheet rather than a bare
+/// SDK call. `currency: 'usd'` is required: it marks the token as a payout
+/// destination, which is what `Account.create_external_account` accepts.
+class _AddDebitCardSheet extends StatefulWidget {
+  const _AddDebitCardSheet();
 
   @override
-  State<_BankLinkWebView> createState() => _BankLinkWebViewState();
+  State<_AddDebitCardSheet> createState() => _AddDebitCardSheetState();
 }
 
-class _BankLinkWebViewState extends State<_BankLinkWebView> {
+class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
+  static const _gold = Color(0xFFD4A843);
+
+  final _nameCtrl = TextEditingController();
+  bool _complete = false;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_complete || _submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final token = await stripe.Stripe.instance.createToken(
+        stripe.CreateTokenParams.card(
+          params: stripe.CardTokenParams(
+            type: stripe.TokenType.Card,
+            name: _nameCtrl.text.trim().isEmpty
+                ? null
+                : _nameCtrl.text.trim(),
+            currency: 'usd',
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (token.id.isEmpty) {
+        setState(() {
+          _submitting = false;
+          _error = S.of(context).failedToAddMethod;
+        });
+        return;
+      }
+      Navigator.pop(context, token.id);
+    } on stripe.StripeException catch (e) {
+      if (!mounted) return;
+      if (e.error.code == stripe.FailureCode.Canceled) {
+        Navigator.pop(context);
+        return;
+      }
+      setState(() {
+        _submitting = false;
+        _error = e.error.localizedMessage ?? S.of(context).failedToAddMethod;
+      });
+    } catch (e) {
+      debugPrint('[AddDebitCard] createToken error: $e');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = S.of(context).failedToAddMethod;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-        title: const Text(
-          'Link Bank Account',
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
+    final s = S.of(context);
+    return Padding(
+      // Lift above the keyboard so the card field stays visible.
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      body: Stack(
-        children: [
-          // Use a simple approach with url_launcher since webview_flutter
-          // may not be imported. Open external browser as fallback.
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(color: Color(0xFFE8C547)),
-                const SizedBox(height: 24),
-                const Text(
-                  'Opening secure bank connection...',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8C547),
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                s.addDebitCardTitle,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                s.addDebitForCashouts,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Stripe secure card field ──
+              Container(
+                decoration: neuBox(radius: 16, pressed: true),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: stripe.CardField(
+                  enablePostalCode: false,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      fontSize: 16,
                     ),
                   ),
-                  onPressed: () async {
-                    final ok = await launchUrl(
-                      Uri.parse(widget.url),
-                      mode: LaunchMode.externalApplication,
-                    );
-                    if (ok && context.mounted) {
-                      // Give user time to complete in external browser
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Complete bank linking in your browser, then return here.'),
-                          duration: Duration(seconds: 5),
-                        ),
-                      );
-                    }
+                  onCardChanged: (details) {
+                    setState(() => _complete = details?.complete ?? false);
                   },
-                  child: const Text('Open in Browser'),
                 ),
-                const SizedBox(height: 16),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(
-                    S.of(context).cancel,
-                    style: const TextStyle(color: Colors.white54),
+              ),
+              const SizedBox(height: 14),
+
+              // ── Cardholder name ──
+              Container(
+                decoration: neuBox(radius: 16, pressed: true),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _nameCtrl,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: s.cardholderNameLabel,
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      fontSize: 15,
+                    ),
+                    icon: Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.white.withValues(alpha: 0.35),
+                      size: 20,
+                    ),
                   ),
                 ),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: Color(0xFFFF5252),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: Color(0xFFFF5252),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
-            ),
+
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(
+                    Icons.lock_rounded,
+                    color: const Color(0xFF4CAF50).withValues(alpha: 0.7),
+                    size: 14,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.infoEncryptedSecure,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // ── Submit ──
+              GestureDetector(
+                onTap: (_complete && !_submitting) ? _submit : null,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: (_complete && !_submitting) ? 1 : 0.45,
+                  child: Container(
+                    width: double.infinity,
+                    height: 54,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _gold,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          offset: const Offset(5, 5),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            s.addCardButton,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => Navigator.pop(context),
+                  child: Text(
+                    s.cancel,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

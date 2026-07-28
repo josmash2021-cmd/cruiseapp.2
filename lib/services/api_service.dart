@@ -2340,6 +2340,29 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Attach a bank account (collected via the Stripe Financial Connections
+  /// sheet) as a Connect external_account — the destination for the weekly
+  /// Tuesday ACH payout. Only the `btok_...` reaches us, never the
+  /// account/routing numbers.
+  static Future<Map<String, dynamic>> addBankAccountPayout({
+    required String bankToken,
+    bool setDefault = false,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/payout-methods/bank-account'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({
+            'bank_token': bankToken,
+            'set_default': setDefault,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
   // ═══════════════════════════════════════════════════════
   //  PLAID BANK LINKING
   // ═══════════════════════════════════════════════════════

@@ -1512,6 +1512,9 @@ class S {
       : 'Debit card added — instant cashout enabled';
   String get bankAccountLinked =>
       _es ? 'Cuenta bancaria vinculada' : 'Bank account linked';
+  String get bankNeedsVerification => _es
+      ? 'Tu banco necesita verificación antes de poder usarse. Stripe te enviará dos micro-depósitos; vuelve a vincularlo cuando los recibas.'
+      : 'Your bank needs verification before it can be used. Stripe will send two microdeposits — link it again once they arrive.';
   String get failedToAddMethod =>
       _es ? 'Error al agregar método' : 'Failed to add method';
   String get removePayoutMethod =>
@@ -2625,8 +2628,8 @@ class S {
 
   // ── Payout Methods ──
   String get plaidLinkDescription => _es
-      ? 'Recibe tus pagos semanales directo a tu cuenta. Los pagos se procesan cada lunes.'
-      : 'Receive your weekly earnings directly to your account. Payments are processed every Monday.';
+      ? 'Recibe tus pagos semanales directo a tu cuenta. Los pagos se procesan cada martes.'
+      : 'Receive your weekly earnings directly to your account. Payments are processed every Tuesday.';
   String get connectingLabel => _es ? 'Conectando...' : 'Connecting...';
   String get connectBankForCashouts => _es
       ? 'Agrega una cuenta bancaria para recibir\ntus ganancias cada semana'
@@ -3373,6 +3376,9 @@ class S {
       : 'Could not load payment methods. Tap retry.';
   String get configurePayments => _es ? 'Configurar Pagos' : 'Configure Payments';
   String get openingLabel => _es ? 'Abriendo...' : 'Opening...';
+  String get failedToSetDefault => _es
+      ? 'No se pudo cambiar el método predeterminado'
+      : 'Could not change the default method';
 
   // ── Referral Screen (NEW) ──
   String get inviteFriendsTitle => _es ? 'Invitar Amigos' : 'Invite Friends';

@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
-import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/neu_style.dart';
 import '../home_screen.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
@@ -42,51 +42,14 @@ class DriverMenuScreen extends StatefulWidget {
 class _DriverMenuScreenState extends State<DriverMenuScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
-  static const _goldLight = Color(0xFFF5D990);
-  static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF1A1A1F);
-  static const _card = Color(0xFF1C1C1E);
+  static const _danger = Color(0xFFFF5252);
 
-  // ── Neumorphism helpers (dark) ──
-  /// Raised surface: same base color as background + dual shadows.
-  BoxDecoration _neu(
-    Color base, {
-    double radius = 20,
-    bool circle = false,
-  }) {
-    return BoxDecoration(
-      color: base,
-      borderRadius: circle ? null : BorderRadius.circular(radius),
-      shape: circle ? BoxShape.circle : BoxShape.rectangle,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.white.withValues(alpha: 0.05),
-          offset: const Offset(-4, -4),
-          blurRadius: 9,
-        ),
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.55),
-          offset: const Offset(4, 4),
-          blurRadius: 11,
-        ),
-      ],
-    );
-  }
-
-  /// Pressed / inset surface: subtle inner gradient, no cast shadows.
-  BoxDecoration _neuPressed(Color base, {double radius = 20}) {
-    return BoxDecoration(
-      borderRadius: BorderRadius.circular(radius),
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color.lerp(base, Colors.black, 0.28)!,
-          Color.lerp(base, Colors.white, 0.05)!,
-        ],
-      ),
-    );
-  }
+  // Text ramp for the dark neumorphic surface (neuBase/neuSurface).
+  // The shared neu system is dark-only, so these are fixed — see
+  // lib/widgets/neu_style.dart.
+  static const _text = Colors.white;
+  static final _textSecondary = Colors.white.withValues(alpha: 0.60);
+  static final _textTertiary = Colors.white.withValues(alpha: 0.38);
 
   // ── Dynamic profile data ──
   String _driverName = '';
@@ -273,14 +236,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    final dc = DriverColors.of(context);
+    final s = S.of(context);
     return Scaffold(
-      backgroundColor: dc.bg,
+      backgroundColor: neuBase,
       body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: dc.bg,
+            color: neuBase,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -294,15 +257,19 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   child: Container(
                     width: Responsive.w(40),
                     height: Responsive.w(40),
-                    decoration: _neu(dc.bg, circle: true),
-                    child: Icon(Icons.close_rounded, color: dc.text, size: Responsive.sp(22)),
+                    decoration: neuBox(radius: 14, pressed: true),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: _text,
+                      size: Responsive.sp(22),
+                    ),
                   ),
                 ),
                 const Spacer(),
                 Text(
-                  S.of(context).menuTitle,
+                  s.menuTitle,
                   style: TextStyle(
-                    color: dc.text,
+                    color: _text,
                     fontSize: Responsive.sp(18),
                     fontWeight: FontWeight.w800,
                   ),
@@ -319,7 +286,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               opacity: _entranceAnim,
               child: ListView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 40),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
                 children: [
                   const SizedBox(height: 16),
 
@@ -328,213 +295,138 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
 
                   const SizedBox(height: 20),
 
-                  // ── Quick actions row: Help, Safety, Settings ──
+                  // ── Quick actions row: Earnings, Help, Settings ──
                   _quickActionsRow(context),
 
                   const SizedBox(height: 28),
 
                   // ── More ways to earn ──
-                  _sectionHeader(S.of(context).moreWaysToEarn),
-                  // Opportunities — Coming Soon
-                  Stack(
-                    children: [
-                      IgnorePointer(
-                        child: Opacity(
-                          opacity: 0.45,
-                          child: _item(
-                            context,
-                            Icons.trending_up_rounded,
-                            S.of(context).opportunities,
-                            S.of(context).findMoreEarnings,
-                            () {},
-                          ),
-                        ),
+                  _sectionHeader(s.moreWaysToEarn),
+                  _sectionCard([
+                    _item(
+                      Icons.workspace_premium_rounded,
+                      s.cruiseLevelLabel,
+                      s.cruiseLevelTiers,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const CruiseLevelScreen())),
+                    ),
+                    _item(
+                      Icons.work_outline_rounded,
+                      s.workHub,
+                      s.deliveryAndServices,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const WorkHubScreen())),
+                    ),
+                    _item(
+                      Icons.person_add_rounded,
+                      s.referFriends,
+                      s.earnBonuses,
+                      () => Navigator.of(context).push(
+                        slideFromRightRoute(const DriverReferralScreen()),
                       ),
-                      Positioned(
-                        right: 20, top: 0, bottom: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [Color(0xFFE8C547), Color(0xFFF5D990)]),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'Coming Soon',
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  _item(
-                    context,
-                    Icons.workspace_premium_rounded,
-                    S.of(context).cruiseLevelLabel,
-                    S.of(context).cruiseLevelTiers,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const CruiseLevelScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.work_outline_rounded,
-                    S.of(context).workHub,
-                    S.of(context).deliveryAndServices,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const WorkHubScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.person_add_rounded,
-                    S.of(context).referFriends,
-                    S.of(context).earnBonuses,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const DriverReferralScreen()));
-                    },
-                  ),
+                    ),
+                  ]),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 22),
 
                   // ── Manage ──
-                  _sectionHeader(S.of(context).manageSectionLabel),
-                  _item(
-                    context,
-                    Icons.event_note_rounded,
-                    S.of(context).scheduledTripsMenu,
-                    S.of(context).upcomingRides,
-                    () {
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const ScheduledRidesScreen(initialTab: 1)),
-                      );
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.directions_car_rounded,
-                    S.of(context).vehiclesLabel,
-                    S.of(context).yourCarDetails,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const DriverVehicleScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.description_rounded,
-                    S.of(context).documentsLabel,
-                    S.of(context).licenseAndInsurance,
-                    () {
-                      Navigator.of(context).push(
+                  _sectionHeader(s.manageSectionLabel),
+                  _sectionCard([
+                    _item(
+                      Icons.event_note_rounded,
+                      s.scheduledTripsMenu,
+                      s.upcomingRides,
+                      () => Navigator.of(context).push(
+                        slideFromRightRoute(
+                          const ScheduledRidesScreen(initialTab: 1),
+                        ),
+                      ),
+                    ),
+                    _item(
+                      Icons.directions_car_rounded,
+                      s.vehiclesLabel,
+                      s.yourCarDetails,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const DriverVehicleScreen())),
+                    ),
+                    _item(
+                      Icons.description_rounded,
+                      s.documentsLabel,
+                      s.licenseAndInsurance,
+                      () => Navigator.of(context).push(
                         slideFromRightRoute(const DriverDocumentsScreen()),
-                      );
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.gavel_rounded,
-                    S.of(context).driverTermsOfServiceMenu,
-                    S.of(context).driverTermsOfServiceMenuSubtitle,
-                    () {
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const DriverTermsScreen()),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                    _item(
+                      Icons.gavel_rounded,
+                      s.driverTermsOfServiceMenu,
+                      s.driverTermsOfServiceMenuSubtitle,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const DriverTermsScreen())),
+                    ),
+                  ]),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 22),
 
                   // ── Money ──
-                  _sectionHeader(S.of(context).moneySectionLabel),
-                  _item(
-                    context,
-                    Icons.receipt_long_rounded,
-                    S.of(context).taxInfo,
-                    S.of(context).taxDocsAndForms,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const TaxInfoScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.account_balance_rounded,
-                    S.of(context).payoutMethodsLabel,
-                    S.of(context).bankAndPaymentSetup,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const PayoutMethodsScreen()));
-                    },
-                  ),
-                  const SizedBox(height: 24),
+                  _sectionHeader(s.moneySectionLabel),
+                  _sectionCard([
+                    _item(
+                      Icons.receipt_long_rounded,
+                      s.taxInfo,
+                      s.taxDocsAndForms,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const TaxInfoScreen())),
+                    ),
+                    _item(
+                      Icons.account_balance_rounded,
+                      s.payoutMethodsLabel,
+                      s.bankAndPaymentSetup,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const PayoutMethodsScreen())),
+                    ),
+                  ]),
+
+                  const SizedBox(height: 22),
 
                   // ── Resources ──
-                  _sectionHeader(S.of(context).resourcesSectionLabel),
-                  _item(
-                    context,
-                    Icons.school_rounded,
-                    S.of(context).learningCenter,
-                    S.of(context).tipsAndGuides,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const LearningCenterScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.bug_report_rounded,
-                    S.of(context).bugReporter,
-                    S.of(context).reportIssues,
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const BugReporterScreen()));
-                    },
-                  ),
-                  _item(
-                    context,
-                    Icons.info_outline_rounded,
-                    S.of(context).aboutLabel,
-                    'Cruise v1.0.0',
-                    () {
-                      Navigator.of(
-                        context,
-                      ).push(slideFromRightRoute(const AboutScreen()));
-                    },
-                  ),
+                  _sectionHeader(s.resourcesSectionLabel),
+                  _sectionCard([
+                    _item(
+                      Icons.school_rounded,
+                      s.learningCenter,
+                      s.tipsAndGuides,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const LearningCenterScreen())),
+                    ),
+                    _item(
+                      Icons.bug_report_rounded,
+                      s.bugReporter,
+                      s.reportIssues,
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const BugReporterScreen())),
+                    ),
+                    _item(
+                      Icons.info_outline_rounded,
+                      s.aboutLabel,
+                      'Cruise v1.0.0',
+                      () => Navigator.of(context)
+                          .push(slideFromRightRoute(const AboutScreen())),
+                    ),
+                  ]),
 
-                  const SizedBox(height: 24),
-                  _divider(),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 26),
 
                   // ── Sign out ──
-                  _item(
-                    context,
-                    Icons.logout_rounded,
-                    S.of(context).signOut,
-                    S.of(context).logOutAccount,
-                    () {
-                      _showSignOut(context);
-                    },
-                    danger: true,
-                  ),
+                  _sectionCard([
+                    _item(
+                      Icons.logout_rounded,
+                      s.signOut,
+                      s.logOutAccount,
+                      () => _showSignOut(context),
+                      danger: true,
+                    ),
+                  ]),
 
                   const SizedBox(height: 20),
                 ],
@@ -550,7 +442,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   //  PROFILE CARD (Uber style: photo, name, Gold badge, rating)
   // ═══════════════════════════════════════════════════
   Widget _profileCard(BuildContext context) {
-    final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: () {
         HapticService.selectionClick();
@@ -559,9 +450,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         ).push(slideFromRightRoute(const DriverProfileScreen()));
       },
       child: Container(
-        margin: EdgeInsets.symmetric(horizontal: Responsive.w(16)),
         padding: EdgeInsets.all(Responsive.w(18)),
-        decoration: _neu(dc.bg, radius: 22),
+        decoration: neuBox(radius: 22),
         child: Row(
           children: [
             // Avatar
@@ -586,7 +476,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                             ? Text(
                                 _driverName,
                                 style: TextStyle(
-                                  color: dc.text,
+                                  color: _text,
                                   fontSize: Responsive.sp(20),
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -647,7 +537,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                           Text(
                             _rating,
                             style: TextStyle(
-                              color: dc.textSecondary,
+                              color: _textSecondary,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
@@ -684,7 +574,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: dc.divider, size: 24),
+            Icon(Icons.chevron_right_rounded, color: _textTertiary, size: 24),
           ],
         ),
       ),
@@ -742,9 +632,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   //  QUICK ACTIONS ROW: Help, Safety, Settings
   // ═══════════════════════════════════════════════════
   Widget _quickActionsRow(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+    return Row(
         children: [
           _quickAction(
             context,
@@ -777,7 +665,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             },
           ),
         ],
-      ),
     );
   }
 
@@ -787,7 +674,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     String label,
     VoidCallback onTap,
   ) {
-    final dc = DriverColors.of(context);
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -796,19 +682,21 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: _neu(dc.bg, radius: 18),
+          decoration: neuBox(radius: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: dc.icon, size: 24),
+              Icon(icon, color: _gold, size: 24),
               const SizedBox(height: 6),
               Text(
                 label,
                 style: TextStyle(
-                  color: dc.textSecondary,
+                  color: _textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -821,93 +709,100 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   //  SECTION HEADER
   // ═══════════════════════════════════════════════════
   Widget _sectionHeader(String title) {
-    final dc = DriverColors.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
+      padding: const EdgeInsets.only(left: 6, bottom: 10),
       child: Text(
-        title,
+        title.toUpperCase(),
         style: TextStyle(
-          color: dc.textSecondary,
-          fontSize: 13,
+          color: _textTertiary,
+          fontSize: 12,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
+          letterSpacing: 1.2,
         ),
       ),
     );
   }
 
+  /// Raised neumorphic card holding a group of menu rows, hairline-divided.
+  Widget _sectionCard(List<Widget> rows) {
+    return Container(
+      decoration: neuBox(radius: 20),
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                indent: 70,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+            rows[i],
+          ],
+        ],
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════
-  //  MENU ITEM
+  //  MENU ITEM — icon in a pressed well, title, subtitle, chevron
   // ═══════════════════════════════════════════════════
   Widget _item(
-    BuildContext context,
     IconData icon,
     String title,
     String sub,
     VoidCallback onTap, {
-    bool accent = false,
     bool danger = false,
   }) {
-    final dc = DriverColors.of(context);
-    final Color iconColor = danger
-        ? const Color(0xFFCC3333)
-        : accent
-        ? _gold
-        : dc.icon;
-    final Color titleColor = danger
-        ? const Color(0xFFCC3333)
-        : accent
-        ? _gold
-        : dc.text;
+    final Color accentColor = danger ? _danger : _gold;
+    final Color titleColor = danger ? _danger : _text;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: ListTile(
-        onTap: () {
-          HapticService.selectionClick();
-          onTap();
-        },
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        leading: Container(
-          width: 42,
-          height: 42,
-          decoration: danger || accent
-              ? BoxDecoration(
-                  color: danger
-                      ? const Color(0xFFCC3333).withValues(alpha: 0.1)
-                      : _gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                )
-              : _neuPressed(dc.bg, radius: 13),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: titleColor,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Text(
-          sub,
-          style: TextStyle(color: dc.textSecondary, fontSize: 12),
-        ),
-        trailing: Icon(
-          Icons.chevron_right_rounded,
-          color: dc.divider,
-          size: 20,
+    return GestureDetector(
+      onTap: () {
+        HapticService.selectionClick();
+        onTap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: Icon(icon, color: accentColor, size: 21),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: titleColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    sub,
+                    style: TextStyle(color: _textTertiary, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: _textTertiary,
+              size: 20,
+            ),
+          ],
         ),
       ),
-    );
-  }
-
-  Widget _divider() {
-    final dc = DriverColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Divider(color: dc.divider),
     );
   }
 
@@ -922,7 +817,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(24),
         decoration: const BoxDecoration(
-          color: _card,
+          color: neuBase,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -1026,12 +921,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
         onTap: onTap,
+        behavior: HitTestBehavior.opaque,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: _neu(_card, radius: 16),
+          decoration: neuBox(radius: 16),
           child: Row(
             children: [
-              Icon(icon, color: _gold, size: 20),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: neuBox(radius: 13, pressed: true),
+                child: Icon(icon, color: _gold, size: 19),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -1074,7 +975,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _card,
+        backgroundColor: neuSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           S.of(context).signOutTitle,
@@ -1119,7 +1020,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFCC3333),
+              backgroundColor: _danger,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1131,24 +1032,6 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          msg,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
       ),
     );
   }

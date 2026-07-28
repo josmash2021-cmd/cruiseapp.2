@@ -266,6 +266,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
       final collected =
           await Stripe.instance.collectFinancialConnectionsAccounts(
         clientSecret: clientSecret,
+        params: const CollectFinancialConnectionsAccountsParams(),
       );
       if (!mounted) return;
 

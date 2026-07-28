@@ -1,9 +1,8 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
 import '../../config/page_transitions.dart';
-import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
@@ -11,6 +10,7 @@ import '../../services/user_session.dart';
 import '../home_screen.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/common/profile_avatar.dart';
+import '../../widgets/neu_style.dart';
 import 'driver_trip_history_screen.dart';
 import 'cruise_level_screen.dart';
 
@@ -26,7 +26,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   static const _gold = Color(0xFFE8C547);
   // ignore: unused_field
   static const _goldLight = Color(0xFFF5D990);
-  static const _card = Color(0xFF1C1C1E);
   // ignore: unused_field
   static const _surface = Color(0xFF141414);
 
@@ -210,9 +209,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: dc.bg,
+      backgroundColor: neuBase,
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
@@ -236,10 +234,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: Container(
                                 width: 40,
                                 height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.06),
-                                  shape: BoxShape.circle,
-                                ),
+                                decoration: neuBox(radius: 20),
                                 child: const Icon(
                                   Icons.arrow_back_rounded,
                                   color: Colors.white,
@@ -311,10 +306,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                               child: Container(
                                 width: 32,
                                 height: 32,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.06),
-                                  shape: BoxShape.circle,
-                                ),
+                                decoration: neuBox(radius: 16),
                                 child: Icon(
                                   Icons.arrow_forward_rounded,
                                   color: Colors.white.withValues(alpha: 0.5),
@@ -452,11 +444,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                 horizontal: 12,
                                 vertical: 6,
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white24),
-                              ),
+                              decoration: neuBox(radius: 12, pressed: true),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -522,10 +510,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   Widget _buildProfileHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(20),
-      ),
+      decoration: neuBox(radius: 22),
       child: Row(
         children: [
           // Avatar with tier ring
@@ -595,10 +580,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                       horizontal: 14,
                       vertical: 7,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    decoration: neuBox(radius: 20, pressed: true),
                     child: Text(
                       S.of(context).viewPublicProfile,
                       style: const TextStyle(
@@ -638,10 +620,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       },
       child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: neuBox(radius: 16),
       child: Row(
         children: [
           Icon(
@@ -702,10 +681,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       },
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(18),
-        ),
+        decoration: neuBox(radius: 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -777,20 +753,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(18),
-      ),
+      decoration: neuBox(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
-              color: bgColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-            ),
+            decoration: neuBox(radius: 14, pressed: true),
             child: Icon(icon, color: bgColor, size: 28),
           ),
           const SizedBox(height: 12),
@@ -862,10 +832,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     if (badges.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(18),
-        ),
+        decoration: neuBox(radius: 18),
         child: Center(
           child: Text(
             S.of(context).completeTripsToEarnBadges,
@@ -889,20 +856,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
           return Container(
             width: 100,
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.circular(18),
-            ),
+            decoration: neuBox(radius: 18),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
                   width: 48,
                   height: 48,
-                  decoration: BoxDecoration(
-                    color: (b['color'] as Color).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  decoration: neuBox(radius: 14, pressed: true),
                   child: Icon(
                     b['icon'] as IconData,
                     color: b['color'] as Color,
@@ -958,7 +919,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(28),
         decoration: const BoxDecoration(
-          color: _card,
+          color: neuBase,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
@@ -1088,7 +1049,6 @@ class _StatDetailScreen extends StatelessWidget {
   });
 
   static const _gold = Color(0xFFE8C547);
-  static const _card = Color(0xFF1C1C1E);
 
   @override
   Widget build(BuildContext context) {
@@ -1225,7 +1185,7 @@ class _StatDetailScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           children: [
@@ -1242,10 +1202,7 @@ class _StatDetailScreen extends StatelessWidget {
                       child: Container(
                         width: 40,
                         height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          shape: BoxShape.circle,
-                        ),
+                        decoration: neuBox(radius: 20),
                         child: const Icon(
                           Icons.arrow_back_rounded,
                           color: Colors.white,
@@ -1318,13 +1275,7 @@ class _StatDetailScreen extends StatelessWidget {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: _card,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.06),
-                        ),
-                      ),
+                      decoration: neuBox(radius: 18),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1477,11 +1428,7 @@ class _StatDetailScreen extends StatelessWidget {
   Widget _feedbackChip(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      decoration: neuBox(radius: 20, pressed: true),
       child: Text(
         text,
         style: TextStyle(

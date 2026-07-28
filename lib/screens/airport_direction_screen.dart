@@ -90,8 +90,20 @@ class _AirportDirectionScreenState extends State<AirportDirectionScreen>
             ColoredBox(color: Colors.black.withValues(alpha: 0.78)),
 
           // ── Content ──
+          // Height-adaptive: on short screens the two cards + spacers can
+          // exceed the available height (RenderFlex overflow). Let the
+          // column scroll in that case while keeping the spacer
+          // distribution when there is room.
           SafeArea(
-            child: Column(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: IntrinsicHeight(
+                      child: Column(
           children: [
             // ── Header: back + title ──
             Padding(
@@ -169,6 +181,11 @@ class _AirportDirectionScreenState extends State<AirportDirectionScreen>
             const Spacer(flex: 3),
           ],
         ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),

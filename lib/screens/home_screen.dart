@@ -66,7 +66,6 @@ class HomeScreen extends StatefulWidget {
 
 const _gold = Color(0xFFE8C547);
 const _goldLight = Color(0xFFFBE47A);
-const double _kMaxSheet = 1.0; // Sheet is always full screen
 
 // Self-healing watchdog constant — top-level so part files can reference it
 // inside const expressions without relying on class static const visibility.
@@ -151,12 +150,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   bool _stateCheckDone = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _zonesSub;
 
-  // ── Draggable sheet (permanently full-screen) ──
-  final DraggableScrollableController _sheetController = DraggableScrollableController();
-
   // Self-healing watchdog — detects and recovers from a stuck GPS stream.
   DateTime _lastGpsFixAt = DateTime(0);
   Timer? _gpsStreamWatchdog;
+  // Throttle for the "never got a GPS fix" retry (no permission spam).
+  DateTime? _lastGpsRetryAt;
 
   // User profile data
   String _firstName = '';
@@ -359,7 +357,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
-    _sheetController.dispose();
     _homeDot.dispose();
     _boltFlashCtrl.dispose();
     _promoShimmerCtrl.dispose();
@@ -526,6 +523,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       });
       // Snap the mini map dot on the first accurate fix.
       _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+      // The ticker stays idle while the dot isn't moving — draw directly so
+      // the dot appears even if it never needs to glide.
+      unawaited(_updateHomeDotAnnotation());
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {
@@ -552,6 +552,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             // follow camera — the platform channel stays unsaturated.
             _homeDot.ensureRunning();
             _homeDot.setTarget(ll.latitude, ll.longitude);
+            // Direct draw — the ticker alone misses redraws once the dot
+            // has reached its target and gone idle.
+            unawaited(_updateHomeDotAnnotation());
             _recenterHomeMiniMap();
           });
     } catch (_) {
@@ -624,6 +627,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     } catch (e) {
       if (kDebugMode) debugPrint('[HomeScreen] Mini map dot geometry write failed: $e');
       _homeDotAnnot = null;
+    }
+  }
+
+  /// Retry the mini map dot draw after the map/style becomes ready, in
+  /// case the GPS fix or the annotation manager wasn't available yet.
+  /// Reintenta dibujar el punto por si el GPS o el manager no estaban listos.
+  void _retryHomeDotDraw() {
+    for (final ms in const [500, 1500, 3000]) {
+      Future.delayed(Duration(milliseconds: ms), () {
+        if (mounted) unawaited(_updateHomeDotAnnotation());
+      });
     }
   }
 
@@ -1129,17 +1143,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           ),
 
           // ── Bottom sheet — permanently full-screen (no map behind it) ──
+          // A plain full-screen widget now: a DraggableScrollableSheet
+          // locked to a single snap size still installed drag recognizers
+          // that fought the inner CustomScrollView (stuttery scroll).
           RepaintBoundary(
-            child: DraggableScrollableSheet(
-              controller: _sheetController,
-              initialChildSize: _kMaxSheet,
-              minChildSize: _kMaxSheet,
-              maxChildSize: _kMaxSheet,
-              snap: true,
-              snapSizes: const [_kMaxSheet],
-              builder: (ctx, scrollCtrl) =>
-                  _buildSheet(scrollCtrl, bottomPad),
-            ),
+            child: _buildSheet(bottomPad),
           ),
 
         ],
@@ -1200,9 +1208,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         }
         if (!await _ensureVerified()) return;
         if (!mounted) return;
-        await Navigator.of(
-          context,
-        ).push(slideUpFadeRoute(const RideRequestScreen()));
+        // Same flow as the hero "Where to?" CTA: address search first,
+        // then RideRequestScreen with the results pre-filled.
+        await _openSearchThenRide();
         if (mounted) {
           _loadSavedData();
           setState(() => _dockIndex = 0);

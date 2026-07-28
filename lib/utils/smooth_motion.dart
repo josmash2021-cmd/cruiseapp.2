@@ -63,8 +63,43 @@ class SmoothMotion {
       final dtSec =
           now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
       if (dtSec > 0.05 && dtSec < 10.0) {
-        final newVLat = (lat - _targetLat!) / dtSec;
-        final newVLng = (lng - _targetLng!) / dtSec;
+        final dLat = lat - _targetLat!;
+        final dLng = lng - _targetLng!;
+        // Equirectangular meters — accurate enough at GPS-smoothing scales.
+        final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+        final distM = math.sqrt(
+          math.pow(dLng * 111320.0 * cosLat, 2) +
+              math.pow(dLat * 110540.0, 2),
+        );
+        final impliedSpeed = distM / dtSec; // m/s
+
+        // GPS teleport glitch (tunnel re-acquire, cell-tower hop): snap
+        // directly instead of ingesting a 100+ m/s velocity estimate that
+        // rockets the dot across the map.
+        if (impliedSpeed > 60.0) {
+          snapTo(lat, lng, bearing: bearing);
+          return;
+        }
+
+        // Standstill jitter hold: while essentially parked, ignore small
+        // position hops (typical GPS wander is 5–20 m). Without this the
+        // velocity estimator ingests random jitter and the dot visibly
+        // jumps around a stationary car.
+        final curSpeedMps = math.sqrt(
+          math.pow(_vLng * 111320.0 * cosLat, 2) +
+              math.pow(_vLat * 110540.0, 2),
+        );
+        if (curSpeedMps < 1.2 && distM < 15.0) {
+          // Bleed off residual velocity and refresh the timestamp so the
+          // extrapolation freeze doesn't kick in — but keep the old target.
+          _vLat *= 0.5;
+          _vLng *= 0.5;
+          _lastTargetAt = now;
+          return;
+        }
+
+        final newVLat = dLat / dtSec;
+        final newVLng = dLng / dtSec;
         // Exponential average — absorbs GPS jitter without overfitting.
         _vLat = _vLat * 0.3 + newVLat * 0.7;
         _vLng = _vLng * 0.3 + newVLng * 0.7;

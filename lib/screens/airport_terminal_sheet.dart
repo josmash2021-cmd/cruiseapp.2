@@ -659,27 +659,43 @@ class _AirportTerminalSheetState extends State<AirportTerminalSheet>
   //  STEP 0 — Direction Picker (1:1 with web - vertical cards)
   // ─────────────────────────────────────────────
   Widget _buildDirectionPicker() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-      child: Column(
-        children: [
-          const Spacer(flex: 2),
-          _buildDirectionCardVertical(
-            direction: AirportDirection.toAirport,
-            title: S.of(context).takeMeToAirport,
-            subtitle: S.of(context).flyingOutSubtitle,
-            isToAirport: true,
+    // Height-adaptive: on short screens the two cards + spacers can
+    // exceed the available height (RenderFlex overflow). Let the column
+    // scroll in that case while keeping the spacer distribution when
+    // there is room.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  children: [
+                    const Spacer(flex: 2),
+                    _buildDirectionCardVertical(
+                      direction: AirportDirection.toAirport,
+                      title: S.of(context).takeMeToAirport,
+                      subtitle: S.of(context).flyingOutSubtitle,
+                      isToAirport: true,
+                    ),
+                    const SizedBox(height: 28),
+                    _buildDirectionCardVertical(
+                      direction: AirportDirection.fromAirport,
+                      title: S.of(context).pickMeUpFromAirport,
+                      subtitle: S.of(context).justLandedSubtitle,
+                      isToAirport: false,
+                    ),
+                    const Spacer(flex: 3),
+                  ],
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 28),
-          _buildDirectionCardVertical(
-            direction: AirportDirection.fromAirport,
-            title: S.of(context).pickMeUpFromAirport,
-            subtitle: S.of(context).justLandedSubtitle,
-            isToAirport: false,
-          ),
-          const Spacer(flex: 3),
-        ],
-      ),
+        );
+      },
     );
   }
 

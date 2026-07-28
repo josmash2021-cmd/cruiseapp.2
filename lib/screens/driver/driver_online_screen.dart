@@ -22,6 +22,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/neu_style.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -348,6 +349,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   late AnimationController _searchPulse;
   late Animation<double> _searchPulseVal;
 
+  // ── Entrance choreography (home → online unified transition) ──
+  // Drives the staggered fade/slide of the top pill, side FABs and the
+  // "Finding trips" bar when the screen first appears. Purely visual.
+  late AnimationController _enterCtrl;
+  late Animation<double> _enterTop;
+  late Animation<double> _enterBar;
+  final List<Animation<double>> _enterFabs = [];
+
+  // First-tick zoom ease: camera opens at zoom 16 (same as home) and
+  // glides to the working 15.5 over ~750ms — no zoom "pop" on entry.
+  int? _zoomEaseStartMs;
+  bool _zoomEaseDone = false;
+
   // â”€â”€ Slide confirm â”€â”€
   double _slideVal = 0;
   bool _slid = false;
@@ -436,6 +450,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );
 
+    // ── Entrance choreography — staggered fade/slide of chrome UI ──
+    _enterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+    );
+    _enterTop = CurvedAnimation(
+      parent: _enterCtrl,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+    );
+    _enterBar = CurvedAnimation(
+      parent: _enterCtrl,
+      curve: const Interval(0.30, 1.0, curve: Curves.easeOutBack),
+    );
+    for (var i = 0; i < 4; i++) {
+      _enterFabs.add(
+        CurvedAnimation(
+          parent: _enterCtrl,
+          curve: Interval(
+            0.15 + 0.08 * i,
+            0.60 + 0.08 * i,
+            curve: Curves.easeOutCubic,
+          ),
+        ),
+      );
+    }
+
     // Show offer details immediately — no delay
     _offerDetailsVisible = true;
 
@@ -444,6 +484,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // 400ms fade+scale transition animation.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+
+      // Entrance choreography starts once the first frame is on screen.
+      _enterCtrl.forward();
 
       _reqCtrl = AnimationController(
         vsync: this,
@@ -558,6 +601,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     _smoothTicker?.stop();
     _smoothTicker?.dispose();
+    _enterCtrl.dispose();
     _driverAnim.dispose();
     _reqCtrl?.dispose();
     _doneCtrl?.dispose();
@@ -912,13 +956,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Positioned(
                 top: top + 10,
                 left: 16,
-                child: _fab(
-                  Icons.arrow_back_ios_new_rounded,
-                  48,
-                  fabBg,
-                  fabBorder,
-                  fabIcon,
-                  _goBack,
+                child: _enterTopWrap(
+                  _fab(
+                    Icons.arrow_back_ios_new_rounded,
+                    48,
+                    fabBg,
+                    fabBorder,
+                    fabIcon,
+                    _goBack,
+                  ),
                 ),
               ),
 
@@ -928,10 +974,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 top: top + 10,
                 left: 0,
                 right: 0,
-                child: Column(
-                  children: [
-                    Center(child: _earningsPill(isDark)),
-                  ],
+                child: _enterTopWrap(
+                  Column(
+                    children: [
+                      Center(child: _earningsPill(isDark)),
+                    ],
+                  ),
                 ),
               ),
 
@@ -941,7 +989,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Positioned(
                 top: top + 10,
                 right: 16,
-                child: ScaleTransition(
+                child: _enterTopWrap(
+                  ScaleTransition(
                   scale: _scheduledBounceAnim ?? const AlwaysStoppedAnimation(1.0),
                   child: GestureDetector(
                     onTap: () {
@@ -957,7 +1006,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     child: Container(
                       width: 48,
                       height: 48,
-                      decoration: BoxDecoration(
+                      decoration: isDark && _scheduledAvailCount == 0
+                          ? neuBox(radius: 24, borderColor: fabBorder)
+                          : BoxDecoration(
                         color: fabBg,
                         shape: BoxShape.circle,
                         border: Border.all(
@@ -1012,6 +1063,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     ),
                   ),
                 ),
+                  ),
               ),
 
             // ── Scheduled rides toast notification ──
@@ -1102,6 +1154,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         context,
                         slideFromRightRoute(const SafetyScreen()),
                       ),
+                      stagger: 0,
                     ),
                   ],
                 ),
@@ -1121,6 +1174,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         context,
                         slideFromRightRoute(const DriverInboxScreen()),
                       ),
+                      stagger: 1,
                     ),
                     const SizedBox(height: 10),
                     _fab(
@@ -1133,6 +1187,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         context,
                         slideFromRightRoute(const DriverPromosScreen()),
                       ),
+                      stagger: 2,
                     ),
                     const SizedBox(height: 10),
                     _fab(
@@ -1145,6 +1200,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         context,
                         slideFromRightRoute(const DriverAnalyticsScreen()),
                       ),
+                      stagger: 3,
                     ),
                   ],
                 ),

@@ -47,6 +47,47 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   static const _surface = Color(0xFF1A1A1F);
   static const _card = Color(0xFF1C1C1E);
 
+  // ── Neumorphism helpers (dark) ──
+  /// Raised surface: same base color as background + dual shadows.
+  BoxDecoration _neu(
+    Color base, {
+    double radius = 20,
+    bool circle = false,
+  }) {
+    return BoxDecoration(
+      color: base,
+      borderRadius: circle ? null : BorderRadius.circular(radius),
+      shape: circle ? BoxShape.circle : BoxShape.rectangle,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.white.withValues(alpha: 0.05),
+          offset: const Offset(-4, -4),
+          blurRadius: 9,
+        ),
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.55),
+          offset: const Offset(4, 4),
+          blurRadius: 11,
+        ),
+      ],
+    );
+  }
+
+  /// Pressed / inset surface: subtle inner gradient, no cast shadows.
+  BoxDecoration _neuPressed(Color base, {double radius = 20}) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(radius),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.lerp(base, Colors.black, 0.28)!,
+          Color.lerp(base, Colors.white, 0.05)!,
+        ],
+      ),
+    );
+  }
+
   // ── Dynamic profile data ──
   String _driverName = '';
   String _tierName = '';
@@ -239,7 +280,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         children: [
           // ── Top bar ──
           Container(
-            color: dc.surface,
+            color: dc.bg,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -253,10 +294,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   child: Container(
                     width: Responsive.w(40),
                     height: Responsive.w(40),
-                    decoration: BoxDecoration(
-                      color: dc.glassBg,
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: _neu(dc.bg, circle: true),
                     child: Icon(Icons.close_rounded, color: dc.text, size: Responsive.sp(22)),
                   ),
                 ),
@@ -523,10 +561,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       child: Container(
         margin: EdgeInsets.symmetric(horizontal: Responsive.w(16)),
         padding: EdgeInsets.all(Responsive.w(18)),
-        decoration: BoxDecoration(
-          color: dc.card,
-          borderRadius: BorderRadius.circular(20),
-        ),
+        decoration: _neu(dc.bg, radius: 22),
         child: Row(
           children: [
             // Avatar
@@ -724,21 +759,10 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           const SizedBox(width: 10),
           _quickAction(
             context,
-            Icons.help_outline_rounded,
-            S.of(context).helpLabel,
+            Icons.health_and_safety_outlined,
+            S.of(context).helpAndSafety,
             () {
               _showHelp(context);
-            },
-          ),
-          const SizedBox(width: 10),
-          _quickAction(
-            context,
-            Icons.shield_outlined,
-            S.of(context).safetyLabel,
-            () {
-              Navigator.of(
-                context,
-              ).push(slideFromRightRoute(const DriverSafetyScreen()));
             },
           ),
           const SizedBox(width: 10),
@@ -772,10 +796,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: dc.card,
-            borderRadius: BorderRadius.circular(16),
-          ),
+          decoration: _neu(dc.bg, radius: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -851,14 +872,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         leading: Container(
           width: 42,
           height: 42,
-          decoration: BoxDecoration(
-            color: danger
-                ? const Color(0xFFCC3333).withValues(alpha: 0.1)
-                : accent
-                ? _gold.withValues(alpha: 0.12)
-                : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(13),
-          ),
+          decoration: danger || accent
+              ? BoxDecoration(
+                  color: danger
+                      ? const Color(0xFFCC3333).withValues(alpha: 0.1)
+                      : _gold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(13),
+                )
+              : _neuPressed(dc.bg, radius: 13),
           child: Icon(icon, color: iconColor, size: 20),
         ),
         title: Text(
@@ -958,6 +979,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   );
                 },
               ),
+              _helpRow(
+                Icons.shield_outlined,
+                S.of(context).safetyCenter,
+                S.of(context).safetySection,
+                () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverSafetyScreen()),
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -995,10 +1028,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(14),
-          ),
+          decoration: _neu(_card, radius: 16),
           child: Row(
             children: [
               Icon(icon, color: _gold, size: 20),

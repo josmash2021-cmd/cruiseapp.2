@@ -439,7 +439,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // .vipRide__rideDetail — appears only when the rider
                   // re-expanded the grid (so they can compare detail
                   // while picking). In collapsed mode the horizontal
-                  // card already shows description, meta and price.
+                  // card already shows stats and price.
                   if (option != null && _gridExpanded) ...[
                     const SizedBox(height: 14),
                     _buildRideDetailPanel(c, option),
@@ -878,31 +878,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
 
-  // Single horizontal card shown when a tier has been picked and the
-  // grid is collapsed. Combines the small car render + name + badge +
-  // description + meta chips + price into one premium row, removing the
-  // need for the separate _buildRideDetailPanel below.
-  // Tier-aware so badge colors / glyph match the picked vehicle.
+  // Single card shown when a tier has been picked and the grid is
+  // collapsed. Neumorphic layout: centered car render on top, tier name
+  // (left) + price (right) below it, then a centered row of three sunken
+  // stat chips (ETA minutes, trip miles, passenger capacity). No tier
+  // badge and no description line — the chips carry the key facts.
   Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
     final bool isSuv = opt.id == 'suburban';
     final bool isFusion = opt.id == 'fusion';
     final bool isVIP = isSuv;
     final bool isPremium = !isSuv && !isFusion;
-    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
 
-    final List<Color> badgeGradient = isVIP
-        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
-        : isPremium
-            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
-            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
-    final Color badgeTextColor = isVIP
-        ? Colors.white
-        : isPremium
-            ? Colors.black
-            : const Color(0xFF1A1A1A);
-    final IconData? badgeIcon = isVIP ? Icons.diamond : null;
-    final String badgeGlyph = isPremium ? '★' : '✦';
+    // Trip distance comes from the pickup→dropoff route (already
+    // formatted in miles, e.g. "12.34 mi"). Em dash while the route is
+    // still loading.
+    final String distanceText = _ctrl.state.route?.distanceText ?? '— mi';
 
     // Promo math: when the rider entered through the 10% off button,
     // widget.applyPromo is true and the rendered price is 90% of the
@@ -924,215 +915,154 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
-      padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
-      decoration: neuBox(radius: 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      // Raised neumorphic card on the sheet, thin gold edge marking it
+      // as the selected tier.
+      decoration: neuBox(
+        radius: 24,
+        borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Left: car render with 3D shadow (home look, no gold glow) ──
+          // ── Top: car render centered (home look, no gold glow) ──
           SizedBox(
-            width: 84,
-            height: 60,
+            height: 84,
+            width: double.infinity,
             child: CarImage3D(
               assetPath: _carAssetForOption(opt.name),
               cacheWidth: 640,
-              alignment: Alignment.bottomCenter,
+              alignment: Alignment.center,
               fallback: Icon(
                 Icons.directions_car_rounded,
                 color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                size: 32,
+                size: 40,
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 10),
 
-          // ── Center: name + badge (line 1), description (line 2),
-          //          chips (line 3) — all left-aligned ──
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.02,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 78,
-                      height: 20,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: badgeGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                          border: isVIP
-                              ? Border.all(
-                                  color: const Color(0xFFE8C547)
-                                      .withValues(alpha: 0.3),
-                                  width: 1,
-                                )
-                              : null,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (badgeIcon != null)
-                              Icon(badgeIcon,
-                                  size: 9, color: badgeTextColor)
-                            else
-                              Text(
-                                badgeGlyph,
-                                style: TextStyle(
-                                  color: badgeTextColor,
-                                  fontSize: 8,
-                                  height: 1,
-                                ),
-                              ),
-                            const SizedBox(width: 3),
-                            Text(
-                              tierLabel,
-                              style: TextStyle(
-                                color: badgeTextColor,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.64,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  opt.description,
+          // ── Middle: tier name (left) + price (right) ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.65),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                    height: 1.2,
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    _chipWidget(Icons.schedule_rounded,
-                        '${opt.etaMinutes} min'),
-                    const SizedBox(width: 6),
-                    _chipWidget(Icons.person_rounded, '${opt.capacity}'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // ── Right: price (with crossed-out original when 10% promo
-          // or when Cruise Cash is being applied) ──
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (promoOn || hasCC) ...[
-                Text(
-                  oldPriceText,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.lineThrough,
-                    decorationColor: Colors.white.withValues(alpha: 0.45),
-                    decorationThickness: 1.5,
-                    height: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 2),
-              ],
-              Text(
-                priceText,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color:
-                      (promoOn || hasCC) ? const Color(0xFFE8C547) : Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
                 ),
               ),
-              if (promoOn) ...[
-                const SizedBox(height: 3),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                      width: 0.8,
+              const SizedBox(width: 10),
+              // Price (with crossed-out original when 10% promo or when
+              // Cruise Cash is being applied).
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (promoOn || hasCC) ...[
+                    Text(
+                      oldPriceText,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor:
+                            Colors.white.withValues(alpha: 0.45),
+                        decorationThickness: 1.5,
+                        height: 1.0,
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    '10% OFF',
+                    const SizedBox(height: 2),
+                  ],
+                  Text(
+                    priceText,
                     style: TextStyle(
                       fontFamily: 'Poppins',
-                      color: Color(0xFFE8C547),
-                      fontSize: 8,
+                      color: (promoOn || hasCC)
+                          ? const Color(0xFFE8C547)
+                          : Colors.white,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                      letterSpacing: -0.4,
                     ),
                   ),
-                ),
-              ],
-              if (hasCC) ...[
-                const SizedBox(height: 3),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                      width: 0.8,
+                  if (promoOn) ...[
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color:
+                              const Color(0xFFE8C547).withValues(alpha: 0.5),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: const Text(
+                        '10% OFF',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFFE8C547),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Color(0xFFE8C547),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                  ],
+                  if (hasCC) ...[
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color:
+                              const Color(0xFFE8C547).withValues(alpha: 0.5),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFFE8C547),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // ── Bottom: centered row of three sunken stat chips ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _neuStatChip(Icons.schedule_rounded, '${opt.etaMinutes} min'),
+              const SizedBox(width: 8),
+              _neuStatChip(Icons.route_rounded, distanceText),
+              const SizedBox(width: 8),
+              _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
             ],
           ),
         ],
@@ -1141,8 +1071,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   // Detail panel shown below the 3-card grid once the user has picked a
-  // tier. Matches .vipRide__rideDetail from the web (description + eta
-  // row + big price).
+  // tier. Sunken neumorphic well with the same three stat chips as the
+  // collapsed card (ETA, trip miles, capacity) plus the big price — no
+  // description line.
   Widget _buildRideDetailPanel(AppColors c, RideOption opt) {
 
     // 650ms cubic-bezier(.4,0,.2,1) slide-down 6px — matches the web's
@@ -1167,62 +1098,31 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Container(
         key: ValueKey('detail_${opt.id}'),
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              _cardGold.withValues(alpha: 0.06),
-              Colors.white.withValues(alpha: 0.02),
-            ],
-          ),
-          border: Border.all(
-            color: _cardGold.withValues(alpha: 0.18),
-          ),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        decoration: neuBox(radius: 14, pressed: true),
+        child: Row(
           children: [
-            // .vipRide__rideDetail__desc: 13px, color rgba(255,255,255,.75),
-            // line-height 1.4, default weight 400.
-            Text(
-              opt.description,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(alpha: 0.75),
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                height: 1.4,
+            _neuStatChip(Icons.schedule_rounded, '${opt.etaMinutes} min'),
+            const SizedBox(width: 6),
+            _neuStatChip(Icons.route_rounded,
+                _ctrl.state.route?.distanceText ?? '— mi'),
+            const SizedBox(width: 6),
+            _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
+            const Spacer(),
+            if (_ctrl.state.route == null)
+              _buildPriceShimmer(width: 68, height: 22)
+            else
+              // .vipRide__rideDetail__price: clamp(18,5vw,22)
+              // weight 800 color #fff.
+              Text(
+                '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            // Web (.vipRide__rideDetail__meta) shows exactly two chips:
-            // ETA minutes and capacity. No arrival-time chip — port must
-            // match this to avoid looking cluttered.
-            Row(
-              children: [
-                _chipWidget(Icons.schedule_rounded, '${opt.etaMinutes} min'),
-                const SizedBox(width: 6),
-                _chipWidget(Icons.person_rounded, '${opt.capacity}'),
-                const Spacer(),
-                if (_ctrl.state.route == null)
-                  _buildPriceShimmer(width: 68, height: 22)
-                else
-                  // .vipRide__rideDetail__price: clamp(18,5vw,22)
-                  // weight 800 color #fff.
-                  Text(
-                    '\$${opt.priceEstimate.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-              ],
-            ),
           ],
         ),
       ),
@@ -1240,23 +1140,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
     final String carAsset = _carAssetForOption(opt.name);
 
-    // Identical look to the home fleet cards: neumorphic surface, name on
-    // top, car hugging the bottom edge, no tier badge. Selected = thin
-    // gold border (same copyWith treatment as home's PREMIUM).
+    // Same visual rhythm as the home fleet cards: name on top, car right
+    // below it with a fixed height, comfortable padding all around — no
+    // Expanded/Spacer, so there's no empty band in the middle.
     return Container(
-      // Responsive card height based on screen size
-      height: Responsive.vehicleCardHeight,
+      // Compact fixed height: 12 top + name + 10 gap + 58 car + 16 bottom.
+      height: 124,
       clipBehavior: Clip.antiAlias,
       decoration: selected
-          ? neuBox(radius: 24).copyWith(
-              border: Border.all(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.45),
-                width: 1,
-              ),
+          ? neuBox(
+              radius: 24,
+              pressed: true,
+              borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
             )
           : neuBox(radius: 24),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
         child: Column(
           children: [
             // Vehicle name on top — home screen style
@@ -1273,13 +1172,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 letterSpacing: 0.5,
               ),
             ),
-            // Car render pinned to the bottom edge (3D black shadow,
-            // no gold glow — same as home).
-            Expanded(
+            const SizedBox(height: 10),
+            // Car render with fixed height, centered — same 58px as the
+            // home fleet cards, clear of the bottom edge.
+            SizedBox(
+              height: 58,
+              width: double.infinity,
               child: CarImage3D(
                 assetPath: carAsset,
                 cacheWidth: 640,
-                alignment: Alignment.bottomCenter,
+                alignment: Alignment.center,
                 fallback: Icon(
                   Icons.directions_car_rounded,
                   color: const Color(0xFFE8C547).withValues(alpha: 0.5),
@@ -1296,7 +1198,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   // Shimmer card for grid loading state - web style
   Widget _buildShimmerCardGrid() {
     return Container(
-      height: 150,
+      height: 124,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -1718,6 +1620,32 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: Colors.white.withValues(alpha: 0.50),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Small sunken neumorphic stat chip (icon + value) used on the
+  /// collapsed tier card — inset well via the shared neu style.
+  Widget _neuStatChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: neuBox(radius: 10, pressed: true),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              size: 13, color: const Color(0xFFE8C547).withValues(alpha: 0.85)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.80),
             ),
           ),
         ],

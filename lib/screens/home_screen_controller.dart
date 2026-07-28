@@ -264,6 +264,9 @@ extension _HomeScreenController on _HomeScreenState {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
       _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+      // The ticker stays idle while the dot isn't moving — draw directly so
+      // the dot appears even if it never needs to glide.
+      unawaited(_updateHomeDotAnnotation());
       _recenterHomeMiniMap();
     }).catchError((e) {
       if (kDebugMode) debugPrint('[GPS] getCurrentPosition error: $e');
@@ -287,6 +290,9 @@ extension _HomeScreenController on _HomeScreenState {
         // path runs its stream here).
         _homeDot.ensureRunning();
         _homeDot.setTarget(ll.latitude, ll.longitude);
+        // Direct draw — the ticker alone misses redraws once the dot
+        // has reached its target and gone idle.
+        unawaited(_updateHomeDotAnnotation());
         _recenterHomeMiniMap();
       },
       onError: (e) {
@@ -316,12 +322,57 @@ extension _HomeScreenController on _HomeScreenState {
 
   /// If no GPS fix has arrived recently, restart the position stream.
   /// Geolocator streams can die silently on some Android/iOS devices.
-  /// Only restarts if a stream was already started (i.e., permission granted).
+  /// Also retries the initial fetch when no stream ever started (services
+  /// disabled or permission denied at launch) — throttled so it doesn't
+  /// spam the system permission dialog.
   void _checkGpsStreamHealth() {
-    if (!mounted || _locationSub == null || _fetchingLocation) return;
+    if (!mounted || _fetchingLocation) return;
+    if (_locationSub == null) {
+      // Never got a stream and no position at all — retry the initial
+      // fetch at most every 30s.
+      // Nunca arrancó el stream: reintenta la obtención inicial (máx. 30s).
+      if (_currentLatLng != null) return;
+      final now = DateTime.now();
+      if (_lastGpsRetryAt != null &&
+          now.difference(_lastGpsRetryAt!).inSeconds < 30) {
+        return;
+      }
+      _lastGpsRetryAt = now;
+      _retryInitialLocation();
+      return;
+    }
     final elapsed = DateTime.now().difference(_lastGpsFixAt).inSeconds;
     if (elapsed < _gpsWatchdogSec) return;
     _fetchCurrentLocation();
+  }
+
+  /// Throttled recovery when the initial location fetch failed (services
+  /// disabled or permission denied). Re-checks service status and only
+  /// restarts the fetch when permission is ALREADY granted — it never
+  /// pops the system permission dialog itself.
+  /// Recuperación sin diálogo de permisos: solo reintenta si ya hay permiso.
+  Future<void> _retryInitialLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      // Permission already granted — seed from the last known fix for an
+      // instant dot, then run the full fetch (starts the stream).
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted && _currentLatLng == null) {
+        _setState(() {
+          _currentLatLng = LatLng(last.latitude, last.longitude);
+        });
+        _homeDot.snapTo(last.latitude, last.longitude);
+        unawaited(_updateHomeDotAnnotation());
+      }
+      _fetchCurrentLocation();
+    } catch (_) {
+      // Location still unavailable — the next watchdog tick retries.
+    }
   }
 
   // ─── Ride progress countdown ───

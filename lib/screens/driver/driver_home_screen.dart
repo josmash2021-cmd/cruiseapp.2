@@ -102,15 +102,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   late Animation<double> _fabScale;
 
   // ── Bottom panel ──
-  // Base collapsed height fits the full content (status row + 3 stat cards +
-  // all 3 recommended rows) so nothing is clipped without dragging.
-  static const double _panelBaseH = 492.0;
+  // Collapsed height shows only the drag handle + status header row
+  // ("You're offline" / "Finding trips"); the stats & recommendations stay
+  // hidden until the user swipes the panel up.
+  static const double _panelBaseH = 92.0;
   // Extra height reserved while the scheduled-rides banner is shown above the
   // header (finding-trips state). Without it the banner's ~46px eats into the
   // scroll viewport and clips the bottom rows on devices with small insets.
   static const double _panelBannerH = 50.0;
   // Travel for the spring drag (must stay > 0 — drag deltas divide by it).
-  static const double _panelTravelH = 48.0;
+  // Collapsed (92) + travel (400) = 492 expanded, which fits the full content
+  // (status row + 3 stat cards + all 3 recommended rows) without clipping.
+  static const double _panelTravelH = 400.0;
 
   bool get _scheduledBannerVisible =>
       _isStillOnline && _activeTripData == null && _scheduledAvailableCount > 0;
@@ -131,8 +134,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Online state (driver pressed back but is still connected) ──
   bool _isStillOnline = false;
-  // Throttle camera flyTo to prevent jitter when GPS fires rapidly
-  DateTime _lastCameraFlyTo = DateTime(2000);
   // Prevents _resumeActiveTrip() from pushing DriverTripAcceptScreen twice.
   // Six different code paths call _resumeActiveTrip (initState, app resume,
   // polling, notification tap, refresh-complete, Firestore listener). Without
@@ -410,6 +411,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } catch (_) {
       _myLocAnnot = null;
     }
+
+    // Smooth camera follow — instant setCamera on every dot tick (~30fps,
+    // throttled inside GoldLocationDot). The camera glides frame-by-frame
+    // with the INTERPOLATED dot position, so the driver sees a continuous
+    // slide instead of discrete flyTo jumps.
+    _mapController?.setCamera(
+      mapbox.CameraOptions(
+        center: point,
+        zoom: 16.0,
+        pitch: 0.0,
+        bearing: 0.0,
+      ),
+    );
   }
 
   /// Update the gold dot PointAnnotation with latest interpolated position + frame.
@@ -550,21 +564,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _goldDot.setTarget(ll.latitude, ll.longitude);
         debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
-        // Camera follows with throttled flyTo — prevents jitter from rapid GPS.
-        // The GoldLocationDot 60fps ticker handles smooth annotation movement.
-        final now = DateTime.now();
-        if (now.difference(_lastCameraFlyTo).inMilliseconds >= 800) {
-          _lastCameraFlyTo = now;
-          _mapController?.flyTo(
-            mapbox.CameraOptions(
-              center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)),
-              zoom: 16.0,
-              pitch: 0.0,
-              bearing: 0.0,
-            ),
-            mapbox.MapAnimationOptions(duration: 400),
-          );
-        }
+        // Camera follow is handled per dot-tick in _updateMyLocAnnotation
+        // (instant setCamera at ~30fps). The old 800ms-throttled flyTo
+        // restarted its animation on every fix and made the map — and the
+        // dot relative to the screen — visibly jump.
       });
     } catch (_) {}
   }
@@ -812,15 +815,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         opaque: true,
         pageBuilder: (ctx, anim1, anim2) =>
             DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
-        transitionDuration: const Duration(milliseconds: 200),
-        reverseTransitionDuration: const Duration(milliseconds: 150),
+        transitionDuration: const Duration(milliseconds: 420),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
           final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
             opacity: curved,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
-              child: child,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.02),
+                end: Offset.zero,
+              ).animate(curved),
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
+                child: child,
+              ),
             ),
           );
         },
@@ -838,12 +847,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // 150ms of the fade+scale transition, the driver still feels a
     // ~1s freeze. By waiting 300ms the transition is already 75%
     // done and the user perceives it as smooth.
-    // Sound + haptic: play AFTER navigation starts to avoid freeze.
-    // The old order (sound+haptic before push) stacked MethodChannel
-    // round-trips on the same frame as the route transition, causing
-    // ~1s freeze. New order: push first, then fire-and-forget sound.
-    HapticService.lightImpact();
-    NotificationService.playOnlineSound();
+    // Sound + haptic: fire AFTER the route transition has finished its
+    // first frames. Calling them synchronously here (or even on the
+    // immediate post-frame) still stacks MethodChannel round-trips on the
+    // 200ms fade/scale transition and the page freezes until the clip's
+    // platform-channel work settles. A 300ms deferral lets the transition
+    // complete first, so the screen never freezes while the sound plays.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      HapticService.lightImpact();
+      NotificationService.playOnlineSound();
+    });
     final result = await pushFuture;
     if (!mounted) return;
     setState(() => _isNavigatingToOnline = false);
@@ -1756,9 +1769,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
             ),
             ),
-            // ── Panel content — always visible; collapsed shows all rows ──
+            // ── Panel content — hidden when collapsed; fades/slides in
+            // proportionally to the drag for a fluid open gesture ──
             Expanded(
-              child: FadeTransition(
+              child: Opacity(
+                // 0 when closed → fully visible ~60% through the swipe up
+                opacity: (panelExtent * 1.7).clamp(0.0, 1.0),
+                child: FadeTransition(
                 opacity: _statsAnim,
                 child: SlideTransition(
                   position: Tween<Offset>(
@@ -1863,6 +1880,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   ),
                   ),
                 ),
+              ),
               ),
           ],
         ),

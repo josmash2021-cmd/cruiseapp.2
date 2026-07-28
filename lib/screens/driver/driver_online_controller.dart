@@ -1085,13 +1085,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     final offerActive = _isCardAnimating || _previewingOffer != null;
     if (_phase == _Phase.searching && !offerActive) {
+      // Entry zoom ease: the map opens at zoom 16 (same as home) and
+      // glides to the working 15.5 over ~750ms (easeOutCubic) so there
+      // is no zoom "pop" when arriving from the home screen.
+      double zoom = 15.5;
+      if (!_zoomEaseDone) {
+        _zoomEaseStartMs ??= elapsed.inMilliseconds;
+        final t = ((elapsed.inMilliseconds - _zoomEaseStartMs!) / 750.0)
+            .clamp(0.0, 1.0);
+        final e = 1.0 - math.pow(1.0 - t, 3).toDouble();
+        zoom = 16.0 - 0.5 * e;
+        if (t >= 1.0) _zoomEaseDone = true;
+      }
       // Smooth camera follow at 60fps — setCamera (instant) so the camera
       // glides with the interpolated dot position frame-by-frame.
       _map?.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 15.5,
+          zoom: zoom,
           bearing: 0,
           pitch: 0,
         ),

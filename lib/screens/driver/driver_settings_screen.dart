@@ -12,6 +12,7 @@ import '../privacy_screen.dart';
 import '../accessibility_screen.dart';
 import 'driver_manage_account_screen.dart';
 import 'driver_settings_pages.dart';
+import '../../widgets/neu_style.dart';
 
 /// Driver settings: Uber Driver–style layout with Account & General sections.
 class DriverSettingsScreen extends StatefulWidget {
@@ -78,12 +79,12 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     final top = MediaQuery.of(context).padding.top;
     final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: Column(
         children: [
           // ── Top bar ──
           Container(
-            color: const Color(0xFF1A1A1F),
+            color: neuBase,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -100,10 +101,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                     child: Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(
-                        color: dc.glassBg,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: neuBox(radius: 20),
                       child: Icon(
                         Icons.arrow_back_rounded,
                         color: dc.text,
@@ -245,8 +243,10 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   Widget _navItem(IconData icon, String title, String sub, VoidCallback onTap) {
     final dc = DriverColors.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: ListTile(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Container(
+        decoration: neuBox(radius: 16),
+        child: ListTile(
         onTap: () {
           HapticService.selectionClick();
           onTap();
@@ -256,10 +256,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
         leading: Container(
           width: 42,
           height: 42,
-          decoration: BoxDecoration(
-            color: dc.glassBg,
-            borderRadius: BorderRadius.circular(13),
-          ),
+          decoration: neuBox(radius: 13, pressed: true),
           child: Icon(icon, color: dc.icon, size: 20),
         ),
         title: Text(
@@ -279,6 +276,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
           color: dc.divider,
           size: 20,
         ),
+        ),
       ),
     );
   }
@@ -292,17 +290,16 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
   ) {
     final dc = DriverColors.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: ListTile(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Container(
+        decoration: neuBox(radius: 16),
+        child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
           width: 42,
           height: 42,
-          decoration: BoxDecoration(
-            color: dc.glassBg,
-            borderRadius: BorderRadius.circular(13),
-          ),
+          decoration: neuBox(radius: 13, pressed: true),
           child: Icon(icon, color: dc.icon, size: 20),
         ),
         title: Text(
@@ -327,6 +324,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
           activeTrackColor: _gold.withValues(alpha: 0.3),
           inactiveThumbColor: Colors.white30,
           inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
+        ),
         ),
       ),
     );

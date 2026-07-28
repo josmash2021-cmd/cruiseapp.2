@@ -9,6 +9,7 @@ import '../../services/user_session.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
 import 'payout_methods_screen.dart';
+import '../../widgets/neu_style.dart';
 
 /// Full-featured earnings screen — fetches real data from the backend.
 /// Falls back to empty state if API is unreachable.
@@ -22,8 +23,6 @@ class DriverEarningsScreen extends StatefulWidget {
 class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
-  static const _card = Color(0xFF1C1C1E);
-  static const _surface = Color(0xFF141414);
 
   int _selectedPeriod = 1; // 0=Today, 1=This Week, 2=This Month
   final _periodKeys = ['today', 'week', 'month'];
@@ -253,23 +252,20 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     final s = S.of(context);
     final periods = [s.today, s.thisWeek, s.thisMonth];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App bar ──
           SliverAppBar(
-            backgroundColor: _surface,
+            backgroundColor: neuBase,
             pinned: true,
             expandedHeight: 110,
             leading: IconButton(
               icon: Container(
                 width: 38,
                 height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  shape: BoxShape.circle,
-                ),
+                decoration: neuBox(radius: 19),
                 child: const Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
@@ -299,17 +295,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _gold.withValues(alpha: 0.18),
-                          _gold.withValues(alpha: 0.06),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: _gold.withValues(alpha: 0.25)),
+                    decoration: neuBox(
+                      radius: 26,
+                      borderColor: _gold.withValues(alpha: 0.15),
                     ),
                     child: Column(
                       children: [
@@ -335,26 +323,31 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                             : Text(
                                 '\$${_total.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: _gold,
                                   fontSize: 44,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: -1,
                                 ),
                               ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _miniStat('$_tripsCount', s.tripsStatLabel),
-                            const SizedBox(width: 28),
-                            _miniStat(
-                              '${_onlineHours.toStringAsFixed(1)}h',
-                              s.onlineStatLabel,
+                            Expanded(
+                              child: _miniStat('$_tripsCount', s.tripsStatLabel),
                             ),
-                            const SizedBox(width: 28),
-                            _miniStat(
-                              '\$${_tipsTotal.toStringAsFixed(2)}',
-                              s.tipsStatLabel,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _miniStat(
+                                '${_onlineHours.toStringAsFixed(1)}h',
+                                s.onlineStatLabel,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _miniStat(
+                                '\$${_tipsTotal.toStringAsFixed(2)}',
+                                s.tipsStatLabel,
+                              ),
                             ),
                           ],
                         ),
@@ -368,12 +361,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.redAccent.withValues(alpha: 0.3),
-                        ),
+                      decoration: neuBox(
+                        radius: 14,
+                        borderColor: Colors.redAccent.withValues(alpha: 0.3),
                       ),
                       child: Row(
                         children: [
@@ -403,11 +393,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
                   // ── Period selector ──
                   Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
+                    padding: const EdgeInsets.all(5),
+                    decoration: neuBox(radius: 16, pressed: true),
                     child: Row(
                       children: List.generate(3, (i) {
                         final sel = i == _selectedPeriod;
@@ -420,18 +407,15 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
                               padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: sel
-                                    ? _gold.withValues(alpha: 0.15)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(11),
-                                border: sel
-                                    ? Border.all(
-                                        color: _gold.withValues(alpha: 0.3),
-                                      )
-                                    : null,
-                              ),
+                              decoration: sel
+                                  ? neuBox(
+                                      radius: 12,
+                                      borderColor:
+                                          _gold.withValues(alpha: 0.35),
+                                    )
+                                  : const BoxDecoration(),
                               child: Text(
                                 periods[i],
                                 textAlign: TextAlign.center,
@@ -452,10 +436,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   // ── Weekly bar chart ──
                   Container(
                     padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: _card,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    decoration: neuBox(radius: 22),
                     child: ListenableBuilder(
                       listenable: _chartAnim,
                       builder: (ctx, child) => _buildBarChart(),
@@ -493,32 +474,36 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       ),
                     )
                   else if (!_hasPayoutMethod)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          HapticService.mediumImpact();
-                          _openPayoutMethodsScreen();
-                        },
-                        icon: const Icon(Icons.account_balance_wallet_rounded, size: 20),
-                        label: Text(
-                          S.of(context).configurePayments,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    GestureDetector(
+                      onTap: () {
+                        HapticService.mediumImpact();
+                        _openPayoutMethodsScreen();
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        height: 56,
+                        decoration: neuBox(
+                          radius: 16,
+                          borderColor: Colors.white.withValues(alpha: 0.10),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                          elevation: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.account_balance_wallet_rounded,
+                              size: 20,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              S.of(context).configurePayments,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -577,11 +562,58 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   const SizedBox(height: 14),
                   FadeTransition(
                     opacity: _listAnim,
-                    child: Column(
-                        children: _transactions
-                            .map((t) => _transactionTile(t))
-                            .toList(),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
                       ),
+                      decoration: neuBox(radius: 20),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < _transactions.length; i++) ...[
+                            _transactionTile(_transactions[i]),
+                            if (i < _transactions.length - 1)
+                              Divider(
+                                height: 1,
+                                color: Colors.white.withValues(alpha: 0.05),
+                              ),
+                          ],
+                          if (_transactions.isEmpty && !_loading)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 28,
+                              ),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration:
+                                        neuBox(radius: 28, pressed: true),
+                                    child: Icon(
+                                      Icons.receipt_long_rounded,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.3),
+                                      size: 26,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    S.of(context).noTripsYet,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.4),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
                 ],
@@ -610,26 +642,18 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _stripeConnected
-              ? const Color(0xFF34A853).withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.08),
-        ),
+      decoration: neuBox(
+        radius: 20,
+        borderColor: _stripeConnected
+            ? const Color(0xFF34A853).withValues(alpha: 0.35)
+            : null,
       ),
       child: Row(
         children: [
           Container(
             width: 44,
             height: 44,
-            decoration: BoxDecoration(
-              color: _stripeConnected
-                  ? const Color(0xFF34A853).withValues(alpha: 0.15)
-                  : _gold.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
+            decoration: neuBox(radius: 22, pressed: true),
             child: Icon(
               _stripeConnected
                   ? Icons.schedule_rounded
@@ -714,21 +738,13 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
-            borderRadius: BorderRadius.circular(16),
-          ),
+          decoration: neuBox(radius: 16),
           child: Row(
             children: [
               Container(
                 width: 38,
                 height: 38,
-                decoration: BoxDecoration(
-                  color: isCompleted
-                      ? const Color(0xFF34A853).withValues(alpha: 0.15)
-                      : Colors.orange.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
+                decoration: neuBox(radius: 19, pressed: true),
                 child: Icon(
                   isCompleted
                       ? Icons.check_circle_rounded
@@ -780,6 +796,12 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   Widget _buildBarChart() {
     final count = _dailyEarnings.length;
+    // Index of the best day — its bar gets the gold gradient.
+    int maxIdx = 0;
+    for (var i = 0; i < count; i++) {
+      if (_dailyEarnings[i] > _dailyEarnings[maxIdx]) maxIdx = i;
+    }
+    final hasEarnings = _dailyEarnings.any((v) => v > 0);
     return SizedBox(
       height: 180,
       child: Row(
@@ -789,6 +811,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
           final h = (_maxDay > 0)
               ? (val / _maxDay) * 140 * _chartAnim.value
               : 0.0;
+          final isMax = hasEarnings && i == maxIdx;
           final isToday = i == DateTime.now().weekday - 1;
           return Expanded(
             child: Column(
@@ -808,13 +831,22 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   height: h,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
                   decoration: BoxDecoration(
-                    color: isToday ? _gold : _gold.withValues(alpha: 0.3),
+                    gradient: isMax
+                        ? const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFFF5D990), Color(0xFFE8C547)],
+                          )
+                        : null,
+                    color: isMax
+                        ? null
+                        : Colors.white.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(6),
-                    boxShadow: isToday
+                    boxShadow: isMax
                         ? [
                             BoxShadow(
-                              color: _gold.withValues(alpha: 0.3),
-                              blurRadius: 8,
+                              color: _gold.withValues(alpha: 0.35),
+                              blurRadius: 10,
                             ),
                           ]
                         : [],
@@ -838,25 +870,31 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
   Widget _miniStat(String value, String label) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: neuBox(radius: 14, pressed: true),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.4),
-            fontSize: 12,
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 12,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -886,22 +924,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         iconColor = _gold;
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
           Container(
             width: 42,
             height: 42,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(13),
-            ),
+            decoration: neuBox(radius: 13, pressed: true),
             child: Icon(icon, color: iconColor, size: 20),
           ),
           const SizedBox(width: 14),

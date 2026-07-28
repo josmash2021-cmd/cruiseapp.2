@@ -80,7 +80,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: 15.5,
+          zoom: 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
           bearing: 0,
           pitch: 0,
         ),
@@ -137,7 +137,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
             try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
             // Use already-known position from home screen — no blocking GPS call needed
-            if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: _heading, tilt: 0);
+            if (_pos != null) _animateToPosition(_pos!, zoom: 16.0, bearing: _heading, tilt: 0);
             _updateDriverAnnotation();
             // Re-draw route if map initialised after _drawRoute already ran
             if (_routePts.length > 1) {
@@ -229,11 +229,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: pillBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: pillBorder),
-            ),
+            decoration: isDark
+                ? neuBox(radius: 20, borderColor: pillBorder)
+                : BoxDecoration(
+                    color: pillBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: pillBorder),
+                  ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -378,7 +380,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color textMuted,
     Color borderC,
   ) {
-    return GestureDetector(
+    return _enterBarWrap(GestureDetector(
       onVerticalDragUpdate: (d) {
         // Detect swipe up (negative dy) to open the panel
         if (d.delta.dy < -3) _showOnlinePanel();
@@ -393,10 +395,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
           child: Container(
             decoration: BoxDecoration(
-              // Pure black bg (no particles per 2026-04-27 spec —
-              // particles only on Searching + Waiting screens). The
-              // animated gold border above is the searching pulse.
-              color: Colors.black,
+              // Neumorphic dark base (no particles per 2026-04-27
+              // spec — particles only on Searching + Waiting screens).
+              // The animated gold border above is the searching pulse.
+              color: neuBase,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
               border: Border(top: BorderSide(color: borderC)),
             ),
@@ -475,6 +477,38 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       ),
         ),
       ),
+    ));
+  }
+
+  /// Entrance wrapper: slides a widget up from below with a soft spring
+  /// (easeOutBack) + fade when the screen first appears.
+  Widget _enterBarWrap(Widget child) {
+    return AnimatedBuilder(
+      animation: _enterBar,
+      builder: (_, c) => Opacity(
+        opacity: _enterBar.value.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, 40 * (1 - _enterBar.value)),
+          child: c,
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  /// Entrance wrapper for top chrome (back button, earnings pill,
+  /// scheduled-rides FAB): fade + slide down from ~20px above.
+  Widget _enterTopWrap(Widget child) {
+    return AnimatedBuilder(
+      animation: _enterTop,
+      builder: (_, c) => Opacity(
+        opacity: _enterTop.value,
+        child: Transform.translate(
+          offset: Offset(0, -20 * (1 - _enterTop.value)),
+          child: c,
+        ),
+      ),
+      child: child,
     );
   }
 
@@ -488,8 +522,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color shadowC,
   ) {
     final bot = MediaQuery.of(context).padding.bottom;
-    // â”€â”€ Always use dark styling for offer cards â”€â”€
-    const cCardBg = Color(0xFF1A1A1F);
+    // ── Always use dark styling for offer cards ──
+    const cCardBg = neuSurface;
     final cCardBorder = _gold.withValues(alpha: 0.12);
     final cRejectBg = Colors.red.withValues(alpha: 0.08);
     const cRejectText = Color(0xFFFF6B6B);
@@ -656,7 +690,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F),
+                          color: neuBase,
                           border: Border(
                             top: BorderSide(
                               color: Colors.white.withValues(alpha: 0.06),
@@ -3815,9 +3849,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color bg,
     Color border,
     Color iconColor,
-    VoidCallback tap,
-  ) {
-    return GestureDetector(
+    VoidCallback tap, {
+    int stagger = -1,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final button = GestureDetector(
       onTap: () {
         HapticService.lightImpact();
         tap();
@@ -3825,14 +3861,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       child: Container(
         width: sz,
         height: sz,
-        decoration: BoxDecoration(
-          color: bg,
-          shape: BoxShape.circle,
-          border: Border.all(color: border),
-        ),
+        decoration: isDark
+            ? neuBox(radius: sz / 2, borderColor: border)
+            : BoxDecoration(
+                color: bg,
+                shape: BoxShape.circle,
+                border: Border.all(color: border),
+              ),
         child: Icon(ic, color: iconColor, size: sz * 0.44),
       ),
     );
+    // Entrance stagger: side FABs fade+scale in one after another.
+    if (stagger >= 0 && _enterFabs.isNotEmpty) {
+      final a = _enterFabs[stagger.clamp(0, _enterFabs.length - 1)];
+      return FadeTransition(
+        opacity: a,
+        child: ScaleTransition(scale: a, child: button),
+      );
+    }
+    return button;
   }
 
   Widget _avatar(double s, {bool showBadge = false}) {

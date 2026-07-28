@@ -100,17 +100,16 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // Draggable bottom sheet content. The sheet is permanently locked to
-  // full screen, so the collapsed ↔ expanded crossfade is gone — everything
-  // renders directly in its expanded state.
-  Widget _buildSheet(ScrollController sc, double botPad) {
+  // Sheet content. Permanently full-screen — the DraggableScrollableSheet
+  // was removed (its drag recognizers fought this scroll view), so this is
+  // now a plain CustomScrollView with its own controller.
+  Widget _buildSheet(double botPad) {
     final screenW = MediaQuery.of(context).size.width;
     final topPad = MediaQuery.of(context).padding.top;
 
     return Container(
       color: neuBase,
       child: CustomScrollView(
-        controller: sc,
         physics: _activeRide != null
             ? const NeverScrollableScrollPhysics()
             : const BouncingScrollPhysics(
@@ -1420,7 +1419,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
       decoration: neuBox(radius: 24),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: mapbox.MapWidget(
+        // IgnorePointer guarantees the Android platform view can't absorb
+        // scroll touches (all gestures are already disabled natively).
+        child: IgnorePointer(
+          child: mapbox.MapWidget(
           key: const ValueKey('home_mini_map'),
           styleUri: MapboxConfig.styleDark,
           cameraOptions: mapbox.CameraOptions(
@@ -1472,7 +1474,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
               // Native puck stays off — we draw the gold dot ourselves.
               await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
 
-              if (_currentLatLng != null) unawaited(_updateHomeDotAnnotation());
+              // Draw now, and retry shortly in case the GPS fix hadn't
+              // arrived yet (the ticker alone won't fire while idle).
+              unawaited(_updateHomeDotAnnotation());
+              _retryHomeDotDraw();
             } catch (e) {
               if (kDebugMode) debugPrint('[HomeScreen] Mini map onMapCreated error: $e');
             }
@@ -1494,7 +1499,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
               } catch (e) {
                 if (kDebugMode) debugPrint('[HomeScreen] Mini map manager recreate failed: $e');
               }
-              if (_currentLatLng != null) unawaited(_updateHomeDotAnnotation());
+              // Draw now, and retry shortly in case the GPS fix or the
+              // manager wasn't ready yet (the ticker won't fire while idle).
+              unawaited(_updateHomeDotAnnotation());
+              _retryHomeDotDraw();
               // Re-disable native puck in case the style reset re-enabled it
               try {
                 await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
@@ -1506,6 +1514,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
           onMapLoadErrorListener: (err) {
             if (kDebugMode) debugPrint('[HomeScreen] Mini map load error: ${err.message} (type: ${err.type})');
           },
+        ),
         ),
       ),
     );

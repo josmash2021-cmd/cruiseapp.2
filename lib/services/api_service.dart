@@ -3242,6 +3242,8 @@ class ApiService {
     );
     final body = _parse(res);
     if (body is List) return (body as List).cast<Map<String, dynamic>>();
+    final wrapped = body['data'];
+    if (wrapped is List) return wrapped.cast<Map<String, dynamic>>();
     return [];
   }
 
@@ -3359,9 +3361,11 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
     final dynamic data = _parse(res);
-    if (data is List) {
+    final dynamic listSource =
+        data is Map<String, dynamic> ? data['data'] : data;
+    if (listSource is List) {
       final out = <Map<String, dynamic>>[];
-      final listData = data;
+      final listData = listSource;
       for (var i = 0; i < listData.length; i++) {
         final dynamic item = listData[i];
         if (item is Map<String, dynamic>) {

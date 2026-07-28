@@ -324,6 +324,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false;   // true after first-appearance pop completes
   double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
+  // Re-asserts the dot annotation while the smooth ticker is parked (driver
+  // stationary). Without it a dot that failed to appear — or whose final
+  // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.
+  Timer? _dotWatchdog;
+  bool _smoothTickerStarted = false; // first start is deferred, restarts aren't
   bool _annotUpdateBusy = false; // prevents overlapping annotation update() IPC calls
   bool _annotCreateBusy = false; // prevents parallel create/delete (stricter than update)
   bool _isClearingAnnotations = false; // prevents create during clear
@@ -564,6 +569,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _pollT?.cancel();
       _clock?.cancel();
       _earningsRefreshTimer?.cancel();
+      _dotWatchdog?.cancel();
       _goldDot.dispose();
       // Start background heartbeat to keep driver "online" in backend
       _startBackgroundHeartbeat();
@@ -586,7 +592,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       Future.delayed(const Duration(milliseconds: 800), () {
         if (!mounted) return;
         _clearAllAnnotations().then((_) {
-          if (mounted) _updateDriverAnnotation();
+          if (!mounted) return;
+          _updateDriverAnnotation();
+          _startDotWatchdog();
         });
       });
     }
@@ -613,6 +621,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _scheduledPollTimer?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
+    _dotWatchdog?.cancel();
     _goldDot.dispose();
     _driverPhotoImage?.dispose();
     _posStream?.cancel();

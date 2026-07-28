@@ -190,7 +190,43 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _updateDriverAnnotation(); // await so frames don't pile up
     }
     _dotPopScale = 1.0;
-    if (mounted) await _updateDriverAnnotation();
+    await _settleDotSize();
+  }
+
+  /// Force the final 1.0 icon size onto the native annotation.
+  ///
+  /// The pop steps go through [_updateDriverAnnotation], which drops its
+  /// flush whenever the previous IPC is still in flight. A `mgr.update()`
+  /// round-trip routinely outlasts a 16 ms frame, so the LAST step — the one
+  /// carrying the settled size — is the most likely of all to be dropped,
+  /// leaving the dot frozen at whatever partial scale landed last (this is
+  /// the "dot is smaller when online" report). The smooth ticker parks itself
+  /// when the driver is stationary, so nothing corrects it afterwards.
+  /// Retry until the IPC lane is free and the settled size actually lands.
+  Future<void> _settleDotSize() async {
+    for (int attempt = 0; attempt < 12; attempt++) {
+      if (!mounted) return;
+      final annot = _goldDotAnnot;
+      final mgr = _pointAnnotMgr;
+      if (annot == null || mgr == null) return;
+      if (_annotUpdateBusy) {
+        await Future.delayed(const Duration(milliseconds: 30));
+        continue;
+      }
+      annot.iconSize = _dotPopScale;
+      _annotUpdateBusy = true;
+      try {
+        await mgr.update(annot);
+        return;
+      } catch (_) {
+        // Annotation went stale — next tick recreates it at the settled size.
+        _goldDotAnnot = null;
+        _goldDotAnnotGen = 0;
+        return;
+      } finally {
+        _annotUpdateBusy = false;
+      }
+    }
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.

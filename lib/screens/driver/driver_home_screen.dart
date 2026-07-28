@@ -82,6 +82,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ignore: unused_field
   bool _mapReady = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
+  // Retries the first dot draw until it lands. _updateMyLocAnnotation() no-ops
+  // until BOTH the annotation manager and the dot image exist, and the dot
+  // ticker only fires when the position actually changes — so a driver sitting
+  // still while the map view is still coming up would never get a dot at all.
+  // Self-cancels as soon as the annotation exists.
+  Timer? _dotCreateWatchdog;
   StreamSubscription<Position>? _posStream;
   StreamSubscription<String>? _fcmTokenRefreshSub;
 
@@ -232,6 +238,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // Update the Mapbox annotation directly — no setState needed (avoids rebuild storm)
       if (mounted) _syncDotAnnotation();
     });
+    _startDotCreateWatchdog();
     _initLocation();
     _loadDriverData();
     _checkVerification().then((_) => _checkVehicleDocStatus());
@@ -322,6 +329,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _statsCtrl.dispose();
     _fabCtrl.dispose();
     _goldDot.dispose();
+    _dotCreateWatchdog?.cancel();
     _posStream?.cancel();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
@@ -429,6 +437,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// Update the gold dot PointAnnotation with latest interpolated position + frame.
   void _syncDotAnnotation() {
     _updateMyLocAnnotation();
+  }
+
+  /// Poll until the dot annotation actually exists, then stop.
+  /// Covers the startup race where the GPS fix arrives before the map's
+  /// annotation manager (or the rendered dot image) is ready.
+  void _startDotCreateWatchdog() {
+    _dotCreateWatchdog?.cancel();
+    _dotCreateWatchdog = Timer.periodic(const Duration(seconds: 2), (t) {
+      if (!mounted || _myLocAnnot != null) {
+        t.cancel();
+        _dotCreateWatchdog = null;
+        return;
+      }
+      _updateMyLocAnnotation();
+    });
   }
 
   // ═══════════════════════════════════════════════════
@@ -1196,6 +1219,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             }
             
             setState(() => _mapReady = true);
+
+            // A fresh manager means any annotation we still hold belongs to
+            // the previous platform view (Android destroys it in background)
+            // and can never be updated again. Drop it, draw the dot on the
+            // new map right away, and re-arm the watchdog in case this ran
+            // before the first GPS fix.
+            _myLocAnnot = null;
+            _updateMyLocAnnotation();
+            _startDotCreateWatchdog();
           } catch (e) {
             debugPrint('[DriverMap] onMapCreated error: $e');
           }

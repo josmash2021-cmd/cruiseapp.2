@@ -323,7 +323,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // results[3] is void (_loadDriverPhoto sets _driverPhotoImage internally)
     _goldPinBytes = results[4] as Uint8List?;
     await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
-    if (mounted) _setState(() {});
+    if (!mounted) return;
+    // The dot image is what _updateDriverAnnotation() gates on — every call
+    // before this point bailed out with no bytes. Draw it now instead of
+    // waiting for the next GPS tick: a driver who goes online standing still
+    // never gets one, so the dot would simply never appear.
+    _updateDriverAnnotation();
+    _startDotWatchdog();
+    _setState(() {});
+  }
+
+  /// Low-frequency safety net for the driver dot (0.5 Hz).
+  ///
+  /// The dot is normally redrawn by [_onSmoothTick], but that ticker parks
+  /// itself once the driver reaches the target position, so a stationary
+  /// driver gets no redraws at all. Anything that leaves the annotation
+  /// missing or half-scaled — late icon bytes, a dropped pop-scale flush, a
+  /// map recreated on resume — would then stay broken until they drove off.
+  void _startDotWatchdog() {
+    _dotWatchdog?.cancel();
+    _dotWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) return;
+      if (_smoothTicker?.isTicking ?? false) return; // ticker has it covered
+      _updateDriverAnnotation();
+    });
   }
 
   /// Download and decode the driver's profile photo for the map marker.
@@ -331,7 +354,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final url = widget.photoUrl;
     if (url == null || url.isEmpty) return;
     try {
-      final resp = await http.get(Uri.parse(url));
+      // Hard timeout: this download sits inside the Future.wait() that gates
+      // _goldDot.build(), so a stalled request would keep the driver dot off
+      // the map for as long as the socket hangs.
+      final resp = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200) {
         final codec = await ui.instantiateImageCodec(resp.bodyBytes);
         final frame = await codec.getNextFrame();
@@ -1024,12 +1052,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // on top of the route transition animation and causes a 1-2s freeze on
     // mid-range Android devices. We defer by 500ms so the transition owns
     // the UI thread cleanly.
+    //
+    // The deferral applies to the FIRST start only. Later restarts happen
+    // every time the driver pulls away after standing still (the ticker parks
+    // itself at the target), and delaying those by half a second is exactly
+    // the "dot doesn't follow me" lag — the transition is long gone by then.
     if (!(_smoothTicker?.isTicking ?? false)) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !(_smoothTicker?.isTicking ?? false)) {
-          _smoothTicker?.start();
-        }
-      });
+      if (_smoothTickerStarted) {
+        _smoothTicker?.start();
+      } else {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !(_smoothTicker?.isTicking ?? false)) {
+            _smoothTickerStarted = true;
+            _smoothTicker?.start();
+          }
+        });
+      }
     }
   }
 

@@ -313,6 +313,26 @@ async def lifespan(app: FastAPI):
     from services.event_bus import event_bus as _eb
     _eb.start_heartbeat()
 
+    # Resolve the support LLM provider now and say which one won.
+    #
+    # The module logs this at import, but routers/support.py imports it
+    # lazily inside the endpoint — so the line only appeared once a rider
+    # had already written in, which is exactly too late to notice that
+    # the key is missing and every conversation is being handed to a
+    # human. Touching it here makes a misconfigured deploy visible in the
+    # startup logs. Guarded: support must degrade, never block boot.
+    try:
+        from services.openai_support_service import _MODEL, _PROVIDER
+        if _PROVIDER == "none":
+            logging.warning(
+                "[Support AI] no provider configured — every support chat "
+                "will be handed straight to a human. Set MOONSHOT_API_KEY."
+            )
+        else:
+            logging.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)
+    except Exception as _e:  # noqa: BLE001
+        logging.error("[Support AI] failed to initialise: %s", _e)
+
     # ── CRITICAL PATH: DB init (SYNCHRONOUS - blocks startup until done) ──
     db_initialized = False
     for _attempt in range(5):

@@ -85,17 +85,22 @@ async def _verify_worker_token(x_worker_token: str = Header(None)):
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
-@router.get("/worker/health")
+@router.get("/health")
 async def worker_health():
-    """Health check for external schedulers.
+    """Health check for external schedulers. Served at GET /worker/health.
 
-    Was registered on "/health", where it never ran a single time:
+    Originally declared on a bare "/health", where it never ran once:
     routers/system.py declares the same GET /health and is included
     first, so FastAPI kept that one and silently ignored this (rule 19).
     Schedulers polling for a cheap liveness ping were instead running
     system.py's deep check, which hits the database, Redis, Stripe,
     Twilio and FCM on every poll — and reports "degraded" when any
     third party is having a bad day.
+
+    The path here is relative to the router's own prefix="/worker". The
+    first fix spelled it "/worker/health" and shipped GET
+    /worker/worker/health — still a 404 for every caller, just a
+    different one. Verified live after deploy, not assumed.
     """
     return {
         "status": "ok",

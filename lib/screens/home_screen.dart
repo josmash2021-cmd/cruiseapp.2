@@ -174,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   mapbox.PointAnnotationManager? _homeDotAnnotMgr;
   mapbox.PointAnnotation? _homeDotAnnot;
   bool _creatingHomeDotAnnot = false; // guard: prevents parallel annotation creation
+  Timer? _homeDotRetryTimer; // backoff ladder until the dot actually draws
+  int _homeDotRetryAttempt = 0;
   final GoldLocationDot _homeDot = GoldLocationDot();
   // Throttle camera recentering so it doesn't fight the dot ticker.
   DateTime _lastMiniMapRecenter = DateTime(0);
@@ -358,6 +360,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     WidgetsBinding.instance.removeObserver(this);
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
     _homeDot.dispose();
+    _homeDotRetryTimer?.cancel();
+    _homeDotRetryTimer = null;
     _boltFlashCtrl.dispose();
     _promoShimmerCtrl.dispose();
     _rideFadeCtrl.dispose();
@@ -455,8 +459,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         setState(() {
           _currentLatLng = LatLng(preloaded.latitude, preloaded.longitude);
         });
-        // Snap the mini map dot to the first known position (no glide).
-        _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
+        // Draw the dot straight away. This path used to only snapTo and
+        // return, leaving the dot invisible until _refreshGpsInBackground's
+        // getCurrentPosition resolved (up to 15 s) — which is exactly why
+        // the dot was missing on a cold open.
+        _feedHomeDot(_currentLatLng!.latitude, _currentLatLng!.longitude);
         if (!_stateCheckDone) {
           _stateCheckDone = true;
           _checkUserStateZone(_currentLatLng!);
@@ -508,6 +515,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         setState(() {
           _currentLatLng = LatLng(lastKnown.latitude, lastKnown.longitude);
         });
+        // Show the dot on the cached fix rather than waiting out the
+        // 15 s getCurrentPosition below — this path set the field but
+        // never told the map to draw.
+        _feedHomeDot(lastKnown.latitude, lastKnown.longitude);
       }
 
       // 4. Fetch accurate position
@@ -521,11 +532,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       setState(() {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
       });
-      // Snap the mini map dot on the first accurate fix.
-      _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-      // The ticker stays idle while the dot isn't moving — draw directly so
-      // the dot appears even if it never needs to glide.
-      unawaited(_updateHomeDotAnnotation());
+      // Glides if lastKnown already rendered a dot, snaps if this is the
+      // first position we've had.
+      _feedHomeDot(_currentLatLng!.latitude, _currentLatLng!.longitude);
 
       // Check service zone for this position (once)
       if (!_stateCheckDone) {
@@ -550,11 +559,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _currentLatLng = ll;
             // Feed the mini map dot (SmoothMotion glides) + throttled
             // follow camera — the platform channel stays unsaturated.
-            _homeDot.ensureRunning();
-            _homeDot.setTarget(ll.latitude, ll.longitude);
-            // Direct draw — the ticker alone misses redraws once the dot
-            // has reached its target and gone idle.
-            unawaited(_updateHomeDotAnnotation());
+            _feedHomeDot(ll.latitude, ll.longitude);
             _recenterHomeMiniMap();
           });
     } catch (_) {
@@ -562,6 +567,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     } finally {
       _fetchingLocation = false;
     }
+  }
+
+  /// Single entry point for feeding a GPS fix to the mini map dot.
+  ///
+  /// The first fix snaps (nothing is rendered yet, so a glide from a null
+  /// position would be meaningless). Every later fix sets a target so
+  /// SmoothMotion glides the dot instead of teleporting it across the
+  /// card — the preloaded position and the first accurate fix are often
+  /// tens of metres apart, and snapping both made the dot jump.
+  ///
+  /// Always ends with a direct draw: the ticker bails out when the dot
+  /// hasn't moved (gold_location_dot.dart — `if (!posChanged) return`),
+  /// so a stationary rider gets no redraw from it at all.
+  void _feedHomeDot(double lat, double lng) {
+    if (_homeDot.lat == null) {
+      _homeDot.snapTo(lat, lng);
+    } else {
+      _homeDot.ensureRunning();
+      _homeDot.setTarget(lat, lng);
+    }
+    unawaited(_updateHomeDotAnnotation());
   }
 
   /// Redraw the gold dot on the "Your location" mini map. Driven by the
@@ -593,15 +619,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         // Defensive cleanup: delete any stale annotation left behind by a
         // failed update or a style reload, so we never draw two gold dots.
         try { await mgr.deleteAll(); } catch (_) {}
-        _homeDotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        final created = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
           iconSize: 1.05,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
+        // A style reload can swap the manager while create() is in flight.
+        // Publishing this handle then would leave _homeDotAnnot non-null
+        // pointing at an annotation on a dead manager — invisible, yet
+        // enough to stop the retry ladder. Drop it and let the retry run.
+        if (!mounted || _homeDotAnnotMgr != mgr) {
+          try { await mgr.delete(created); } catch (_) {}
+          return;
+        }
+        _homeDotAnnot = created;
       } catch (e) {
         if (kDebugMode) debugPrint('[HomeScreen] Mini map dot create failed: $e');
+        // Don't leave the dot missing until the next GPS fix — a stationary
+        // rider may not get one for minutes.
+        _retryHomeDotDraw();
       } finally {
         _creatingHomeDotAnnot = false;
       }
@@ -621,24 +659,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         if (_homeDotAnnot == annot) {
           _homeDotAnnot = null;
           mgr.delete(annot).catchError((_) {});
+          // THE dot is now off the map. "The next tick recreates it" only
+          // holds while the rider is moving — GoldLocationDot skips the
+          // callback when the position is unchanged, so a stationary rider
+          // would watch the dot vanish and never come back. Kick the retry
+          // ladder so it is redrawn within a second.
+          _retryHomeDotDraw();
         }
         if (kDebugMode) debugPrint('[HomeScreen] Mini map dot update failed: $e');
       });
     } catch (e) {
       if (kDebugMode) debugPrint('[HomeScreen] Mini map dot geometry write failed: $e');
       _homeDotAnnot = null;
+      _retryHomeDotDraw(); // same reasoning as above
     }
   }
 
-  /// Retry the mini map dot draw after the map/style becomes ready, in
-  /// case the GPS fix or the annotation manager wasn't available yet.
-  /// Reintenta dibujar el punto por si el GPS o el manager no estaban listos.
+  /// Backoff schedule for [_retryHomeDotDraw] — ~12 s of total coverage.
+  static const List<int> _homeDotRetryDelaysMs = [
+    250, 400, 600, 800, 1000, 1200, 1500, 2000, 2000, 2000,
+  ];
+
+  /// Keep retrying the mini map dot draw until it actually lands.
+  ///
+  /// The draw needs four things at once: the annotation manager, a GPS
+  /// position, a valid point and the rendered dot bytes. On a cold start
+  /// every one of them is racing (native map init, style download, first
+  /// fix), and the ticker is no safety net — GoldLocationDot skips the
+  /// callback entirely when the dot hasn't moved, so a stationary rider
+  /// gets nothing. The old version fired three fixed shots (500/1500/
+  /// 3000 ms) and then gave up forever, which is why the dot could stay
+  /// missing for the whole session.
+  ///
+  /// This retries on a backoff and stops as soon as the annotation
+  /// exists, so a slow map or a slow GPS no longer loses the race.
   void _retryHomeDotDraw() {
-    for (final ms in const [500, 1500, 3000]) {
-      Future.delayed(Duration(milliseconds: ms), () {
-        if (mounted) unawaited(_updateHomeDotAnnotation());
-      });
-    }
+    // Restart from scratch: a fresh map or style reload means any pending
+    // attempt is chasing a manager that no longer exists.
+    _homeDotRetryTimer?.cancel();
+    _homeDotRetryAttempt = 0;
+    _scheduleHomeDotRetry();
+  }
+
+  void _scheduleHomeDotRetry() {
+    if (_homeDotRetryAttempt >= _homeDotRetryDelaysMs.length) return;
+    final ms = _homeDotRetryDelaysMs[_homeDotRetryAttempt++];
+    _homeDotRetryTimer = Timer(Duration(milliseconds: ms), () async {
+      if (!mounted || _homeDotAnnot != null) return; // already on screen
+      // The dot bitmap is rendered once in initState. If that rasterise
+      // failed, currentBytes stays null and every draw below is a silent
+      // no-op forever — rebuild it here so the retry can actually succeed.
+      if (!_homeDot.isReady) {
+        await _homeDot.build(this, _updateHomeDotAnnotation);
+      }
+      if (!mounted) return;
+      await _updateHomeDotAnnotation();
+      if (mounted && _homeDotAnnot == null) _scheduleHomeDotRetry();
+    });
   }
 
   /// Recenter the mini map camera on the rider at most once per [interval].
@@ -658,15 +735,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     if (point == null) return;
 
     try {
-      unawaited(_homeMiniMapCtrl!.easeTo(
-        mapbox.CameraOptions(
-          center: point,
-          zoom: 15.0,
-          pitch: 0,
-          bearing: 0,
-        ),
-        mapbox.MapAnimationOptions(duration: 250),
-      ));
+      // .catchError is required, not decorative: the try/catch only sees
+      // synchronous throws, and easeTo rejects asynchronously when the
+      // native map is torn down mid-animation (backgrounding, style
+      // reload). Without it that rejection escapes as an unhandled async
+      // error instead of being ignored.
+      unawaited(_homeMiniMapCtrl!
+          .easeTo(
+            mapbox.CameraOptions(
+              center: point,
+              zoom: 15.0,
+              pitch: 0,
+              bearing: 0,
+            ),
+            mapbox.MapAnimationOptions(duration: 250),
+          )
+          .catchError((e) {
+        if (kDebugMode) debugPrint('[HomeScreen] Mini map ease failed: $e');
+      }));
     } catch (e) {
       if (kDebugMode) debugPrint('[HomeScreen] Mini map recenter failed: $e');
     }

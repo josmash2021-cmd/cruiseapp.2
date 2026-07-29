@@ -762,11 +762,23 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final pickupText = loc.pickupUpperLabel; // "RECOGIDA" / "PICKUP"
     final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
 
-    // Label geometry — keeps the pill clear of the pin glyph.
-    const double pinHalfWidth = 16.0;
-    const double sideGap = 20.0;
-    const double pillHalfHeight = 26.0;
-    const double pillHeight = pillHalfHeight * 2;
+    // Label geometry — the pill sits beside the pin's head, with clear
+    // air between them, vertically centred on the head.
+    //
+    // The pin bitmap is 80×73.6 (GoldenPinPainter: _width = size,
+    // _height = size * 0.92, size = radius*2+16 with radius 32) drawn at
+    // iconSize 0.85 with iconAnchor BOTTOM — so the screen offset we get
+    // from pixelForCoordinate is the pin's TIP, not its head. The head
+    // centre sits at w * 0.34 from the bitmap top (GoldenPinPainter's
+    // cupCY), i.e. ~63% of the pin height above the tip. These two
+    // numbers are the ones to nudge if the pill reads high or low.
+    const double pinOnScreenHalfWidth = 28.0;
+    const double pinHeadLift = 34.0; // head centre above the tip
+    const double sideGap = 14.0; // clear gap, pill never touches the pin
+    // Pill height is deterministic: 6px padding top/bottom + the taller
+    // of the 22px icon chip and the kind+address stack (~25px), + border.
+    const double pillHeight = 39.0;
+    const double pillHalfHeight = pillHeight / 2;
     const double pillEstimatedWidth = 230.0; // icon+gap+maxWidth(180)+padding
 
     // Map viewport bounds so we can clamp the label inside the visible area.
@@ -778,23 +790,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final topSafe = mq.padding.top + 12;
     final bottomSafe = screenH * 0.55; // sheet covers bottom ~45%
 
-    // Polyline projected to screen coords for collision detection.
-    final routePts = _routeScreenPoints;
-
     final pickupPos = _pickupScreenOffset;
     if (pickupPos != null && s.pickupLabel.isNotEmpty) {
-      double left = pickupPos.dx + pinHalfWidth + sideGap;
+      double left = pickupPos.dx + pinOnScreenHalfWidth + sideGap;
       final bool flipLeft = left + pillEstimatedWidth > screenW - 8;
       if (flipLeft) {
-        left = pickupPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+        left =
+            pickupPos.dx - pinOnScreenHalfWidth - sideGap - pillEstimatedWidth;
       }
       // Clamp inside the viewport (left/right + top/bottom).
       left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
-      double top = pickupPos.dy - pillHalfHeight;
+      // Centre on the pin HEAD: lift off the tip, then half the pill.
+      double top = pickupPos.dy - pinHeadLift - pillHalfHeight;
       top = top.clamp(topSafe, bottomSafe - pillHeight);
-      // Collision: dim if polyline crosses the label's bounding rect.
-      final rect = Rect.fromLTWH(left, top, pillEstimatedWidth, pillHeight);
-      final dimmed = _polylineIntersectsRect(routePts, rect);
       widgets.add(
         Positioned(
           left: left,
@@ -806,7 +814,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             dropoffText: dropoffText,
             visible: _pickupLabelRevealed,
             alignEnd: flipLeft,
-            dimmedByRoute: dimmed,
           ),
         ),
       );
@@ -814,17 +821,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     final dropoffPos = _dropoffScreenOffset;
     if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
-      double left = dropoffPos.dx - pinHalfWidth - sideGap - pillEstimatedWidth;
+      double left =
+          dropoffPos.dx - pinOnScreenHalfWidth - sideGap - pillEstimatedWidth;
       final bool flipRight = left < 8;
       if (flipRight) {
-        left = dropoffPos.dx + pinHalfWidth + sideGap;
+        left = dropoffPos.dx + pinOnScreenHalfWidth + sideGap;
       }
       // Clamp inside the viewport.
       left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
-      double top = dropoffPos.dy - pillHalfHeight;
+      double top = dropoffPos.dy - pinHeadLift - pillHalfHeight;
       top = top.clamp(topSafe, bottomSafe - pillHeight);
-      final rect = Rect.fromLTWH(left, top, pillEstimatedWidth, pillHeight);
-      final dimmed = _polylineIntersectsRect(routePts, rect);
       widgets.add(
         Positioned(
           left: left,
@@ -836,7 +842,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             dropoffText: dropoffText,
             visible: _dropoffLabelRevealed,
             alignEnd: !flipRight,
-            dimmedByRoute: dimmed,
           ),
         ),
       );
@@ -844,45 +849,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return widgets;
   }
 
-  /// True if any segment of the polyline crosses the label rect.
-  bool _polylineIntersectsRect(List<Offset> pts, Rect rect) {
-    if (pts.length < 2) return false;
-    for (int i = 0; i < pts.length - 1; i++) {
-      if (_segIntersectsRect(pts[i], pts[i + 1], rect)) return true;
-    }
-    return false;
-  }
-
-  bool _segIntersectsRect(Offset a, Offset b, Rect r) {
-    if (r.contains(a) || r.contains(b)) return true;
-    if ((a.dx < r.left && b.dx < r.left) ||
-        (a.dx > r.right && b.dx > r.right) ||
-        (a.dy < r.top && b.dy < r.top) ||
-        (a.dy > r.bottom && b.dy > r.bottom)) {
-      return false;
-    }
-    return _segCross(a, b, r.topLeft, r.topRight) ||
-        _segCross(a, b, r.topRight, r.bottomRight) ||
-        _segCross(a, b, r.bottomRight, r.bottomLeft) ||
-        _segCross(a, b, r.bottomLeft, r.topLeft);
-  }
-
-  bool _segCross(Offset p1, Offset p2, Offset p3, Offset p4) {
-    double cross(Offset o, Offset a, Offset b) =>
-        (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
-    final d1 = cross(p3, p4, p1);
-    final d2 = cross(p3, p4, p2);
-    final d3 = cross(p1, p2, p3);
-    final d4 = cross(p1, p2, p4);
-    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
-  }
-
   // Single card shown when a tier has been picked and the grid is
-  // collapsed. Neumorphic layout: centered car render on top, tier name
-  // (left) + price (right) below it, then a centered row of three sunken
-  // stat chips (ETA minutes, trip miles, passenger capacity). No tier
-  // badge and no description line — the chips carry the key facts.
+  // collapsed. Neumorphic layout: tier name top-left with the price pinned
+  // to the top-right corner, the car render left-aligned below them, then a
+  // left-aligned row of three sunken stat chips under the car (ETA minutes,
+  // trip miles, passenger capacity). No tier badge and no description line
+  // — the chips carry the key facts.
   Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
     final bool isSuv = opt.id == 'suburban';
     final bool isFusion = opt.id == 'fusion';
@@ -923,40 +895,32 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Top: car render centered (home look, no gold glow) ──
-          SizedBox(
-            height: 84,
-            width: double.infinity,
-            child: CarImage3D(
-              assetPath: _carAssetForOption(opt.name),
-              cacheWidth: 640,
-              alignment: Alignment.center,
-              fallback: Icon(
-                Icons.directions_car_rounded,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                size: 40,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // ── Middle: tier name (left) + price (right) ──
+          // ── Top: tier name on the left, price pinned to the top-right
+          // corner. Top-aligned so the price stays in the corner even when
+          // the promo / Cruise Cash badges stack underneath it.
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
+                child: Padding(
+                  // Optical alignment: the 20px price renders ~3px taller
+                  // than the 16px tier name, so nudge the name down to line
+                  // their cap heights up.
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -1052,11 +1016,31 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+
+          // ── Car render, left-aligned under the title. BoxFit.contain
+          // scales it to the 84px height, so centerLeft parks it against
+          // the left edge and leaves the right side open under the price.
+          SizedBox(
+            height: 84,
+            width: double.infinity,
+            child: CarImage3D(
+              assetPath: _carAssetForOption(opt.name),
+              cacheWidth: 640,
+              alignment: Alignment.centerLeft,
+              fallback: Icon(
+                Icons.directions_car_rounded,
+                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                size: 40,
+              ),
+            ),
+          ),
           const SizedBox(height: 10),
 
-          // ── Bottom: centered row of three sunken stat chips ──
+          // ── Bottom: three sunken stat chips under the car, left-aligned
+          // with it (ETA minutes, trip miles, passenger capacity).
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               _neuStatChip(Icons.schedule_rounded, '${opt.etaMinutes} min'),
               const SizedBox(width: 8),

@@ -1549,6 +1549,12 @@ extension _RideRequestController on _RideRequestScreenState {
         return _confirmPayPal(amountCents);
       case 'credit_card':
         return _confirmCard(amountCents);
+      case 'bank_account':
+        // ACH debit against the linked bank account. Without this case the
+        // switch fell to `default` → false, which _startRideRequest reads as
+        // "rider dismissed the OS sheet": tapping Request Ride with the bank
+        // selected did nothing at all — no trip, no charge, no error.
+        return _confirmBankAccount(amountCents, option);
       default:
         // Unrecognised payment method — never allow payment to proceed silently.
         debugPrint('[Payment] _confirmNativePayment: unknown method "$_selectedPaymentMethod"');
@@ -1781,13 +1787,24 @@ extension _RideRequestController on _RideRequestScreenState {
       final status = piResult['status'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
 
-      // Confirmed server-side.
-      if (status == 'succeeded') return true;
-      if (status == 'requires_capture') return true;
-      // ACH: debit initiated, Stripe settles asynchronously.
-      if (status == 'processing') return true;
+      // Confirmed server-side. 'processing' IS the success state for ACH —
+      // Stripe settles the debit over the next few business days.
+      if (status == 'succeeded' ||
+          status == 'requires_capture' ||
+          status == 'processing') {
+        return true;
+      }
 
-      return true;
+      // Anything else is a real failure and must NOT dispatch a driver:
+      //   requires_payment_method → the debit was rejected outright
+      //   requires_action         → Stripe wants microdeposit verification
+      //   canceled                → intent died server-side
+      // The old code had an unconditional `return true` here, so both of
+      // those shipped a free ride. Throw instead so _handlePaymentFailure
+      // can offer the rider another method.
+      debugPrint('[Bank] unexpected PaymentIntent status: $status');
+      _heldPaymentIntentId = null;
+      throw ApiException(402, 'ach_not_confirmed:${status ?? 'unknown'}');
     } catch (e) {
       debugPrint('[Bank] Saved bank account failed: $e');
       // Same policy as saved cards: no silent fallback on payment failures.

@@ -100,12 +100,22 @@ class GoldLocationDot {
       Paint()..color = _gold.withValues(alpha: 0.9),
     );
 
-    final img = await recorder
-        .endRecording()
-        .toImage(_canvasSize.toInt(), _canvasSize.toInt());
-    final data = await img.toByteData(format: ui.ImageByteFormat.png);
-    if (data == null || _isDisposing) return;
-    _frame = data.buffer.asUint8List();
+    // Rasterising can fail (GPU context lost while backgrounding, OOM on
+    // low-end devices). Left unguarded it escapes as an unhandled async
+    // error AND leaves _frame null forever, so the dot never draws again
+    // — callers see currentBytes == null and silently give up.
+    try {
+      final img = await recorder
+          .endRecording()
+          .toImage(_canvasSize.toInt(), _canvasSize.toInt());
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+      if (data == null || _isDisposing) return;
+      _frame = data.buffer.asUint8List();
+    } catch (e) {
+      debugPrint('[GoldLocationDot] frame render failed: $e');
+      return; // isReady stays false; the caller may build() again later
+    }
 
     _lastElapsed = Duration.zero;
     _onTick = onTick;

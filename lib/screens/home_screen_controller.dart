@@ -263,10 +263,9 @@ extension _HomeScreenController on _HomeScreenState {
     ).then((pos) {
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _homeDot.snapTo(_currentLatLng!.latitude, _currentLatLng!.longitude);
-      // The ticker stays idle while the dot isn't moving — draw directly so
-      // the dot appears even if it never needs to glide.
-      unawaited(_updateHomeDotAnnotation());
+      // Glide, don't snap: the preloaded position already rendered a dot
+      // and the accurate fix is usually metres away — snapping teleported it.
+      _feedHomeDot(_currentLatLng!.latitude, _currentLatLng!.longitude);
       _recenterHomeMiniMap();
     }).catchError((e) {
       if (kDebugMode) debugPrint('[GPS] getCurrentPosition error: $e');
@@ -288,11 +287,7 @@ extension _HomeScreenController on _HomeScreenState {
         // Feed the mini map dot + throttled follow camera (same hooks as
         // the listener in _fetchCurrentLocation — the preloaded startup
         // path runs its stream here).
-        _homeDot.ensureRunning();
-        _homeDot.setTarget(ll.latitude, ll.longitude);
-        // Direct draw — the ticker alone misses redraws once the dot
-        // has reached its target and gone idle.
-        unawaited(_updateHomeDotAnnotation());
+        _feedHomeDot(ll.latitude, ll.longitude);
         _recenterHomeMiniMap();
       },
       onError: (e) {
@@ -366,8 +361,7 @@ extension _HomeScreenController on _HomeScreenState {
         _setState(() {
           _currentLatLng = LatLng(last.latitude, last.longitude);
         });
-        _homeDot.snapTo(last.latitude, last.longitude);
-        unawaited(_updateHomeDotAnnotation());
+        _feedHomeDot(last.latitude, last.longitude);
       }
       _fetchCurrentLocation();
     } catch (_) {

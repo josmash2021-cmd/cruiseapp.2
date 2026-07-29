@@ -807,13 +807,6 @@ extension _RideRequestMap on _RideRequestScreenState {
     _bearingCtrl?.dispose();
     _bearingCtrl = null;
 
-    // ── Labels fade in near the END of the route draw (~80%) ──
-    // so the rider sees the route almost complete, then the pickup
-    // and dropoff address labels appear smoothly next to their pins.
-    Future.delayed(const Duration(milliseconds: 1800), () {
-      if (mounted) _unrollLabels();
-    });
-
     // ── Route draws starting at 25% of the tilt animation ──
     await Future.delayed(const Duration(milliseconds: 550));
     if (!mounted) { _cinematicRunning = false; return; }
@@ -826,6 +819,12 @@ extension _RideRequestMap on _RideRequestScreenState {
     final Future<void> routeFuture = pts.length < 3
         ? Future.value()
         : _animateGoldRoute(pts);
+
+    // NOTE: the label reveal is NOT chained here. `routeFuture` is
+    // Future.value() for the 2-point placeholder, which resolves before
+    // any line exists — the labels would pop in over an empty map. It
+    // lives at the end of _animateGoldRoute() instead, so it fires only
+    // when a real line actually finished drawing.
 
     // ── Wait for BOTH tilt and route to finish ──
     await Future.wait([
@@ -1014,42 +1013,10 @@ extension _RideRequestMap on _RideRequestScreenState {
         _setState(() => _dropoffScreenOffset =
             Offset(px.x.toDouble(), px.y.toDouble()));
       }
-      // Project the polyline (route) into screen coords so the labels
-      // can detect when the gold line is about to overlap them and
-      // fade to 10% during the overlap. Sample every Nth point on
-      // long routes (>50 pts) so we never run more than ~50 segment
-      // checks per frame.
-      final routePts = _ctrl.state.route?.points ?? const [];
-      if (routePts.length >= 2) {
-        final stride =
-            routePts.length > 50 ? (routePts.length / 50).ceil() : 1;
-        final sampled = <Offset>[];
-        for (int i = 0; i < routePts.length; i += stride) {
-          final p = routePts[i];
-          final px = await mc.pixelForCoordinate(mapbox.Point(
-            coordinates: mapbox.Position(p.longitude, p.latitude),
-          ));
-          if (!mounted) return;
-          sampled.add(Offset(px.x.toDouble(), px.y.toDouble()));
-        }
-        // Always include the last point so the label near dropoff
-        // detects the route ending under it.
-        if (sampled.isNotEmpty &&
-            sampled.length * stride < routePts.length) {
-          final last = routePts.last;
-          final px = await mc.pixelForCoordinate(mapbox.Point(
-            coordinates: mapbox.Position(last.longitude, last.latitude),
-          ));
-          if (mounted) {
-            sampled.add(Offset(px.x.toDouble(), px.y.toDouble()));
-          }
-        }
-        if (mounted) {
-          _setState(() => _routeScreenPoints = sampled);
-        }
-      } else if (_routeScreenPoints.isNotEmpty) {
-        _setState(() => _routeScreenPoints = const []);
-      }
+      // NOTE: this used to also project the whole polyline into screen
+      // coords (up to ~50 async pixelForCoordinate calls per camera
+      // change) purely to dim the labels when the gold line passed under
+      // them. That behaviour was dropped, so the projection is gone too.
     } catch (e) {
       // Mapbox throws if called before the map is ready — log so we can
       // notice if labels stop syncing unexpectedly.
@@ -1235,6 +1202,20 @@ extension _RideRequestMap on _RideRequestScreenState {
           polyMgr.update(_routeAnnot!).catchError((_) {});
         }
         if (!completer.isCompleted) completer.complete();
+
+        // ── The gold line is now fully drawn: reveal the address labels ──
+        // This lives here, not in the cinematic, so EVERY path that draws
+        // the route reveals them — the cinematic, the late Directions
+        // redraw when the real road-snapped route arrives, and any
+        // _drawRoute on a route change. _unrollLabels' own _labelsRevealed
+        // guard makes repeat calls a no-op. _syncLabelOffsets first so the
+        // pills animate in at the right pin positions, not a stale offset.
+        if (mounted) {
+          unawaited(() async {
+            await _syncLabelOffsets();
+            if (mounted) _unrollLabels();
+          }());
+        }
       }
     });
     _routeDrawTicker!.start();
@@ -1538,9 +1519,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     await MapTheme.hidePoiLayers(ctrl);
   }
 
+  /// Re-frames the map: fits pickup+dropoff when both exist, otherwise
+  /// flies to the rider. Safe to call repeatedly — it holds no state, so
+  /// the button behind it stays live for as many taps as the rider wants.
   Future<void> _recenterMap() async {
-    _programmaticCam = true;
-    _setState(() => _userMovedMap = false);
     final s = _ctrl.state;
     // If we have pickup+dropoff, fit both in view
     if (s.pickup != null && s.dropoff != null) {
@@ -1566,7 +1548,9 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,
       );
       // Slower fit so the fly feels fluid instead of snappy.
-      if (cam != null) _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
+      if (cam != null) {
+        _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
+      }
     } else if (_userLocation != null) {
       _mapCtrl?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),

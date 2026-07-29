@@ -275,6 +275,14 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
       final attached = await ApiService.attachBankAccount(accounts.first.id);
       if (!mounted) return;
 
+      // Stripe still wants microdeposit verification — the ACH mandate isn't
+      // live, so any ride charged to this account would decline. Don't cache
+      // the pm id or mark the method linked; tell the rider what's pending.
+      if (attached?['requires_verification'] == true) {
+        _showBankError(ctx, s.bankNeedsVerification);
+        return;
+      }
+
       final last4 = attached?['last4'] as String? ?? accounts.first.last4;
       final bankName =
           attached?['bank_name'] as String? ?? accounts.first.institutionName;

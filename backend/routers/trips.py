@@ -1873,6 +1873,31 @@ async def share_trip(
     }
 
 
+def _share_link_expired(expires_at) -> bool:
+    """True when a share link is past its expiry.
+
+    Normalises the timestamp first. A naive value compared against an
+    aware now() raises TypeError, which surfaced as a 500 on a public,
+    unauthenticated endpoint — anyone opening a shared link could hit it.
+    A missing expiry means no expiry.
+    """
+    if expires_at is None:
+        return False
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at < datetime.now(timezone.utc)
+
+
+def _is_share_finished(status: str | None) -> bool:
+    """True once a shared link should stop resolving.
+
+    Normalised through _STATUS_ALIASES first, so a driver app sending
+    'canceled' or 'trip_completed' does not quietly keep a link alive.
+    """
+    raw = (status or "").strip().lower()
+    return _STATUS_ALIASES.get(raw, raw) in ("completed", "cancelled")
+
+
 @router.get("/trips/shared/{token}")
 async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
     """Public endpoint: get trip info by share token (no auth required)."""
@@ -1882,7 +1907,7 @@ async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+    if _share_link_expired(trip.share_expires_at):
         raise HTTPException(410, "Share link has expired")
 
     # Return limited trip info (no personal data)
@@ -1902,15 +1927,25 @@ async def get_shared_trip(token: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/trips/shared/{token}/location")
 async def get_shared_trip_location(token: str, db: AsyncSession = Depends(get_db)):
-    """Public endpoint: get live driver location for a shared trip."""
+    """Public endpoint: get live driver location for a shared trip.
+
+    Stops the moment the trip does. This used to check only the 24-hour
+    expiry, so after the rider was dropped off the link kept streaming the
+    DRIVER's live coordinates to whoever they had sent it to — for the rest
+    of the day, following them through their next fares and home. The rider
+    shared a ride, not a day of someone else's movements, and the driver
+    never agreed to any of it.
+    """
     if not token or len(token) > 64:
         raise HTTPException(400, "Invalid token")
     result = await db.execute(select(Trip).where(Trip.share_token == token))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Shared trip not found")
-    if trip.share_expires_at and trip.share_expires_at < datetime.now(timezone.utc):
+    if _share_link_expired(trip.share_expires_at):
         raise HTTPException(410, "Share link has expired")
+    if _is_share_finished(trip.status):
+        raise HTTPException(410, "This trip has ended")
 
     if not trip.driver_id:
         return {"lat": None, "lng": None, "status": trip.status}
@@ -1935,8 +1970,22 @@ async def serve_shared_trip_page(token: str):
     if not token or len(token) > 64 or not re.match(r'^[A-Za-z0-9_\-]+$', token):
         raise HTTPException(400, "Invalid token")
     import os as _os
-    html_path = _os.path.join(_os.path.dirname(__file__), "static", "shared_trip.html")
-    if not _os.path.isfile(html_path):
+
+    # The page lives in backend/static, one level ABOVE this file's routers/
+    # directory. The old path joined "static" onto routers/ itself, so every
+    # shared link resolved to a 404 — verified against production before
+    # changing it. The rider sent a tracking link to someone worried about
+    # them and that person got a JSON error page.
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    candidates = [
+        _os.path.join(_os.path.dirname(_here), "static", "shared_trip.html"),
+        _os.path.join(_here, "static", "shared_trip.html"),
+    ]
+    html_path = next((p for p in candidates if _os.path.isfile(p)), None)
+    if html_path is None:
+        logging.error(
+            "[Share] shared_trip.html missing — looked in %s", candidates
+        )
         raise HTTPException(404, "Tracking page not found")
     return FileResponse(html_path, media_type="text/html")
 

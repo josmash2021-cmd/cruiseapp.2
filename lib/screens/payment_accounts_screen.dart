@@ -93,6 +93,17 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
     }
   }
 
+  /// True when this device holds a saved card that the server doesn't know
+  /// about, so the Added list can still show it instead of silently
+  /// dropping it.
+  bool get _localCardMissingFromServer {
+    final last4 = _savedCardLast4;
+    if (last4 == null || last4.isEmpty) return false;
+    return !_serverMethods.any(
+      (m) => (m['display_name'] as String? ?? '').contains(last4),
+    );
+  }
+
   /// Only persistent payment methods belong on this screen. Apple Pay and
   /// Google Pay are device wallets — they cannot be "saved", they appear
   /// at checkout when the device has them configured.
@@ -373,6 +384,14 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                 S.of(context).linkAccountsMsg,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
+              const SizedBox(height: 24),
+
+              // ── Device-wallet explainer ──
+              // Sits at the top: Apple Pay / Google Pay are detected at
+              // checkout and are not something you add here, so saying so
+              // first stops riders hunting for them in the lists below.
+              const _DeviceWalletNote(),
+
               const SizedBox(height: 28),
 
               // ── Add new methods section ──
@@ -382,20 +401,17 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
               ),
               const SizedBox(height: 12),
 
-              // Apple Pay / Google Pay are device wallets, not saved
-              // methods. They show up automatically at checkout when the
-              // device wallet is configured — there's nothing to "save"
-              // here. Only persistent methods (cards, bank) live on this
-              // screen.
-
-              // ── Credit / Debit Card ──
+              // ── Add a card ──
+              // Always an "add" action, never a linked/added state: riders
+              // keep more than one card, and showing the saved card here as
+              // "Added" left no way to attach a second one. Cards you have
+              // already added live in the Added Payment Methods list below,
+              // where they can be removed or promoted to default.
               _accountTile(
                 c: c,
-                logoWidget: _cardBrandLogo(_savedCardBrand),
-                label: _savedCardLast4 != null
-                    ? '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4'
-                    : S.of(context).creditOrDebitCard,
-                linked: _savedCardLast4 != null,
+                logoWidget: _cardBrandLogo(null),
+                label: S.of(context).addDebitCreditCardAction,
+                linked: false,
                 onTap: _linkCreditCard,
               ),
               const SizedBox(height: 12),
@@ -420,21 +436,16 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                 onTap: _bankLast4 != null ? () {} : _openBankConnection,
               ),
 
-              const SizedBox(height: 20),
-
-              // ── Device-wallet explainer ──
-              // Communicates that Apple Pay / Google Pay are detected at
-              // checkout and don't need to be linked here.
-              const _DeviceWalletNote(),
-
-              // ── Saved methods from server ──
+              // ── Added payment methods ──
+              // Every card and bank the rider has attached, each removable
+              // and promotable to default.
               if (_loadingServer) ...[
                 const SizedBox(height: 24),
                 const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2)),
               ] else if (_serverMethods.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 Text(
-                  'Saved Methods',
+                  S.of(context).addedPaymentMethods,
                   style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
                 ),
                 const SizedBox(height: 12),
@@ -487,7 +498,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textPrimary),
                               ),
                               if (isDefault)
-                                Text('Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
+                                Text(S.of(context).defaultBadge, style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
                             ],
                           ),
                         ),
@@ -497,7 +508,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: neuBox(radius: 10, pressed: true),
-                              child: Text('Set Default', style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
+                              child: Text(S.of(context).setDefault, style: TextStyle(fontSize: 11, color: _gold, fontWeight: FontWeight.w700)),
                             ),
                           ),
                         const SizedBox(width: 8),
@@ -515,6 +526,43 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                     ),
                   );
                 }),
+              ],
+
+              // A card saved on this device that never reached the server
+              // (the sync in credit_card_screen is deliberately non-fatal
+              // and retries later). It used to be visible in the add tile;
+              // now that the tile is always an add action, list it here so
+              // the rider can still see what they attached.
+              if (!_loadingServer && _localCardMissingFromServer) ...[
+                if (_serverMethods.isEmpty) ...[
+                  const SizedBox(height: 28),
+                  Text(
+                    S.of(context).addedPaymentMethods,
+                    style: TextStyle(fontSize: 13, color: c.textTertiary, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: neuBox(radius: 16),
+                  child: Row(
+                    children: [
+                      _cardBrandLogo(_savedCardBrand),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${_capitalizedBrand(_savedCardBrand)} •••• $_savedCardLast4',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
 
               const SizedBox(height: 20),

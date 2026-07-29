@@ -618,21 +618,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             children: [
               // LAYER 1: Full-screen map
               Positioned.fill(child: _buildFullScreenMap()),
-              // LAYER 2: Back button
-              _buildBackButton(topPad),
-              // LAYER 3: Status + ETA bar (top).
+              // LAYER 2: Status + ETA bar (top).
               //
-              // Starts to the RIGHT of the back button instead of spanning
-              // the full width: the driver card used to sit here and paint
-              // straight over the button, so back was invisible and
-              // untappable for the whole ride.
+              // No back button once a driver is assigned: the trip is the
+              // only thing this screen is for, and leaving mid-ride only
+              // ever meant losing sight of the car. The status bar spans
+              // the full width again now that nothing sits beside it.
               //
               // _topCardKey stays on the top slot, not on a specific card —
               // every map padding calculation measures "whatever is on
               // top", so swapping the two cards needs no math changes.
               Positioned(
                 top: topPad + 10,
-                left: Responsive.w(16) + Responsive.w(40) + Responsive.w(10),
+                left: Responsive.w(16),
                 right: 16,
                 child: KeyedSubtree(
                   key: _topCardKey,

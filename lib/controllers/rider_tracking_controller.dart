@@ -820,9 +820,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _routeDrawDone = false;
       _startAnimatedRouteDraw();
 
-      // Fit camera to show driver + pickup + dropoff
+      // Fit camera to show driver + pickup + dropoff — but only while
+      // waiting for the driver. Once the rider is aboard the camera is
+      // chasing the car, and a late approach-route fetch landing here
+      // would yank it back out to an overview mid-ride.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _fitRouteBounds();
+        if (!mounted) return;
+        if (_phase == _TrackPhase.onTrip ||
+            _phase == _TrackPhase.nearDestination) {
+          return;
+        }
+        _fitRouteBounds();
       });
 
       debugPrint('[RiderTracking] Approach route ready: ${_routePts.length} pts, ${_distanceMiles.toStringAsFixed(1)} mi, ETA $_etaMinutes min');
@@ -1936,9 +1944,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _routeDrawDone = false;
     _startAnimatedRouteDraw();
 
-    // Fit camera to remaining route with adaptive zoom
+    // Chase the car, don't frame the whole route.
+    //
+    // This used to fit the pickup→dropoff bounds, so the moment the driver
+    // pressed Start Ride the camera pulled way out to a flat overview of
+    // the entire trip — the rider's own car reduced to a speck for the
+    // whole ride. The line above already says "skip to follow mode
+    // immediately"; the fit contradicted it.
+    _shouldFollowDriver = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fitRouteBounds();
+      if (mounted) _startCameraFollowTracking();
     });
   }
 
@@ -1957,7 +1972,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Phase 4: Animate camera zoom in and tilted to follow driver
   void _zoomInToCameraFollow() {
-    _fitRouteBounds();
+    // Was _fitRouteBounds() — the exact opposite of what the name promises,
+    // and of what a "follow" phase should do.
+    _shouldFollowDriver = true;
+    _startCameraFollowTracking();
   }
 
   /// Start real-time camera tracking.

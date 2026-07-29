@@ -686,24 +686,6 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  Widget _buildBackButton(double topPad) {
-    final d = Responsive.w(40);
-    return Positioned(
-      top: topPad + 10,
-      left: Responsive.w(16),
-      child: GestureDetector(
-        onTap: _navigateToHome,
-        child: Container(
-          width: d, height: d,
-          // Raised, so it reads as the one thing sitting on the map rather
-          // than a hole punched into it.
-          decoration: neuBox(radius: d / 2),
-          child: Icon(Icons.arrow_back_ios_rounded,
-              color: Colors.white, size: Responsive.sp(18)),
-        ),
-      ),
-    );
-  }
 }
 
 /// Chat input pill on the rider tracking driver-info card.

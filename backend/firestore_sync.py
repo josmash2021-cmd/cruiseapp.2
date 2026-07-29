@@ -890,6 +890,43 @@ def sync_trip_status(trip_id: int, status: str,
         log.error("❌ Trip status sync failed for %d: %s", trip_id, e)
 
 
+def sync_trip_released(trip_id: int):
+    """Put a trip back in the dispatch queue and strip its driver.
+
+    `sync_trip_status` can only ever ADD driver fields — it skips them all
+    when driver_id is falsy — so it cannot undo an assignment. A released
+    trip has to clear them explicitly, otherwise the rider's listener keeps
+    rendering a driver who was handed back and is never coming.
+    """
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"sql_{trip_id}"
+    data = {
+        "status": "requested",
+        "driverId": None,
+        "driver_id": None,
+        "driverName": None,
+        "driver_name": None,
+        "driverPhone": None,
+        "driver_phone": None,
+        "driverPhotoUrl": None,
+        "driver_photo_url": None,
+        "vehicle_make": None,
+        "vehicle_model": None,
+        "vehicle_color": None,
+        "vehicle_plate": None,
+        "vehicle_year": None,
+        "acceptedAt": None,
+        "releasedAt": _ts(),
+    }
+    try:
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
+        log.info("🔄 Released trip sql_%d back to dispatch", trip_id)
+    except Exception as e:
+        log.error("❌ Trip release sync failed for %d: %s", trip_id, e)
+
+
 # ═══════════════════════════════════════════════════════════
 #  BULK SYNC — push all existing SQLite data to Firestore
 # ═══════════════════════════════════════════════════════════

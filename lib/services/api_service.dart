@@ -2774,6 +2774,53 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Hand an already-assigned trip back to dispatch.
+  ///
+  /// Called when this app accepted a trip but cannot actually drive it —
+  /// the trip screen failed to open, or the accept blew up after the
+  /// backend had already assigned us. Without this the trip stays in
+  /// `driver_en_route` with a driver who is never coming, and the rider
+  /// waits forever instead of being re-dispatched.
+  ///
+  /// Returns true only when the trip provably has no driver afterwards —
+  /// either we released it, or the backend says it was never ours and
+  /// nobody else has it. That is exactly the condition under which the
+  /// caller may clear the driver info it optimistically wrote for the
+  /// rider. A trip past pickup, or one another driver already took,
+  /// returns false so that write is left alone.
+  static Future<bool> releaseTrip({
+    required int tripId,
+    required int driverId,
+    String? reason,
+  }) async {
+    try {
+      final h = await _authHeaders();
+      var uri =
+          '$_baseUrl/dispatch/driver/release?trip_id=$tripId&driver_id=$driverId';
+      if (reason != null && reason.isNotEmpty) {
+        uri += '&reason=${Uri.encodeComponent(reason)}';
+      }
+      final res = await _client
+          .post(Uri.parse(uri), headers: h)
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        debugPrint('[ApiService] releaseTrip($tripId) refused: '
+            '${res.statusCode} ${res.body}');
+        return false;
+      }
+      final body = jsonDecode(res.body);
+      if (body is! Map) return false;
+      final status = (body['status'] ?? '').toString();
+      if (status == 'released') return true;
+      // Never ours — safe to clear only if nobody else picked it up.
+      if (status == 'not_assigned') return body['assigned_to'] == null;
+      return false;
+    } catch (e) {
+      debugPrint('[ApiService] releaseTrip($tripId) failed: $e');
+      return false;
+    }
+  }
+
   /// Rider polls dispatch status to see if a driver accepted.
   /// Returns a map with at least `status`. On error the map will contain
   /// `{'status': 'error', 'error': '<reason>'}` — callers MUST check for

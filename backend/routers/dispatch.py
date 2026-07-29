@@ -1434,6 +1434,174 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
 
     return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
 
+
+async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
+    """Offer `trip` to the nearest driver who has not been tried yet.
+
+    Shared by reject (the driver said no) and release (the driver said yes
+    and then could not take it). The caller must have already put the trip
+    back to `requested` and committed -- this only reads it.
+
+    Returns the new DispatchOffer, or None when nobody is left to try.
+    """
+    if not trip or trip.status != "requested":
+        return None
+
+    # Cancel any running auto-cascade for this trip since we handle it here
+    old_task = _cascade_tasks.pop(trip.id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    # Collect all drivers already offered for this trip
+    prev_result = await db.execute(
+        select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
+    )
+    tried_ids = {r[0] for r in prev_result.all()}
+
+    drivers_sorted = await _find_nearest_drivers(
+        db,
+        pickup_lat=trip.pickup_lat or 0,
+        pickup_lng=trip.pickup_lng or 0,
+        exclude_driver_ids=tried_ids,
+        vehicle_type=trip.vehicle_type or "comfort",
+        limit=5,
+    )
+    if not drivers_sorted:
+        return None
+
+    next_driver = drivers_sorted[0]
+    rider = None
+    if trip.rider_id:
+        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+        rider = rider_result.scalar_one_or_none()
+    rider_name, rider_phone = _resolve_rider_display(trip, rider)
+    rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+
+    new_offer = await _send_offer_to_driver(
+        db, trip, next_driver, rider_name, rider_phone, rider_photo,
+    )
+
+    # Restart cascade for the new offer
+    _cascade_tasks[trip.id] = _safe_create_task(
+        _auto_cascade(trip.id, new_offer.id, next_driver.id)
+    )
+    return new_offer
+
+
+@router.post("/dispatch/driver/release", dependencies=[Depends(_verify_api_key)])
+async def release_trip(
+    trip_id: int = Query(...),
+    driver_id: int = Query(...),
+    reason: str = Query(None, description="Why the driver app is giving the trip back"),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hand an already-assigned trip back to dispatch.
+
+    The driver app accepted, this backend committed the assignment, and
+    then the app could not actually drive the trip -- the trip screen died,
+    or the accept blew up client-side after the assignment stuck. Left
+    alone the trip sits in `driver_en_route` forever: the rider watches a
+    driver who is never coming, and the cascade will not re-offer a trip
+    that already has an owner.
+
+    This is NOT a cancel. The trip goes back to `requested` and is
+    re-offered to the next nearest driver. The strict cancel policy (rider
+    with no driver / admin / dispatch only) is untouched -- nothing here
+    ever writes `cancelled`.
+    """
+    if user.id != driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to release this trip")
+
+    # Canonical lock order (2026-04-11): trips first, then dispatch_offers.
+    trip_result = await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+    )
+    trip = trip_result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.driver_id != driver_id:
+        # Not ours: either the accept never stuck, or another driver has it
+        # already. There is nothing to release, so say that plainly rather
+        # than erroring -- and report who owns it now, because the caller
+        # uses that to decide whether clearing its own optimistic
+        # rider-facing write would clobber the real driver's info.
+        return {
+            "status": "not_assigned",
+            "trip_id": trip_id,
+            "assigned_to": trip.driver_id,
+        }
+    # Past pickup the driver is physically with the rider; handing the trip
+    # away then would be a cancel, which drivers are not allowed to do.
+    # `requested` is allowed through: a trip that still carries our
+    # driver_id in that state is exactly the half-written assignment this
+    # endpoint exists to clean up.
+    if trip.status not in ("requested", "accepted", "driver_en_route"):
+        raise HTTPException(
+            409, f"Trip cannot be released from status {trip.status}"
+        )
+
+    offers_result = await db.execute(
+        select(DispatchOffer)
+        .where(
+            DispatchOffer.trip_id == trip_id,
+            DispatchOffer.driver_id == driver_id,
+        )
+        .order_by(DispatchOffer.id)
+        .with_for_update()
+    )
+    # Mark our offers rejected so the cascade below skips this driver.
+    # The reason only goes to the log: `dispatch_offers` has no
+    # rejection_reason column (reject_offer assigns one, but it is a plain
+    # Python attribute that never reaches the database).
+    for offer in offers_result.scalars().all():
+        if offer.status in ("pending", "accepted"):
+            offer.status = "rejected"
+
+    trip.driver_id = None
+    trip.driver_assigned_at = None
+    trip.status = "requested"
+    await db.commit()
+
+    _pending_cache.pop(driver_id, None)
+    _dispatch_status_cache.pop(trip_id, None)
+    logging.warning(
+        "[Release] Driver %s handed trip %s back to dispatch (reason=%s)",
+        driver_id, trip_id, reason or "unspecified",
+    )
+
+    # Tell the rider the driver is gone before doing anything slow --
+    # otherwise they keep watching a car that will never arrive.
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_released(trip_id)
+        except Exception as e:
+            logging.error("[Release] Firestore sync failed for trip %s: %s", trip_id, e)
+    try:
+        await event_bus.push_trip_update(trip_id, {
+            "status": "requested",
+            "trip_id": trip_id,
+            "driver_id": None,
+        })
+    except Exception as e:
+        logging.warning("[Release] SSE push failed for trip %s: %s", trip_id, e)
+
+    try:
+        new_offer = await _requeue_trip_to_next_driver(db, trip)
+    except Exception as e:
+        # The release is already committed. Failing to line up the next
+        # driver must not undo it or fail the request -- the trip is back
+        # in `requested` and the normal dispatch path can still find it.
+        logging.error("[Release] requeue failed for trip %s: %s", trip_id, e)
+        new_offer = None
+
+    return {
+        "status": "released",
+        "trip_id": trip_id,
+        "requeued": new_offer is not None,
+    }
+
+
 @router.post("/dispatch/driver/reject", dependencies=[Depends(_verify_api_key)])
 async def reject_offer(
     offer_id: int = Query(...),
@@ -1472,44 +1640,7 @@ async def reject_offer(
     # Cascade: find next available driver using shared helper (exclude already-tried)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
-    if trip and trip.status == "requested":
-        # Cancel any running auto-cascade for this trip since we handle it here
-        old_task = _cascade_tasks.pop(trip.id, None)
-        if old_task and not old_task.done():
-            old_task.cancel()
-
-        # Collect all drivers already offered for this trip
-        prev_result = await db.execute(
-            select(DispatchOffer.driver_id).where(DispatchOffer.trip_id == trip.id)
-        )
-        tried_ids = {r[0] for r in prev_result.all()}
-
-        drivers_sorted = await _find_nearest_drivers(
-            db,
-            pickup_lat=trip.pickup_lat or 0,
-            pickup_lng=trip.pickup_lng or 0,
-            exclude_driver_ids=tried_ids,
-            vehicle_type=trip.vehicle_type or "comfort",
-            limit=5,
-        )
-        if drivers_sorted:
-            next_driver = drivers_sorted[0]
-            rider = None
-            if trip.rider_id:
-                rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-                rider = rider_result.scalar_one_or_none()
-            rider_name, rider_phone = _resolve_rider_display(trip, rider)
-            rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-
-            new_offer = await _send_offer_to_driver(
-                db, trip, next_driver, rider_name, rider_phone, rider_photo,
-            )
-
-            # Restart cascade for the new offer
-            task = _safe_create_task(
-                _auto_cascade(trip.id, new_offer.id, next_driver.id)
-            )
-            _cascade_tasks[trip.id] = task
+    await _requeue_trip_to_next_driver(db, trip)
 
     return {"status": "rejected", "reason_stored": reason is not None}
 

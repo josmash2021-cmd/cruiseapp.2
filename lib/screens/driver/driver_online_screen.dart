@@ -55,7 +55,7 @@ import '../../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
-import 'trip_accepted_screen.dart';
+import 'trip_accepted_overlay.dart';
 import 'scheduled_rides_screen.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
@@ -101,6 +101,11 @@ enum _Phase {
   inTrip,
   completed,
 }
+
+// How long the "viaje aceptado" celebration stays up before the trip screen
+// takes over. Top-level, not a class static: part files can't use a class
+// static inside a const expression without the compiler choking on iOS.
+const Duration _acceptedOverlayDuration = Duration(seconds: 3);
 
 // Brand colors (top-level for extension access)
 const _gold = Color(0xFFD4A843);
@@ -211,6 +216,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String? _rejectingOfferId;
   AnimationController? _rejectSlideCtrl;
 
+  // ── "Viaje aceptado" celebration ──
+  // Rendered as an overlay on THIS screen's map. It used to be
+  // TripAcceptedScreen, a pushed route carrying its own MapWidget, which
+  // meant every accept briefly held two native Mapbox surfaces alive at
+  // once. Non-null while the celebration is on screen.
+  _AcceptedOverlayData? _acceptedOverlay;
+
   // ── Accept card animation state ──
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
   String? _acceptingCardId;
@@ -243,10 +255,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<List<Map<String, dynamic>>>? _offerSseSub;
   // Top-level Firestore watcher that fires when the active trip is
   // cancelled externally (dispatch, guardian ghost cleanup, auto-cancel).
-  // Required because the navFuture-based detection in _acceptOffer resolves
-  // with null after TripAcceptedScreen pushReplacement(DriverTripAcceptScreen),
-  // so the controller never learns of the cancel and leaves the trip visually
-  // active. See _startActiveTripCancelWatcher().
+  // Required because DriverTripAcceptScreen usually leaves via
+  // pushAndRemoveUntil instead of popping a result, so the route future
+  // _acceptOffer awaits resolves with null and the controller would never
+  // learn of the cancel — leaving the trip visually active.
+  // See _startActiveTripCancelWatcher().
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _activeTripCancelWatcher;
   int? _watchedCancelTripId;
@@ -1327,6 +1340,29 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   shadowC,
                 ),
               ),
+
+            // ── "Viaje aceptado" celebration ──
+            // Topmost layer, drawn over the map this screen already owns.
+            // Absorbs taps so the offer cards underneath can't be hit while
+            // the accept is still settling.
+            if (_acceptedOverlay != null)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: TripAcceptedOverlay(
+                    key: ValueKey('accepted-$_tripId'),
+                    riderName: _acceptedOverlay!.riderName,
+                    riderInitials: _acceptedOverlay!.riderInitials,
+                    riderPhotoUrl: _acceptedOverlay!.riderPhotoUrl,
+                    riderRating: _acceptedOverlay!.riderRating,
+                    riderIsNew: _acceptedOverlay!.riderIsNew,
+                    riderId: _acceptedOverlay!.riderId,
+                    pickupAddress: _acceptedOverlay!.pickupAddress,
+                    distToPickupKm: _acceptedOverlay!.distToPickupKm,
+                    etaMinutes: _acceptedOverlay!.etaMinutes,
+                    duration: _acceptedOverlayDuration,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1603,6 +1639,30 @@ class _CachedOfferRoute {
     this.driverToPickupKm,
     this.pickupToDropoffMin,
     this.pickupToDropoffKm,
+  });
+}
+
+/// Rider data shown by the "viaje aceptado" celebration overlay.
+class _AcceptedOverlayData {
+  final String riderName;
+  final String riderInitials;
+  final String? riderPhotoUrl;
+  final double riderRating;
+  final bool riderIsNew;
+  final int? riderId;
+  final String pickupAddress;
+  final double distToPickupKm;
+  final int etaMinutes;
+  const _AcceptedOverlayData({
+    required this.riderName,
+    required this.riderInitials,
+    required this.riderRating,
+    required this.riderIsNew,
+    required this.pickupAddress,
+    required this.distToPickupKm,
+    required this.etaMinutes,
+    this.riderPhotoUrl,
+    this.riderId,
   });
 }
 

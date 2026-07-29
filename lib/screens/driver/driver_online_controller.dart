@@ -1515,6 +1515,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _acceptingCardId = oid;
     });
 
+    // True once DriverTripAcceptScreen owns the trip. Guards the outer
+    // catch below from handing back a trip that is being driven for real.
+    bool handedOff = false;
+
     try {
       debugPrint('[DriverOnline] ▶ STEP 1: creating acceptFuture');
       final acceptFuture = (() async {
@@ -1550,8 +1554,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
 
       debugPrint('[DriverOnline] ▶ STEP 3: populating trip data');
-      // Populate active trip data from the accepted offer
-      final name = (r['rider_name'] ?? 'Rider') as String;
+      // Populate active trip data from the accepted offer.
+      //
+      // Every field is coerced, never cast. A hard `as String` on a payload
+      // field throws a TypeError the moment the backend sends a number (or
+      // anything else) where a string was expected, and the only thing the
+      // driver sees is "Error accepting offer" — with the trip already
+      // assigned to them server-side. A wrong-looking address is survivable;
+      // losing the accept is not.
+      String str(dynamic v, String fallback) {
+        if (v == null) return fallback;
+        final s = v.toString().trim();
+        return s.isEmpty ? fallback : s;
+      }
+
+      final name = str(r['rider_name'], 'Rider');
       _pickupLL = LatLng(
         (r['pickup_lat'] as num?)?.toDouble() ?? 0.0,
         (r['pickup_lng'] as num?)?.toDouble() ?? 0.0,
@@ -1564,21 +1581,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _currentOfferId = offerId;
       _tripId = tripId;
       // Start the top-level cancel watcher as soon as we know the trip id.
-      // Survives pushReplacement (TripAcceptedScreen -> DriverTripAcceptScreen)
-      // and any subsequent screen transitions — the only sources of truth for
-      // remote cancellation are Firestore and this watcher.
+      // It lives on this screen, so it survives the handoff to
+      // DriverTripAcceptScreen and every transition after it — the only
+      // sources of truth for remote cancellation are Firestore and this
+      // watcher.
       if (tripId != null) {
-        _startActiveTripCancelWatcher(tripId);
+        // Firestore access can throw synchronously when the app has no
+        // Firebase instance. Losing the cancel watcher is bad; losing the
+        // accept because of it is worse.
+        try {
+          _startActiveTripCancelWatcher(tripId);
+        } catch (e) {
+          debugPrint('[DriverOnline] cancel watcher failed to arm: $e');
+        }
       }
       _riderName = name;
       _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
       _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-      _riderPhone = (r['rider_phone'] ?? '') as String;
+      _riderPhone = str(r['rider_phone'], '');
       _riderId = (r['rider_id'] ?? '').toString();
-      _pickupAddr = r['pickup_address'] ?? 'Pickup';
-      _dropoffAddr = r['dropoff_address'] ?? 'Drop-off';
+      _pickupAddr = str(r['pickup_address'], 'Pickup');
+      _dropoffAddr = str(r['dropoff_address'], 'Drop-off');
       _fare = (r['fare'] as num?)?.toDouble() ?? 0;
-      _vehicleType = _mapRideType((r['vehicle_type'] ?? 'Comfort') as String);
+      _vehicleType = _mapRideType(str(r['vehicle_type'], 'Comfort'));
       _distToPickup = _pos != null ? _hav(_pos!, _pickupLL) : 0.0;
       _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       _tripDist = _hav(_pickupLL, _dropoffLL);
@@ -1644,30 +1669,42 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
         final fullName = '${driverFirstName ?? ''} ${driverLastName ?? ''}'.trim();
         final fsDocId = 'sql_$tripId';
-        unawaited(
-          FirebaseFirestore.instance
-              .collection('trips')
-              .doc(fsDocId)
-              .set({
-            'status': 'driver_en_route',
-            'driver_id': _driverId ?? 0,
-            'driverId': _driverId?.toString() ?? '',
-            'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
-            'driverName': fullName.isNotEmpty ? fullName : 'Driver',
-            'driver_phone': driverPhone ?? '',
-            'driverPhone': driverPhone ?? '',
-            'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
-            'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
-            'acceptedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)).catchError((_) {}),
-        );
+        // This write is an accelerator, not a requirement: the backend
+        // mirrors the same status a couple of seconds later. `.catchError`
+        // only covers the async failure — `FirebaseFirestore.instance`
+        // itself throws synchronously when the app has no Firebase (e.g.
+        // `[core/no-app]`), and that escaped all the way to the generic
+        // "Error accepting offer" toast while the backend had already
+        // assigned the trip. Never let it kill the accept.
+        try {
+          unawaited(
+            FirebaseFirestore.instance
+                .collection('trips')
+                .doc(fsDocId)
+                .set({
+              'status': 'driver_en_route',
+              'driver_id': _driverId ?? 0,
+              'driverId': _driverId?.toString() ?? '',
+              'driver_name': fullName.isNotEmpty ? fullName : 'Driver',
+              'driverName': fullName.isNotEmpty ? fullName : 'Driver',
+              'driver_phone': driverPhone ?? '',
+              'driverPhone': driverPhone ?? '',
+              'driver_photo_url': widget.photoUrl ?? _driverPhotoUrl ?? '',
+              'driverPhotoUrl': widget.photoUrl ?? _driverPhotoUrl ?? '',
+              'acceptedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true)).catchError((_) {}),
+          );
+        } catch (e) {
+          debugPrint('[DriverOnline] optimistic Firestore write failed: $e');
+        }
       }
 
       if (!mounted) {
         debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
         return;
       }
-      debugPrint('[DriverOnline] ▶ STEP 6: navigating to TripAcceptedScreen — tripId=$tripId, offerId=$offerId');
+      debugPrint('[DriverOnline] ▶ STEP 6: showing accepted celebration — tripId=$tripId, offerId=$offerId');
+      final acceptedTripId = tripId ?? offerId ?? 0;
       final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
       final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
       // Use the backend's rider_is_new flag as the source of truth — it now
@@ -1675,32 +1712,32 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // "has never been rated".
       final riderIsNew = r['rider_is_new'] == true;
       final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
-      // In shell mode, use rootNavigator to ensure we push on the app's root
-      // navigator instead of any nested navigator that might not exist.
-      final navFuture = Navigator.of(context).push<String>(
-        smoothFadeRoute(
-          TripAcceptedScreen(
-            tripId:         tripId ?? offerId ?? 0,
-            riderName:      name,
-            riderInitials:  riderInit,
-            riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
-            riderRating:    riderRating,
-            riderIsNew:     riderIsNew,
-            riderId:        int.tryParse(_riderId),
-            pickupLatLng:   _pickupLL,
-            dropoffLatLng:  _dropoffLL,
-            pickupAddress:  _pickupAddr,
-            dropoffAddress: _dropoffAddr,
-            fare:           _fare,
-            vehicleType:    _vehicleType,
-            driverPos:      _pos ?? _pickupLL,
-            distToPickupKm: _distToPickup,
-            etaMinutes:     _etaToPickup,
-            riderPhone:     _riderPhone,
-            routePoints:    preRoutePoints,
-          ),
-        ),
-      );
+
+      // ── SINGLE CANVAS ──
+      // The celebration is an overlay on the map this screen already owns.
+      // It used to be TripAcceptedScreen, a pushed route carrying its own
+      // MapWidget, so every accept lit up a second native Mapbox surface —
+      // two GL contexts and two tile caches — on top of this one. That is
+      // the crash the driver hit right after accepting. Same reason the
+      // rider flow was rebuilt around one shared canvas.
+      _setState(() {
+        _acceptedOverlay = _AcceptedOverlayData(
+          riderName:      name,
+          riderInitials:  riderInit,
+          riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
+          riderRating:    riderRating,
+          riderIsNew:     riderIsNew,
+          riderId:        int.tryParse(_riderId),
+          pickupAddress:  _pickupAddr,
+          distToPickupKm: _distToPickup,
+          etaMinutes:     _etaToPickup,
+        );
+      });
+      // Camera + route paint onto the existing canvas. Not awaited: the
+      // celebration clock must not hang on a Directions API call.
+      unawaited(_paintAcceptedRoute(preRoutePoints));
+      final celebration = Future<void>.delayed(_acceptedOverlayDuration);
+
       debugPrint('[DriverOnline] ▶ STEP 7: awaiting acceptFuture');
       try {
         await acceptFuture;
@@ -1769,11 +1806,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         serverHasTrip = true;
         // Fall through to normal handling.
       } else {
-        // Accept genuinely failed — offer is gone. Reset local state
-        // but do NOT try to cancel the trip (the driver never owned it
-        // anyway). The local reset brings the driver back to searching.
-        // mounted guard required: previous await (getTrip) means context
-        // may be defunct if the driver navigated away mid-verify.
+        // Accept genuinely failed — offer is gone. Do NOT cancel the trip
+        // (the driver never owned it anyway), but DO undo the optimistic
+        // Firestore write from STEP 5: it already told the rider a driver
+        // was en route. Left as-is, the rider watches a driver who was
+        // never dispatched while the trip is locked to this app.
+        _hideAcceptedOverlay();
+        if (tripId != null) {
+          // notify: false — the driver already gets the clearer
+          // "trip no longer available" message just below.
+          await _returnTripToDispatch(
+            tripId,
+            reason: 'accept_failed',
+            notify: false,
+          );
+        }
+        // mounted guard required: previous awaits (getTrip, release) mean
+        // context may be defunct if the driver navigated away mid-verify.
         if (mounted) {
           _setState(() {
             _offerAcceptState = _OfferAcceptState.normal;
@@ -1785,25 +1834,31 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         return;
       }
     }
-    // FIX: Add timeout to navFuture so the driver isn't stuck forever
-    // if TripAcceptedScreen crashes or fails to complete. If timeout fires,
-    // reset the accept state so the driver can try again.
-    String? result;
-    try {
-      result = await navFuture.timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      debugPrint('[DriverOnline] navFuture timed out after 30s — TripAcceptedScreen may have crashed');
-      if (mounted) {
-        _setState(() {
-          _offerAcceptState = _OfferAcceptState.normal;
-          _acceptingCardId = null;
-        });
-        _snack('Trip screen timed out — please try again');
-      }
-      return;
-    }
+    // ── STEP 8: let the celebration play out, then hand the trip over ──
+    // The 30s navFuture timeout that used to live here was a bandage for
+    // TripAcceptedScreen crashing on its own map. There is no second route
+    // to time out anymore — the overlay is ours and the handoff below is
+    // a plain push we own end to end.
+    await celebration;
     if (!mounted) return;
+
+    // Hand off with the celebration still up: it covers the canvas through
+    // the route fade, and _pushTripScreen drops both it and our map once
+    // the trip screen is actually on top.
+    handedOff = true;
+    final String? result = await _pushTripScreen(
+      tripId:         acceptedTripId,
+      riderName:      name,
+      riderPhotoUrl:  riderPhotoUrl,
+      riderRating:    riderRating,
+      riderIsNew:     riderIsNew,
+      routePoints:    preRoutePoints,
+    );
+    if (!mounted) return;
+    _hideAcceptedOverlay();
     if (result == 'completed') {
+      // Back on this screen for the earnings overlay — bring the map back.
+      _remountMapSurface();
       // Show the earnings / completed overlay (mirrors _complete())
       _setState(() {
         _trips++;
@@ -1830,36 +1885,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] trip screen popped with result=cancelled — remote cancel, resetting');
       _resetToSearchingOnRemoteCancel();
     } else {
-      // result == null — THE big phantom-cancel case.
-      //
-      // This fires ~3 seconds after accept because TripAcceptedScreen
-      // does `Navigator.pushReplacement(DriverTripAcceptScreen(...))`.
-      // pushReplacement destroys the route that our `navFuture` was
-      // tracking, so Flutter completes navFuture with `null` — even
-      // though the driver is now actively on DriverTripAcceptScreen
-      // managing the trip.
-      //
-      // Previously (v293) we blindly called _cancel() here, which
-      // PATCHed the backend to status=cancelled while the driver kept
-      // driving — the mysterious "Ride Cancelled by operator" dialog
-      // the rider kept seeing. The v294 intermediate fix tried
-      // _goBackToHomeWithTrip() but that calls nav.pop() which closes
-      // DriverTripAcceptScreen out from under the driver.
-      //
-      // Correct behaviour: do NOTHING. DriverTripAcceptScreen is now
-      // the source of truth for the trip lifecycle (it owns arrived /
-      // in_trip / completed state machine and its own navigation on
-      // exit). Touching controller state from here would race its
-      // transitions.
+      // result == null — DriverTripAcceptScreen left via pushAndRemoveUntil
+      // (rating screen, home) rather than popping a result, so nothing was
+      // handed back. It owns the trip lifecycle from `arrived` onward and
+      // its own exit navigation; touching trip state from here would race
+      // its transitions. Never cancel here — that was the v293 phantom
+      // cancel that showed the rider "Ride Cancelled by operator" while
+      // the driver was still driving.
       debugPrint(
-        '[DriverOnline] navFuture resolved with null — pushReplacement handoff to '
-        'DriverTripAcceptScreen detected. Leaving trip alone.',
+        '[DriverOnline] trip screen returned null — it navigated away on its '
+        'own. Leaving the trip alone.',
       );
-      // Clear local offer/trip refs so if the driver later exits
-      // DriverTripAcceptScreen back to this online screen via a
-      // back_to_home pop, the controller doesn't think there's a ghost
-      // trip still in progress. The rider-side trip state lives in
-      // DriverTripAcceptScreen — we don't need to mirror it here.
+      // If we somehow survived underneath, bring the canvas back.
+      _remountMapSurface();
+      // Clear local offer/trip refs so a later back_to_home pop doesn't
+      // make the controller think a ghost trip is still in progress.
       _tripId = null;
       _currentOfferId = null;
     }
@@ -1870,6 +1910,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] mounted=$mounted, phase=$_phase');
       debugPrint(stack.toString());
       debugPrint('[DriverOnline] ═══════════════════════════════════════');
+      _hideAcceptedOverlay();
+      _remountMapSurface();
+      // We may already be the assigned driver — the backend commits the
+      // accept before this app finishes setting up the trip. Blowing up
+      // here without releasing leaves the trip in driver_en_route owned by
+      // an app that cannot drive it: the rider watches a driver who never
+      // arrives and dispatch can't reassign. Hand it back.
+      // `handedOff` keeps this off trips that DriverTripAcceptScreen is
+      // legitimately running.
+      if (!handedOff && tripId != null) {
+        unawaited(_returnTripToDispatch(tripId, reason: 'driver_app_error'));
+      }
       if (mounted) {
         _setState(() {
           _offerAcceptState = _OfferAcceptState.normal;
@@ -1887,6 +1939,239 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _snack(msg);
       }
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ACCEPTED CELEBRATION — single canvas
+  // ═══════════════════════════════════════════════════════════
+
+  /// Paint the accepted trip onto the map this screen already owns:
+  /// the cinematic camera toward the pickup, the pickup/dropoff pins and
+  /// the gold route. All of this used to be drawn on TripAcceptedScreen's
+  /// own throwaway MapWidget.
+  ///
+  /// Fire-and-forget: the celebration clock must not wait on a Directions
+  /// API call, and every step bails the moment the overlay is gone.
+  ///
+  /// Nothing in here may throw. It runs unawaited, so an escaping error
+  /// becomes an uncaught zone exception — cosmetic map work would be
+  /// crashing the app it was meant to stop crashing.
+  Future<void> _paintAcceptedRoute(List<LatLng>? preRoutePoints) async {
+    try {
+      await _paintAcceptedRouteInner(preRoutePoints);
+    } catch (e, s) {
+      debugPrint('[DriverOnline] _paintAcceptedRoute failed: $e\n$s');
+    }
+  }
+
+  Future<void> _paintAcceptedRouteInner(List<LatLng>? preRoutePoints) async {
+    final driverPos = _pos ?? _pickupLL;
+
+    // Frame driver → pickup with the same tilt the old screen opened on.
+    final center = safePoint(
+      (driverPos.longitude + _pickupLL.longitude) / 2,
+      (driverPos.latitude + _pickupLL.latitude) / 2,
+    );
+    if (center != null) {
+      try {
+        _map?.flyTo(
+          mapbox.CameraOptions(
+            center: center,
+            zoom: 14.5,
+            pitch: 20.0,
+            bearing: _bearingBetween(driverPos, _pickupLL),
+          ),
+          mapbox.MapAnimationOptions(duration: 900),
+        );
+      } catch (e) {
+        debugPrint('[DriverOnline] accepted camera failed: $e');
+      }
+    }
+
+    try {
+      await _setPickupDropoffAnnotations();
+    } catch (e) {
+      debugPrint('[DriverOnline] accepted pins failed: $e');
+    }
+    if (!mounted || _acceptedOverlay == null) return;
+
+    var pts = preRoutePoints;
+    if (pts == null || pts.length < 2) {
+      pts = await _fetchRoutePoints(driverPos, _pickupLL);
+    }
+    if (!mounted || _acceptedOverlay == null || pts.length < 2) return;
+    try {
+      // stillWanted overrides the helper's default "a preview is open"
+      // liveness check — the preview was torn down before we got here.
+      await _drawGoldGlossRoute(
+        pts,
+        stillWanted: () => _acceptedOverlay != null,
+      );
+    } catch (e) {
+      debugPrint('[DriverOnline] accepted route draw failed: $e');
+    }
+  }
+
+  /// Take the celebration off screen. Safe to call more than once.
+  void _hideAcceptedOverlay() {
+    if (_acceptedOverlay == null) return;
+    _setState(() => _acceptedOverlay = null);
+  }
+
+  /// Hand the trip over to [DriverTripAcceptScreen].
+  ///
+  /// That screen mounts its own MapWidget, so ours is dropped as soon as
+  /// the transition lands — only one native Mapbox surface may be alive at
+  /// a time on iOS. Remounting is the caller's call: the paths that leave
+  /// this screen for good shouldn't pay for a PlatformView they are about
+  /// to throw away.
+  Future<String?> _pushTripScreen({
+    required int tripId,
+    required String riderName,
+    required String riderPhotoUrl,
+    required double riderRating,
+    required bool riderIsNew,
+    List<LatLng>? routePoints,
+  }) {
+    final future = Navigator.of(context).push<String>(
+      smoothFadeRoute(
+        DriverTripAcceptScreen(
+          tripId:         tripId,
+          riderName:      riderName,
+          riderPhotoUrl:  riderPhotoUrl,
+          riderRating:    riderRating,
+          riderIsNew:     riderIsNew,
+          riderId:        int.tryParse(_riderId),
+          pickupLatLng:   _pickupLL,
+          dropoffLatLng:  _dropoffLL,
+          pickupAddress:  _pickupAddr,
+          dropoffAddress: _dropoffAddr,
+          fare:           _fare,
+          vehicleType:    _vehicleType,
+          driverPos:      _pos ?? _pickupLL,
+          distToPickupKm: _distToPickup,
+          etaMinutes:     _etaToPickup,
+          riderPhone:     _riderPhone,
+          routePoints:    routePoints,
+        ),
+      ),
+    );
+
+    // Tear our surface down only once the 280ms fade has landed and the
+    // trip screen actually covers us. Unmounting a PlatformView under a
+    // half-transparent route flashes the "Finding trips" placeholder in
+    // the driver's face; the celebration overlay is what hides the swap.
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      // isCurrent means nothing is on top of us anymore — the trip screen
+      // came and went inside the fade window, so keep the map (rule 12).
+      if (ModalRoute.of(context)?.isCurrent == true) return;
+      _hideAcceptedOverlay();
+      _releaseMapSurface();
+    });
+
+    return future;
+  }
+
+  /// Tear down our native map so the screen on top of us can own the only
+  /// live Mapbox surface. Every annotation handle belongs to the
+  /// PlatformView being destroyed, so they all go with it; onMapCreated
+  /// rebuilds them against the fresh map on remount (same path Android
+  /// already takes when it recreates the SurfaceView after a background).
+  void _releaseMapSurface() {
+    if (!_mapMounted) return;
+    debugPrint('[DriverOnline] releasing map surface');
+    _dotWatchdog?.cancel();
+    _smoothTicker?.stop();
+    _routeDrawTicker?.stop();
+    _pinPopTicker?.stop();
+    // Bump the generation so any in-flight annotation work recognises its
+    // handles as dead instead of poking a destroyed native object.
+    _mapGeneration++;
+    _polylineAnnotMgr = null;
+    _pointAnnotMgr = null;
+    _pinAnnotMgr = null;
+    _carAnnot = null;
+    _carAnnotGen = 0;
+    _goldDotAnnot = null;
+    _goldDotAnnotGen = 0;
+    _pickupAnnot = null;
+    _dropoffAnnot = null;
+    _prevDriverAnnot = null;
+    _prevPickupAnnot = null;
+    _prevDropoffAnnot = null;
+    _routeAnnot = null;
+    _previewPickupAnnot = null;
+    _previewDropoffAnnot = null;
+    _dotPopDone = false;
+    _dotPopScale = 0.0;
+    _map = null;
+    _setState(() => _mapMounted = false);
+  }
+
+  /// Bring the canvas back after the screen above us is gone.
+  void _remountMapSurface() {
+    if (_mapMounted || !mounted) return;
+    debugPrint('[DriverOnline] remounting map surface');
+    _setState(() => _mapMounted = true);
+    // onMapCreated redraws the driver annotation; the watchdog re-asserts
+    // it if the bitmap wasn't ready on the first pass.
+    _startDotWatchdog();
+  }
+
+  /// Give an assigned trip back to dispatch.
+  ///
+  /// This app told the backend (and, optimistically, Firestore) that it was
+  /// taking the trip, and then couldn't. Left alone the trip sits in
+  /// `driver_en_route` with a driver who is never coming: the rider watches
+  /// a phantom car and dispatch can't reassign because the trip already has
+  /// an owner. The backend puts it back to `requested` and re-offers it to
+  /// the next nearest driver.
+  ///
+  /// The optimistic Firestore write from the accept is only undone once the
+  /// backend confirms the trip has no driver — either because it released
+  /// it, or because it was never ours and nobody else took it. A trip past
+  /// pickup, or one another driver now owns, is left alone: wiping the
+  /// rider's driver info there would be the lie.
+  Future<void> _returnTripToDispatch(
+    int tripId, {
+    required String reason,
+    bool notify = true,
+  }) async {
+    final driverId = _driverId;
+    if (driverId == null) return;
+    debugPrint('[DriverOnline] returning trip $tripId to dispatch ($reason)');
+    final released = await ApiService.releaseTrip(
+      tripId: tripId,
+      driverId: driverId,
+      reason: reason,
+    );
+    if (!released) {
+      debugPrint('[DriverOnline] backend refused to release trip $tripId — '
+          'leaving the rider view alone');
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc('sql_$tripId')
+          .set({
+        // Nulls, matching the backend's own release sync — the rider's
+        // listener must see "no driver", not an empty-string driver.
+        'status': 'requested',
+        'driver_id': null,
+        'driverId': null,
+        'driver_name': null,
+        'driverName': null,
+        'driver_phone': null,
+        'driverPhone': null,
+        'driver_photo_url': null,
+        'driverPhotoUrl': null,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[DriverOnline] Firestore revert for trip $tripId failed: $e');
+    }
+    if (notify && mounted) _snack(S.of(context).tripReturnedToDispatch);
   }
 
   Future<void> _rejectOffer(Map<String, dynamic> r) async {
@@ -2471,6 +2756,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // disposed by the time we land here.
     if (!mounted) return;
     _stopActiveTripCancelWatcher();
+    _hideAcceptedOverlay();
+    // We may be coming back from DriverTripAcceptScreen, which owned the
+    // only live map surface while it was up.
+    _remountMapSurface();
     _navService.stopNavigation();
     _navState = null;
     _currentNavRoute = null;
@@ -2541,10 +2830,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// [_handleExternalTripCancel] as soon as the backend flips the trip to
   /// cancelled, regardless of which screen is currently on top of the
   /// navigator stack. This is the definitive detection mechanism for
-  /// dispatch-initiated cancels — the navFuture-based detection in
-  /// _acceptOffer resolves with null after TripAcceptedScreen does
-  /// pushReplacement, so without this watcher the controller would never
-  /// learn about a remote cancel.
+  /// dispatch-initiated cancels: DriverTripAcceptScreen usually leaves via
+  /// pushAndRemoveUntil rather than popping a result, so the route future
+  /// _acceptOffer awaits comes back null and tells the controller nothing.
   void _startActiveTripCancelWatcher(int tripId) {
     _activeTripCancelWatcher?.cancel();
     _watchedCancelTripId = tripId;
@@ -2586,9 +2874,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Shared handler for a remote cancel fired from the Firestore watcher.
   /// Pops every route pushed on top of DriverOnlineScreen
-  /// (TripAcceptedScreen, DriverTripAcceptScreen, DriverNavScreen, ...)
-  /// and then resets the controller back to the searching phase with the
-  /// same gold toast used elsewhere.
+  /// (DriverTripAcceptScreen, DriverNavScreen, ...) and then resets the
+  /// controller back to the searching phase — which also remounts our map,
+  /// since the screen above us owned the only live surface.
   void _handleExternalTripCancel() {
     if (!mounted) return;
     _stopActiveTripCancelWatcher();

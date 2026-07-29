@@ -725,9 +725,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Draw a single gold route line with distance-based interpolation — smooth 60fps.
-  Future<void> _drawGoldGlossRoute(List<LatLng> points) async {
+  ///
+  /// [stillWanted] decides, per frame, whether the draw is still relevant.
+  /// It defaults to "an offer preview is open", which is what every caller
+  /// wanted until the accepted-trip celebration started drawing on this
+  /// same canvas — by then `_previewingOffer` is already null, so without
+  /// an override the ticker would bail on its first frame and leave a
+  /// two-point stub on the map.
+  Future<void> _drawGoldGlossRoute(
+    List<LatLng> points, {
+    bool Function()? stillWanted,
+  }) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
+    bool wanted() => stillWanted != null ? stillWanted() : _previewingOffer != null;
 
     // Pre-compute cumulative distances for distance-based interpolation
     final cumDist = <double>[0.0];
@@ -759,7 +770,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
-      if (!mounted || _previewingOffer == null) {
+      if (!mounted || !wanted()) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
         return;

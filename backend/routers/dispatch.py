@@ -60,6 +60,125 @@ _ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
 #  Shared helper: find nearest eligible drivers using SQL haversine sort
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  State filter: a driver only gets pickups in the state they are standing in
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A driver in Florida is not going to cross into Alabama to collect someone,
+# so offering them that pickup just ages the trip in their queue while the
+# rider waits. Trips *out of* their state are fine — that is a real fare —
+# so the test is on the PICKUP, not the destination.
+#
+# Neither User nor Trip stores a state (the app resolves one client-side by
+# geocoding), so it is derived from the coordinates dispatch already has.
+# Two things keep that affordable:
+#
+#   * a cache keyed by coordinates rounded to 2 decimals (~1.1 km cells).
+#     Drivers idle in the same neighbourhood and pickups repeat, so a busy
+#     market settles on a handful of live entries.
+#   * failing OPEN. Missing key, dead API, odd response — the answer is
+#     None and the candidate is KEPT. A geocoding outage must never be able
+#     to strand every rider in the city: an out-of-state offer is a
+#     nuisance, nobody getting any offer is an outage.
+
+# cell -> state code ("FL"), or None for "asked, no usable answer" so a dead
+# spot is not re-queried on every dispatch.
+_state_cache: dict[tuple[float, float], str | None] = {}
+_STATE_CACHE_MAX = 4096
+_STATE_LOOKUP_TIMEOUT_S = 4
+
+
+def _state_cell(lat: float, lng: float) -> tuple[float, float]:
+    """~1.1 km grid cell — two drivers on the same block share one lookup."""
+    return (round(lat, 2), round(lng, 2))
+
+
+async def _state_for(lat: float | None, lng: float | None) -> str | None:
+    """State code for a coordinate, or None when it cannot be determined.
+
+    None means "do not filter on this" — it never means "exclude".
+    """
+    if lat is None or lng is None:
+        return None
+
+    # Cache before the key check: an already-resolved cell is still valid
+    # if the key is later removed, and it keeps this readable in tests.
+    key = _state_cell(lat, lng)
+    if key in _state_cache:
+        return _state_cache[key]
+
+    if not GOOGLE_MAPS_API_KEY:
+        return None
+
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    url = "https://maps.googleapis.com/maps/api/geocode/json?" + urllib.parse.urlencode({
+        "latlng": f"{lat},{lng}",
+        "result_type": "administrative_area_level_1",
+        "key": GOOGLE_MAPS_API_KEY,
+    })
+
+    def _fetch():
+        try:
+            with urllib.request.urlopen(url, timeout=_STATE_LOOKUP_TIMEOUT_S) as resp:
+                return json.loads(resp.read().decode())
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+            logging.warning("[StateFilter] lookup failed for %s: %s", key, exc)
+            return None
+
+    payload = await asyncio.get_running_loop().run_in_executor(None, _fetch)
+
+    state: str | None = None
+    if payload and payload.get("status") == "OK":
+        for result in payload.get("results") or []:
+            for comp in result.get("address_components") or []:
+                if "administrative_area_level_1" in (comp.get("types") or []):
+                    code = (comp.get("short_name") or "").strip().upper()
+                    if code:
+                        state = code
+                        break
+            if state:
+                break
+
+    if len(_state_cache) >= _STATE_CACHE_MAX:
+        _state_cache.clear()
+    _state_cache[key] = state
+    return state
+
+
+async def _drop_out_of_state(
+    drivers: list, pickup_lat: float, pickup_lng: float
+) -> list:
+    """Keep only drivers standing in the same state as the pickup.
+
+    Unknown state on either side keeps the driver — see the fail-open note
+    above.
+    """
+    if not drivers:
+        return drivers
+
+    pickup_state = await _state_for(pickup_lat, pickup_lng)
+    if not pickup_state:
+        return drivers
+
+    kept, dropped = [], []
+    for d in drivers:
+        driver_state = await _state_for(d.lat, d.lng)
+        if driver_state is None or driver_state == pickup_state:
+            kept.append(d)
+        else:
+            dropped.append((d.id, driver_state))
+
+    if dropped:
+        logging.info(
+            "[StateFilter] pickup in %s — dropped %d out-of-state driver(s): %s",
+            pickup_state, len(dropped), dropped,
+        )
+    return kept
+
+
 async def _find_nearest_drivers(
     db: AsyncSession,
     pickup_lat: float,
@@ -190,6 +309,10 @@ async def _find_nearest_drivers(
             # Filter comfort drivers with rating >= 4.7
             eligible_comfort = [d for d in comfort_drivers if avg_ratings.get(d.id, 0) >= 4.7]
             drivers.extend(eligible_comfort[:remaining])
+
+    # Last, so the state lookups only run for candidates that already passed
+    # distance, tier and availability — a handful, not the driver table.
+    drivers = await _drop_out_of_state(drivers, pickup_lat, pickup_lng)
 
     if drivers:
         logging.info(

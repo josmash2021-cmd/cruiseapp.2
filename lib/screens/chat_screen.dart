@@ -74,7 +74,17 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _otherRole => _myRole == 'driver' ? 'rider' : 'driver';
   String get _rideId => widget.tripId?.toString() ?? '';
 
-  bool _useRtdb = false; // true for trip chats, false for support
+  /// True for trip chats, false for support.
+  ///
+  /// A getter, not a field assigned during init: it is a pure decision about
+  /// the widget's own arguments, and as a field it read `false` for the whole
+  /// window before init finished — long enough for a send to take the wrong
+  /// branch.
+  bool get _useRtdb => !widget.isSupport && widget.tripId != null;
+
+  /// The live message feed, opened once in [_initChat]. See the comment there
+  /// for why this is not built inside build().
+  Stream<List<ChatMessage>>? _messagesStream;
   bool _chatReady = false; // true after _initChat completes
   bool _rtdbFailed = false; // true when RTDB stream errors → REST fallback
 
@@ -111,16 +121,41 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initChat() async {
-    // Resolve user ID
+    _myRole = widget.currentRole ?? 'rider';
+
+    // Who we are is NOT a prerequisite for the chat working.
+    //
+    // getCurrentUserId() used to be awaited right here, with a 15-second
+    // timeout, and _chatReady only flipped after it. Until then build()
+    // painted a spinner instead of the message list, so the RTDB listener was
+    // never even attached and nothing arrived; and _sendMessage returned early
+    // at its !_chatReady guard, so every tap on send was a silent no-op with
+    // no error and no bubble. That is the entire "messages take forever and
+    // sending just fails" report — the chat was inert for as long as that one
+    // call took, and on a cold cache it is a full HTTP round trip.
+    //
+    // The room is keyed on the trip id, which we already have. Only the
+    // sender's own id needs resolving, and the send path does that itself when
+    // it finds the field empty.
     if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
       _myUserId = widget.currentUserId!;
     } else {
-      final id = await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15));
-      _myUserId = (id ?? 0).toString();
+      unawaited(
+        ApiService.getCurrentUserId()
+            .timeout(const Duration(seconds: 15))
+            .then((id) {
+          if (id != null && id > 0) _myUserId = id.toString();
+        }).catchError((e) {
+          debugPrint('[Chat] user id resolve failed: $e');
+          return null;
+        }),
+      );
     }
-    _myRole = widget.currentRole ?? 'rider';
 
-    // Ensure Firebase Auth is signed in so RTDB rules (auth != null) pass
+    // Firebase Auth IS a prerequisite — RTDB rules require auth != null, and
+    // attaching the listener without it fails the stream straight into the
+    // REST fallback. Normally free: main.dart already signed in at startup, so
+    // this only costs a round trip when that session was lost.
     try {
       if (FirebaseAuth.instance.currentUser == null) {
         await FirebaseAuth.instance.signInAnonymously();
@@ -130,13 +165,21 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     // Decide mode: RTDB for trip chats, polling for support
-    if (!widget.isSupport && widget.tripId != null) {
-      _useRtdb = true;
+    if (_useRtdb) {
+      // Opened ONCE, here — never inside build().
+      //
+      // Every call to messagesStream() attaches a brand-new RTDB listener, and
+      // this was being called straight from the StreamBuilder in build(). So
+      // each setState tore the listener down and attached another: the builder
+      // fell back to its initialData (an empty list, so the bubbles blinked
+      // out), re-downloaded all 200 messages, and re-ran the auto-scroll.
+      // A chat that re-subscribes on every rebuild feels slow no matter how
+      // fast the network underneath it is.
+      _messagesStream = _chat.messagesStream(_rideId);
       _startConnectionListener();
       // Mark existing messages as read when opening
       _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
     } else if (widget.isSupport) {
-      _useRtdb = false;
       await _initSupportChat();
     }
 
@@ -351,8 +394,19 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    if (!_chatReady) {
-      debugPrint('[Chat] send blocked — chat not ready yet');
+    // A trip chat only needs the room id, which comes from the trip id and is
+    // known before this screen is built. Support genuinely cannot send until
+    // the server has handed us a chat id.
+    //
+    // This used to be a bare !_chatReady check that swallowed the message: the
+    // text stayed in the box, nothing was sent, nothing was said. The one
+    // thing worse than a slow send is a send that silently did not happen.
+    final canSend = _useRtdb ? _rideId.isNotEmpty : _supportChatId != null;
+    if (!canSend) {
+      debugPrint('[Chat] send held — channel not up yet (rtdb=$_useRtdb)');
+      if (mounted) {
+        ErrorService.show(context, S.of(context).connectionIssueRetrying);
+      }
       return;
     }
 
@@ -750,7 +804,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return StreamBuilder<List<ChatMessage>>(
-      stream: _chat.messagesStream(_rideId),
+      // The one instance opened in _initChat. Passing the same object across
+      // rebuilds is what stops StreamBuilder from re-subscribing.
+      stream: _messagesStream,
       initialData: const <ChatMessage>[],
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -1027,24 +1083,32 @@ class _ChatScreenState extends State<ChatScreen> {
   // ── Empty state ─────────────────────────────────────────────────────
 
   Widget _buildEmptyState(S s) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            size: 48,
-            color: Colors.white.withValues(alpha: 0.15),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            s.writeToStart,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.3),
-              fontSize: 14,
+    // Sits at the bottom, just above the input bar, rather than floating in
+    // the middle of the screen. It is a prompt to start typing, so it belongs
+    // next to the thing it is asking you to type in — and where the first
+    // message will actually appear.
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 30,
+              color: Colors.white.withValues(alpha: 0.13),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              s.writeToStart,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.3),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

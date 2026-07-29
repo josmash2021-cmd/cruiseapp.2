@@ -339,6 +339,30 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         await db.rollback()
         raise HTTPException(500, f"Failed to create trip: {e}")
 
+    # ── Dispatch immediately ──
+    # Creating a trip used to send it to nobody: offers were only ever made
+    # by UnmatchedTripRetryAgent's 15s polling loop, so the rider watched
+    # "finding a driver" while no driver had been told the trip existed.
+    # Riders gave up first — trips 391-393 in production were cancelled
+    # having never received a single offer.
+    #
+    # Fire-and-forget so the rider's response isn't held up by the driver
+    # query and push. The polling loop stays as the safety net: it skips
+    # trips that already have a pending offer, so the two can't double-offer.
+    if not trip.scheduled_at:
+        async def _bg_dispatch(_trip_id: int = trip.id):
+            try:
+                from guardian_agent import guardian_agent
+                await guardian_agent.unmatched_retry_agent.dispatch_pending_now(
+                    session_maker=SessionLocal
+                )
+            except Exception as e:
+                logging.warning(
+                    "[create_trip] Immediate dispatch failed for trip %s "
+                    "(retry loop will pick it up): %s", _trip_id, e,
+                )
+        asyncio.create_task(_bg_dispatch())
+
     # Sync trip to Firestore (non-blocking - don't delay API response)
     # IMPORTANT: use a fresh session — the request-scoped `db` closes when
     # the handler returns, causing "another operation is in progress" errors.

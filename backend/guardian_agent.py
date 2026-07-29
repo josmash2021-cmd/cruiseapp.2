@@ -1144,6 +1144,28 @@ class UnmatchedTripRetryAgent:
                 logger.error("[UnmatchedTripRetry] Error: %s", e)
             await asyncio.sleep(self.INTERVAL)
 
+    async def dispatch_pending_now(self, session_maker=None):
+        """Run one dispatch pass immediately, outside the 15s cadence.
+
+        create_trip does not dispatch — offers are only ever created by this
+        agent's polling loop, so a rider sat on "finding a driver" for up to
+        INTERVAL seconds before any driver was even told the trip existed.
+        Riders cancelled first: trips 391-393 in production were cancelled
+        having never received a single offer.
+
+        Calling this right after a trip is created removes that wait while
+        reusing the loop's exact logic — no second copy of the eligibility
+        and offer rules to drift out of sync.
+
+        `session_maker` is accepted because the request that creates a trip
+        may land on a worker that never started the guardian (schedulers are
+        leader-only), leaving _db_session_maker unset. Pass it and this works
+        from any worker.
+        """
+        if session_maker is not None and not self._db_session_maker:
+            self._db_session_maker = session_maker
+        await self._retry_unmatched()
+
     async def _retry_unmatched(self):
         if not self._db_session_maker:
             return

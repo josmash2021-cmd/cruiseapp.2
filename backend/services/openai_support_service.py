@@ -20,9 +20,17 @@ import logging
 import os
 from typing import Any
 
+import httpx
 import openai
 
 _log = logging.getLogger(__name__)
+
+# Phrases that mean the agent has already offered a human. Shared by both
+# provider paths so "escalate" means the same thing whoever answered.
+_ESCALATION_PHRASES = (
+    "connect you with a human", "supervisor", "human agent",
+    "connect you with a supervisor", "transfer you to",
+)
 
 # ── Provider selection ────────────────────────────────────────────────
 # Kimi first when its key is present, OpenAI as the fallback. Deliberately
@@ -32,14 +40,14 @@ _log = logging.getLogger(__name__)
 _MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "") or os.getenv("KIMI_API_KEY", "")
 _OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# Moonshot's OpenAI-compatible endpoint. Use api.moonshot.cn for the
-# mainland-China account tier — the two are separate account systems and a
-# key from one does not work on the other.
-_MOONSHOT_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1")
+# Kimi Code (kimi.com/code) speaks the ANTHROPIC Messages protocol, not
+# OpenAI's — verified against a live key. Keys from that console are the
+# `sk-ki...` ones; they do NOT authenticate against Moonshot's platform,
+# which is a separate product with separate billing.
+_KIMI_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.kimi.com/coding")
 
-# Model ids move faster than this file does, so both are env-overridable.
-# Set MOONSHOT_MODEL to whatever your Moonshot console lists.
-_MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "kimi-k2-0711-preview")
+# Model ids move faster than this file does, so all are env-overridable.
+_MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "k3")
 _OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 def _build_openai() -> tuple[Any, str, str] | None:
@@ -49,13 +57,15 @@ def _build_openai() -> tuple[Any, str, str] | None:
 
 
 def _build_kimi() -> tuple[Any, str, str] | None:
+    """Kimi needs no client object — _anthropic_completion talks raw HTTP.
+
+    The Anthropic wire format is a single POST and httpx is already a
+    pinned dependency, so this avoids adding an SDK to a production
+    backend just to change one call's shape.
+    """
     if not _MOONSHOT_API_KEY:
         return None
-    client = openai.AsyncOpenAI(
-        api_key=_MOONSHOT_API_KEY,
-        base_url=_MOONSHOT_BASE_URL,
-    )
-    return (client, _MOONSHOT_MODEL, "kimi")
+    return (None, _MOONSHOT_MODEL, "kimi")
 
 
 _openai_client = None
@@ -78,6 +88,113 @@ _log.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)
 # Set once a tools= request has been rejected by the provider, so the
 # retry path below stops paying for a round-trip it knows will fail.
 _TOOLS_UNSUPPORTED = False
+
+
+def _anthropic_tools() -> list[dict[str, Any]]:
+    """The same tools, in Anthropic's Messages shape.
+
+    OpenAI nests them under `function` with a `parameters` schema; Anthropic
+    puts `name`/`description` at the top level and calls the schema
+    `input_schema`. Converted here rather than maintained twice, so a tool
+    added to _FUNCTIONS reaches both providers.
+    """
+    out: list[dict[str, Any]] = []
+    for f in _FUNCTIONS:
+        fn = f.get("function") or {}
+        if not fn.get("name"):
+            continue
+        out.append({
+            "name": fn["name"],
+            "description": fn.get("description", ""),
+            "input_schema": fn.get("parameters")
+            or {"type": "object", "properties": {}},
+        })
+    return out
+
+
+async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """One turn against an Anthropic-format endpoint (Kimi Code).
+
+    Kimi Code speaks the Anthropic Messages protocol, not OpenAI's, so this
+    is a separate call path rather than a base-URL swap: the system prompt
+    is a top-level field instead of a message, tools carry `input_schema`,
+    and the reply is a list of content blocks.
+
+    Returns the same {response, function_call?, escalate} dict the OpenAI
+    path returns, so the caller doesn't care which provider answered.
+    """
+    system = ""
+    convo: list[dict[str, Any]] = []
+    for m in messages:
+        if m["role"] == "system":
+            # Anthropic takes the system prompt as its own field. Later
+            # system turns are folded in rather than dropped.
+            system = f"{system}\n\n{m['content']}".strip() if system else m["content"]
+            continue
+        convo.append({"role": m["role"], "content": m["content"]})
+
+    # The conversation must start with a user turn and alternate; a stray
+    # leading assistant message is a 400.
+    while convo and convo[0]["role"] != "user":
+        convo.pop(0)
+    if not convo:
+        convo = [{"role": "user", "content": "Hello"}]
+
+    body: dict[str, Any] = {
+        "model": _MODEL,
+        "max_tokens": 800,
+        "system": system,
+        "messages": convo,
+    }
+    if not _TOOLS_UNSUPPORTED:
+        body["tools"] = _anthropic_tools()
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(
+            f"{_KIMI_BASE_URL.rstrip('/')}/v1/messages",
+            headers={
+                "x-api-key": _MOONSHOT_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=body,
+        )
+
+    if resp.status_code == 401:
+        raise openai.AuthenticationError(
+            f"kimi rejected the key: {resp.text[:120]}",
+            response=resp, body=None,
+        )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"kimi {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    blocks = data.get("content") or []
+
+    # K3 returns `thinking` blocks alongside the answer. They are the
+    # model reasoning to itself — never show them to a rider, and never
+    # mistake one for the reply.
+    text = "".join(
+        b.get("text", "") for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text"
+    ).strip()
+
+    for b in blocks:
+        if isinstance(b, dict) and b.get("type") == "tool_use":
+            _log.info("[Support AI] kimi tool call: %s", b.get("name"))
+            return {
+                "response": text or "I'll help you with that right away.",
+                "function_call": {
+                    "name": b.get("name", ""),
+                    "arguments": b.get("input") or {},
+                },
+                "escalate": False,
+            }
+
+    return {
+        "response": text,
+        "escalate": any(kw in text.lower() for kw in _ESCALATION_PHRASES),
+    }
 
 
 async def _chat_completion(messages: list[dict[str, Any]]):
@@ -455,8 +572,11 @@ async def generate_support_response(
     Returns:
         Dict with 'response' (str), 'function_call' (optional), 'escalate' (bool)
     """
-    if not _openai_client:
-        _log.error("OpenAI client not initialized — OPENAI_API_KEY missing")
+    # Gate on the provider, not on the client object: the Kimi path talks
+    # raw HTTP and legitimately has no client. Checking _openai_client here
+    # silently escalated every rider even with a working Kimi key.
+    if _PROVIDER == "none":
+        _log.error("[Support AI] no provider configured — set MOONSHOT_API_KEY")
         return {
             "response": "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away.",
             "escalate": True,
@@ -498,6 +618,15 @@ async def generate_support_response(
 
     global _TOOLS_UNSUPPORTED
     try:
+        # Kimi answers over the Anthropic protocol and returns the finished
+        # dict directly; OpenAI-compatible providers fall through below.
+        if _PROVIDER == "kimi":
+            try:
+                return await _anthropic_completion(openai_messages)
+            except openai.AuthenticationError as e:
+                if not _demote_primary(str(e)[:120]):
+                    raise
+
         try:
             response = await _chat_completion(openai_messages)
         except openai.AuthenticationError as e:
@@ -575,8 +704,16 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
         lines.append(f"Pickup: {active_trip.get('pickup_address', 'N/A')}")
         lines.append(f"Dropoff: {active_trip.get('dropoff_address', 'N/A')}")
         lines.append(f"Fare: ${active_trip.get('fare', 'N/A')}")
-        if active_trip.get('driver_name'):
-            lines.append(f"Driver: {active_trip['driver_name']}")
+        if active_trip.get('driver_name') or active_trip.get('driver_id'):
+            # Always label the id, and say so when there isn't one. Left
+            # unstated, the model fills a required driver_id argument with
+            # whatever number is nearby — the trip id.
+            did = active_trip.get('driver_id')
+            did_str = str(did) if did is not None else (
+                "NOT AVAILABLE — do not guess it; ask a human to look it up"
+            )
+            name = active_trip.get('driver_name') or 'unknown'
+            lines.append(f"Driver: {name} (driver_id: {did_str})")
     
     recent_trips = ctx.get("recent_trips", [])
     if recent_trips:

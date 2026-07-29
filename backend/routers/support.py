@@ -225,6 +225,11 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
             "pickup": active_trip.pickup_address,
             "dropoff": active_trip.dropoff_address,
             "fare": active_trip.fare,
+            # The agent's flag_driver / contact_driver tools need the id.
+            # Passing only the name left it with nothing to fill that
+            # argument with, and in testing it substituted the TRIP id —
+            # a safety report against the wrong driver.
+            "driver_id": active_trip.driver_id,
             "driver_name": driver_name,
             "vehicle_type": active_trip.vehicle_type,
             "created_at": active_trip.created_at,

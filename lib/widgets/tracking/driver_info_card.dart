@@ -6,16 +6,33 @@ part of '../../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 
+  /// The same render the rider picked on "Choose a ride".
+  ///
+  /// Keys and files are deliberately identical to _carAssetForOption in
+  /// ride_request_widgets.dart — the rider chose a tier by looking at one
+  /// of these cars, so the card that says their ride arrived has to show
+  /// that same car. The old car_suv/car_sedan/car_economy set was a
+  /// different set of renders entirely.
+  ///
+  /// Tier first, model as the fallback: rideName carries the tier the
+  /// rider actually paid for, and a VIP booking stays a VIP render even
+  /// when dispatch sends a differently-named vehicle.
   String get _vehicleAsset {
     final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
-    if (rn.contains('vip') || rn.contains('suv') || rn.contains('suburban') || m.contains('suburban')) {
-      return 'assets/images/car_suv.png';
+    if (rn.contains('vip') || rn.contains('black') ||
+        rn.contains('suv') || rn.contains('suburban') ||
+        m.contains('suburban')) {
+      return 'assets/images/cruisert1.png';
     }
-    if (rn.contains('sedan') || rn.contains('premium') || rn.contains('fusion') || m.contains('fusion')) {
-      return 'assets/images/car_sedan.png';
+    if (rn.contains('sedan') || rn.contains('premium') ||
+        rn.contains('camry') || m.contains('camry')) {
+      return 'assets/images/cruisert2.png';
     }
-    return 'assets/images/car_economy.png';
+    // comfort / fusion and anything unrecognised. Deliberately NOT in the
+    // branch above: the picker sends the Fusion here too, and the whole
+    // point is that both screens show the rider the same car.
+    return 'assets/images/cruisert3.png';
   }
 
   Widget _driverInitial() => Container(
@@ -144,9 +161,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     // The car render itself. errorBuilder, not a bare
                     // Image.asset: a missing render must not take the whole
                     // card down mid-trip.
+                    // width too, not height alone: the picker renders are
+                    // wide, so a height-only constraint left the car
+                    // floating small against the right edge. Letterboxed
+                    // into the full column width it reads as the same car
+                    // the rider chose.
                     Image.asset(
                       _vehicleAsset,
-                      height: Responsive.h(30),
+                      width: double.infinity,
+                      height: Responsive.h(34),
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Icon(
                         Icons.directions_car_rounded,

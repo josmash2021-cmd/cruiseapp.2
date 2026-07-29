@@ -150,6 +150,19 @@ class _TripAcceptedScreenState extends State<TripAcceptedScreen>
     _tiltCtrl.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    // Release the native map. This screen builds its OWN MapWidget while the
+    // online screen's map is still alive, so two Mapbox surfaces — each a GL
+    // context plus tile cache — exist at once; leaking this one left the
+    // memory held after the screen was gone. On iOS that pressure is a prime
+    // suspect for the crash seen right after accepting a trip.
+    //
+    // This reduces the leak. It does NOT remove the second instance, which
+    // is the actual structural problem: the rider flow was reworked to a
+    // single shared canvas for exactly this reason and this screen never was.
+    try {
+      _mapCtrl?.dispose();
+    } catch (_) {}
+    _mapCtrl = null;
     super.dispose();
   }
 

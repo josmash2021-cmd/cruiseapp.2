@@ -207,25 +207,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         ),
                       ),
                     SizedBox(height: Responsive.h(3)),
-                    // The car render itself. errorBuilder, not a bare
-                    // Image.asset: a missing render must not take the whole
-                    // card down mid-trip.
-                    // width too, not height alone: the picker renders are
-                    // wide, so a height-only constraint left the car
-                    // floating small against the right edge. Letterboxed
-                    // into the full column width it reads as the same car
-                    // the rider chose.
-                    Image.asset(
-                      _vehicleAsset,
-                      width: double.infinity,
-                      height: Responsive.h(34),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.directions_car_rounded,
-                        color: AppColors.kGold.withValues(alpha: 0.5),
-                        size: Responsive.sp(22),
-                      ),
-                    ),
+                    _buildVehicleRender(),
                     SizedBox(height: Responsive.h(3)),
                     // Plate: smaller than before — it is the confirmation,
                     // not the headline. White, because a plate should read
@@ -686,6 +668,89 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
+  /// The car render, sitting on the card instead of floating over it.
+  ///
+  /// Two shadows, because on a PNG neither one alone works. A BoxShadow
+  /// shadows the image's bounding box, not the car — a rectangle of grey
+  /// under a car-shaped hole. A blurred silhouette alone reads as a sticker
+  /// lifting off the surface, because nothing anchors it to a ground plane.
+  /// Together:
+  ///   • a soft elliptical pool under the wheels gives contact with the card
+  ///   • a blurred copy of the car's own alpha gives height above that pool
+  ///
+  /// clipBehavior: none — the car is letterboxed edge to edge horizontally,
+  /// so a clipping Stack would cut the blur off in a straight line down both
+  /// sides, which is the one thing that makes a shadow look fake.
+  Widget _buildVehicleRender() {
+    final h = Responsive.h(34);
+    return SizedBox(
+      height: h,
+      width: double.infinity,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          // Ground pool. A radial gradient in a wide, short box is already
+          // an ellipse with a soft edge, so this needs no blur filter of
+          // its own — it is the cheapest of the three layers.
+          Positioned(
+            left: Responsive.w(6),
+            right: Responsive.w(6),
+            bottom: h * 0.04,
+            height: h * 0.24,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.black.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Silhouette: the car's own alpha, tinted black and blurred.
+          // srcIn keeps the shape and throws away the colour.
+          Transform.translate(
+            offset: Offset(0, Responsive.h(2)),
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+              child: Image.asset(
+                _vehicleAsset,
+                width: double.infinity,
+                height: h,
+                fit: BoxFit.contain,
+                color: Colors.black.withValues(alpha: 0.5),
+                colorBlendMode: BlendMode.srcIn,
+                // No fallback icon here: if the asset is missing the real
+                // image below already draws the icon, and a blurred black
+                // copy of it would sit behind that as a smudge.
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          // The car itself. errorBuilder, not a bare Image.asset: a missing
+          // render must not take the whole card down mid-trip.
+          //
+          // width too, not height alone: the picker renders are wide, so a
+          // height-only constraint left the car floating small against the
+          // right edge. Letterboxed into the full column width it reads as
+          // the same car the rider chose.
+          Image.asset(
+            _vehicleAsset,
+            width: double.infinity,
+            height: h,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Icon(
+              Icons.directions_car_rounded,
+              color: AppColors.kGold.withValues(alpha: 0.5),
+              size: Responsive.sp(22),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Chat input pill on the rider tracking driver-info card.

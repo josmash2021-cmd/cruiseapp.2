@@ -564,11 +564,23 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
     if (_phase == _TrackPhase.arrived) return;
 
-    final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-    // When the Uber-style navigation chase is active, the continuous ticker
-    // drives the camera. A periodic flyTo bounds-fit would fight it and
-    // create visible jumps, so we skip those calls.
-    if (isOnTrip && (_mapCamera?.isNavChaseActive ?? false)) return;
+    // Once the rider is aboard, the chase ticker owns the camera outright.
+    //
+    // This used to stand down only while isNavChaseActive was true and
+    // otherwise fall through to a driver+dropoff bounds fit — flat,
+    // north-up, the car a speck against the whole remaining route. Every
+    // gap in the chase leaked that view onto the screen: the frame before
+    // the ticker seeds, the seconds after the rider pans, and worst of
+    // all reopening the app mid-trip, where _shouldFollowDriver was still
+    // false from the arrived phase so the ticker never took over at all —
+    // that one lasted the entire ride.
+    //
+    // There is no bounds fit worth showing during a trip, so there is no
+    // condition on this return.
+    if (_phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination) {
+      return;
+    }
     // Same reasoning for the approach phase, which now has its own
     // continuous framer. The first fit still runs — it lands before the
     // framer has seeded — and gives the wide opening shot the framer then
@@ -589,36 +601,25 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     // Use modular camera component if available
     if (_mapCamera != null) {
-      if (isOnTrip && _animPos.latitude != 0) {
-        // Chase camera mode
-        _mapCamera!.chaseCamera(
-          driverPos: _animPos,
-          dropoffPos: widget.dropoffLatLng,
-          topPadding: topPad + 10 + topHeight + 32,
-          bottomPadding: bottomPad + 16 + bottomHeight + 32,
-        );
+      final pts = <LatLng>[];
+      if (_phase == _TrackPhase.arriving) {
+        pts.add(widget.pickupLatLng);
+        pts.add(widget.dropoffLatLng);
+        if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
+        if (_routePts.isNotEmpty) pts.addAll(_routePts);
+        if (_tripRoutePts.isNotEmpty) pts.addAll(_tripRoutePts);
       } else {
-        // Bounds fit mode
-        final pts = <LatLng>[];
-        if (_phase == _TrackPhase.arriving) {
-          pts.add(widget.pickupLatLng);
-          pts.add(widget.dropoffLatLng);
-          if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
-          if (_routePts.isNotEmpty) pts.addAll(_routePts);
-          if (_tripRoutePts.isNotEmpty) pts.addAll(_tripRoutePts);
-        } else {
-          pts.add(widget.pickupLatLng);
-          pts.add(widget.dropoffLatLng);
-          if (_animPos.latitude != 0) pts.add(_animPos);
-          pts.addAll(_routePts);
-        }
-        if (pts.isNotEmpty) {
-          _mapCamera!.fitBounds(
-            points: pts,
-            topPadding: topPad + 10 + topHeight + 64,
-            bottomPadding: bottomPad + 16 + bottomHeight + 64,
-          );
-        }
+        pts.add(widget.pickupLatLng);
+        pts.add(widget.dropoffLatLng);
+        if (_animPos.latitude != 0) pts.add(_animPos);
+        pts.addAll(_routePts);
+      }
+      if (pts.isNotEmpty) {
+        _mapCamera!.fitBounds(
+          points: pts,
+          topPadding: topPad + 10 + topHeight + 64,
+          bottomPadding: bottomPad + 16 + bottomHeight + 64,
+        );
       }
       return;
     }
@@ -626,11 +627,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // Legacy fallback
     // Skip if another camera animation is still running
     if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-
-    if (isOnTrip && _animPos.latitude != 0) {
-      _chaseCamera();
-      return;
-    }
 
     final pts = <LatLng>[];
     if (_phase == _TrackPhase.arriving) {
@@ -691,120 +687,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     });
   }
 
-  /// Navigation-style chase camera for onTrip phase.
-  /// Keeps the driver at ~35% from the bottom of the visible map area
-  /// (between the top and bottom cards) so the route ahead is always visible.
-  /// Uses a fixed zoom to prevent zoom jitter from constant bounds re-calculation.
-  /// 
-  /// FIX: Includes remaining route points so curvy roads stay in view,
-  /// and clamps zoom to 12-16 (was 12-17) so dropoff never goes off-screen
-  /// on short trips.
-  void _chaseCamera() {
-    if (_map == null) return;
-    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
-    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd)) return;
-
-    final mq = MediaQuery.of(context).padding;
-    final topPad = mq.top;
-    final bottomPad = mq.bottom;
-    final topHeight = _topCardHeight;
-    final bottomHeight = _bottomCardHeight;
-
-    // Visible map area = screen minus cards and safe area
-    final visibleTop = topPad + 10 + topHeight + 32;
-    final visibleBottom = bottomPad + 16 + bottomHeight + 32;
-
-    // Build bounds that include driver position AND destination
-    // so the rider can see the full route ahead, not just the car.
-    final pts = <mapbox.Point>[];
-    pts.add(mapbox.Point(
-      coordinates: mapbox.Position(_animPos.longitude, _animPos.latitude),
-    ));
-    pts.add(mapbox.Point(
-      coordinates: mapbox.Position(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude),
-    ));
-    // Also include pickup if we're near it (shows full trip context)
-    if (_phase == _TrackPhase.onTrip && _tripJustStarted) {
-      pts.add(mapbox.Point(
-        coordinates: mapbox.Position(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude),
-      ));
-    }
-    // FIX: Include remaining route points ahead of driver so curvy roads
-    // don't go off-screen. We sample every Nth point to avoid overloading
-    // cameraForCoordinates while still capturing the route shape.
-    if (_routePts.length >= 2 && _segDist.isNotEmpty) {
-      final totalM = _segDist.last;
-      final stepM = totalM > 500 ? 150.0 : 75.0; // denser sampling on short routes
-      double cursorM = _traveledM;
-      int lastIdx = -1;
-      while (cursorM < totalM) {
-        // Find the segment containing cursorM
-        int idx = 0;
-        for (int i = 1; i < _segDist.length; i++) {
-          if (_segDist[i] >= cursorM) { idx = i - 1; break; }
-          if (i == _segDist.length - 1) idx = i - 1;
-        }
-        if (idx != lastIdx && idx >= 0 && idx < _routePts.length) {
-          final p = _routePts[idx];
-          pts.add(mapbox.Point(
-            coordinates: mapbox.Position(p.longitude, p.latitude),
-          ));
-          lastIdx = idx;
-        }
-        cursorM += stepM;
-      }
-      // Always include the final dropoff point (already added above, but
-      // ensure the last route point is included if it's not exactly dropoff)
-      if (_routePts.last.latitude != widget.dropoffLatLng.latitude ||
-          _routePts.last.longitude != widget.dropoffLatLng.longitude) {
-        pts.add(mapbox.Point(
-          coordinates: mapbox.Position(_routePts.last.longitude, _routePts.last.latitude),
-        ));
-      }
-    }
-
-    _cameraAnimating = true;
-    // FIX: shorter animation (800ms) to match the wider 2000ms follow interval
-    // and avoid overlapping camera movements that cause visible jumps.
-    const dur = 800;
-    _cameraAnimEnd = DateTime.now().add(const Duration(milliseconds: dur - 50));
-
-    // Use cameraForCoordinates to auto-fit zoom so full route is visible
-    _map!.cameraForCoordinatesPadding(
-      pts,
-      mapbox.CameraOptions(bearing: 0, pitch: 0),
-      mapbox.MbxEdgeInsets(
-        top: visibleTop.toDouble(),
-        bottom: visibleBottom.toDouble(),
-        left: 28,
-        right: 28,
-      ),
-      null,
-      null,
-    ).then((camera) {
-      if (!mounted || _map == null) return;
-      // FIX: Clamp zoom 12-16 (was 12-17). On short trips the computed zoom
-      // could hit 17 which cuts off the dropoff pin. 16 is the sweet spot
-      // that keeps both driver and destination visible with card padding.
-      final computedZoom = camera.zoom ?? 15.0;
-      final zoom = math.max(12.0, math.min(16.0, computedZoom));
-      _map!.flyTo(
-        mapbox.CameraOptions(
-          center: camera.center,
-          zoom: zoom,
-          bearing: 0,
-          pitch: 0,
-          padding: camera.padding,
-        ),
-        mapbox.MapAnimationOptions(duration: dur),
-      );
-    });
-
-    Future.delayed(const Duration(milliseconds: dur), () {
-      _cameraAnimating = false;
-    });
-  }
-
   void _throttleBoundsFit() {
     final now = DateTime.now();
     if (now.difference(_lastBoundsFit).inMilliseconds < 1500) return;
@@ -833,6 +715,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _throttleCam() {
     // During arrived phase, camera is stable — no animations at all.
     if (_phase == _TrackPhase.arrived) return;
+    // During the trip the chase ticker owns the camera and nothing
+    // periodic gets to touch it. _fitRouteBounds() already bails on these
+    // phases; this says so at the call site instead of two files away.
+    if (_phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination) {
+      return;
+    }
 
     final now = DateTime.now();
     // Chase mode: follow driver — throttle at 2000ms to match camera follow timer.
@@ -889,18 +778,57 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _lastUserCameraInteraction = DateTime.now();
   }
 
-  /// Start the navigation chase camera ticker (~25 fps).
-  void _startCameraTicker() {
-    _cameraTicker?.dispose();
-    _cameraTicker = createTicker(_onCameraTick);
-    _cameraTicker?.start();
+  /// One vsync frame: advance the car, then move the camera after it.
+  ///
+  /// The car and the camera used to own a Ticker each. Both fired on
+  /// vsync, so on a fast device they behaved identically — but they write
+  /// to the Mapbox platform channel with different discipline. The car
+  /// coalesces and re-sends the newest frame the instant its write lands
+  /// ([TrackingMapCar._flushCarWrite]); the camera drops a frame when the
+  /// channel is busy and waits for the next tick. On a saturated channel
+  /// the car therefore won more slots than the camera, and a marker
+  /// moving at twice the camera's rate visibly oscillates around its
+  /// anchor: the map translates in coarser steps than the thing it is
+  /// chasing.
+  ///
+  /// One ticker makes that impossible. Both writes are produced in the
+  /// same frame from the same position, so whatever the channel does to
+  /// one it does to the other. It also removes the frame of lag the
+  /// camera used to read: _interpolate writes _animPos microseconds
+  /// before _onCameraTick reads it, not one vsync earlier.
+  ///
+  /// Order matters — car first, camera second. The reverse would frame
+  /// the position the car is about to leave.
+  void _onAnimationFrame(Duration elapsed) {
+    _interpolate(elapsed);
+    _onCameraTick(elapsed);
   }
 
-  /// Stop the navigation chase camera ticker.
-  void _stopCameraTicker() {
-    _cameraTicker?.dispose();
-    _cameraTicker = null;
+  /// Make sure the shared animation frame is running.
+  ///
+  /// The camera does not own a Ticker any more — it rides the
+  /// interpolation one (see [_onAnimationFrame]), so "start the camera"
+  /// means "make sure that ticker is awake". It only ever idles itself
+  /// once the trip is completed, which is also the one phase the camera
+  /// must not move in.
+  void _startCameraTicker() {
+    if (!mounted) return;
+    final t = _interpTicker;
+    if (t != null && !t.isActive) t.start();
   }
+
+  /// Whether the camera is allowed to track anything this frame.
+  ///
+  /// Derived from the phase, not from a flag someone has to remember to
+  /// reset. _shouldFollowDriver is switched off when the driver reaches
+  /// the pickup — deliberately, the camera freezes there — and only
+  /// _transitionToOnTrip ever switched it back on. Reopening the app
+  /// mid-trip restores straight into the onTrip phase without passing
+  /// through that method, so the flag stayed false, this ticker returned
+  /// on its first line, and the chase never started for the rest of the
+  /// ride. A phase cannot fall out of sync with itself.
+  bool get _cameraChaseAllowed =>
+      _phase != _TrackPhase.arrived && _phase != _TrackPhase.completed;
 
   /// Ticker callback: drive the Uber-style chase camera.
   void _onCameraTick(Duration elapsed) {
@@ -920,8 +848,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         return;
       }
     }
-    if (!_shouldFollowDriver) return;
-    if (_phase == _TrackPhase.arrived) return;
+    if (!_cameraChaseAllowed) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
 
     // No throttle: the camera runs at the ticker's own rate, matching the

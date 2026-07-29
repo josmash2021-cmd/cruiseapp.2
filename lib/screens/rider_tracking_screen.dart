@@ -389,7 +389,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       debugPrint('[RiderTracking] _initFromPersistence failed: $e');
       if (mounted) _startRealTimeTracking();
     });
-    _interpTicker = createTicker((elapsed) => _interpolate(elapsed))..start();
+    // One ticker for the car AND the camera — see _onAnimationFrame for why
+    // they must not be two.
+    // Lambda, not a tear-off: _onAnimationFrame lives in an extension, and
+    // this matches how the file already called _interpolate.
+    _interpTicker = createTicker((elapsed) => _onAnimationFrame(elapsed))
+      ..start();
     // Listen to chat messages so we can fire a local push whenever a
     // driver-sent message arrives while the app is not in the foreground
     // (or the rider is on a different screen). The in-card pill shimmer
@@ -494,7 +499,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _routeFadeJob?.cancel();
     _startRidePhaseTimer?.cancel();
     _cameraFollowTimer?.cancel();
-    _stopCameraTicker();
+    // No _stopCameraTicker() — the camera rides _interpTicker, disposed above.
     _tripStartedTimer?.cancel();
     _ratingNavTimer?.cancel();
     _socketHealthSub?.cancel();
@@ -568,10 +573,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _cameraFollowTimer;
   bool _useNavCamera = true; // When true: follow driver at 55° pitch (Uber-style)
 
-  // Navigation chase camera ticker — runs at the display's own rate so the
-  // map glides frame-for-frame with the car marker. Frame dropping happens
-  // in TrackingMapCamera, against the platform channel, not on a clock.
-  Ticker? _cameraTicker;
+  // No camera Ticker of its own: the chase camera runs on _interpTicker,
+  // the same frame that moves the car. Two tickers writing to one platform
+  // channel with different backpressure made the marker oscillate around
+  // its anchor on slow devices — see _onAnimationFrame.
   bool _userControllingCamera = false;
   DateTime? _lastUserCameraInteraction;
 

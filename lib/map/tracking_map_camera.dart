@@ -72,59 +72,6 @@ class TrackingMapCamera {
     });
   }
 
-  /// Cámara de persecución estilo navegación (driver + dropoff)
-  Future<void> chaseCamera({
-    required LatLng driverPos,
-    required LatLng dropoffPos,
-    required double topPadding,
-    required double bottomPadding,
-    double minZoom = 12.0,
-    double maxZoom = 16.0,
-    int durationMs = 800,
-  }) async {
-    if (_map == null) return;
-    if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
-    if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd!)) return;
-
-    final pts = <mapbox.Point>[
-      mapbox.Point(coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude)),
-      mapbox.Point(coordinates: mapbox.Position(dropoffPos.longitude, dropoffPos.latitude)),
-    ];
-
-    _cameraAnimating = true;
-    _cameraAnimEnd = DateTime.now().add(Duration(milliseconds: durationMs - 50));
-
-    final camera = await _map!.cameraForCoordinatesPadding(
-      pts,
-      mapbox.CameraOptions(bearing: 0, pitch: 0),
-      mapbox.MbxEdgeInsets(
-        top: topPadding,
-        bottom: bottomPadding,
-        left: 28,
-        right: 28,
-      ),
-      null, null,
-    );
-
-    final computedZoom = camera.zoom ?? 15.0;
-    final zoom = math.max(minZoom, math.min(maxZoom, computedZoom));
-
-    await _map!.flyTo(
-      mapbox.CameraOptions(
-        center: camera.center,
-        zoom: zoom,
-        bearing: 0,
-        pitch: 0,
-        padding: camera.padding,
-      ),
-      mapbox.MapAnimationOptions(duration: durationMs),
-    );
-
-    Future.delayed(Duration(milliseconds: durationMs), () {
-      _cameraAnimating = false;
-    });
-  }
-
   /// Ajusta cámara para mostrar pickup + dropoff (fase arrived)
   Future<void> fitArrivedBounds({
     required LatLng pickupPos,
@@ -293,13 +240,63 @@ class TrackingMapCamera {
   /// setCamera is a visible fight.
   bool get isApproachFramingActive => _approachZoom != null;
 
+  // ── Chase intro: the camera swings in behind the car ──
+  //
+  // The chase used to take the camera over on its very first frame:
+  // pitch and bearing were whatever this class last held (0 and 0 on a
+  // fresh screen) and the centre jumped straight onto the car. Starting a
+  // ride was a hard cut from a flat overview to a tilted close-up.
+  //
+  // The intro eases centre, zoom, pitch, bearing and anchor together,
+  // from wherever the camera actually is to the chase frame, so the view
+  // rotates around and settles behind the car. It replays whenever the
+  // chase is handed back — after the rider pans, or on recenter.
+  static const int _kChaseIntroMs = 1500;
+  bool _introActive = false;
+  bool _introSeeding = false;
+  DateTime? _introStartedAt;
+  LatLng? _introFromCenter;
+  double _introFromZoom = 16.0;
+  double _introFromPitch = 0.0;
+  double _introFromBearing = 0.0;
+
   void startNavigationChase() {
     _navChaseActive = true;
     _lastNavFrameAt = null;
     // Leaving the approach phase — re-seed if we ever come back to it.
     _approachZoom = null;
     _lastApproachFrameAt = null;
+    _beginChaseIntro();
   }
+
+  /// Read the live camera so the intro starts from the real view rather
+  /// than from this class's stale internal values.
+  void _beginChaseIntro() {
+    if (_map == null) return;
+    _introActive = true;
+    _introSeeding = true;
+    _introStartedAt = null; // stamped on the first frame after seeding, so
+    _introFromCenter = null; // the async read is not counted as animation
+    _map!.getCameraState().then((state) {
+      _introFromZoom = state.zoom;
+      _introFromPitch = state.pitch;
+      _introFromBearing = state.bearing;
+      final c = state.center.coordinates;
+      _introFromCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      _introSeeding = false;
+    }).catchError((Object e) {
+      // Could not read the live camera. Drop the intro and let the chase
+      // take over directly: a hard cut is worse than a swing, but a
+      // camera stalled mid-ride waiting on a seed is worse than both.
+      debugPrint('[TrackingMapCamera] chase intro seed failed: $e');
+      _introSeeding = false;
+      _introActive = false;
+    });
+  }
+
+  static double _easeInOut(double t) => t < 0.5
+      ? 4 * t * t * t
+      : 1 - math.pow(-2 * t + 2, 3).toDouble() / 2;
 
   /// Frame the driver on their way to the pickup.
   ///
@@ -384,6 +381,10 @@ class TrackingMapCamera {
 
   void stopNavigationChase() {
     _navChaseActive = false;
+    // Abandon any intro in flight. The rider has the camera now, and a
+    // half-finished swing must never resume from a stale start point.
+    _introActive = false;
+    _introSeeding = false;
   }
 
   /// Update the chase camera frame. Call from a ~20-30 fps ticker.
@@ -431,6 +432,59 @@ class TrackingMapCamera {
                 ? 14.8
                 : 14.0;
 
+    // ── Intro: swing in and settle behind the car ──
+    //
+    // Absolute interpolation from the seeded start values, not the per-frame
+    // low-pass the steady state uses: the low-pass approaches its target
+    // asymptotically, which is right for chasing a moving car but would
+    // leave the opening move drifting in for several seconds with no
+    // defined end. The intro has a duration and an easing curve.
+    if (_introActive) {
+      if (_introSeeding || _introFromCenter == null) return; // seed in flight
+      _introStartedAt ??= now;
+      final t = (now.difference(_introStartedAt!).inMilliseconds /
+              _kChaseIntroMs)
+          .clamp(0.0, 1.0);
+      final e = _easeInOut(t);
+
+      // A stopped car has no meaningful heading — hold the starting bearing
+      // instead of swinging the map to a stale one.
+      final introTargetBearing = speedMps < 1.0 ? _introFromBearing : bearing;
+      var introDb = introTargetBearing - _introFromBearing;
+      while (introDb > 180) {
+        introDb -= 360;
+      }
+      while (introDb < -180) {
+        introDb += 360;
+      }
+
+      final from = _introFromCenter!;
+      _navZoom = _introFromZoom + (targetZoom - _introFromZoom) * e;
+      _navPitch = _introFromPitch +
+          ((use3DPitch ? 35.0 : 0.0) - _introFromPitch) * e;
+      _navBearing = (_introFromBearing + introDb * e) % 360;
+
+      // The anchor eases too. A bounds-fit camera sits on the viewport
+      // centre; the chase hangs the car 62% down the visible box. Snapping
+      // that in one frame slides the car across the screen right as the
+      // swing lands.
+      final introVisibleH = screenSize.height - topPadding - bottomPadding;
+      final anchorYFrom = screenSize.height / 2;
+      final anchorYTo = topPadding + introVisibleH * 0.62;
+
+      _writeChaseFrame(
+        center: LatLng(
+          from.latitude + (driverPos.latitude - from.latitude) * e,
+          from.longitude + (driverPos.longitude - from.longitude) * e,
+        ),
+        anchorX: screenSize.width / 2,
+        anchorY: anchorYFrom + (anchorYTo - anchorYFrom) * e,
+      );
+
+      if (t >= 1.0) _introActive = false;
+      return;
+    }
+
     // Bearing: freeze when nearly stopped so the map doesn't spin in traffic.
     var targetBearing = bearing;
     if (speedMps < 1.0) {
@@ -439,8 +493,12 @@ class TrackingMapCamera {
 
     // Smooth bearing via shortest arc.
     var db = targetBearing - _navBearing;
-    while (db > 180) db -= 360;
-    while (db < -180) db += 360;
+    while (db > 180) {
+      db -= 360;
+    }
+    while (db < -180) {
+      db += 360;
+    }
     _navBearing = (_navBearing + db * tf(0.25)) % 360;
 
     // Smooth pitch: animate into 3D once chase starts.
@@ -462,14 +520,29 @@ class TrackingMapCamera {
     final anchorX = screenSize.width / 2;
     final anchorY = topPadding + visibleH * 0.62;
 
-    // Instant setCamera, NOT an animated easeTo.
-    //
-    // Every value above is already low-passed by tf() against real dt, so
-    // the smoothing lives here, in our own state. Layering a 150 ms easeTo
-    // on top — restarted before it ever finished, every single frame —
-    // smoothed an already-smooth signal and left the camera rubber-banding
-    // behind the car it was chasing. Feeding pre-smoothed values straight
-    // in is what makes the map glide with the marker instead of after it.
+    _writeChaseFrame(
+      center: driverPos,
+      anchorX: anchorX,
+      anchorY: anchorY,
+    );
+  }
+
+  /// Push one chase frame to the map.
+  ///
+  /// Instant setCamera, NOT an animated easeTo. Every value handed in is
+  /// already smoothed — by tf() against real dt in the steady state, by the
+  /// easing curve during the intro — so the smoothing lives in our own
+  /// state. Layering a 150 ms easeTo on top, restarted before it ever
+  /// finished on every single frame, smoothed an already-smooth signal and
+  /// left the camera rubber-banding behind the car it was chasing. Feeding
+  /// pre-smoothed values straight in is what makes the map glide with the
+  /// marker instead of after it.
+  void _writeChaseFrame({
+    required LatLng center,
+    required double anchorX,
+    required double anchorY,
+  }) {
+    if (_map == null) return;
     if (_frameInFlight) return;
     _frameInFlight = true;
     try {
@@ -477,7 +550,7 @@ class TrackingMapCamera {
           .setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
-            coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude),
+            coordinates: mapbox.Position(center.longitude, center.latitude),
           ),
           zoom: _navZoom,
           bearing: _navBearing,

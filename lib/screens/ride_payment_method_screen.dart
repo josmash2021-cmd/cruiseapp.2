@@ -387,33 +387,39 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                         icon: _GoogleGLogo(size: 32),
                         onTap: () => _pick(PaymentMethodId.google),
                       ),
-                    _cardLast4 != null
-                        // Saved card: brand logo + last 4 digits
-                        ? _PayCard(
-                            entryCtl: _entryCtl,
-                            staggerDelay: 0.08,
-                            id: PaymentMethodId.card,
-                            selected: _selected == PaymentMethodId.card,
-                            iconBg: const Color(0xFF2A2A2A),
-                            label: '•••• $_cardLast4',
-                            icon: _CardBrandBadge(brand: _cardBrand),
-                            onTap: () => _pick(PaymentMethodId.card),
-                          )
-                        // No card yet: prompt to add one
-                        : _PayCard(
-                            entryCtl: _entryCtl,
-                            staggerDelay: 0.08,
-                            id: PaymentMethodId.card,
-                            selected: false,
-                            iconBg: const Color(0xFF2A2A2A),
-                            label: s.addDebitCreditCard,
-                            icon: const Icon(
-                              Icons.add_card_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                            onTap: _addCard,
-                          ),
+                    // Saved card: brand logo + last 4 digits. Tapping it
+                    // selects it as the payment method.
+                    if (_cardLast4 != null)
+                      _PayCard(
+                        entryCtl: _entryCtl,
+                        staggerDelay: 0.08,
+                        id: PaymentMethodId.card,
+                        selected: _selected == PaymentMethodId.card,
+                        iconBg: const Color(0xFF2A2A2A),
+                        label: '•••• $_cardLast4',
+                        icon: _CardBrandBadge(brand: _cardBrand),
+                        onTap: () => _pick(PaymentMethodId.card),
+                      ),
+                    // Add card — ALWAYS on screen, never selectable.
+                    //
+                    // This used to be an either/or with the tile above: the
+                    // moment a card was on file the add tile vanished, so a
+                    // rider had no way to add or change a card from here at
+                    // all. The only escape was having no card.
+                    _PayCard(
+                      entryCtl: _entryCtl,
+                      staggerDelay: _cardLast4 != null ? 0.12 : 0.08,
+                      id: PaymentMethodId.card,
+                      selected: false,
+                      iconBg: const Color(0xFF2A2A2A),
+                      label: s.addDebitCreditCard,
+                      icon: const Icon(
+                        Icons.add_card_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      onTap: _addCard,
+                    ),
                     // Tap to Pay - NFC Contactless Payment
                     // Only visible on Android. iOS requires Apple's
                     // proximity-reader entitlement which is per-app and

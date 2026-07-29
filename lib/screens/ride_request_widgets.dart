@@ -850,11 +850,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   // Single card shown when a tier has been picked and the grid is
-  // collapsed. Neumorphic layout: tier name top-left with the price pinned
-  // to the top-right corner, the car render left-aligned below them, then a
-  // left-aligned row of three sunken stat chips under the car (ETA minutes,
-  // trip miles, passenger capacity). No tier badge and no description line
-  // — the chips carry the key facts.
+  // collapsed. One horizontal row: the small car render on the left, the
+  // tier name plus the three sunken stat chips (ETA minutes, trip miles,
+  // passenger capacity) in the middle, price pinned right.
+  //
+  // No tier badge and no description line — the chips carry the facts and
+  // the card stays one compact row instead of the tall stacked block.
   Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
     final bool isSuv = opt.id == 'suburban';
     final bool isFusion = opt.id == 'fusion';
@@ -894,159 +895,152 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         radius: 24,
         borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Top: tier name on the left, price pinned to the top-right
-          // corner. Top-aligned so the price stays in the corner even when
-          // the promo / Cruise Cash badges stack underneath it.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // ── Left: car render with its 3D shadow, sitting on the row's
+          // baseline. bottomCenter keeps the wheels planted no matter how
+          // tall the source asset is.
+          SizedBox(
+            width: 84,
+            height: 60,
+            child: CarImage3D(
+              assetPath: _carAssetForOption(opt.name),
+              cacheWidth: 640,
+              alignment: Alignment.bottomCenter,
+              fallback: Icon(
+                Icons.directions_car_rounded,
+                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                size: 32,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // ── Center: tier name, then the three sunken stat chips.
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Wrap, not Row: three chips beside an 84px car and a
+                // $126.42 price do not fit one line on a 320pt screen, and
+                // a Row would throw a RenderFlex overflow there. They stay
+                // on one line wherever there is room.
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _neuStatChip(
+                        Icons.schedule_rounded, '${opt.etaMinutes} min'),
+                    _neuStatChip(Icons.route_rounded, distanceText),
+                    _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // ── Right: price (with crossed-out original when 10% promo or
+          // when Cruise Cash is being applied).
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Padding(
-                  // Optical alignment: the 20px price renders ~3px taller
-                  // than the 16px tier name, so nudge the name down to line
-                  // their cap heights up.
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+              if (promoOn || hasCC) ...[
+                Text(
+                  oldPriceText,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.lineThrough,
+                    decorationColor: Colors.white.withValues(alpha: 0.45),
+                    decorationThickness: 1.5,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
+              Text(
+                priceText,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: (promoOn || hasCC)
+                      ? const Color(0xFFE8C547)
+                      : Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              if (promoOn) ...[
+                const SizedBox(height: 3),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: const Text(
+                    '10% OFF',
+                    style: TextStyle(
                       fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 16,
+                      color: Color(0xFFE8C547),
+                      fontSize: 8,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              // Price (with crossed-out original when 10% promo or when
-              // Cruise Cash is being applied).
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (promoOn || hasCC) ...[
-                    Text(
-                      oldPriceText,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.lineThrough,
-                        decorationColor:
-                            Colors.white.withValues(alpha: 0.45),
-                        decorationThickness: 1.5,
-                        height: 1.0,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                  ],
-                  Text(
-                    priceText,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: (promoOn || hasCC)
-                          ? const Color(0xFFE8C547)
-                          : Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
+              ],
+              if (hasCC) ...[
+                const SizedBox(height: 3),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                      width: 0.8,
                     ),
                   ),
-                  if (promoOn) ...[
-                    const SizedBox(height: 3),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color:
-                              const Color(0xFFE8C547).withValues(alpha: 0.5),
-                          width: 0.8,
-                        ),
-                      ),
-                      child: const Text(
-                        '10% OFF',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          color: Color(0xFFE8C547),
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                  child: Text(
+                    '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFFE8C547),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
-                  ],
-                  if (hasCC) ...[
-                    const SizedBox(height: 3),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color:
-                              const Color(0xFFE8C547).withValues(alpha: 0.5),
-                          width: 0.8,
-                        ),
-                      ),
-                      child: Text(
-                        '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          color: Color(0xFFE8C547),
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // ── Car render, left-aligned under the title. BoxFit.contain
-          // scales it to the 84px height, so centerLeft parks it against
-          // the left edge and leaves the right side open under the price.
-          SizedBox(
-            height: 84,
-            width: double.infinity,
-            child: CarImage3D(
-              assetPath: _carAssetForOption(opt.name),
-              cacheWidth: 640,
-              alignment: Alignment.centerLeft,
-              fallback: Icon(
-                Icons.directions_car_rounded,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                size: 40,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // ── Bottom: three sunken stat chips under the car, left-aligned
-          // with it (ETA minutes, trip miles, passenger capacity).
-          Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              _neuStatChip(Icons.schedule_rounded, '${opt.etaMinutes} min'),
-              const SizedBox(width: 8),
-              _neuStatChip(Icons.route_rounded, distanceText),
-              const SizedBox(width: 8),
-              _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

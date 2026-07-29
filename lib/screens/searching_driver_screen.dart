@@ -45,6 +45,14 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldEnd = Color(0xFFF5D990);
 
+  /// Total time this screen may stay on top before it pops itself.
+  static const _visibleCap = Duration(seconds: 4);
+
+  /// What _finishAndPop costs on the way out: ~300 ms filling the progress
+  /// bar + the 450 ms exit fade. Kept next to _visibleCap so the two stay
+  /// in sync — if the exit animation changes, this is the number to update.
+  static const _exitCost = Duration(milliseconds: 750);
+
   // ── controllers ──
   late final AnimationController _radarCtrl;    // 2400 ms – radar pulse rings
   late final AnimationController _glowCtrl;     // 1200 ms – car glow + scale
@@ -204,14 +212,30 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       });
     }
 
-    // ── Safety timeout: if payment/driver-matching takes longer than
-    // 10 s, complete the bar and pop so the user isn't stuck.
-    _searchTimeoutTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && !_popping) {
-        debugPrint('[SearchingDriverScreen] Timeout reached (10s) - completing bar and popping');
-        _finishAndPop(false);
-      }
-    });
+    // ── Hard cap: this screen is a transition, not a waiting room. After
+    // 4 s it completes the bar and pops no matter what, dropping the rider
+    // back onto the ride-request map in waiting-for-driver mode — where
+    // there is a real map, a real ETA and a cancel button, instead of a
+    // black screen with a spinner.
+    //
+    // Safe to cut this short because the caller passes paymentCallback:
+    // null — the charge is already authorized before this screen opens, so
+    // popping early can never abandon a payment mid-flight. Driver matching
+    // continues on the screen underneath.
+    //
+    // Fired early on purpose: _finishAndPop spends ~300 ms filling the
+    // progress bar and 450 ms on the exit fade, so starting at a flat 4 s
+    // would leave the screen up until ~4.75 s. Subtracting that exit cost
+    // is what makes it actually GONE at 4 s.
+    _searchTimeoutTimer = Timer(
+      _visibleCap - _exitCost,
+      () {
+        if (mounted && !_popping) {
+          debugPrint('[SearchingDriverScreen] 4s cap reached — completing bar and popping');
+          _finishAndPop(false);
+        }
+      },
+    );
   }
 
   @override

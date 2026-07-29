@@ -690,7 +690,27 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
     await _ensureFirebaseAuth();
-    // Retry backend API up to 3 times; only then fire Firestore sync as backup.
+
+    // Tell the rider FIRST.
+    //
+    // This write used to happen only after the backend call succeeded —
+    // behind a 6 s timeout and up to two 2 s retry gaps. On a weak signal
+    // the rider's "your driver has arrived" screen appeared many seconds
+    // after the driver swiped, or not at all, while the driver stood there
+    // believing the passenger had been told. Firestore is the rider's
+    // fastest channel; firing it now makes their overlay appear in the
+    // same beat as the swipe. Reverted below if the backend ultimately
+    // rejects the arrival, exactly like the optimistic write on accept.
+    unawaited(
+      FirebaseFirestore.instance.collection('trips').doc(_fsDocId).set({
+        'status': 'arrived',
+        'arrivedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)).catchError((e) {
+        debugPrint('[Driver] Firestore arrived write FAILED: $e');
+      }),
+    );
+
+    // Retry backend API up to 3 times — it remains the source of truth.
     bool apiOk = false;
     for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
       try {
@@ -704,6 +724,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     if (!apiOk) {
       debugPrint('[Driver] arrived API FAILED after 3 attempts');
+      // Undo the optimistic write above, or the rider is left staring at a
+      // "confirm you are with the driver" screen for an arrival the
+      // backend never accepted.
+      unawaited(
+        FirebaseFirestore.instance.collection('trips').doc(_fsDocId).set({
+          'status': 'driver_en_route',
+        }, SetOptions(merge: true)).catchError((e) {
+          debugPrint('[Driver] Firestore arrived rollback FAILED: $e');
+        }),
+      );
       // H2 fix: previously the UI stayed in "arrived" state even when all
       // 3 backend attempts failed — the driver thought they were at pickup
       // but neither the backend nor the rider ever knew. Roll back the
@@ -721,20 +751,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ),
         );
       }
-      return;  // don't fall through to Firestore backup — nothing to sync
+      return;
     }
-    // Fire-and-forget Firestore sync as backup (backend already syncs on success)
-    FirebaseFirestore.instance
-        .collection('trips')
-        .doc(_fsDocId)
-        .set({
-      'status': 'arrived',
-      'arrivedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true)).then((_) {
-      debugPrint('[Driver] Firestore arrived write OK → $_fsDocId');
-    }).catchError((e) {
-      debugPrint('[Driver] Firestore arrived write FAILED: $e');
-    });
+    debugPrint('[Driver] arrived confirmed → $_fsDocId');
   }
 
   // ── Listen for rider confirming they are with the driver ────────────────

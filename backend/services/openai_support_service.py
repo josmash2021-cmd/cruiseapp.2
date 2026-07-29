@@ -1,7 +1,18 @@
-"""OpenAI-powered support chat service for CruiseApp.
+"""LLM-powered support chat service for CruiseApp.
 
-Replaces the rule-based keyword bot with GPT-4o for human-like responses.
-Includes function calling for autonomous actions (cancel trip, apply promo, etc.)
+Replaces the rule-based keyword bot with a chat model for human-like
+responses, plus function calling for autonomous actions (cancel trip,
+apply promo, escalate...).
+
+Provider
+--------
+Kimi (Moonshot AI) when MOONSHOT_API_KEY is set, OpenAI otherwise. Kimi
+speaks the OpenAI wire protocol, so the same client and the same request
+shape work for both — only the base URL and the model name change.
+
+There is no fine-tuning involved for either. What makes this agent good
+or bad at Cruise support is _SYSTEM_PROMPT below: the app's real
+policies, written down so the model does not invent them.
 """
 
 import json
@@ -13,16 +24,47 @@ import openai
 
 _log = logging.getLogger(__name__)
 
-# Initialize OpenAI client
+# ── Provider selection ────────────────────────────────────────────────
+# Kimi first when its key is present, OpenAI as the fallback. Deliberately
+# not a hard swap: a missing or rejected Moonshot key must not take
+# support down, it should just fall through to whatever else is
+# configured — and to the human-escalation path if nothing is.
+_MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "") or os.getenv("KIMI_API_KEY", "")
 _OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Moonshot's OpenAI-compatible endpoint. Use api.moonshot.cn for the
+# mainland-China account tier — the two are separate account systems and a
+# key from one does not work on the other.
+_MOONSHOT_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1")
+
+# Model ids move faster than this file does, so both are env-overridable.
+# Set MOONSHOT_MODEL to whatever your Moonshot console lists.
+_MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "kimi-k2-0711-preview")
+_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
 _openai_client = None
+_MODEL = _OPENAI_MODEL
+_PROVIDER = "none"
 
-if _OPENAI_API_KEY:
+if _MOONSHOT_API_KEY:
+    _openai_client = openai.AsyncOpenAI(
+        api_key=_MOONSHOT_API_KEY,
+        base_url=_MOONSHOT_BASE_URL,
+    )
+    _MODEL = _MOONSHOT_MODEL
+    _PROVIDER = "kimi"
+elif _OPENAI_API_KEY:
     _openai_client = openai.AsyncOpenAI(api_key=_OPENAI_API_KEY)
+    _MODEL = _OPENAI_MODEL
+    _PROVIDER = "openai"
 
-# Model configuration
-_MODEL = "gpt-4o-mini"  # Cost-effective, fast, capable
-# _MODEL = "gpt-4o"     # Uncomment for higher quality (more expensive)
+# Logged at import so a misconfigured deploy is visible in Railway logs
+# instead of silently answering every rider with the escalation message.
+_log.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)
+
+# Set once a tools= request has been rejected by the provider, so the
+# retry path below stops paying for a round-trip it knows will fail.
+_TOOLS_UNSUPPORTED = False
 
 # System prompt for Cruise support agent
 _SYSTEM_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
@@ -48,6 +90,45 @@ Rules:
 4. For refunds over $50, get confirmation before processing
 5. Be transparent that you are an AI assistant
 6. If you don't know something, admit it and offer to connect with a human
+
+HOW CRUISE ACTUALLY WORKS — these are the real rules of this app.
+Never invent policy. If a rider asks something not covered here, say you
+will check with a human rather than guessing.
+
+Trip states, in order:
+  requested -> accepted -> driver_en_route -> arrived -> in_trip -> completed
+  Any state can end in `cancelled`. "arrived" means the driver is at the
+  pickup waiting; "in_trip" means the rider is aboard.
+
+Who may cancel a trip:
+  - The rider, ONLY while no driver has been assigned yet.
+  - Admin and dispatch, at any point.
+  - Drivers may NOT cancel. Their app blocks it and the backend rejects
+    it. A driver who cannot continue hands the trip back to dispatch and
+    it is re-offered to another driver — the rider is NOT stranded and is
+    NOT charged for that.
+  So: if a rider with an assigned driver asks to cancel, do not promise
+  it. Explain a human has to do it and escalate.
+
+Waiting at pickup:
+  There is a free wait window after the driver arrives. Past it, a wait
+  charge accrues. If a rider disputes a wait charge, check the trip's
+  wait_time_minutes before deciding.
+
+Changing the destination mid-trip:
+  Not self-service. It re-prices the ride and the driver has to be told,
+  so it goes through dispatch. Tell the rider you are passing it on —
+  never tell them to do it in the app themselves.
+
+Fares:
+  The fare shown at booking is an estimate. Final charge can differ with
+  actual distance, time, wait charges and tips. Cancellation fees and
+  wait charges appear as separate line items, not as a higher fare.
+
+What you must NOT claim:
+  - You cannot see the driver's live GPS. Do not describe where the car is.
+  - You cannot reassign a driver. Dispatch does that.
+  - You cannot change a rider's payment method for them.
 
 FRAUD DETECTION - CRITICAL:
 Before processing ANY refund or credit, analyze for fraud patterns:
@@ -335,15 +416,35 @@ async def generate_support_response(
         
         openai_messages.append({"role": openai_role, "content": content})
 
+    global _TOOLS_UNSUPPORTED
     try:
-        response = await _openai_client.chat.completions.create(
-            model=_MODEL,
-            messages=openai_messages,
-            tools=_FUNCTIONS,
-            tool_choice="auto",
-            max_tokens=500,
-            temperature=0.7,
-        )
+        try:
+            response = await _openai_client.chat.completions.create(
+                model=_MODEL,
+                messages=openai_messages,
+                max_tokens=500,
+                temperature=0.7,
+                **({} if _TOOLS_UNSUPPORTED
+                   else {"tools": _FUNCTIONS, "tool_choice": "auto"}),
+            )
+        except openai.BadRequestError as e:
+            # Not every model behind an OpenAI-compatible endpoint accepts
+            # tools. Losing autonomous actions is a degradation; losing the
+            # whole reply is a broken support chat. Retry plain text once,
+            # and remember so we stop paying for the failed round-trip.
+            if _TOOLS_UNSUPPORTED:
+                raise
+            _log.warning(
+                "[Support AI] %s rejected tools (%s) — retrying without them",
+                _PROVIDER, e,
+            )
+            _TOOLS_UNSUPPORTED = True
+            response = await _openai_client.chat.completions.create(
+                model=_MODEL,
+                messages=openai_messages,
+                max_tokens=500,
+                temperature=0.7,
+            )
 
         message = response.choices[0].message
 

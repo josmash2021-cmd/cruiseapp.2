@@ -120,36 +120,66 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ],
                 ),
               ),
-              // Plate + vehicle
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: Responsive.w(10), vertical: Responsive.h(4)),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      widget.vehiclePlate.isNotEmpty
-                          ? widget.vehiclePlate.toUpperCase()
-                          : '---',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: Responsive.sp(13),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
+              // Vehicle identity, stacked so the rider can match the car at
+              // a glance: model on top, the car itself, plate underneath.
+              SizedBox(
+                width: Responsive.w(92),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (vehicleLabel.isNotEmpty)
+                      Text(
+                        vehicleLabel,
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: Responsive.sp(10),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    SizedBox(height: Responsive.h(3)),
+                    // The car render itself. errorBuilder, not a bare
+                    // Image.asset: a missing render must not take the whole
+                    // card down mid-trip.
+                    Image.asset(
+                      _vehicleAsset,
+                      height: Responsive.h(30),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.directions_car_rounded,
+                        color: AppColors.kGold.withValues(alpha: 0.5),
+                        size: Responsive.sp(22),
                       ),
                     ),
-                  ),
-                  if (vehicleLabel.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      vehicleLabel,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: Responsive.sp(10)),
+                    SizedBox(height: Responsive.h(3)),
+                    // Plate: smaller than before — it is the confirmation,
+                    // not the headline. White, because a plate should read
+                    // like a plate.
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: Responsive.w(7),
+                          vertical: Responsive.h(2)),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        widget.vehiclePlate.isNotEmpty
+                            ? widget.vehiclePlate.toUpperCase()
+                            : '---',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: Responsive.sp(11),
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
                     ),
                   ],
-                ],
+                ),
               ),
             ],
           ),

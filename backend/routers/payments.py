@@ -415,6 +415,7 @@ async def create_financial_connections_session(
 @router.post("/stripe/bank-accounts/attach", dependencies=[Depends(_verify_api_key)])
 async def attach_bank_account(
     payload: BankAccountAttachIn,
+    request: Request,
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -429,22 +430,109 @@ async def attach_bank_account(
     if not customer_id:
         raise HTTPException(500, "Could not initialise payment customer")
 
+    # Stripe REQUIRES billing_details[name] on us_bank_account PaymentMethods
+    # (it's the ACH account-holder name on the mandate). Omitting it returned
+    # 400 "Missing required param: billing_details[name]" and the rider bounced
+    # back to the vehicle sheet with a generic payment error.
+    holder_name = " ".join(
+        [(user.first_name or ""), (user.last_name or "")]
+    ).strip()
+    if not holder_name:
+        # Last-resort fallbacks so the call never 400s on a nameless profile.
+        holder_name = (user.email or "").split("@")[0].strip() or (
+            user.phone or ""
+        ).strip() or f"Cruise Rider {user.id}"
+
+    billing_details = {"name": holder_name}
+    if user.email:
+        billing_details["email"] = user.email
+
     try:
         pm = _stripe_mod.PaymentMethod.create(
             type="us_bank_account",
             us_bank_account={
                 "financial_connections_account": payload.account_id,
             },
+            billing_details=billing_details,
         )
         _stripe_mod.PaymentMethod.attach(pm.id, customer=customer_id)
     except _stripe_mod.error.StripeError as e:
         logging.error("[Stripe] Attach bank account failed: %s", e)
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
 
+    # ACH MANDATE. Attaching the PaymentMethod is not enough: Stripe refuses
+    # any off_session debit against a us_bank_account without a mandate on
+    # record. Confirming a SetupIntent with online customer_acceptance creates
+    # it, and Stripe then links it automatically to every later
+    # PaymentIntent(customer=..., payment_method=..., off_session=True).
+    #
+    # Financial Connections returns an already-verified account, so this
+    # normally lands on 'succeeded' immediately. If it lands on
+    # requires_action, Stripe wants microdeposit verification and the account
+    # is NOT chargeable yet — we say so instead of letting the rider pick a
+    # bank that will decline at request time.
+    setup_status = None
+    try:
+        setup_intent = _stripe_mod.SetupIntent.create(
+            customer=customer_id,
+            payment_method=pm.id,
+            payment_method_types=["us_bank_account"],
+            confirm=True,
+            usage="off_session",
+            mandate_data={
+                "customer_acceptance": {
+                    "type": "online",
+                    "online": {
+                        "ip_address": (
+                            request.client.host if request.client else "0.0.0.0"
+                        ),
+                        "user_agent": request.headers.get("user-agent", "CruiseApp"),
+                    },
+                }
+            },
+            metadata={"user_id": str(user.id)},
+        )
+        setup_status = getattr(setup_intent, "status", None)
+        logging.info(
+            "[Stripe] ACH mandate SetupIntent %s for user %s → %s",
+            setup_intent.id, user.id, setup_status,
+        )
+    except _stripe_mod.error.StripeError as e:
+        # Roll the PaymentMethod back off the customer so a bank we cannot
+        # actually debit never shows up as a usable method in the picker.
+        try:
+            _stripe_mod.PaymentMethod.detach(pm.id)
+        except Exception:
+            pass
+        logging.error("[Stripe] ACH mandate setup failed: %s", e)
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
     bank = getattr(pm, "us_bank_account", None)
     bank_name = getattr(bank, "bank_name", None) if bank else None
     last4 = getattr(bank, "last4", None) if bank else None
     display = f"{bank_name} •••• {last4}" if bank_name else f"Bank •••• {last4}"
+
+    if setup_status != "succeeded":
+        # Mandate not live (microdeposit verification pending). Detach and skip
+        # the rider_payment_methods insert — otherwise GET /stripe/bank-accounts
+        # would list it again on the next app resume and the client would cache
+        # it as a usable method behind the picker's back.
+        try:
+            _stripe_mod.PaymentMethod.detach(pm.id)
+        except Exception:
+            pass
+        logging.warning(
+            "[Stripe] Bank for user %s not chargeable yet (setup_status=%s)",
+            user.id, setup_status,
+        )
+        return {
+            "stripe_pm_id": None,
+            "bank_name": bank_name,
+            "last4": last4,
+            "display_name": display,
+            "requires_verification": True,
+            "setup_status": setup_status,
+        }
 
     existing_r = await db.execute(
         select(RiderPaymentMethod).where(
@@ -469,6 +557,9 @@ async def attach_bank_account(
         "bank_name": bank_name,
         "last4": last4,
         "display_name": display,
+        # Mandate is live — the account can be debited off_session right away.
+        "requires_verification": False,
+        "setup_status": setup_status,
     }
 
 

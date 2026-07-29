@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, text, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, FareSplit, Rating, ChatMessage, SurgeZone,
@@ -593,6 +593,17 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                 trip.payment_status = "paid"
                 await db.commit()
                 return {"status": "succeeded", "payment_intent_id": existing.id, "amount": existing.amount}
+            elif existing.status == "processing":
+                # ACH: the debit was already initiated when the rider requested
+                # the ride and Stripe settles it over the next few business
+                # days. There is nothing to capture, and falling through to the
+                # card path below would charge a second time for riders who
+                # also have a card on file. payment_intent.succeeded /
+                # payment_failed webhooks flip this to paid/failed later.
+                trip.payment_status = "processing"
+                await db.commit()
+                logging.info("[Capture] Trip %s ACH debit still processing (pi=%s)", trip.id, existing.id)
+                return {"status": "processing", "payment_intent_id": existing.id, "amount": existing.amount}
         except asyncio.TimeoutError:
             logging.error("[Capture] Stripe timeout for trip %s", trip.id)
             trip.payment_status = "pending"
@@ -613,22 +624,35 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                 logging.warning("[Capture] Could not cancel old hold %s: %s", trip.stripe_payment_intent_id, _cancel_err)
             # Fall through to create new charge
 
-    # No existing hold - charge the saved card directly
-    # Find rider's default Stripe card
+    # No existing hold - charge the saved method directly.
+    # Cards first (they settle instantly); a linked bank account (ACH) is the
+    # fallback so riders who only ever linked a bank aren't a free ride. The
+    # ACH mandate created at attach time is what makes this debit legal.
     pm_r = await db.execute(
         select(RiderPaymentMethod).where(
             RiderPaymentMethod.user_id == trip.rider_id,
-            RiderPaymentMethod.method_type == "stripe_card",
+            RiderPaymentMethod.method_type.in_(("stripe_card", "bank_account")),
             RiderPaymentMethod.stripe_pm_id.isnot(None),
-        ).order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.asc())
+        ).order_by(
+            case((RiderPaymentMethod.method_type == "stripe_card", 0), else_=1),
+            RiderPaymentMethod.is_default.desc(),
+            RiderPaymentMethod.created_at.asc(),
+        )
     )
     pm = pm_r.scalars().first()
 
     if not pm:
-        logging.warning("[Charge] No Stripe card on file for rider %s, trip %s", trip.rider_id, trip.id)
+        logging.warning("[Charge] No Stripe payment method on file for rider %s, trip %s", trip.rider_id, trip.id)
         trip.payment_status = "failed"
         await db.commit()
         return {"status": "no_card", "payment_intent_id": None}
+
+    # Stripe rejects off_session charges against a customer-attached
+    # PaymentMethod unless the customer is passed too, and the ACH mandate is
+    # resolved through it. Without this the fallback charge 400s.
+    rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+    rider = rider_r.scalar_one_or_none()
+    rider_customer_id = getattr(rider, "stripe_customer_id", None) if rider else None
 
     amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50c
     # Cap at 120% of fare to prevent overcharge
@@ -643,6 +667,7 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                     amount=amount_cents,
                     currency="usd",
                     payment_method=pm.stripe_pm_id,
+                    **({"customer": rider_customer_id} if rider_customer_id else {}),
                     confirm=True,
                     off_session=True,
                     automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
@@ -651,7 +676,14 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
             ),
             timeout=10.0,
         )
-        trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
+        # ACH lands on 'processing', not 'succeeded' — treating that as failed
+        # would flag a perfectly good debit as a payment failure.
+        if intent.status == "succeeded":
+            trip.payment_status = "paid"
+        elif intent.status == "processing":
+            trip.payment_status = "processing"
+        else:
+            trip.payment_status = "failed"
         trip.stripe_payment_intent_id = intent.id
         await db.commit()
         logging.info("[Charge] Trip %s charged %sc - status: %s", trip.id, amount_cents, intent.status)
@@ -1399,6 +1431,16 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         except Exception as e:
             logging.warning("[Refund] Failed to refund trip %d: %s -- marking for manual refund", trip_id, e)
             trip.payment_status = "pending_refund"  # Manual refund needed
+    # ACH debits leave the rider's account at request time, not on completion,
+    # and Stripe can neither cancel nor refund a PaymentIntent while it is
+    # 'processing'. Flag it so the money is refunded once it settles instead of
+    # silently keeping a cancelled trip's fare.
+    elif trip.payment_status == "processing" and trip.stripe_payment_intent_id and _HAS_STRIPE:
+        trip.payment_status = "pending_refund"
+        logging.warning(
+            "[Refund] Trip %d cancelled while ACH debit still processing (pi=%s) -- needs refund once settled",
+            trip_id, trip.stripe_payment_intent_id,
+        )
 
     # Credit the driver their 60% share of any charged cancellation fee
     # (same 60/40 ledger split as completed-trip fares; 40% = Company revenue).

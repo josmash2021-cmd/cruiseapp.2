@@ -1561,8 +1561,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         dropoffLatLng: widget.dropoffLatLng,
       );
     } else {
-      // Pickup pin — always visible (legacy)
-      if (_pickupPinBytes != null) {
+      // Pickup pin — legacy path. `_showPickupPin` was written twice and
+      // read nowhere, so this recreated the pin after the rider boarded
+      // and it sat on the map for the rest of the trip.
+      if (_pickupPinBytes != null && _showPickupPin) {
         final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
         if (pickupPoint != null) {
           try {
@@ -1671,6 +1673,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _routePts = _tripRoutePts;
       _buildSegDist();
     }
+    // The map component holds its own copy and its own draw flag. Without
+    // this it still has the approach route and refuses to draw again.
+    _syncRouteToMap();
     _startAnimatedRouteDraw();
   }
 
@@ -2042,6 +2047,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _traveledM = 0;
       _tgtTraveledM = 0;
       _routeDrawDone = false;
+      // Clear the component's draw flag too, or _restartRouteAnimation
+      // below finds it already true and draws nothing.
+      _syncRouteToMap();
       // Do NOT draw yet — deferred to _restartRouteAnimation() on rider confirm
     }
 

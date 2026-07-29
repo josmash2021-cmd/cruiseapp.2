@@ -80,6 +80,26 @@ class TrackingMapRoute {
     _routeDrawDone = false;
   }
 
+  /// Point this component at a new active route.
+  ///
+  /// [initRoute] only ever ran once, at map creation, while the screen
+  /// swaps its own route three times over a trip — approach route,
+  /// reroute, then the pickup→dropoff leg. This component kept the first
+  /// one forever, so:
+  ///   - startAnimatedRouteDraw bailed on its own stale `_routeDrawDone`
+  ///     and the trip route was never drawn at all;
+  ///   - eraseRouteBehindCar trimmed against the wrong geometry.
+  /// Every swap on the screen side must come through here.
+  void setActiveRoute(List<LatLng> points, {bool resetDraw = true}) {
+    if (points.length < 2) return;
+    _routePts = List.of(points);
+    _buildSegDist();
+    if (resetDraw) {
+      _routeDrawTicker?.stop();
+      _routeDrawDone = false;
+    }
+  }
+
   /// Dibuja la ruta completa (dimmed) como fondo
   Future<void> drawDimmedRoute({double opacity = 0.20, double width = 5.0}) async {
     final mgr = _polylineAnnotMgr;

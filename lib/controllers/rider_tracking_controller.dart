@@ -695,6 +695,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // car actually is instead of snapping back to it.
     _routePts = newPoints;
     _buildSegDist();
+    _syncRouteToMap();
     _traveledM = _startMOnCurrentRoute();
     _tgtTraveledM = _traveledM;
     _directTargetPos = null;
@@ -714,6 +715,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // 4) Animate new route drawing on top
     _routeDrawDone = false;
     _startAnimatedRouteDraw();
+  }
+
+  /// Push the screen's current route into the modular map component.
+  ///
+  /// The two hold separate copies and only initRoute() ever synced them —
+  /// once, at map creation. Every later swap left TrackingMapRoute drawing
+  /// and erasing against the first route it ever saw. Call this right
+  /// after any assignment to `_routePts`.
+  void _syncRouteToMap({bool resetDraw = true}) {
+    if (_routePts.length < 2) return;
+    _mapRoute?.setActiveRoute(_routePts, resetDraw: resetDraw);
   }
 
   /// Where along the freshly-built route the car should resume from.
@@ -756,6 +768,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Set approach route as the active route for car tracking.
       _routePts = result.points;
       _buildSegDist();
+      _syncRouteToMap();
       // Start the car where the driver IS, not at the route's origin.
       //
       // This request is async: the driver kept driving while it was in
@@ -1028,6 +1041,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_tripRoutePts.isNotEmpty) {
       _routePts = _tripRoutePts;
       _buildSegDist();
+      // Without this the map component keeps the approach route and its
+      // own already-true draw flag, so the pickup→dropoff line is never
+      // drawn — the rider rides to the destination with no route on
+      // screen at all.
+      _syncRouteToMap();
     }
     _traveledM = 0;
     _tgtTraveledM = 0;
@@ -1094,6 +1112,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           _routeDurationSec = result.durationSeconds;
           _routePts = result.points;
           _buildSegDist();
+          // resetDraw: false — the line is already on screen and being
+          // erased behind the car. This only refreshes the geometry the
+          // erase is computed against; redrawing would flash it.
+          _syncRouteToMap(resetDraw: false);
           // Recalculate ETA with fresh traffic data
           final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
           _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);

@@ -37,6 +37,17 @@ class TrackingMapAnnotations {
   /// Settled by [_finishPickupPop] on every exit path — see the note there.
   Completer<void>? _pickupPopCompleter;
 
+  /// The rider is aboard: the pickup pin is retired for the rest of the
+  /// trip and must never be recreated.
+  ///
+  /// Popping the pin nulls `_pickupAnnot`, and createAnnotations creates
+  /// one whenever that is null. So any later re-run — a recreated
+  /// PlatformView resets `_staticAnnotsDone` and calls it again — brought
+  /// the pickup pin back on the map while the rider was already riding to
+  /// the destination. Deliberately survives [reset]: a map rebuild is not
+  /// a reason to resurrect it.
+  bool _pickupRetired = false;
+
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PointAnnotationManager? mgr) {
     _pointAnnotMgr = mgr;
@@ -91,8 +102,8 @@ class TrackingMapAnnotations {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
-    // Pickup pin
-    if (_pickupPinBytes != null && _pickupAnnot == null) {
+    // Pickup pin — never once the rider has boarded.
+    if (_pickupPinBytes != null && _pickupAnnot == null && !_pickupRetired) {
       final pickupPoint = safePoint(pickupLatLng.longitude, pickupLatLng.latitude);
       if (pickupPoint != null) {
         try {
@@ -204,6 +215,10 @@ class TrackingMapAnnotations {
 
   /// Pop-out animation para el pin de pickup (cuando el conductor llega)
   Future<void> popOutPickupPin() async {
+    // Set before the early return: the caller only asks for this once the
+    // rider is aboard, so the pin is retired even if there is nothing
+    // left to animate away.
+    _pickupRetired = true;
     if (_pickupAnnot == null || _pointAnnotMgr == null) return;
 
     final mgr = _pointAnnotMgr!;

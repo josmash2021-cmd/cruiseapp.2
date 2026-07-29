@@ -798,6 +798,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ── Support messages (polling fallback) ──────────────────────────────
 
+  /// What to print above a support message.
+  ///
+  /// The backend labels its automated replies "System" (and variants like
+  /// "Cruise Support System"). To the rider that reads as a machine
+  /// talking, which is not who they think they are writing to — the header
+  /// right above says Cruise Support. Anything system-ish is folded into
+  /// that one name; a real agent's name is shown as-is.
+  String _displaySenderName(String raw, S s) {
+    final lower = raw.toLowerCase().trim();
+    if (lower.isEmpty || lower == 'system' || lower == 'bot' ||
+        lower.contains('system')) {
+      return s.cruiseSupport;
+    }
+    return raw;
+  }
+
   Widget _buildSupportMessages(S s) {
     return Column(
       children: [
@@ -823,36 +839,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-        if (_supportMessages.length <= 1 && _supportChatId != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _quickReplies.map((label) => GestureDetector(
-                onTap: () {
-                  _controller.text = label;
-                  _sendMessage();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.3)),
-                  ),
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Color(0xFFE8C547),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              )).toList(),
-            ),
-          ),
         Expanded(
           child: _supportMessages.isEmpty
               ? _buildEmptyState(s)
@@ -867,13 +853,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       children: [
                         if (!msg.isMe && msg.senderName.isNotEmpty && (index == 0 || _supportMessages[index - 1].isMe))
                           Padding(
-                            padding: const EdgeInsets.only(left: 36, bottom: 2),
+                            padding: const EdgeInsets.only(left: 36, bottom: 4),
                             child: Text(
-                              msg.senderName,
+                              _displaySenderName(msg.senderName, s),
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFFE8C547).withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                                color: _gold.withValues(alpha: 0.75),
                               ),
                             ),
                           ),
@@ -888,6 +875,61 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
         ),
+        // Quick replies — BELOW the conversation, not above it. They used
+        // to render before the list, so the rider met a wall of buttons
+        // before the greeting that explains them. Now the welcome message
+        // comes first and the shortcuts sit where the answer goes, right
+        // above the input.
+        if (_supportMessages.length <= 1 && _supportChatId != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.chooseATopic,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: Colors.white.withValues(alpha: 0.35),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _quickReplies
+                      .map((label) => GestureDetector(
+                            onTap: () {
+                              HapticService.selectionClick();
+                              _controller.text = label;
+                              _sendMessage();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 9),
+                              // Raised pills — they are buttons, so they
+                              // should stand off the surface.
+                              decoration: neuBox(
+                                radius: 20,
+                                borderColor: _gold.withValues(alpha: 0.28),
+                              ),
+                              child: Text(
+                                label,
+                                style: const TextStyle(
+                                  color: _gold,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
         if (_agentTyping)
           Padding(
             padding: const EdgeInsets.only(left: 16, bottom: 8, top: 4),
@@ -895,25 +937,35 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Container(
                   width: 26, height: 26,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                  decoration: neuBox(
+                    radius: 13,
+                    pressed: true,
+                    borderColor: _gold.withValues(alpha: 0.25),
                   ),
                   child: const Center(
-                    child: Icon(Icons.support_agent_rounded, size: 13, color: Color(0xFFE8C547)),
+                    child: Icon(Icons.support_agent_rounded, size: 13, color: _gold),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  // Matches the raised incoming bubble, tail corner and all.
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: neuSurface,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(18),
                       topRight: Radius.circular(18),
                       bottomLeft: Radius.circular(4),
                       bottomRight: Radius.circular(18),
                     ),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        offset: const Offset(4, 4),
+                        blurRadius: 10,
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

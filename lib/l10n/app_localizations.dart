@@ -3887,6 +3887,9 @@ class S {
   // Driver offer card — rider quality labels.
   String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
 
+  // Support chat — label above the quick-reply topic pills.
+  String get chooseATopic => _es ? 'ELIGE UN TEMA' : 'CHOOSE A TOPIC';
+
   // Rider tracking — support menu on the driver card.
   String get call911 => _es ? 'Llamar al 911' : 'Call 911';
   String get changeDestination =>

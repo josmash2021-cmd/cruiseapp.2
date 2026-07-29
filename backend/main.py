@@ -1650,15 +1650,14 @@ async def _connection_watchdog():
             logging.error("[Watchdog] Unexpected error: %s", _outer)
 
         await asyncio.sleep(30)
-# ── Stripe Webhooks router (legacy — now in routers/webhooks.py) ──
-# The new consolidated webhooks router is registered above.
-# Keep legacy import as fallback for backward compatibility.
-try:
-    from webhooks.stripe_webhook import router as stripe_wh_router
-    app.include_router(stripe_wh_router)
-    logging.info("[Webhooks] Legacy Stripe webhook router registered")
-except ImportError as _wh_err:
-    pass
+# ── Stripe Webhooks ──
+# Handled solely by routers/webhooks.py, registered above. There used to be a
+# second router here declaring the same POST /webhooks/stripe path: FastAPI
+# keeps the first route registered for a path and silently ignores later ones,
+# so that module never ran a single event. Two copies of the payment-event
+# logic meant a fix landing in the wrong one would do nothing, with no error
+# to show for it. The duplicate module has been deleted — do not add another
+# router on this path.
 # -------------------------------------------------------
 #  SERVER STARTUP (if run directly)
 # -------------------------------------------------------

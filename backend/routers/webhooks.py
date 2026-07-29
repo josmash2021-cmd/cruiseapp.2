@@ -56,6 +56,121 @@ def _get_helpers():
 #  Stripe Event Handlers
 # ═══════════════════════════════════════════════════════════════
 
+async def _resolve_trip(db, Trip, trip_id, payment_intent_id: str):
+    """Find the trip a PaymentIntent belongs to.
+
+    Prefers the `trip_id` metadata, falling back to the PaymentIntent id stored
+    on the trip row. The fallback is what makes ACH observable at all: the
+    rider's bank debit is created BEFORE the trip exists (the fare has to be
+    secured before drivers are dispatched), so its metadata can never carry a
+    trip_id. Without this, every asynchronous ACH settlement or failure was
+    silently dropped.
+    """
+    from sqlalchemy import select
+    if trip_id:
+        # A non-numeric trip_id must not take the whole event down. Handlers
+        # run as background tasks *after* the 200 has gone back to Stripe, so
+        # an uncaught error here is not retried — the event is simply lost,
+        # and a paid trip would stay marked unpaid forever. Fall through to
+        # the PaymentIntent lookup instead.
+        try:
+            numeric_trip_id = int(trip_id)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[StripeWH] Ignoring non-numeric trip_id metadata %r (pi=%s)",
+                trip_id, payment_intent_id,
+            )
+            numeric_trip_id = None
+        if numeric_trip_id is not None:
+            result = await db.execute(select(Trip).where(Trip.id == numeric_trip_id))
+            trip = result.scalar_one_or_none()
+            if trip:
+                return trip
+    if payment_intent_id:
+        result = await db.execute(
+            select(Trip).where(Trip.stripe_payment_intent_id == payment_intent_id)
+        )
+        return result.scalar_one_or_none()
+    return None
+
+
+async def _auto_refund_cancelled_trip(db, trip, payment_intent_id: str, client_ip: str):
+    """Refund a cancelled trip whose payment only settled after the cancel.
+
+    Only reachable for ACH: a card ride is authorized with capture_method=manual
+    and the cancel path releases the hold, but an ACH debit leaves the rider's
+    account at request time and Stripe cannot cancel or refund it while it is
+    'processing'. The cancel handler parks those on payment_status
+    ='pending_refund' and this closes the loop the moment Stripe confirms the
+    money actually moved.
+
+    Keeps any cancellation fee the trip already assessed, matching the
+    same-day refund branch in trips.py.
+    """
+    _, _security_audit_log = _get_helpers()
+
+    fare = float(trip.fare or 0)
+    fee = float(trip.cancellation_fee or 0)
+    refund_cents = int(round(max(fare - fee, 0) * 100))
+
+    if refund_cents <= 0:
+        # Fee ate the whole fare — nothing to send back, but the trip is
+        # settled and must not stay flagged as owing a refund forever.
+        trip.payment_status = "paid"
+        trip.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        logger.info(
+            "[StripeWH] Trip %s cancelled: cancellation fee covers the full fare, no refund due",
+            trip.id,
+        )
+        return
+
+    try:
+        refund = _stripe_mod.Refund.create(
+            payment_intent=payment_intent_id,
+            amount=refund_cents,
+            reason="requested_by_customer",
+            # Stripe retries webhooks; without this a redelivery of the same
+            # event would issue a second refund for the same trip.
+            idempotency_key=f"auto_refund_trip_{trip.id}_{payment_intent_id}",
+        )
+    except Exception as e:
+        # Leave it on pending_refund so it stays visible for manual handling.
+        trip.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        logger.error(
+            "[StripeWH] Auto-refund FAILED for cancelled trip %s (pi=%s): %s",
+            trip.id, payment_intent_id, e,
+        )
+        try:
+            from services.admin_alerts import send_alert, CRITICAL
+            asyncio.create_task(send_alert(
+                alert_type="auto_refund_failed",
+                title="Auto-refund failed",
+                message=f"Trip #{trip.id} was cancelled but its ACH refund failed: {str(e)[:120]}",
+                severity=CRITICAL,
+                data={"trip_id": str(trip.id), "payment_intent": payment_intent_id},
+            ))
+        except Exception:
+            pass
+        return
+
+    trip.payment_status = "refunded"
+    trip.refund_amount = refund_cents / 100.0
+    trip.refund_status = "partial" if fee > 0 else "full"
+    trip.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    logger.info(
+        "[StripeWH] Trip %s auto-refunded $%.2f (fee kept: $%.2f, refund=%s)",
+        trip.id, refund_cents / 100.0, fee, getattr(refund, "id", "?"),
+    )
+    _security_audit_log(
+        "stripe_auto_refund", client_ip,
+        f"trip={trip.id} pi={payment_intent_id} amt={refund_cents} fee={fee}",
+    )
+
+
 async def _handle_payment_intent_succeeded(data_object: dict, client_ip: str):
     """payment_intent.succeeded — mark trip as paid."""
     _, _security_audit_log = _get_helpers()
@@ -66,17 +181,24 @@ async def _handle_payment_intent_succeeded(data_object: dict, client_ip: str):
     payment_intent_id = data_object.get("id", "")
     amount = data_object.get("amount", 0)
 
-    if not trip_id:
-        logger.info("[StripeWH] payment_intent.succeeded without trip_id, skipping")
-        return
-
-    from sqlalchemy import select
     async with SessionLocal() as db:
-        result = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
-        trip = result.scalar_one_or_none()
+        trip = await _resolve_trip(db, Trip, trip_id, payment_intent_id)
         if not trip:
-            logger.warning("[StripeWH] Trip %s not found", trip_id)
+            logger.warning(
+                "[StripeWH] No trip for payment_intent.succeeded (trip_id=%s pi=%s)",
+                trip_id, payment_intent_id,
+            )
             return
+        trip_id = trip.id
+
+        # Cancelled while the ACH debit was still settling — the money has now
+        # actually moved, so send it back instead of flipping to 'paid', which
+        # would quietly keep a cancelled trip's fare.
+        if trip.payment_status == "pending_refund":
+            trip.stripe_payment_intent_id = payment_intent_id
+            await _auto_refund_cancelled_trip(db, trip, payment_intent_id, client_ip)
+            return
+
         trip.payment_status = "paid"
         trip.stripe_payment_intent_id = payment_intent_id
         trip.updated_at = datetime.now(timezone.utc)
@@ -86,6 +208,47 @@ async def _handle_payment_intent_succeeded(data_object: dict, client_ip: str):
     _security_audit_log("stripe_payment_succeeded", client_ip, f"trip={trip_id}")
 
 
+async def _handle_payment_intent_processing(data_object: dict, client_ip: str):
+    """payment_intent.processing — ACH debit accepted, settling asynchronously.
+
+    Cards never hit this state; us_bank_account always does. Recording it means
+    a trip paid by bank reads as 'processing' rather than 'unpaid' for the 3-5
+    business days Stripe takes to settle, so reconciliation doesn't flag it as
+    a free ride.
+    """
+    _, _security_audit_log = _get_helpers()
+    Trip, _User = _get_models()
+    SessionLocal = _get_db_session()
+
+    trip_id = data_object.get("metadata", {}).get("trip_id")
+    payment_intent_id = data_object.get("id", "")
+    amount = data_object.get("amount", 0)
+
+    async with SessionLocal() as db:
+        trip = await _resolve_trip(db, Trip, trip_id, payment_intent_id)
+        if not trip:
+            logger.info(
+                "[StripeWH] No trip for payment_intent.processing (trip_id=%s pi=%s)",
+                trip_id, payment_intent_id,
+            )
+            return
+
+        # Never walk back a terminal state — Stripe can deliver events out of
+        # order, and a late 'processing' must not un-pay a settled trip nor
+        # erase the pending_refund flag a cancel already set.
+        if trip.payment_status in ("paid", "refunded", "pending_refund"):
+            return
+
+        trip.payment_status = "processing"
+        trip.stripe_payment_intent_id = payment_intent_id
+        trip.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        trip_id = trip.id
+
+    logger.info("[StripeWH] Trip %s ACH debit processing (pi=%s, amount=%s)", trip_id, payment_intent_id, amount)
+    _security_audit_log("stripe_payment_processing", client_ip, f"trip={trip_id} pi={payment_intent_id}")
+
+
 async def _handle_payment_intent_failed(data_object: dict, client_ip: str):
     """payment_intent.payment_failed — mark failed, notify rider."""
     _send_fcm_push, _security_audit_log = _get_helpers()
@@ -93,19 +256,19 @@ async def _handle_payment_intent_failed(data_object: dict, client_ip: str):
     SessionLocal = _get_db_session()
 
     trip_id = data_object.get("metadata", {}).get("trip_id")
+    payment_intent_id = data_object.get("id", "")
     error_msg = (data_object.get("last_payment_error") or {}).get("message", "Payment failed")
-
-    if not trip_id:
-        logger.info("[StripeWH] payment_intent.payment_failed without trip_id, skipping")
-        return
 
     from sqlalchemy import select
     async with SessionLocal() as db:
-        result = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
-        trip = result.scalar_one_or_none()
+        trip = await _resolve_trip(db, Trip, trip_id, payment_intent_id)
         if not trip:
-            logger.warning("[StripeWH] Trip %s not found", trip_id)
+            logger.warning(
+                "[StripeWH] No trip for payment_failed (trip_id=%s pi=%s)",
+                trip_id, payment_intent_id,
+            )
             return
+        trip_id = trip.id
         trip.payment_status = "failed"
         trip.updated_at = datetime.now(timezone.utc)
         await db.commit()
@@ -194,6 +357,7 @@ async def _handle_account_updated(data_object: dict, client_ip: str):
 _STRIPE_HANDLERS = {
     "payment_intent.succeeded": _handle_payment_intent_succeeded,
     "payment_intent.payment_failed": _handle_payment_intent_failed,
+    "payment_intent.processing": _handle_payment_intent_processing,
     "charge.refunded": _handle_charge_refunded,
     "charge.dispute.created": _handle_charge_dispute_created,
     "account.updated": _handle_account_updated,

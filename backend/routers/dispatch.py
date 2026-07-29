@@ -1269,12 +1269,52 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             Trip.status == "requested",
         ))
     )
+    rows = result.all()
+
+    # Rider reputation for the driver's trip screen.
+    #
+    # It was never sent, so the driver app defaulted rider_rating to 0 and
+    # rider_is_new to false — and its own "stars, or New Rider" block keys off
+    # exactly those two, so neither ever rendered. The driver saw a bare name
+    # for every passenger they were about to let into their car.
+    #
+    # One grouped query for the whole batch, not _compute_user_rating() per
+    # offer: that helper costs two round trips each and this list is on the
+    # driver's poll path.
+    _rider_ids = [t.rider_id for _o, t, _r in rows if t.rider_id]
+    _rider_rep: dict[int, tuple[float, int]] = {}
+    if _rider_ids:
+        try:
+            _rep_r = await db.execute(
+                select(
+                    Rating.to_user_id,
+                    func.avg(Rating.stars),
+                    func.count(Rating.id),
+                )
+                .where(Rating.to_user_id.in_(_rider_ids))
+                .group_by(Rating.to_user_id)
+            )
+            for _uid, _avg, _cnt in _rep_r.all():
+                _rider_rep[_uid] = (
+                    round(float(_avg), 1) if _avg is not None else 0.0,
+                    int(_cnt or 0),
+                )
+        except Exception as e:
+            # Reputation is decoration; an offer must never be withheld over it.
+            logging.warning("[get_driver_pending] rider reputation fetch failed: %s", e)
+
     offers = []
-    for offer, trip, rider in result.all():
+    for offer, trip, rider in rows:
         rider_name, rider_phone = _resolve_rider_display(trip, rider)
         rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
         estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+        _rating, _rating_count = _rider_rep.get(trip.rider_id, (0.0, 0))
         offers.append({
+            "rider_rating": _rating,
+            # No ratings yet — their first ride with us. Guest bookings have no
+            # rider_id at all, so they land here too, which is correct: nobody
+            # has rated them either.
+            "rider_is_new": _rating_count == 0,
             "offer_id": offer.id,
             "rider_name": rider_name,
             "rider_phone": rider_phone,

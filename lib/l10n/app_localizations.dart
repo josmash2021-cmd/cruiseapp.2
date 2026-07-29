@@ -3887,6 +3887,17 @@ class S {
   // Driver offer card — rider quality labels.
   String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
 
+  // Rider tracking — support menu on the driver card.
+  String get call911 => _es ? 'Llamar al 911' : 'Call 911';
+  String get changeDestination =>
+      _es ? 'Cambiar destino' : 'Change destination';
+  String get changeDestinationViaSupport => _es
+      ? 'Soporte cambiará tu destino y avisará al conductor.'
+      : 'Support will change your destination and tell the driver.';
+  String get trackMyCruiseRideLive => _es
+      ? 'Sigue mi viaje de Cruise en vivo:'
+      : 'Track my Cruise ride live:';
+
   // Driver trip screen — header menu subtitles.
   String get backToDriverHomeSubtitle =>
       _es ? 'Volver a la pantalla principal' : 'Back to the main screen';

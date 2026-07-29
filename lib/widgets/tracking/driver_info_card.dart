@@ -339,7 +339,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           borderColor: AppColors.kGold
               .withValues(alpha: _showMoreMenu ? 0.8 : 0.35),
         ),
-        child: Icon(Icons.more_horiz_rounded,
+        // Support agent, not three dots: this is where the rider reaches
+        // help, and an ellipsis promises nothing.
+        child: Icon(Icons.support_agent_rounded,
             color: AppColors.kGold, size: Responsive.sp(18)),
       ),
     );
@@ -371,6 +373,38 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _buildMenuItem(
+                icon: Icons.report_problem_outlined,
+                label: S.of(context).problemWithTrip,
+                color: AppColors.kGold,
+                onTap: () {
+                  _setState(() => _showMoreMenu = false);
+                  _openSupportChat();
+                },
+              ),
+              _menuDivider(),
+              _buildMenuItem(
+                icon: Icons.edit_location_alt_outlined,
+                label: S.of(context).changeDestination,
+                color: AppColors.kGold,
+                onTap: () {
+                  _setState(() => _showMoreMenu = false);
+                  _requestDestinationChange();
+                },
+              ),
+              _menuDivider(),
+              // Red, and last of the urgent group: 911 is not a thing to
+              // hit by accident while reaching for support.
+              _buildMenuItem(
+                icon: Icons.emergency_outlined,
+                label: S.of(context).call911,
+                color: const Color(0xFFEF4444),
+                onTap: () {
+                  _setState(() => _showMoreMenu = false);
+                  _callEmergency();
+                },
+              ),
+              _menuDivider(),
               _buildMenuItem(
                 icon: Icons.headset_mic_outlined,
                 label: S.of(context).contactSupport,
@@ -495,6 +529,72 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Hairline rule between menu rows — the shared neu grouping idiom.
+  Widget _menuDivider() => Container(
+        height: 1,
+        margin: const EdgeInsets.symmetric(horizontal: 14),
+        color: Colors.white.withValues(alpha: 0.05),
+      );
+
+  /// Dial emergency services.
+  ///
+  /// Confirms first: this sits one tap from Contact Support and a
+  /// misdialled 911 is not a small thing.
+  void _callEmergency() {
+    HapticService.heavyImpact();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: neuSurface,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text(S.of(ctx).call911,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800)),
+        content: Text(
+          S.of(ctx).call911OrEmergency,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).cancel,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              launchUrl(Uri.parse('tel:911'));
+            },
+            child: Text(S.of(ctx).call911,
+                style: const TextStyle(
+                    color: Color(0xFFEF4444), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ask dispatch to change the drop-off.
+  ///
+  /// Routed through support on purpose, not stubbed: changing the
+  /// destination mid-trip re-prices the ride and has to reach the driver,
+  /// and there is no backend endpoint for either yet. Dispatch can do both
+  /// today, so the rider gets a real outcome instead of a dead button —
+  /// the same shape the cancel policy already uses.
+  void _requestDestinationChange() {
+    HapticService.selectionClick();
+    _openSupportChat();
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(S.of(context).changeDestinationViaSupport),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
       ),
     );
   }

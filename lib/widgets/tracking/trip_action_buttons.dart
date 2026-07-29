@@ -193,15 +193,41 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   Future<void> _handleShareTrip() async {
-    if (widget.tripId == null) return;
+    // No trip id — nothing to share. Say so instead of doing nothing:
+    // a button that silently ignores a tap reads as broken.
+    if (widget.tripId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).couldNotShareTripError('no trip')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    HapticService.selectionClick();
     try {
       final result = await ApiService.shareTrip(widget.tripId!);
       final shareUrl = result['share_url'] as String?;
-      if (shareUrl == null) return;
+      if (shareUrl == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(S.of(context).couldNotShareTripError('no link')),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+      // Serves the live-tracking page: GET /track/{token}, backed by
+      // /trips/shared/{token}/location for the moving car.
       final fullUrl = '${ApiService.publicBaseUrl}$shareUrl';
+      if (!mounted) return;
       await Share.share(
-        'Track my Cruise ride live: $fullUrl',
-        subject: 'Cruise - Live Trip Tracking',
+        '${S.of(context).trackMyCruiseRideLive} $fullUrl',
+        subject: 'Cruise — Live Trip Tracking',
       );
       AnalyticsService.instance.logEvent('trip_shared');
     } catch (e) {

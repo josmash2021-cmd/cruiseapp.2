@@ -86,6 +86,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String _agentName = 'Support';
   final int _lastSupportMsgId = 0; // tracks highest msg id seen for polling
   bool _agentTyping = false;
+  /// Signature of the support list as last rendered, so an unchanged poll
+  /// does not rebuild it (and re-trigger the scroll animation).
+  String _supportSig = '';
 
   // ── REST fallback messages (used when RTDB fails) ──
   final List<ChatMessage> _restMessages = [];
@@ -198,13 +201,32 @@ class _ChatScreenState extends State<ChatScreen> {
       final lastBot = parsed.lastWhere((m) => !m.isMe && m.senderName.isNotEmpty, orElse: () => parsed.isNotEmpty ? parsed.last : _SupportMessage(id: 0, text: '', isMe: false, time: DateTime.now(), senderName: _agentName, role: 'bot'));
       if (lastBot.senderName.isNotEmpty) _agentName = lastBot.senderName;
 
-      final newCount = parsed.length;
-      if (newCount != _supportMessages.length) {
+      // Keep optimistic sends the server has not echoed back yet.
+      //
+      // This used to clear and replace the whole list whenever the counts
+      // differed — and right after a send the count ALWAYS differs, because
+      // the local echo (id 0) is in our list and not yet in the server's. So
+      // the driver's own message was deleted off the screen a moment after
+      // they sent it and only came back on the next poll two seconds later.
+      // That is both "my message takes a while to appear" and the scroll
+      // jump: the list shrank and re-grew, and maxScrollExtent moved
+      // underneath a running animation.
+      final serverTexts = parsed.map((m) => m.text).toSet();
+      final pendingMine = _supportMessages
+          .where((m) => m.isMe && m.id == 0 && !serverTexts.contains(m.text));
+      final merged = <_SupportMessage>[...parsed, ...pendingMine];
+
+      // Signature, not length: a poll that brings back the same messages must
+      // not rebuild the list, because every rebuild re-runs the scroll
+      // animation. Two messages can also swap without the count changing.
+      final sig = merged.map((m) => '${m.id}|${m.text}').join('');
+      if (sig != _supportSig) {
+        _supportSig = sig;
         final hasNewBotMsg = parsed.any((m) => !m.isMe);
         setState(() {
           _supportMessages
             ..clear()
-            ..addAll(parsed);
+            ..addAll(merged);
           if (hasNewBotMsg) _agentTyping = false;
         });
         _scrollToBottom();
@@ -418,7 +440,8 @@ class _ChatScreenState extends State<ChatScreen> {
         );
         _agentTyping = true;
       });
-      _scrollToBottom();
+      // force: this is the driver's own message — always follow it down.
+      _scrollToBottom(force: true);
       try {
         await ApiService.sendSupportMessage(chatId, text).timeout(const Duration(seconds: 15));
         // Poll immediately to get bot response faster
@@ -458,16 +481,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ── Scroll ────────────────────────────────────────────────────────────
 
-  void _scrollToBottom() {
+  /// [force] scrolls even when the user has scrolled up — use it for their
+  /// own sends, never for an incoming poll.
+  void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      // Leave the driver where they are if they scrolled up to read back.
+      // Unconditional animateTo meant a poll landing every 2 seconds dragged
+      // the view down out from under their thumb.
+      if (!force && pos.maxScrollExtent - pos.pixels > 240) return;
+      _scrollController.animateTo(
+        pos.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 

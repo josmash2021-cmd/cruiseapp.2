@@ -875,7 +875,26 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
 //  Phase 3: Agent chat (human-like AI responses)
 // ─────────────────────────────────────────────────────────
 class CruiseSupportChatScreen extends StatefulWidget {
-  const CruiseSupportChatScreen({super.key});
+  const CruiseSupportChatScreen({
+    super.key,
+    this.initialMessage,
+    this.inTrip = false,
+  });
+
+  /// Sent on the user's behalf as soon as the chat is ready.
+  ///
+  /// The "problem with pickup / dropoff / trip" buttons used to open a form
+  /// that asked the driver to pick a reason from a list — while they were
+  /// parked with a passenger waiting. Now the tap itself says who they are and
+  /// what went wrong, and the agent replies to a real opening line instead of
+  /// an empty chat.
+  final String? initialMessage;
+
+  /// Opened from inside an active trip. Narrows the quick actions to what can
+  /// actually be done mid-ride — nobody driving a passenger needs "document
+  /// help" — and adds "change destination", which only exists during a trip.
+  final bool inTrip;
+
   @override
   State<CruiseSupportChatScreen> createState() =>
       _CruiseSupportChatScreenState();
@@ -1004,6 +1023,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         }
       } else {
         _subtitle = _isSpanish ? 'Soporte Cruise' : 'Cruise Support';
+      }
+
+      // Opening line the caller already knows. Sent through the normal send
+      // path so it is stored, echoed and answered exactly like anything the
+      // user types — the agent must not be able to tell the difference.
+      final opener = widget.initialMessage?.trim();
+      if (opener != null && opener.isNotEmpty && _chatId != null && mounted) {
+        setState(() => _loading = false);
+        await _sendMessage(opener);
+        return;
       }
     } catch (e) {
       debugPrint('[SupportChat] init error: $e');
@@ -1369,17 +1398,23 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _sending = true;
       _messages.add(_ChatMsg(text: text, role: _userRole, time: DateTime.now()));
     });
-    _scrollToBottom();
+    // force: the driver's own message — always follow it down.
+    _scrollToBottom(force: true);
 
     try {
       await ApiService.sendSupportMessage(_chatId!, text);
       // Show typing indicator while waiting for bot/agent response
       if (mounted && _phase == _ChatPhase.agent) {
         setState(() => _isAgentTyping = true);
-        _scrollToBottom();
+        _scrollToBottom(force: true);
       }
-      // Immediately poll for reply
-      await Future.delayed(const Duration(seconds: 2));
+      // Poll now.
+      //
+      // There was an unconditional `await Future.delayed(2s)` here before
+      // this line — the send sat with _sending = true for two full seconds
+      // after the server had already answered, which is the delay that made
+      // the chat feel stuck on every message. The regular poll timer is the
+      // safety net if this one lands too early.
       await _loadMessages();
     } catch (e) {
       debugPrint('[SupportChat] send error: $e');
@@ -1410,16 +1445,27 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Scroll ──────────────────────────────────────────────────────────
 
-  void _scrollToBottom() {
+  /// [force] scrolls even when the user has scrolled up to read back — use it
+  /// for their own sends, never for an incoming poll.
+  void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent + 80,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      final pos = _scrollCtrl.position;
+      // Leave them where they are if they scrolled up: a poll every couple of
+      // seconds was dragging the view down out from under their thumb.
+      if (!force && pos.maxScrollExtent - pos.pixels > 240) return;
+      // maxScrollExtent, NOT maxScrollExtent + 80.
+      //
+      // That +80 animated 80 px PAST the end of the list, so iOS bouncing
+      // physics stretched the content up and rubber-banded it back on every
+      // single message. That spring is the "something pushes the messages up
+      // and it looks bad" — it was not a layout bug, it was an overscroll
+      // being requested deliberately.
+      _scrollCtrl.animateTo(
+        pos.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -1848,10 +1894,47 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Quick action chips ──────────────────────────────────────────────
 
+  /// Quick actions for a driver who is mid-trip.
+  ///
+  /// The standard driver set includes document and account help, which is not
+  /// what someone with a passenger in the car needs, and leaves out the one
+  /// thing only a live trip can ask for: a destination change. "Other" sends
+  /// nothing — it just clears the chips so the driver can type the problem in
+  /// their own words.
+  List<Map<String, String>> _inTripQuickActions() => [
+    {
+      'label': _isSpanish ? 'Problema con el viaje' : 'Trip problem',
+      'message': _isSpanish
+          ? 'Tengo un problema con este viaje.'
+          : 'I have a problem with this trip.',
+    },
+    {
+      'label': _isSpanish ? 'Ganancias' : 'Earnings help',
+      'message': _isSpanish
+          ? 'Tengo una duda sobre mis ganancias.'
+          : 'I have a question about my earnings.',
+    },
+    {
+      'label': _isSpanish ? 'Cambiar destino' : 'Change destination',
+      'message': _isSpanish
+          ? 'El pasajero necesita cambiar el destino de este viaje.'
+          : 'The passenger needs to change the destination of this trip.',
+    },
+    {
+      'label': _isSpanish ? 'Hablar con un agente' : 'Talk to an agent',
+      'message': _isSpanish
+          ? 'Necesito hablar con un agente.'
+          : 'I need to talk to an agent.',
+    },
+    {'label': _isSpanish ? 'Otro' : 'Other', 'message': ''},
+  ];
+
   Widget _buildQuickActions() {
-    final actions = _userRole == 'driver'
-        ? AgentPrompts.driverQuickActions(_isSpanish)
-        : AgentPrompts.riderQuickActions(_isSpanish);
+    final actions = widget.inTrip && _userRole == 'driver'
+        ? _inTripQuickActions()
+        : _userRole == 'driver'
+            ? AgentPrompts.driverQuickActions(_isSpanish)
+            : AgentPrompts.riderQuickActions(_isSpanish);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1861,7 +1944,17 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         children: List.generate(actions.length, (i) {
           final action = actions[i];
           return GestureDetector(
-            onTap: () => _sendMessage(action['message']),
+            onTap: () {
+              // Empty message = "Other": stand the chips down and hand the
+              // driver the keyboard instead of sending anything.
+              final msg = action['message'] ?? '';
+              if (msg.isEmpty) {
+                setState(() => _showQuickActions = false);
+                _focusNode.requestFocus();
+                return;
+              }
+              _sendMessage(msg);
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
               decoration: neuBox(radius: 22, pressed: true),

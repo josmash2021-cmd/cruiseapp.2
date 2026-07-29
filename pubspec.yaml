@@ -32,6 +32,10 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.3.3
   image_picker: ^1.1.2
+  # Support-chat attachments. image_picker cannot select a PDF, so documents
+  # need this. It is a native plugin: adding it means a full Codemagic /
+  # Shorebird build, NOT an OTA patch.
+  file_picker: ^8.1.6
   path_provider: ^2.1.4
   permission_handler: ^11.3.1
   url_launcher: ^6.3.1

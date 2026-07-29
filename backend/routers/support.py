@@ -11,7 +11,10 @@ try:
     _HAS_FIELD_FILTER = True
 except ImportError:
     pass
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from fastapi import (
+    APIRouter, Depends, HTTPException, Header, Request, Query, Body,
+    UploadFile, File,
+)
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +28,7 @@ from utils.security import (  # type: ignore[attr-defined]
 )
 from utils.helpers import _safe_create_task, utc_now, _support_msg_dict  # type: ignore[attr-defined]
 from services.fcm_service import _send_fcm_push_async  # type: ignore[attr-defined]
+from services.storage import upload_file, get_signed_url
 from config import (
     firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
 )
@@ -2275,6 +2279,71 @@ async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
         })
     return out
 
+# Attachments ride inside the message text. SupportMessage has no column for
+# them and adding one is a migration, so the row carries a marker plus the
+# durable S3 key — never the signed URL. Those expire, and a photo that 404s a
+# day later is worse than no photo at all. get_support_messages mints a fresh
+# URL on the way out.
+_ATTACH_PREFIX = "||ATT||"
+
+
+@router.post("/support/chats/{chat_id}/attachments", dependencies=[Depends(_verify_api_key)])
+async def send_support_attachment(
+    chat_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a photo or a PDF to a support chat.
+
+    Type and size are enforced inside upload_file, which sniffs magic bytes
+    and trusts what it sniffs over the declared Content-Type — a client can
+    rename a file but it cannot rename its header.
+    """
+    chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_r.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your chat")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        result = await upload_file(
+            data,
+            folder=f"support/{chat_id}",
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ValueError as e:
+        # Too big or wrong type — the caller's problem, and they get to know
+        # which one it was instead of a generic 400.
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    row = SupportMessage(
+        chat_id=chat_id,
+        sender_id=user.id,
+        sender_role=(user.role or "rider"),
+        message=f"{_ATTACH_PREFIX}{result['key']}",
+    )
+    db.add(row)
+    await db.commit()
+
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(
+                chat_id, row.id, user.id,
+                f"{user.first_name or ''}".strip(),
+                row.sender_role, row.message,
+            )
+        except Exception as e:
+            logging.warning("[support] attachment sync failed for %s: %s", chat_id, e)
+
+    return {"id": row.id, "signed_url": result.get("signed_url", "")}
+
+
 @router.get("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])
 async def get_support_messages(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get messages for a support chat."""
@@ -2326,7 +2395,20 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
                 name = "Soporte Cruise" if _chat_lang.startswith("es") else "Cruise Support"
         else:
             name = sender_names.get(m.sender_id, "Soporte Cruise")
-        output.append(_support_msg_dict(m, name))
+        d = _support_msg_dict(m, name)
+        # Swap the stored key for a URL that works right now. Presigning is
+        # local HMAC work, not a round trip, so doing it per poll is cheap.
+        raw = d.get("message") or ""
+        if raw.startswith(_ATTACH_PREFIX):
+            key = raw[len(_ATTACH_PREFIX):].strip()
+            try:
+                d["message"] = _ATTACH_PREFIX + await get_signed_url(key)
+            except Exception as e:
+                logging.warning("[support] presign failed for %s: %s", key, e)
+                # Marker with no URL — the client renders "unavailable" rather
+                # than a broken image or, worse, the raw S3 key as chat text.
+                d["message"] = _ATTACH_PREFIX
+        output.append(d)
     return output
 
 @router.get("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])

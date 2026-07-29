@@ -1310,6 +1310,41 @@ class ApiService {
 
   /// Send a support chat message.
   /// Uses retry logic so messages are not lost on transient failures.
+  /// Attach a photo or a PDF to a support chat.
+  ///
+  /// Multipart, not base64-in-JSON: base64 inflates the body by a third and
+  /// the backend already speaks multipart for driver documents.
+  ///
+  /// [filename] matters — the server sniffs the real type from the bytes, but
+  /// the extension is what the chat bubble reads to decide between showing an
+  /// image and showing a document chip.
+  static Future<Map<String, dynamic>> sendSupportAttachment({
+    required int chatId,
+    required String path,
+    required String filename,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final req = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/support/chats/$chatId/attachments'),
+    );
+    // Copy auth headers but skip content-type — MultipartRequest writes its
+    // own, with the boundary. Same handling as the driver document upload.
+    _jsonHeaders(token).forEach((k, v) {
+      if (k.toLowerCase() != 'content-type') req.headers[k] = v;
+    });
+    req.files.add(await http.MultipartFile.fromPath(
+      'file',
+      path,
+      filename: filename,
+    ));
+    // Longer than a text send: this is bytes over a driver's mobile signal.
+    final streamed = await req.send().timeout(const Duration(seconds: 45));
+    final res = await http.Response.fromStream(streamed);
+    return _parse(res);
+  }
+
   static Future<Map<String, dynamic>> sendSupportMessage(
     int chatId,
     String message,

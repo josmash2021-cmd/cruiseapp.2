@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/ai_support_service.dart';
 import '../config/agent_prompts.dart';
 import '../widgets/typing_indicator.dart';
@@ -916,6 +918,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   String _subtitle = '';
   bool _loading = true;
   bool _sending = false;
+  /// A file is on its way up — the attach button becomes a spinner and stops
+  /// accepting taps, so a driver on a slow signal cannot queue five copies.
+  bool _uploading = false;
   bool _chatClosed = false;
   bool _isAgentTyping = false;
   bool _showQuickActions = true;
@@ -1460,6 +1465,181 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   /// [force] scrolls even when the user has scrolled up to read back — use it
   /// for their own sends, never for an incoming poll.
+  // ── Attachments ─────────────────────────────────────────────────────────
+
+  /// Marker the backend stores in place of a message body. The row keeps the
+  /// durable S3 key; what arrives here is a freshly signed URL.
+  static const _attachPrefix = '||ATT||';
+
+  static bool _isAttachment(String text) => text.startsWith(_attachPrefix);
+
+  static String _attachUrl(String text) =>
+      text.substring(_attachPrefix.length).trim();
+
+  static bool _isPdfUrl(String url) {
+    // Signed URLs carry a query string, so the extension is not at the end.
+    final path = Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
+    return path.endsWith('.pdf');
+  }
+
+  void _showAttachSheet() {
+    HapticService.lightImpact();
+    final es = _isSpanish;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            20, 14, 20, MediaQuery.of(ctx).padding.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _attachOption(ctx, Icons.photo_camera_rounded,
+                es ? 'Tomar foto' : 'Take a photo',
+                () => _pickImage(ImageSource.camera)),
+            _attachOption(ctx, Icons.photo_library_rounded,
+                es ? 'Elegir de la galería' : 'Choose from library',
+                () => _pickImage(ImageSource.gallery)),
+            _attachOption(ctx, Icons.description_rounded,
+                es ? 'Enviar documento' : 'Send a document',
+                _pickDocument),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _attachOption(
+      BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(ctx);
+        onTap();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(radius: 16),
+        child: Row(children: [
+          Container(
+            width: 38, height: 38,
+            decoration: neuBox(radius: 12, pressed: true),
+            child: Icon(icon, color: _gold, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
+          ),
+          Icon(Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.28), size: 18),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      // Resized and recompressed on the way out. A modern phone camera
+      // produces 4–8 MB, and the server caps uploads at 5 MB — sending the
+      // original would fail for the driver and succeed for nobody.
+      final shot = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 82,
+      );
+      if (shot == null) return;
+      await _uploadAttachment(shot.path, shot.name);
+    } catch (e) {
+      debugPrint('[SupportChat] image pick failed: $e');
+      _attachError();
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+        withData: false,
+      );
+      final files = picked?.files ?? const <PlatformFile>[];
+      if (files.isEmpty) return;
+      final path = files.first.path;
+      if (path == null) return;
+      await _uploadAttachment(path, files.first.name);
+    } catch (e) {
+      debugPrint('[SupportChat] document pick failed: $e');
+      _attachError();
+    }
+  }
+
+  Future<void> _uploadAttachment(String path, String filename) async {
+    if (_chatId == null) {
+      await _initChat();
+      if (_chatId == null) {
+        _attachError();
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _uploading = true);
+    // Quick actions have served their purpose once a file is on its way.
+    if (_showQuickActions) _showQuickActions = false;
+    try {
+      final res = await ApiService.sendSupportAttachment(
+        chatId: _chatId!,
+        path: path,
+        filename: filename,
+      );
+      if (!mounted) return;
+      final url = (res['signed_url'] ?? '').toString();
+      setState(() {
+        _uploading = false;
+        // Optimistic, like a typed message: the poll will replace this with
+        // the server's row a moment later.
+        _messages.add(_ChatMsg(
+          text: '$_attachPrefix$url',
+          role: _userRole,
+          time: DateTime.now(),
+        ));
+      });
+      _scrollToBottom(force: true);
+      await _loadMessages();
+    } catch (e) {
+      debugPrint('[SupportChat] attachment upload failed: $e');
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      _attachError();
+    }
+  }
+
+  void _attachError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(_isSpanish
+          ? 'No se pudo enviar el archivo. Intenta de nuevo.'
+          : 'Could not send the file. Please try again.'),
+      backgroundColor: Colors.red,
+    ));
+  }
+
   void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollCtrl.hasClients) return;
@@ -1988,7 +2168,86 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Message bubble ──────────────────────────────────────────────────
 
+  /// An attachment bubble: the image itself, or a tappable chip for a PDF.
+  Widget _buildAttachmentBubble(_ChatMsg msg, bool isMe) {
+    final url = _attachUrl(msg.text);
+    final unavailable = url.isEmpty;
+    final isPdf = !unavailable && _isPdfUrl(url);
+
+    Widget body;
+    if (unavailable) {
+      body = Text(
+        _isSpanish ? 'Archivo no disponible' : 'File unavailable',
+        style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+      );
+    } else if (isPdf) {
+      body = Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.description_rounded, color: _gold, size: 20),
+        const SizedBox(width: 9),
+        Text(
+          _isSpanish ? 'Documento PDF' : 'PDF document',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ]);
+    } else {
+      body = ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          url,
+          width: 200,
+          fit: BoxFit.cover,
+          // A signed URL can expire between the poll that minted it and the
+          // frame that paints it. Say so instead of showing a broken box.
+          errorBuilder: (_, __, ___) => Container(
+            width: 200,
+            height: 120,
+            alignment: Alignment.center,
+            color: Colors.white.withValues(alpha: 0.05),
+            child: Icon(Icons.broken_image_rounded,
+                color: Colors.white.withValues(alpha: 0.3), size: 28),
+          ),
+          loadingBuilder: (_, child, progress) => progress == null
+              ? child
+              : Container(
+                  width: 200,
+                  height: 120,
+                  alignment: Alignment.center,
+                  color: Colors.white.withValues(alpha: 0.04),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(_gold),
+                  ),
+                ),
+        ),
+      );
+    }
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: unavailable
+            ? null
+            : () => launchUrl(Uri.parse(url),
+                mode: LaunchMode.externalApplication),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: EdgeInsets.all(isPdf || unavailable ? 14 : 6),
+          decoration: neuBox(radius: 16),
+          child: body,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBubble(_ChatMsg msg) {
+    if (_isAttachment(msg.text)) {
+      return _buildAttachmentBubble(
+        msg,
+        msg.role == 'rider' || msg.role == 'driver' || msg.role == 'user',
+      );
+    }
     if (msg.role == 'system') {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2204,6 +2463,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       ),
       child: Row(
         children: [
+          // Attach. Left of the field, not hidden behind a menu: a photo of
+          // the problem is usually faster than describing it, and half of
+          // what support asks for next is "can you send a picture".
+          GestureDetector(
+            onTap: _uploading ? null : _showAttachSheet,
+            child: Container(
+              width: 42,
+              height: 42,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: neuBox(radius: 21, pressed: true),
+              child: _uploading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(_gold),
+                      ),
+                    )
+                  : Icon(Icons.add_rounded,
+                      color: Colors.white.withValues(alpha: 0.75), size: 22),
+            ),
+          ),
           Expanded(
             child: TextField(
               controller: _msgCtrl,

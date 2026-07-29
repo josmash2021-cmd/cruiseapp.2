@@ -342,9 +342,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// map recreated on resume — would then stay broken until they drove off.
   void _startDotWatchdog() {
     _dotWatchdog?.cancel();
-    _dotWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+    _dotWatchdog = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (!mounted) return;
       if (_smoothTicker?.isTicking ?? false) return; // ticker has it covered
+      // The dot bitmap is rasterised once. That can fail (GPU context lost
+      // while backgrounded, OOM), and GoldLocationDot then leaves
+      // currentBytes null — which makes every draw below a silent no-op
+      // forever, since nothing else calls build() again on this screen.
+      if (!_goldDot.isReady) {
+        await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
+        if (!mounted) return;
+      }
       _updateDriverAnnotation();
     });
   }

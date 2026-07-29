@@ -444,11 +444,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// annotation manager (or the rendered dot image) is ready.
   void _startDotCreateWatchdog() {
     _dotCreateWatchdog?.cancel();
-    _dotCreateWatchdog = Timer.periodic(const Duration(seconds: 2), (t) {
+    _dotCreateWatchdog = Timer.periodic(const Duration(seconds: 2), (t) async {
       if (!mounted || _myLocAnnot != null) {
         t.cancel();
         _dotCreateWatchdog = null;
         return;
+      }
+      // Rasterising the dot bitmap can fail (GPU context lost, OOM) and
+      // GoldLocationDot leaves currentBytes null when it does — every draw
+      // is then a silent no-op, and nothing else rebuilds it on this
+      // screen. Same retry the rider home does in _scheduleHomeDotRetry.
+      if (!_goldDot.isReady) {
+        await _goldDot.build(this, () {
+          if (mounted) _syncDotAnnotation();
+        });
+        if (!mounted) return;
       }
       _updateMyLocAnnotation();
     });

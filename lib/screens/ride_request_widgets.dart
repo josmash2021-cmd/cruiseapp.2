@@ -2422,7 +2422,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final driver = _ctrl.state.driver!;
     final firstName = driver.name.split(' ').first;
     const gold = Color(0xFFD4AF37);
-    const cardBg = Color(0xFF1A1A1A);
     final stagger = _dfStaggerCtrl;
     final checkCtrl = _dfCheckCtrl;
     final shimmer = _dfShimmerCtrl;
@@ -2673,14 +2672,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                     child: Container(
                         padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: gold.withValues(alpha: 0.2),
-                            width: 1,
-                          ),
+                        // Raised neumorphic card (shared system — see
+                        // neu_style.dart), keeping the faint gold halo that
+                        // marks this as the moment the driver was matched.
+                        decoration: neuBox(
+                          radius: 20,
+                          borderColor: gold.withValues(alpha: 0.2),
+                        ).copyWith(
                           boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              offset: const Offset(6, 6),
+                              blurRadius: 14,
+                            ),
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.045),
+                              offset: const Offset(-4, -4),
+                              blurRadius: 10,
+                            ),
                             BoxShadow(
                               color: gold.withValues(alpha: 0.08),
                               blurRadius: 20,
@@ -2751,12 +2760,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                   horizontal: 10,
                                   vertical: 4,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: gold.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: gold.withValues(alpha: 0.3),
-                                  ),
+                                // Sunken well — the plate reads as stamped
+                                // into the card, same idiom as the driver's
+                                // own trip screen.
+                                decoration: neuBox(
+                                  radius: 8,
+                                  pressed: true,
+                                  borderColor: gold.withValues(alpha: 0.3),
                                 ),
                                 child: Text(
                                   driver.vehiclePlate,

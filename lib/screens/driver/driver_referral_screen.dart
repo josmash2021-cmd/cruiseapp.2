@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
@@ -6,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../utils/share_helper.dart';
 
 /// Refer Friends — DRIVER program.
 ///
@@ -94,7 +96,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
         '${s.driverShareSteps(rides)}\n\n'
         'Code: $_code\n'
         'https://cruiseinride.com/drive/$_code';
-    Share.share(text, subject: s.driverShareSubject);
+    unawaited(shareText(context, text, subject: s.driverShareSubject));
   }
 
   @override

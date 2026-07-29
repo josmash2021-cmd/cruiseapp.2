@@ -213,11 +213,43 @@ async def _send_offer_to_driver(
     rider_photo: str,
 ) -> DispatchOffer:
     """Create a DispatchOffer for the given driver and push via SSE + FCM.
-    Returns the newly created offer."""
-    offer = DispatchOffer(trip_id=trip.id, driver_id=driver.id)
-    db.add(offer)
-    await db.commit()
-    await db.refresh(offer)
+    Returns the offer — reusing the live one if this driver already has it.
+
+    There is no unique constraint on (trip_id, driver_id), and three call
+    sites reach this function: the initial dispatch, the auto-cascade, and
+    the re-queue after a release. A trip that comes back to the queue can
+    therefore be offered again to a driver who still has the first offer
+    open, and the driver's app shows the same ride twice — two cards, one
+    trip, and accepting one leaves the other stranded on screen.
+
+    Reuse rather than skip: the caller needs an offer object back, and the
+    push is re-sent so a notification lost the first time still lands.
+    """
+    existing = (
+        await db.execute(
+            select(DispatchOffer)
+            .where(
+                DispatchOffer.trip_id == trip.id,
+                DispatchOffer.driver_id == driver.id,
+                DispatchOffer.status == "pending",
+            )
+            .order_by(DispatchOffer.id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+
+    if existing is not None:
+        logging.info(
+            "[Dispatch] driver %s already holds a pending offer for trip %s "
+            "(offer %s) — reusing it instead of creating a duplicate",
+            driver.id, trip.id, existing.id,
+        )
+        offer = existing
+    else:
+        offer = DispatchOffer(trip_id=trip.id, driver_id=driver.id)
+        db.add(offer)
+        await db.commit()
+        await db.refresh(offer)
 
     _pending_cache.pop(driver.id, None)
     estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)

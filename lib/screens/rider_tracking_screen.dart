@@ -31,7 +31,7 @@ import '../widgets/neu_style.dart';
 import '../utils/mapbox_safe.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:share_plus/share_plus.dart';
+import '../utils/share_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/masked_call_service.dart';
 import '../config/api_keys.dart';
@@ -247,6 +247,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   DateTime? _lastAnyDataAt;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
   bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
+
+  /// The trip went back to the dispatch queue and we are waiting for a new
+  /// driver. Set when a hand-back arrives, cleared when one is assigned.
+  bool _backInQueueShown = false;
+  bool _searchingNewDriver = false;
   bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
   bool _goingToRating = false;      // guard: prevents double navigation to rating screen
 
@@ -642,7 +647,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 16,
                 child: KeyedSubtree(
                   key: _bottomCardKey,
-                  child: _buildDriverCard(),
+                  // While the trip is back in the dispatch queue the old
+                  // driver's card would still be showing their name, photo
+                  // and plate for someone who handed the trip back. Show
+                  // the search state instead until a new driver is assigned.
+                  child: _searchingNewDriver
+                      ? _buildSearchingDriverCard()
+                      : _buildDriverCard(),
                 ),
               ),
               // Offline banner

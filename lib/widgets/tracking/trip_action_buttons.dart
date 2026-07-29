@@ -225,7 +225,8 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       // /trips/shared/{token}/location for the moving car.
       final fullUrl = '${ApiService.publicBaseUrl}$shareUrl';
       if (!mounted) return;
-      await Share.share(
+      await shareText(
+        context,
         '${S.of(context).trackMyCruiseRideLive} $fullUrl',
         subject: 'Cruise — Live Trip Tracking',
       );

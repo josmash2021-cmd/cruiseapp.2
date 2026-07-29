@@ -183,3 +183,43 @@ async def test_release_requires_matching_driver_identity(
 
     await db.refresh(test_trip)
     assert test_trip.status == "driver_en_route"
+
+
+async def test_offer_is_not_duplicated_for_the_same_driver(
+    db, test_trip, test_driver
+):
+    """A trip re-offered to a driver who already holds it must not stack.
+
+    The driver app renders one card per pending offer, so a second row for
+    the same (trip, driver) shows the rider the same ride twice, and
+    accepting one leaves the other sitting on screen. Three call sites
+    reach _send_offer_to_driver — initial dispatch, auto-cascade and the
+    re-queue after a release — and nothing in the schema prevents it.
+    """
+    from sqlalchemy import select
+
+    from models.database import DispatchOffer
+    from routers.dispatch import _send_offer_to_driver
+
+    # the fixture yields (user, token)
+    driver, _ = test_driver
+
+    first = await _send_offer_to_driver(
+        db, test_trip, driver, "Rider", "", ""
+    )
+    second = await _send_offer_to_driver(
+        db, test_trip, driver, "Rider", "", ""
+    )
+
+    assert second.id == first.id, "a second call created a duplicate offer"
+
+    rows = (
+        await db.execute(
+            select(DispatchOffer).where(
+                DispatchOffer.trip_id == test_trip.id,
+                DispatchOffer.driver_id == driver.id,
+                DispatchOffer.status == "pending",
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1, f"expected 1 pending offer, found {len(rows)}"

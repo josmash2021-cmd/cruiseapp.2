@@ -48,6 +48,55 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   );
 
   // ── Driver info card (floats at top) ──
+  /// Shown in the driver card's place while the trip is back in the
+  /// dispatch queue, after the assigned driver handed it back.
+  Widget _buildSearchingDriverCard() {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: Responsive.w(18),
+        vertical: Responsive.h(18),
+      ),
+      decoration: neuBox(radius: 22),
+      child: Row(
+        children: [
+          SizedBox(
+            width: Responsive.w(22),
+            height: Responsive.w(22),
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              valueColor: AlwaysStoppedAnimation(AppColors.kGold),
+            ),
+          ),
+          SizedBox(width: Responsive.w(14)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  S.of(context).findingYouAnotherDriver,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: Responsive.sp(15),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: Responsive.h(3)),
+                Text(
+                  S.of(context).yourPickupIsUnchanged,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: Responsive.sp(12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDriverCard() {
     final s = S.of(context);
     String statusLabel;
@@ -328,23 +377,25 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     if (lat != 0 && lng != 0) {
       // Driver live position known — share live Google Maps link
       final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
-      Share.share(
+      unawaited(shareText(
+        context,
         'I\'m on a Cruise ride! My driver $name is on the way.\n\n'
         '📍 Live location: $mapsUrl\n\n'
         'From: ${widget.pickupLabel}\n'
         'To: ${widget.dropoffLabel}\n\n'
         'Track my ride in real time!',
         subject: 'My Cruise ride — live tracking',
-      );
+      ));
     } else {
       // Fallback: share pickup/dropoff info
-      Share.share(
+      unawaited(shareText(
+        context,
         'I\'m on a Cruise ride with $name!\n\n'
         'From: ${widget.pickupLabel}\n'
         'To: ${widget.dropoffLabel}\n\n'
         'Powered by Cruise 🚗',
         subject: 'My Cruise ride',
-      );
+      ));
     }
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../widgets/neu_style.dart';
+import '../utils/share_helper.dart';
 
 class SafetyScreen extends StatefulWidget {
   const SafetyScreen({super.key});
@@ -477,10 +479,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
   void _shareTrip(BuildContext context) {
     HapticService.selectionClick();
-    Share.share(
+    unawaited(shareText(
+      context,
       'I\'m riding with Cruise! Track my trip live for safety. '
       'Download Cruise at ${ApiService.publicBaseUrl} 🚗',
-    );
+    ));
   }
 
   void _showVerifyTip(BuildContext context, AppColors c) {
@@ -869,6 +872,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   void _shareLocation(BuildContext context, AppColors c) {
-    Share.share(S.of(context).rideCheckShareText);
+    unawaited(shareText(context, S.of(context).rideCheckShareText));
   }
 }

@@ -888,8 +888,71 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final isCompletedStatus = status == 'completed';
     // Only trust the explicit status field for cancellation — never timestamps alone.
     final isCancelledStatus = status == 'cancelled';
+    // Back in the dispatch queue: the assigned driver handed the trip back
+    // (their app failed to open it, or they released it). There was no
+    // branch for this at all, so the screen kept rendering the old driver
+    // — name, photo, plate, "meet your driver" — for someone who was never
+    // coming. The rider only found out when nobody arrived.
+    final isBackInQueueStatus = status == 'requested';
 
     debugPrint('[RiderTracking] ⚡ STATUS UPDATE: raw="$rawStatus" → normalized="$status" (phase=$_phase, confirmShown=$_confirmPickupShown, driverId=$did)');
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  BACK IN QUEUE — the driver handed the trip back to dispatch.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (isBackInQueueStatus) {
+      // Only meaningful while still waiting for pickup. Once the rider is
+      // aboard, a stray "requested" is stale data, not a real hand-back —
+      // and acting on it would wipe the driver mid-ride.
+      if (_phase == _TrackPhase.onTrip ||
+          _phase == _TrackPhase.nearDestination ||
+          _phase == _TrackPhase.completed) {
+        debugPrint('[RiderTracking] ⏭️ requested ignored — phase=$_phase');
+        return;
+      }
+      if (_backInQueueShown) return;
+      _backInQueueShown = true;
+      debugPrint('[RiderTracking] ↩️ TRIP RETURNED TO DISPATCH — finding a new driver');
+
+      // Drop the old driver everywhere: the map car, the live GPS feed, and
+      // the card. Leaving any of it up tells the rider to look for a car
+      // that was reassigned.
+      _rtdbDriverLocSub?.cancel();
+      _rtdbDriverLocSub = null;
+      _rtdbDriverId = null;
+      _mapCar?.clear();
+
+      // The driver's name, plate and photo arrive as widget parameters, so
+      // they cannot be blanked from here. _searchingNewDriver is what the
+      // build method keys off to stop showing them.
+      _setState(() {
+        _phase = _TrackPhase.arriving;
+        _etaMinutes = 0;
+        _distanceMiles = 0;
+        _searchingNewDriver = true;
+        _showPickupOverlay = false;
+      });
+      _confirmPickupShown = false;
+      _arrivedNotifSent = false;
+      _saveRideState();
+
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).lookingForAnotherDriver),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+      return;
+    }
+
+    // A driver is assigned again after a hand-back — allow the next one.
+    if (_backInQueueShown && (did != null && did.isNotEmpty)) {
+      _backInQueueShown = false;
+      if (_searchingNewDriver) _setState(() => _searchingNewDriver = false);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     //  COMPLETED — navigate to rating screen. Fires regardless of phase.

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../utils/share_helper.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER SAFETY SCREEN — In-navigation safety actions
@@ -102,7 +103,9 @@ class DriverSafetyScreen extends StatelessWidget {
                           final shareUrl = result['share_url'] as String?;
                           if (shareUrl != null) {
                             final fullUrl = '${ApiService.publicBaseUrl}$shareUrl';
-                            await Share.share(
+                            if (!context.mounted) return;
+                            await shareText(
+                              context,
                               'Track my Cruise trip live: $fullUrl',
                               subject: 'Cruise - Live Trip Tracking',
                             );

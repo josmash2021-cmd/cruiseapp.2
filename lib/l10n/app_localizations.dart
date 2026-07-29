@@ -3887,6 +3887,17 @@ class S {
   // Driver offer card — rider quality labels.
   String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
 
+  String get findingYouAnotherDriver =>
+      _es ? 'Buscando otro conductor…' : 'Finding you another driver…';
+  String get yourPickupIsUnchanged => _es
+      ? 'Tu punto de recogida no cambia.'
+      : 'Your pickup spot has not changed.';
+
+  // Rider tracking — the assigned driver handed the trip back to dispatch.
+  String get lookingForAnotherDriver => _es
+      ? 'Tu conductor no pudo tomar el viaje. Buscando otro para ti…'
+      : 'Your driver could not take the trip. Finding you another one…';
+
   // Support chat — label above the quick-reply topic pills.
   String get chooseATopic => _es ? 'ELIGE UN TEMA' : 'CHOOSE A TOPIC';
 

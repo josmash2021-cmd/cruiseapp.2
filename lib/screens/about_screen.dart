@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/neu_style.dart';
+import '../utils/share_helper.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -287,6 +288,6 @@ class _AboutScreenState extends State<AboutScreen> {
       'https://cruiseinride.com/download',
       storeUrl,
     );
-    await Share.share(text);
+    await shareText(context, text);
   }
 }

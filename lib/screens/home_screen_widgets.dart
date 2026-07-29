@@ -110,11 +110,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
     return Container(
       color: neuBase,
       child: CustomScrollView(
-        physics: _activeRide != null
-            ? const NeverScrollableScrollPhysics()
-            : const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
+        // Scrolls in every state now. It was locked while a ride was
+        // active because everything below the hero card was removed and
+        // there was nothing to scroll to; the content is dimmed rather
+        // than dropped, so the rider can still look through it.
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         slivers: [
           SliverToBoxAdapter(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,8 +151,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
             ),
 
             // ── Scheduled ride indicator (below hero) — fades in/out ──
-            if (_activeRide == null)
-              AnimatedSwitcher(
+            // Also dimmed rather than dropped, for the same reason.
+            AnimatedOpacity(
+              opacity: _activeRide == null ? 1.0 : 0.35,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOut,
+              child: IgnorePointer(
+                ignoring: _activeRide != null,
+                child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 400),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
@@ -163,10 +171,26 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         child: _buildScheduledRideIndicator(context),
                       )
                     : const SizedBox.shrink(key: ValueKey('no_scheduled')),
+                ),
               ),
+            ),
 
-            // ── Hide everything below when a ride is active ──
-            if (_activeRide == null) ...[
+            // ── Everything below the hero card ──
+            //
+            // Dimmed and inert while a ride is active, not removed. Hiding
+            // it made the home screen collapse to a single card and the
+            // rider lost their bearings — the app looked like it had lost
+            // everything else. Greyed out reads as "not now", which is the
+            // truth: the ride is what matters until it ends.
+            AnimatedOpacity(
+              opacity: _activeRide == null ? 1.0 : 0.35,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOut,
+              child: IgnorePointer(
+                ignoring: _activeRide != null,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
             const SizedBox(height: 28),
 
             // ── Circular action buttons ──
@@ -253,10 +277,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 // ── Dock navigation ──
                 _buildDockNav(context, botPad),
                 SizedBox(height: botPad + 12),
-            ], // end if (_activeRide == null)
-
-            if (_activeRide != null)
-              const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
           ],
           )),
         ],
@@ -1390,13 +1414,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
   // ─── "Your location" live mini map card ───
   // Follow-only map: gestures disabled so it never steals the sheet scroll.
-  // When _activeRide != null this card isn't rendered (conditional block in
-  // _buildSheet), so it costs nothing during a trip.
   Widget _buildHomeMiniMapCard() {
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
     // during the first layout (bool.fromEnvironment non-const). On web show
     // a static placeholder instead of the live map.
-    if (kIsWeb) {
+    //
+    // Same placeholder during an active ride. The card is now dimmed
+    // instead of removed, but mounting a live MapWidget here would put a
+    // second native Mapbox surface behind the tracking screen's own — two
+    // GL contexts and two tile caches at once, which is precisely what was
+    // crashing the app on iOS. Visible and inert, without the surface.
+    if (kIsWeb || _activeRide != null) {
       return Container(
         height: Responsive.h(190),
         decoration: neuBox(radius: 24),

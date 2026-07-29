@@ -31,6 +31,7 @@ import '../../utils/mapbox_safe.dart';
 import '../../services/map_controller_cache.dart';
 import '../account_deactivated_screen.dart';
 import 'driver_earnings_screen.dart';
+import 'cruise_level_screen.dart';
 import 'driver_trip_history_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_online_screen.dart';
@@ -95,6 +96,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   double _todayEarnings = 0.0;
   int _todayTrips = 0;
   double _todayHours = 0.0;
+
+  // ── Earnings panel ──
+  double _weekEarnings = 0.0;
+  /// Index = local hour 0..23, from the backend's hourly_earnings.
+  List<double> _hourlySeries = const [];
+  /// Seven entries, oldest first, paired with [_daySeriesLabels].
+  List<double> _daySeries = const [];
+  List<String> _daySeriesLabels = const [];
+  /// Which tab the earnings chart is showing.
+  bool _earningsWeekTab = false;
   String _driverName = 'Driver';
   String? _photoUrl;
 
@@ -111,7 +122,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // Collapsed height shows only the drag handle + status header row
   // ("You're offline" / "Finding trips"); the stats & recommendations stay
   // hidden until the user swipes the panel up.
-  static const double _panelBaseH = 92.0;
+  // Collapsed height, sized against the WORST case so the Column can never
+  // overflow its fixed-height parent (that throws a visible RenderFlex error,
+  // not a graceful clip):
+  //   handle       20  (10 top pad + 4 + 6 bottom pad)
+  //   status row   60  (10 v pad + a 40 px icon + 10)
+  //   button pad   16  (2 top + 14 bottom)
+  //   button       54  (13 v pad + a 28 px status circle + 13) — the circle
+  //                    only appears while navigating or when documents are
+  //                    missing, but the panel cannot resize for that
+  //   -------------
+  //                150, plus 10 px of headroom.
+  //
+  // Was 92, from when the button floated over the map above the panel instead
+  // of living inside it. Anyone changing the button's padding or font must
+  // revisit this number.
+  static const double _panelBaseH = 160.0;
   // Extra height reserved while the scheduled-rides banner is shown above the
   // header (finding-trips state). Without it the banner's ~46px eats into the
   // scroll viewport and clips the bottom rows on devices with small insets.
@@ -720,13 +746,54 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// Lightweight periodic refresh for the 3 stats chips (no name/photo reload).
   Future<void> _refreshStats() async {
     try {
-      final earnings = await ApiService.getDriverEarnings(period: 'today')
-          .catchError((_) => <String, dynamic>{});
+      // Both periods, in parallel. The panel shows today and this week side by
+      // side, so fetching them one after the other would show a stale week
+      // total for a whole round trip. Each falls back to an empty map rather
+      // than taking the other down with it.
+      final results = await Future.wait([
+        ApiService.getDriverEarnings(period: 'today')
+            .catchError((_) => <String, dynamic>{}),
+        ApiService.getDriverEarnings(period: 'week')
+            .catchError((_) => <String, dynamic>{}),
+      ]);
       if (!mounted) return;
+      final today = results[0];
+      final week = results[1];
+
+      // Coerced, never cast: a hard `as num` on a payload field throws on the
+      // first backend that sends a numeric string, and this runs on a timer.
+      double dbl(dynamic v, double fallback) {
+        final n = v is num ? v : num.tryParse(v?.toString() ?? '');
+        final d = n?.toDouble();
+        return (d != null && d.isFinite) ? d : fallback;
+      }
+
+      List<double> series(dynamic raw) {
+        if (raw is! List) return const [];
+        return raw.map((e) => dbl(e, 0.0)).toList(growable: false);
+      }
+
       setState(() {
-        _todayEarnings = (earnings['total'] as num?)?.toDouble() ?? _todayEarnings;
-        _todayTrips    = (earnings['trips_count'] as num?)?.toInt() ?? _todayTrips;
-        _todayHours    = (earnings['online_hours'] as num?)?.toDouble() ?? _todayHours;
+        _todayEarnings = dbl(today['total'], _todayEarnings);
+        _todayTrips = (today['trips_count'] as num?)?.toInt() ?? _todayTrips;
+        _todayHours = dbl(today['online_hours'], _todayHours);
+        _weekEarnings = dbl(week['total'], _weekEarnings);
+
+        // Keep the last good series when a response arrives without one —
+        // an empty chart reads as "you earned nothing", which is a lie the
+        // driver will notice.
+        final h = series(today['hourly_earnings']);
+        if (h.length == 24) _hourlySeries = h;
+        // Bars and labels are updated together or not at all. Guarding them
+        // separately let an empty response blank the labels while the previous
+        // bars stayed on screen — seven unlabelled columns.
+        final d = series(week['daily_earnings']);
+        final labels = week['day_labels'];
+        if (d.isNotEmpty && labels is List && labels.length == d.length) {
+          _daySeries = d;
+          _daySeriesLabels =
+              labels.map((e) => e?.toString() ?? '').toList(growable: false);
+        }
       });
     } catch (_) {}
   }
@@ -1134,10 +1201,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
-    final panelH =
-        _panelCollapsedH + (_panelExpandedH - _panelCollapsedH) * panelExtent;
-
-    final dc = DriverColors.of(context);
+    // No panelH / dc here any more: both existed only to place the floating GO
+    // button above the panel, which the panel now owns.
     return Scaffold(
       backgroundColor: neuBase,
       body: Stack(
@@ -1173,15 +1238,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: _buildTopBar(),
           ),
 
-          // ── Floating GO button (centered above bottom panel) ──
-          Positioned(
-            bottom: pad.bottom + panelH + 16,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: FadeTransition(opacity: _fabScale, child: _buildGoButton()),
-            ),
-          ),
+          // The GO button used to float here, pinned above the panel at
+          // `pad.bottom + panelH + 16` — so it slid up the screen with every
+          // drag of the panel and had to be re-measured against panelH on
+          // every frame. It lives inside the panel now, under the status row,
+          // which is where the driver's thumb already is.
 
           // ── Draggable bottom panel ──
           Positioned(
@@ -1354,6 +1415,292 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   //  TOP BAR
   // ═══════════════════════════════════════════════════
+  /// One figure in the top pill. [emphasis] is today — the number a driver is
+  /// actually checking — so it gets the gold and the weight.
+  Widget _topEarning(
+      DriverColors dc, String label, double amount, bool emphasis) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: dc.textSecondary,
+            fontSize: Responsive.sp(9),
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.9,
+          ),
+        ),
+        SizedBox(height: Responsive.h(2)),
+        Text(
+          '\$${amount.toStringAsFixed(2)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: emphasis ? _gold : dc.text,
+            fontSize: Responsive.sp(emphasis ? 16 : 14),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  EARNINGS PANEL — chart + period toggle
+  // ═══════════════════════════════════════════════════
+
+  /// Bars for the selected period. Hand-drawn rather than pulling in a chart
+  /// package: it is a row of rectangles, and a dependency for that would cost
+  /// a native rebuild to ship.
+  Widget _earningsChart(DriverColors dc) {
+    final week = _earningsWeekTab;
+    final values = week ? _daySeries : _hourlySeries;
+    final barH = Responsive.h(84);
+
+    if (values.isEmpty) {
+      // Nothing fetched yet. Deliberately not "you earned $0" — an empty axis
+      // and a real zero look identical, and only one of them is true.
+      return SizedBox(
+        height: barH,
+        child: Center(
+          child: Text(
+            S.of(context).loading,
+            style: TextStyle(
+                color: dc.textSecondary, fontSize: Responsive.sp(12)),
+          ),
+        ),
+      );
+    }
+
+    final peak = values.fold<double>(0, math.max);
+    // Today's own bar, so the driver can find "now" at a glance.
+    final nowIdx = week ? values.length - 1 : DateTime.now().hour;
+
+    return Column(
+      children: [
+        SizedBox(
+          height: barH,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (int i = 0; i < values.length; i++) ...[
+                if (i > 0) SizedBox(width: week ? Responsive.w(7) : 2),
+                // Explicit height, not FractionallySizedBox.
+                //
+                // A fractional box inside a Row aligned to `end` resolves its
+                // own size from its child, and a DecoratedBox has no intrinsic
+                // size — that combination is the kind of layout that renders
+                // fine on one device and collapses to nothing on another.
+                // barH is known right here, so the arithmetic is done here.
+                Expanded(
+                  child: Container(
+                    // A floor of 3%, so an hour that earned nothing still
+                    // draws a baseline tick. Without it the axis has holes in
+                    // it and reads as broken rather than as empty.
+                    height: barH *
+                        (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
+                    decoration: BoxDecoration(
+                      color:
+                          i == nowIdx ? _gold : _gold.withValues(alpha: 0.30),
+                      borderRadius: BorderRadius.circular(week ? 4 : 2),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(height: Responsive.h(6)),
+        _chartLabels(dc, week),
+      ],
+    );
+  }
+
+  Widget _chartLabels(DriverColors dc, bool week) {
+    final style = TextStyle(
+      color: dc.textSecondary,
+      fontSize: Responsive.sp(9),
+      fontWeight: FontWeight.w600,
+    );
+    // Week: one label per bar. Today: every sixth hour — 24 labels on a phone
+    // is a grey smear.
+    final labels = week
+        ? _daySeriesLabels
+        : const ['12AM', '6AM', '12PM', '6PM'];
+    if (labels.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        for (final l in labels)
+          Expanded(
+            child: Text(
+              l,
+              textAlign: week ? TextAlign.center : TextAlign.start,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              style: style,
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Today / Week pill. The selected one is a raised surface, the other a
+  /// sunken well — the same language the rest of the app uses for state.
+  Widget _periodPill(DriverColors dc, String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.symmetric(
+            horizontal: Responsive.w(14), vertical: Responsive.h(7)),
+        decoration: neuBox(radius: 14, pressed: !selected),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? _gold : dc.textSecondary,
+            fontSize: Responsive.sp(12),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEarningsSection(DriverColors dc) {
+    final s = S.of(context);
+    final total = _earningsWeekTab ? _weekEarnings : _todayEarnings;
+    return Container(
+      padding: EdgeInsets.fromLTRB(Responsive.w(14), Responsive.h(12),
+          Responsive.w(14), Responsive.h(10)),
+      decoration: neuBox(radius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _periodPill(dc, s.today, !_earningsWeekTab, () {
+                if (!_earningsWeekTab) return;
+                HapticService.selectionClick();
+                setState(() => _earningsWeekTab = false);
+              }),
+              SizedBox(width: Responsive.w(8)),
+              _periodPill(dc, s.weekLabel, _earningsWeekTab, () {
+                if (_earningsWeekTab) return;
+                HapticService.selectionClick();
+                setState(() => _earningsWeekTab = true);
+              }),
+              const Spacer(),
+              Text(
+                '\$${total.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: dc.text,
+                  fontSize: Responsive.sp(19),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: Responsive.h(14)),
+          _earningsChart(dc),
+          SizedBox(height: Responsive.h(6)),
+          Center(
+            child: GestureDetector(
+              onTap: () {
+                HapticService.selectionClick();
+                Navigator.of(context).push(
+                  slideFromRightRoute(const DriverEarningsScreen()),
+                );
+              },
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: Responsive.h(6)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      s.seeMore,
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: Responsive.sp(13),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(width: Responsive.w(4)),
+                    Icon(Icons.arrow_forward_rounded,
+                        color: _gold, size: Responsive.sp(15)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Cruise Level row. Tapping opens the full ladder.
+  ///
+  /// No level name or point count here on purpose: this screen does not fetch
+  /// either, and a hardcoded "Silver" would be wrong for most drivers reading
+  /// it. The ladder itself is the honest summary.
+  Widget _buildCruiseLevelRow(DriverColors dc) {
+    return GestureDetector(
+      onTap: () {
+        HapticService.selectionClick();
+        Navigator.of(context).push(
+          slideFromRightRoute(const CruiseLevelScreen()),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(Responsive.w(14)),
+        decoration: neuBox(radius: 20),
+        child: Row(
+          children: [
+            Container(
+              width: Responsive.w(38),
+              height: Responsive.w(38),
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(Icons.workspace_premium_rounded,
+                  color: _gold, size: Responsive.sp(19)),
+            ),
+            SizedBox(width: Responsive.w(12)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    S.of(context).cruiseLevel,
+                    style: TextStyle(
+                      color: dc.text,
+                      fontSize: Responsive.sp(14),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: Responsive.h(2)),
+                  Text(
+                    S.of(context).cruiseLevelTiers,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: dc.textSecondary,
+                      fontSize: Responsive.sp(11),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.28),
+                size: Responsive.sp(20)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     final dc = DriverColors.of(context);
     return Row(
@@ -1384,62 +1731,53 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Greeting pill — raised neumorphic surface.
+        // Earnings pill — raised neumorphic surface.
+        //
+        // Was a greeting and the driver's own name, which they already know.
+        // The two numbers they open this app to check now live in the most
+        // prominent slot on the screen, and tapping them goes where the detail
+        // is. The avatar stays: it is how they confirm they are in the right
+        // account, and it is the only place on this screen that shows it.
         Expanded(
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: Responsive.w(16), vertical: Responsive.h(10)),
-            decoration: neuBox(radius: 28),
-            child: Row(
-              children: [
-                // Avatar with gold border
-                VerifiedAvatar(
-                  photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
-                      ? UserSession.photoUrlNotifier.value
-                      : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
-                  photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                  radius: Responsive.w(18),
-                  fallbackName: _driverName,
-                  uid: UserSession.currentUid,
-                  role: 'driver',
-                  isVerified: _isVerified,
-                ),
-                SizedBox(width: Responsive.w(10)),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _getGreeting(context),
-                        style: TextStyle(
-                          color: dc.textSecondary,
-                          fontSize: Responsive.sp(11),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text(
-                        _driverName,
-                        style: TextStyle(
-                          color: dc.text,
-                          fontSize: Responsive.sp(15),
-                          fontWeight: FontWeight.w800,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+          child: GestureDetector(
+            onTap: () {
+              HapticService.selectionClick();
+              Navigator.of(context).push(
+                slideFromRightRoute(const DriverEarningsScreen()),
+              );
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                  horizontal: Responsive.w(14), vertical: Responsive.h(9)),
+              decoration: neuBox(radius: 28),
+              child: Row(
+                children: [
+                  VerifiedAvatar(
+                    photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
+                        ? UserSession.photoUrlNotifier.value
+                        : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
+                    photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
+                    radius: Responsive.w(16),
+                    fallbackName: _driverName,
+                    uid: UserSession.currentUid,
+                    role: 'driver',
+                    isVerified: _isVerified,
                   ),
-                ),
-                Text(
-                  'CRUISE',
-                  style: TextStyle(
-                    color: _gold.withValues(alpha: 0.35),
-                    fontSize: Responsive.sp(9),
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
+                  SizedBox(width: Responsive.w(12)),
+                  Expanded(child: _topEarning(
+                    dc, S.of(context).today, _todayEarnings, true)),
+                  Container(
+                    width: 1,
+                    height: Responsive.h(26),
+                    color: Colors.white.withValues(alpha: 0.07),
                   ),
-                ),
-              ],
+                  Expanded(child: Padding(
+                    padding: EdgeInsets.only(left: Responsive.w(12)),
+                    child: _topEarning(
+                        dc, S.of(context).weekLabel, _weekEarnings, false),
+                  )),
+                ],
+              ),
             ),
           ),
         ),
@@ -1527,13 +1865,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  String _getGreeting(BuildContext context) {
-    final s = S.of(context);
-    final h = DateTime.now().hour;
-    if (h < 12) return s.goodMorning;
-    if (h < 17) return s.goodAfternoon;
-    return s.goodEvening;
-  }
+  // _getGreeting is gone with the greeting it fed: the top pill shows today's
+  // and this week's earnings now, not the time of day and the driver's own name.
 
   Widget _glassBtn(IconData icon, {required VoidCallback onTap, int? badge}) {
     final dc = DriverColors.of(context);
@@ -1663,6 +1996,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       : neuBox(radius: 16, pressed: true),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    // Centred: the button is full-width inside the panel now,
+                    // and a min-size Row in a stretched box hugs the left edge.
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // No icon in the normal state — the label says it.
                       //
@@ -1883,6 +2219,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
             ),
             ),
+            // ── GO ONLINE — always visible, collapsed or open ──
+            //
+            // Sits below the status row rather than floating over the map. The
+            // status line says what state the driver is in; the button is how
+            // they change it, so the two belong together. Full width because
+            // it is the only action on this panel.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 14),
+              child: FadeTransition(
+                opacity: _fabScale,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _buildGoButton(),
+                ),
+              ),
+            ),
+
             // ── Panel content — hidden when collapsed; fades/slides in
             // proportionally to the drag for a fluid open gesture ──
             Expanded(
@@ -1897,7 +2250,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     end: Offset.zero,
                   ).animate(_statsAnim),
                   child: SingleChildScrollView(
-                    physics: const NeverScrollableScrollPhysics(),
+                    // Scrollable, where it used to be locked.
+                    //
+                    // The content grew — Cruise Level and the earnings chart
+                    // joined the stats and the recommendations — and locked
+                    // physics do not shrink to fit, they clip. On a short phone
+                    // the last rows simply vanished with no way to reach them.
+                    // The panel's drag lives on the handle and the status row,
+                    // so a scrollable body here cannot fight it.
+                    physics: const ClampingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 8,
@@ -1909,16 +2270,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         color: dc.divider,
                         height: 1,
                       ),
+                      const SizedBox(height: 14),
+                      // ── Cruise Level ──
+                      _buildCruiseLevelRow(dc),
                       const SizedBox(height: 16),
-                      // ── Today's stats row ──
+                      // ── Earnings: period toggle + chart + see more ──
+                      Text(
+                        S.of(context).earningsTitle,
+                        style: TextStyle(
+                          color: dc.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildEarningsSection(dc),
+                      const SizedBox(height: 16),
+                      // ── Trips and hours ──
+                      // Earnings moved to the top pill and the chart above, so
+                      // only the two figures that are not money left here.
                       Row(
                         children: [
-                          _panelStat(
-                            Icons.attach_money_rounded,
-                            '\$${_todayEarnings.toStringAsFixed(2)}',
-                            S.of(context).earningsToday,
-                          ),
-                          const SizedBox(width: 8),
                           _panelStat(
                             Icons.local_taxi_rounded,
                             '$_todayTrips',

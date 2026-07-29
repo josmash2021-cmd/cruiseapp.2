@@ -808,6 +808,8 @@ class S {
       ? 'Toca IR para encontrar viajes cercanos'
       : 'Tap GO to find trips nearby';
   String get today => _es ? 'Hoy' : 'Today';
+  String get weekLabel => _es ? 'Semana' : 'Week';
+  String get seeMore => _es ? 'Ver más' : 'See more';
   String get tripsLabel => _es ? 'Viajes' : 'Trips';
   String get onlineLabel => _es ? 'En Línea' : 'Online';
   String get recommendedForYou =>

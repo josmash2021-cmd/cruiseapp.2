@@ -2407,44 +2407,6 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
-@router.get("/auth/dashboard", dependencies=[Depends(_verify_api_key)])
-async def dashboard(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Return everything the home screen needs in a single request.
-    
-    Combines: profile, verification status, account status, active ride,
-    scheduled rides, favorites, notifications, promo status.
-    This eliminates 5-8 separate API calls on app startup.
-    """
-    from services.local_data_service import LocalDataService
-    
-    # Build response
-    result = {
-        "user": _user_dict(user),
-        "verification_status": user.verification_status or "none",
-        "is_verified": user.is_verified or False,
-        "account_status": user.status or "active",
-        "role": user.role or "rider",
-    }
-    
-    # Active ride (if any)
-    try:
-        active_trip = await db.execute(
-            select(Trip).where(
-                and_(
-                    Trip.rider_id == user.id,
-                    Trip.status.in_(["requested", "accepted", "driver_en_route", "arrived", "in_progress"])
-                )
-            ).order_by(Trip.created_at.desc()).limit(1)
-        )
-        trip = active_trip.scalar_one_or_none()
-        if trip:
-            result["active_ride"] = _trip_dict(trip)
-    except Exception:
-        result["active_ride"] = None
-    
-    return result
-
-
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""

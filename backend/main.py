@@ -890,9 +890,14 @@ async def ping():
     """Ultra-fast connectivity check — no DB, no auth, no overhead."""
     return {"status": "ok"}
 
-@app.get("/health")
-async def health(x_api_key: str = Header(default="")):
-    # Fast path: public healthcheck (Railway) — no DB, instant response
+# -- Full Diagnostics Endpoint --------------------------------------------
+# NOTE: this used to be registered on "/health", but routers/system.py also
+# declares GET /health and is included first (see include_router above), so
+# FastAPI silently kept system.py's deep check and this handler never ran.
+# Moved to /health/full — same family as /health/security and /health/guardian.
+@app.get("/health/full")
+async def health_full(x_api_key: str = Header(default="")):
+    # Fast path: public response — no DB, instant
     if x_api_key != API_KEY:
         return {
             "status": "ok",

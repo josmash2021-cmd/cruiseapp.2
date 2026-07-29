@@ -13,6 +13,7 @@ service needed. Trigger them via:
 import os
 import json
 import logging
+import secrets  # constant-time token comparison
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -58,9 +59,26 @@ class CleanupRequest(BaseModel):
 # ── Auth helper ──────────────────────────────────────────────────────────
 
 async def _verify_worker_token(x_worker_token: str = Header(None)):
-    """Optional bearer token to prevent unauthorized cron triggers."""
+    """Bearer token gating the cron-triggered endpoints below.
+
+    Fails CLOSED. This guard used to read `if expected and ...`, so an unset
+    WORKER_API_TOKEN disabled it entirely — and the variable was in fact not
+    set in production, leaving /worker/cleanup and friends callable by
+    anyone who knew the path. A lock that opens when its configuration is
+    missing is not a lock: the hole comes back, silently, the day someone
+    deletes the variable.
+
+    Nothing in this repo calls these endpoints (the schedulers all run
+    in-process from main.py), so refusing when unconfigured costs nothing.
+    """
     expected = os.getenv("WORKER_API_TOKEN")
-    if expected and x_worker_token != expected:
+    if not expected:
+        logger.error(
+            "[Worker] WORKER_API_TOKEN is not configured — refusing the request. "
+            "Set it in Railway to enable external cron triggers."
+        )
+        raise HTTPException(status_code=503, detail="Worker endpoints not configured")
+    if not x_worker_token or not secrets.compare_digest(x_worker_token, expected):
         raise HTTPException(status_code=401, detail="Invalid worker token")
     return True
 

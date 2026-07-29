@@ -282,6 +282,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _riderId = '';
   String _pickupAddr = '';
   String _dropoffAddr = '';
+  /// Free text the passenger left when booking (Trip.notes). Carried through
+  /// the accept so DriverTripAcceptScreen can show it — it used to stop here,
+  /// so the instructions card on that screen could never appear on this path.
+  String _riderNotes = '';
   double _fare = 0;
   double _distToPickup = 0;
   int _etaToPickup = 0; // ignore: unused_field

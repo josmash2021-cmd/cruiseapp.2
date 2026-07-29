@@ -186,6 +186,45 @@ Route<T> fadeThroughRoute<T>(Widget page, {int durationMs = 280}) {
   );
 }
 
+/// How long the driver online → accepted trip handoff takes.
+///
+/// Public because the caller has to keep its map-surface teardown behind the
+/// transition: releasing a PlatformView while this route is still partly
+/// transparent flashes the screen underneath. A hardcoded delay on that side
+/// silently breaks the moment this number changes.
+const int kTripHandoffMs = 520;
+
+/// Driver online → accepted trip.
+///
+/// The one handoff in the app where a full-screen map replaces another
+/// full-screen map, so it gets its own transition instead of the 280 ms
+/// cross-fade the tab switches use. That one was a pure opacity blend between
+/// two dark maps with no motion in it, which the eye reads as a hard cut —
+/// "it opens all at once". This is slower and carries a scale, so there is
+/// something continuous to follow while the new surface comes up.
+Route<T> tripHandoffRoute<T>(Widget page, {int durationMs = kTripHandoffMs}) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration: Duration(milliseconds: (durationMs * 0.6).round()),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      // Fade completes at 65%, so the last third of the move happens on a
+      // fully opaque screen — the settle is felt, not watched through.
+      final fade = CurvedAnimation(
+        parent: animation,
+        curve: const Interval(0.0, 0.65, curve: Curves.easeOut),
+      );
+      final scale = Tween<double>(begin: 0.94, end: 1.0).animate(
+        CurvedAnimation(parent: animation, curve: _easeOutQuart),
+      );
+      return FadeTransition(
+        opacity: fade,
+        child: ScaleTransition(scale: scale, child: child),
+      );
+    },
+  );
+}
+
 /// Shared axis Z — for sibling screens (settings sub-pages)
 Route<T> sharedAxisZRoute<T>(Widget page, {int durationMs = 280}) =>
     slideFromRightRoute<T>(page, durationMs: durationMs);

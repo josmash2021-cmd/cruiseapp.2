@@ -1544,7 +1544,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 2: rejecting other offers');
       // Reject all other pending offers silently
       for (final other in _pendingOffers) {
-        final otherId = (other['offer_id'] as num?)?.toInt();
+        // Parsed, not cast: a TypeError in this loop aborts the accept the
+        // driver just made, over a housekeeping call to reject someone
+        // else's leftover card.
+        final otherId = int.tryParse('${other['offer_id']}');
         if (otherId != null && otherId != offerId && _driverId != null) {
           ApiService.rejectRideOffer(
             offerId: otherId,
@@ -1568,15 +1571,28 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         return s.isEmpty ? fallback : s;
       }
 
+      // Numbers get the same treatment as strings, which they did not before.
+      // The comment above promised "every field is coerced, never cast" while
+      // every numeric field right below it was still `as num?` — and that
+      // cast throws a TypeError the instant the backend sends "33.41" instead
+      // of 33.41, landing us in the catch with the trip already assigned
+      // server-side. That is one of the ways the driver got "Error accepting
+      // offer" for an accept that had worked.
+      //
+      // Non-finite is rejected too, not just non-numeric: a NaN coordinate
+      // propagates through the haversine into the distance the driver reads,
+      // which is where "NaN mi" on the trip card comes from. A wrong-looking
+      // 0 is survivable; NaN poisons every number computed after it.
+      double dbl(dynamic v, [double fallback = 0.0]) {
+        final n = v is num ? v : num.tryParse(v?.toString().trim() ?? '');
+        if (n == null) return fallback;
+        final d = n.toDouble();
+        return d.isFinite ? d : fallback;
+      }
+
       final name = str(r['rider_name'], 'Rider');
-      _pickupLL = LatLng(
-        (r['pickup_lat'] as num?)?.toDouble() ?? 0.0,
-        (r['pickup_lng'] as num?)?.toDouble() ?? 0.0,
-      );
-      _dropoffLL = LatLng(
-        (r['dropoff_lat'] as num?)?.toDouble() ?? 0.0,
-        (r['dropoff_lng'] as num?)?.toDouble() ?? 0.0,
-      );
+      _pickupLL = LatLng(dbl(r['pickup_lat']), dbl(r['pickup_lng']));
+      _dropoffLL = LatLng(dbl(r['dropoff_lat']), dbl(r['dropoff_lng']));
 
       _currentOfferId = offerId;
       _tripId = tripId;
@@ -1600,13 +1616,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
       _riderPhone = str(r['rider_phone'], '');
       _riderId = (r['rider_id'] ?? '').toString();
+      // Already in the offer payload — _trip_dict() has always included
+      // "notes"; nothing here ever read it, so the instructions the passenger
+      // typed died at this line.
+      _riderNotes = str(r['notes'], '');
       _pickupAddr = str(r['pickup_address'], 'Pickup');
       _dropoffAddr = str(r['dropoff_address'], 'Drop-off');
-      _fare = (r['fare'] as num?)?.toDouble() ?? 0;
+      _fare = dbl(r['fare']);
       _vehicleType = _mapRideType(str(r['vehicle_type'], 'Comfort'));
-      _distToPickup = _pos != null ? _hav(_pos!, _pickupLL) : 0.0;
+      // Guarded at the point of use as well as at the boundary: _hav can only
+      // return NaN if it was fed one, but `.ceil()` on a NaN throws an
+      // UnsupportedError, so a single bad coordinate anywhere upstream would
+      // abort the accept two lines later instead of just looking wrong.
+      double finite(double v) => v.isFinite ? v : 0.0;
+      _distToPickup = _pos != null ? finite(_hav(_pos!, _pickupLL)) : 0.0;
       _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _tripDist = _hav(_pickupLL, _dropoffLL);
+      _tripDist = finite(_hav(_pickupLL, _dropoffLL));
       _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
       // ── Extract cached route BEFORE clearing cache ──
@@ -1706,7 +1731,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 6: showing accepted celebration — tripId=$tripId, offerId=$offerId');
       final acceptedTripId = tripId ?? offerId ?? 0;
       final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-      final riderRating   = (r['rider_rating']   as num?)?.toDouble() ?? 0;
+      final riderRating   = dbl(r['rider_rating']);
       // Use the backend's rider_is_new flag as the source of truth — it now
       // reflects rider_rides_count == 0 (first request ever), not just
       // "has never been rated".
@@ -1912,6 +1937,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ═══════════════════════════════════════');
       _hideAcceptedOverlay();
       _remountMapSurface();
+      // Release the accept button whatever happens next — the toast is a
+      // separate decision, made below.
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+      }
       // We may already be the assigned driver — the backend commits the
       // accept before this app finishes setting up the trip. Blowing up
       // here without releasing leaves the trip in driver_en_route owned by
@@ -1927,6 +1960,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // shown a driver, the driver is shown an error, and the trip goes
       // back to the queue underneath both of them. Ask who owns it before
       // giving it up.
+      //
+      // "Error accepting offer. Please try again." used to fire from here
+      // unconditionally, including on the recovery path directly below —
+      // which runs when the trip turns out to be OURS and opens it. So the
+      // accept had succeeded, the app was already navigating to the trip,
+      // and the driver was still told it failed and to try again. Tapping
+      // again is the worst thing they could do at that moment.
+      //
+      // The toast now belongs to whoever concludes the accept really did
+      // fail: the release path, or the branch where there is nothing to
+      // check because we never got a trip id.
       if (!handedOff && tripId != null) {
         unawaited(() async {
           if (await _tripIsAlreadyMine(tripId)) {
@@ -1950,31 +1994,36 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               tripId: tripId,
               riderName: text(r['rider_name'], 'Rider'),
               riderPhotoUrl: text(r['rider_photo_url'], ''),
-              riderRating: (r['rider_rating'] as num?)?.toDouble() ?? 0.0,
+              riderRating: double.tryParse('${r['rider_rating']}') ?? 0.0,
               riderIsNew: r['rider_is_new'] == true,
             );
             return;
           }
+          // Genuinely lost: the trip went back to dispatch, so the driver
+          // does need to know and the offer really is gone.
           await _returnTripToDispatch(tripId, reason: 'driver_app_error');
+          _showAcceptFailed(e);
         }());
-      }
-      if (mounted) {
-        _setState(() {
-          _offerAcceptState = _OfferAcceptState.normal;
-          _acceptingCardId = null;
-        });
-        final errStr = e.toString().toLowerCase();
-        final isNetworkError = errStr.contains('socket') ||
-            errStr.contains('timeout') ||
-            errStr.contains('unreachable') ||
-            errStr.contains('connection') ||
-            errStr.contains('network');
-        final msg = isNetworkError
-            ? 'Network error. Please check your connection and try again.'
-            : 'Error accepting offer. Please try again.';
-        _snack(msg);
+      } else if (!handedOff) {
+        // No trip id at all — nothing was ever assigned, nothing to check.
+        _showAcceptFailed(e);
       }
     }
+  }
+
+  /// Tell the driver the accept failed. Only called once it is established
+  /// that they do NOT hold the trip — see the catch block above.
+  void _showAcceptFailed(Object e) {
+    if (!mounted) return;
+    final errStr = e.toString().toLowerCase();
+    final isNetworkError = errStr.contains('socket') ||
+        errStr.contains('timeout') ||
+        errStr.contains('unreachable') ||
+        errStr.contains('connection') ||
+        errStr.contains('network');
+    _snack(isNetworkError
+        ? 'Network error. Please check your connection and try again.'
+        : 'Error accepting offer. Please try again.');
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2070,7 +2119,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     List<LatLng>? routePoints,
   }) {
     final future = Navigator.of(context).push<String>(
-      smoothFadeRoute(
+      tripHandoffRoute(
         DriverTripAcceptScreen(
           tripId:         tripId,
           riderName:      riderName,
@@ -2089,15 +2138,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           etaMinutes:     _etaToPickup,
           riderPhone:     _riderPhone,
           routePoints:    routePoints,
+          pickupInstructions: _riderNotes,
         ),
       ),
     );
 
-    // Tear our surface down only once the 280ms fade has landed and the
-    // trip screen actually covers us. Unmounting a PlatformView under a
+    // Tear our surface down only once the handoff transition has landed and
+    // the trip screen actually covers us. Unmounting a PlatformView under a
     // half-transparent route flashes the "Finding trips" placeholder in
     // the driver's face; the celebration overlay is what hides the swap.
-    Future.delayed(const Duration(milliseconds: 500), () {
+    //
+    // Derived from kTripHandoffMs, not a copied number: this used to be a
+    // hardcoded 500 ms against a 280 ms fade, so lengthening the transition
+    // would have started tearing the map down mid-animation.
+    Future.delayed(const Duration(milliseconds: kTripHandoffMs + 200), () {
       if (!mounted) return;
       // isCurrent means nothing is on top of us anymore — the trip screen
       // came and went inside the fade window, so keep the map (rule 12).

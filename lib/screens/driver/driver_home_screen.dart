@@ -913,27 +913,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
       ),
     );
-    // Schedule haptic + sound after the route transition has owned the
-    // first frame. WidgetsBinding.addPostFrameCallback fires once the
-    // current build/layout phase is done, which is exactly when the
-    // PageRouteBuilder transition kicks in — so the MethodChannel
-    // round-trips happen in parallel with the fade/scale, not before.
+    // No chime. Removed, not deferred again.
     //
-    // 2026-04-27 freeze fix #2: Defer haptic+sound an extra 300ms.
-    // The haptic engine + AVAudioPlayer init on iOS can block the
-    // platform thread for 200-400ms. If that happens during the first
-    // 150ms of the fade+scale transition, the driver still feels a
-    // ~1s freeze. By waiting 300ms the transition is already 75%
-    // done and the user perceives it as smooth.
-    // Sound + haptic: fire AFTER the route transition has finished its
-    // first frames. Calling them synchronously here (or even on the
-    // immediate post-frame) still stacks MethodChannel round-trips on the
-    // 200ms fade/scale transition and the page freezes until the clip's
-    // platform-channel work settles. A 300ms deferral lets the transition
-    // complete first, so the screen never freezes while the sound plays.
+    // Three rounds went into keeping it: fire it after the push, then defer it
+    // 300 ms, then swap play(Source) for resume() on a pre-warmed player. It
+    // still stuck, because the audio engine's work happens on the platform
+    // thread and that is the same thread the route transition and the Mapbox
+    // surface on the next screen both need. Every fix moved the stall, none of
+    // them removed it. A sound worth one second of frozen UI on the busiest
+    // button in the driver app does not exist.
+    //
+    // The haptic stays and stays deferred — the engine can cold-start slowly
+    // on iOS too, so it waits for the transition to be most of the way done.
     Future.delayed(const Duration(milliseconds: 300), () {
       HapticService.lightImpact();
-      NotificationService.playOnlineSound();
     });
     final result = await pushFuture;
     if (!mounted) return;

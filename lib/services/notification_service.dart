@@ -5,10 +5,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'haptic_service.dart';
-import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'prefs_cache.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -23,8 +21,10 @@ import 'package:timezone/timezone.dart' as tz;
 ///   cruise_reminders — scheduled ride reminders
 ///
 /// In-app sounds (audioplayers):
-///   cruise_online.wav — played when driver goes online
-///   cruise_offer.wav  — played when a new offer arrives while app is open
+///   cruise_online.wav — played when a new offer arrives while the app is open.
+///                       Despite the filename this is the OFFER cue; the
+///                       go-online chime it was named for was removed for
+///                       freezing the platform thread during the transition.
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -35,8 +35,8 @@ class NotificationService {
   static const int _offerBaseId = 9000;
   static const int _driverOnlineId = 8888;
 
-  // AudioPlayer instances — one per sound so they can overlap if needed
-  static final AudioPlayer _onlinePlayer = AudioPlayer();
+  // Offers only. There was a second player for the go-online chime; that
+  // chime is gone — see the comment where _goOnline used to call it.
   static final AudioPlayer _offerPlayer = AudioPlayer();
 
   /// FCM token-refresh subscription (see [registerTokenWithBackend]).
@@ -101,28 +101,24 @@ class NotificationService {
     // Pre-load audio players AND pre-warm iOS audio session in background
     Future<void>(() async {
       try {
-        await _onlinePlayer.setReleaseMode(ReleaseMode.stop);
-        await _onlinePlayer.setSource(AssetSource('sounds/cruise_online.wav'));
         await _offerPlayer.setReleaseMode(ReleaseMode.stop);
         await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
         // Explicitly release player state when the clip ends so the
         // MediaPlayer / AVAudioPlayer instance does not keep the audio
-        // session held — that hold is what produced the ~1 s UI freeze
-        // the moment the online chime finished during a go-online.
-        _onlinePlayer.onPlayerComplete.listen((_) {
-          unawaited(_onlinePlayer.stop());
-          _onlineSoundPlaying = false;
-        });
+        // session held.
         _offerPlayer.onPlayerComplete.listen((_) {
           unawaited(_offerPlayer.stop());
         });
-        // Pre-warm iOS audio session: play silently so first real play is instant
-        await _onlinePlayer.setVolume(0.0);
-        await _onlinePlayer.resume();
+        // Pre-warm the iOS audio session: play silently so the first real
+        // offer sound is instant. This used to run on the go-online player;
+        // that one is gone, so it moved here rather than being dropped —
+        // offers are the sound that actually has to be heard.
+        await _offerPlayer.setVolume(0.0);
+        await _offerPlayer.resume();
         await Future.delayed(const Duration(milliseconds: 100));
-        await _onlinePlayer.pause();
-        await _onlinePlayer.setVolume(1.0);
-        await _onlinePlayer.seek(Duration.zero);
+        await _offerPlayer.pause();
+        await _offerPlayer.setVolume(1.0);
+        await _offerPlayer.seek(Duration.zero);
       } catch (e) {
         debugPrint('[NotificationService] audio preload error: $e');
       }
@@ -418,69 +414,12 @@ class NotificationService {
 
   // ── In-app sounds (audioplayers) ──────────────────────────────────────
 
-  /// Play the "go online" chime inside the app.
-  /// Fire-and-forget — never blocks the UI thread.
-  /// Uses seek+resume on the pre-loaded source to avoid re-decoding.
-  static bool _onlineSoundPlaying = false;
   static bool _offerSoundPlaying = false;
 
   /// Reset sound guards when app resumes from background.
   /// Prevents stuck flags from blocking sounds on next offer.
   static void resetSoundGuards() {
-    _onlineSoundPlaying = false;
     _offerSoundPlaying = false;
-  }
-
-  static void playOnlineSound() {
-    if (_onlineSoundPlaying) return; // prevent double-play
-    // audioplayers on web has no low-latency path — the first play() janks
-    // the page for the whole clip length. Skip the cue on web entirely so
-    // Go Online stays fluid in the browser preview.
-    if (kIsWeb) return;
-    _onlineSoundPlaying = true;
-    // Fire-and-forget on the next frame: the cue plays almost immediately
-    // after the tap, but the MethodChannel round-trip into the platform
-    // audio engine NEVER blocks the UI — the page keeps animating while
-    // the sound plays out. The asset is pre-warmed in init() (setSource +
-    // volume-0 resume/pause), so there is no first-play load stall either.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
-        if (!(prefs.getBool('notif_sounds') ?? true)) {
-          _onlineSoundPlaying = false;
-          return;
-        }
-        // resume(), NOT play(AssetSource(...)).
-        //
-        // This is why Go Online still froze after two rounds of deferring
-        // the call: `play(Source)` is `setSource()` + `resume()`, so it
-        // re-loaded the asset and re-initialised the audio pipeline on
-        // every single tap — throwing away the careful pre-warm init()
-        // does at startup (setSource + silent volume-0 play). That reload
-        // runs on the platform thread, which is exactly why the screen
-        // stayed frozen for the length of the clip.
-        //
-        // resume() plays the already-loaded, already-warmed source.
-        // ReleaseMode.stop keeps it loaded across plays, and the
-        // onPlayerComplete handler stops it back at position zero.
-        unawaited(
-          _onlinePlayer.resume().catchError((e) {
-            // Source lost (audio interruption, phone call, OS reclaim) —
-            // fall back to a full load so the cue is not silently dropped.
-            debugPrint('[NotificationService] resume failed, reloading: $e');
-            return _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
-          }),
-        );
-      } catch (e) {
-        debugPrint('[NotificationService] playOnlineSound error: $e');
-      } finally {
-        // Reset the guard just after the clip ends (~1.8s) so the next
-        // go-online can play cleanly.
-        Future.delayed(const Duration(milliseconds: 1800), () {
-          _onlineSoundPlaying = false;
-        });
-      }
-    });
   }
 
   /// Play the trip offer sound inside the app (when app is in foreground).

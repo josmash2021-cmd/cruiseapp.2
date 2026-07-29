@@ -579,10 +579,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 onPageChanged: (index) {
                   _setState(() => _currentOfferIndex = index);
                   HapticService.selectionClick();
-                  // Only trigger preview if not already animating
-                  if (index < _pendingOffers.length && !_isCardAnimating) {
-                    _autoTriggerRoutePreview(_pendingOffers[index]);
-                  }
+                  // Swiping between offers browses them; it does not draw.
+                  // Only an explicit tap on a card builds its route and pins.
                 },
                 itemCount: _pendingOffers.length,
                 itemBuilder: (ctx, i) {

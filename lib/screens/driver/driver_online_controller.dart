@@ -1392,13 +1392,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
       if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
+    // Routes are still pre-fetched so a tap draws instantly, but nothing is
+    // drawn on arrival: an incoming offer shows the card and only the card.
+    // Drawing the route unasked hijacked the map the moment an offer landed,
+    // animating a line and pins over whatever the driver was looking at. The
+    // route now appears when the driver taps the card — see _onOfferCardTap,
+    // already wired at driver_online_widgets.dart:638.
     _preFetchOfferRoutes(filtered);
-    // Only auto-trigger preview when not already animating — prevents race
-    // where a rapid second offer interrupts the first preview mid-animation,
-    // leaving orphaned annotations on the map.
-    if (isNewFirstOffer && !_isCardAnimating) {
-      _autoTriggerRoutePreview(filtered.first);
-    }
   }
 
   Future<void> _poll() async {

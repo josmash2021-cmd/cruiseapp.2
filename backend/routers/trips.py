@@ -462,11 +462,25 @@ async def get_available_trips(
         ).order_by(Trip.created_at.desc()).limit(50)
     )
     trips = result.scalars().all()
+
+    # Same state rule as live dispatch and the scheduled marketplace: a
+    # driver only sees pickups in the state they are standing in. Closing
+    # this one too so the rule cannot be sidestepped by whichever path a
+    # client happens to call. Unknown state on either side keeps the trip.
+    from routers.dispatch import _state_for
+
+    driver_state = await _state_for(lat, lng)
+
     nearby = []
     for t in trips:
         dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
-        if dist <= radius_km:
-            nearby.append(_trip_dict_for_user(t, user))
+        if dist > radius_km:
+            continue
+        if driver_state:
+            pickup_state = await _state_for(t.pickup_lat, t.pickup_lng)
+            if pickup_state and pickup_state != driver_state:
+                continue
+        nearby.append(_trip_dict_for_user(t, user))
     return nearby
 
 @router.post("/trips/{trip_id}/accept", dependencies=[Depends(_verify_api_key)])

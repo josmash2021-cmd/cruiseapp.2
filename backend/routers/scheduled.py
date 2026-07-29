@@ -84,13 +84,38 @@ async def get_available_scheduled_trips(
     )
     trips = result.scalars().all()
 
+    # Same state rule as live dispatch: a driver only sees pickups in the
+    # state they are standing in. This browse is the wider hole of the two
+    # — its radius is 50 km, not 30 — so a driver near a border could see
+    # a whole neighbouring state's scheduled work and claim a ride they
+    # were never going to drive to.
+    #
+    # Resolved once for the driver, then per candidate pickup, both through
+    # the shared cache. Unknown on either side keeps the trip: a geocoding
+    # outage must not empty every driver's marketplace.
+    from routers.dispatch import _state_for
+
+    driver_state = await _state_for(lat, lng) if (lat and lng) else None
+
     cards = []
+    dropped = 0
     for t in trips:
         if lat and lng and t.pickup_lat and t.pickup_lng:
             dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
             if dist > radius_km:
                 continue
+        if driver_state and t.pickup_lat and t.pickup_lng:
+            pickup_state = await _state_for(t.pickup_lat, t.pickup_lng)
+            if pickup_state and pickup_state != driver_state:
+                dropped += 1
+                continue
         cards.append(_scheduled_trip_card(t, lat, lng))
+
+    if dropped:
+        logging.info(
+            "[StateFilter] scheduled browse for driver %s in %s — hid %d "
+            "out-of-state trip(s)", user.id, driver_state, dropped,
+        )
 
     return cards
 

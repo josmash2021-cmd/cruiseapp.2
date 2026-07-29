@@ -10,6 +10,9 @@ import '../services/chat_service.dart';
 import '../services/error_service.dart';
 import '../services/masked_call_service.dart';
 import '../l10n/app_localizations.dart';
+import '../config/page_transitions.dart';
+import '../widgets/neu_style.dart';
+import '../widgets/verified_avatar.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../widgets/dismiss_keyboard.dart';
@@ -25,6 +28,9 @@ class ChatScreen extends StatefulWidget {
     this.tripId,
     this.currentUserId,
     this.currentRole,
+    this.recipientPhotoUrl,
+    this.recipientId,
+    this.recipientRole,
   });
 
   /// The trip ID of the currently active chat screen (if any).
@@ -35,6 +41,16 @@ class ChatScreen extends StatefulWidget {
   final bool isSupport;
   final String? avatarInitial;
   final int? tripId;
+
+  /// Recipient's profile photo. Falls back to the initial when absent.
+  final String? recipientPhotoUrl;
+
+  /// Recipient's user id — lets VerifiedAvatar resolve the photo itself
+  /// when [recipientPhotoUrl] was not passed.
+  final String? recipientId;
+
+  /// 'driver' or 'rider' — who the recipient is, for the avatar.
+  final String? recipientRole;
 
   /// Current user's ID (as String). If null, resolved from ApiService.
   final String? currentUserId;
@@ -347,30 +363,40 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      try {
-        await _chat.sendMessage(
+      // RTDB is the live channel: Firebase echoes the write to every
+      // listener (including ours) before the server even answers, so the
+      // bubble lands instantly and the driver sees it in the same beat.
+      // Not awaited — awaiting held the send behind a network round-trip
+      // for no benefit, since the local echo has already happened.
+      unawaited(
+        _chat
+            .sendMessage(
           rideId: _rideId,
           senderId: _myUserId,
           senderRole: _myRole,
           text: text,
-        );
-        // Also notify backend so it sends FCM push to the other person
-        if (widget.tripId != null) {
-          unawaited(ApiService.sendChatMessage(tripId: widget.tripId!, message: text).catchError((_) => <String, dynamic>{}));
-        }
-      } catch (e) {
-        debugPrint('[Chat] RTDB send failed: $e');
-        if (mounted) {
-          ErrorService.show(context, S.of(context).messageFailedToSend);
-        }
-      }
-      // Also persist via REST API (triggers FCM push notification to recipient)
+        )
+            .catchError((e) {
+          debugPrint('[Chat] RTDB send failed: $e');
+          if (mounted) {
+            ErrorService.show(context, S.of(context).messageFailedToSend);
+          }
+        }),
+      );
+      // Backend copy — persists the message and fires the FCM push.
+      //
+      // This used to run TWICE per message: once unawaited inside the try
+      // above and again, awaited, right after. Every message was stored
+      // twice and the recipient got two pushes, and the second call
+      // blocked the send for a whole HTTP round-trip.
       if (widget.tripId != null) {
-        try {
-          await ApiService.sendChatMessage(tripId: widget.tripId!, message: text);
-        } catch (e) {
-          debugPrint('[Chat] REST backup send failed: $e');
-        }
+        unawaited(
+          ApiService.sendChatMessage(tripId: widget.tripId!, message: text)
+              .catchError((e) {
+            debugPrint('[Chat] REST backup send failed: $e');
+            return <String, dynamic>{};
+          }),
+        );
       }
     } else if (widget.isSupport) {
       final chatId = _supportChatId;
@@ -485,7 +511,9 @@ class _ChatScreenState extends State<ChatScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        // neuBase, not pure black: the soft shadows below are invisible on
+        // #000000 (see neu_style.dart).
+        backgroundColor: neuBase,
         body: DismissKeyboard(
           child: Column(
             children: [
@@ -494,9 +522,34 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // ── Messages ──
             Expanded(
-              child: !_chatReady
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4A843)))
-                  : _useRtdb ? _buildRtdbMessages(s) : _buildSupportMessages(s),
+              child: Stack(
+                children: [
+                  // Faint Cruise mark behind the conversation. IgnorePointer
+                  // so it can never swallow a tap meant for a message.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Opacity(
+                          opacity: 0.035,
+                          child: Image.asset(
+                            'assets/images/logoapp.png',
+                            width: MediaQuery.of(context).size.width * 0.62,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  !_chatReady
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                              color: Color(0xFFD4A843)))
+                      : _useRtdb
+                          ? _buildRtdbMessages(s)
+                          : _buildSupportMessages(s),
+                ],
+              ),
             ),
 
             // ── Typing indicator (RTDB only) ──
@@ -517,7 +570,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: EdgeInsets.only(top: topPad + 8, bottom: 12, left: 8, right: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
+        color: neuSurface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -534,38 +587,31 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             splashRadius: 22,
           ),
-          // Avatar
-          Container(
-            width: Responsive.w(36),
-            height: Responsive.w(36),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: widget.isSupport
-                  ? _gold.withValues(alpha: 0.2)
-                  : Colors.white.withValues(alpha: 0.1),
-              border: Border.all(
-                color: widget.isSupport
-                    ? _gold.withValues(alpha: 0.4)
-                    : Colors.white.withValues(alpha: 0.2),
-                width: 1.5,
+          // Avatar — the recipient's real photo, not a letter. VerifiedAvatar
+          // falls back to the initial on its own when there is no photo.
+          if (widget.isSupport)
+            Container(
+              width: Responsive.w(36),
+              height: Responsive.w(36),
+              decoration: neuBox(
+                radius: Responsive.w(18),
+                borderColor: _gold.withValues(alpha: 0.4),
               ),
+              child: Center(
+                child: Icon(Icons.support_agent_rounded,
+                    size: Responsive.sp(18), color: _gold),
+              ),
+            )
+          else
+            VerifiedAvatar(
+              photoUrl: widget.recipientPhotoUrl,
+              uid: widget.recipientId,
+              role: widget.recipientRole ??
+                  (_myRole == 'driver' ? 'rider' : 'driver'),
+              fallbackName: widget.avatarInitial ?? widget.recipientName,
+              radius: Responsive.w(18),
+              isVerified: true,
             ),
-            child: Center(
-              child: widget.isSupport
-                  ? Icon(Icons.support_agent_rounded, size: Responsive.sp(18), color: _gold)
-                  : Text(
-                      widget.avatarInitial ??
-                          (widget.recipientName.isNotEmpty
-                              ? widget.recipientName[0].toUpperCase()
-                              : (_myRole == 'driver' ? 'R' : 'D')),
-                      style: TextStyle(
-                        fontSize: Responsive.sp(14),
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-            ),
-          ),
           SizedBox(width: Responsive.w(10)),
           // Name + status
           Expanded(
@@ -608,14 +654,57 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-          if (!widget.isSupport)
-            IconButton(
-              onPressed: _callRecipient,
-              icon: Icon(Icons.phone_rounded, color: _gold, size: 22),
-              splashRadius: 22,
-              tooltip: 'Call',
+          if (!widget.isSupport) ...[
+            _headerIconBtn(Icons.phone_rounded, _callRecipient, s.callAction),
+            SizedBox(width: Responsive.w(8)),
+            // Support, right of the call button: reaching a human should
+            // not mean backing out of the conversation first.
+            _headerIconBtn(
+              Icons.support_agent_rounded,
+              _openSupportFromChat,
+              s.contactSupport,
             ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// Header action pill — sunken neumorphic well, the shared idiom for
+  /// icon buttons across the app.
+  Widget _headerIconBtn(IconData icon, VoidCallback onTap, String tooltip) {
+    final d = Responsive.w(36);
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: d,
+          height: d,
+          decoration: neuBox(
+            radius: d / 2,
+            pressed: true,
+            borderColor: _gold.withValues(alpha: 0.30),
+          ),
+          child: Icon(icon, color: _gold, size: Responsive.sp(18)),
+        ),
+      ),
+    );
+  }
+
+  /// Open the Cruise support conversation without leaving this one.
+  void _openSupportFromChat() {
+    HapticService.selectionClick();
+    Navigator.of(context).push(
+      slideFromRightRoute(
+        ChatScreen(
+          recipientName: 'Support',
+          avatarInitial: 'S',
+          tripId: widget.tripId,
+          isSupport: true,
+          currentUserId: widget.currentUserId,
+          currentRole: widget.currentRole,
+        ),
       ),
     );
   }
@@ -914,27 +1003,13 @@ class _ChatScreenState extends State<ChatScreen> {
         top: 8,
         bottom: bottomPad > 0 ? 8 : safePad + 8,
       ),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
+      decoration: const BoxDecoration(color: neuSurface),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
+              // Sunken well — reads as a field carved into the bar.
+              decoration: neuBox(radius: 24, pressed: true),
               child: TextField(
                 controller: _controller,
                 focusNode: _focusNode,
@@ -963,9 +1038,22 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               width: 42,
               height: 42,
-              decoration: const BoxDecoration(
+              // Raised gold disc: the one thing on this bar that should
+              // look pressable.
+              decoration: neuBox(radius: 21).copyWith(
                 color: _gold,
-                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    offset: const Offset(4, 4),
+                    blurRadius: 10,
+                  ),
+                  BoxShadow(
+                    color: _gold.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
               child: const Icon(Icons.send_rounded, color: Colors.black, size: 20),
             ),
@@ -986,6 +1074,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final timeStr =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
+    // Entrance: fade + rise + a slight scale, drifting in from the sender's
+    // own side so a reply visibly arrives from the other person.
+    return _BubbleEntrance(
+      key: ValueKey('$text-${time.millisecondsSinceEpoch}-$isMe'),
+      fromRight: isMe,
+      child: _bubbleBody(text, isMe, timeStr, isRead),
+    );
+  }
+
+  Widget _bubbleBody(String text, bool isMe, String timeStr, bool isRead) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -1023,14 +1121,33 @@ class _ChatScreenState extends State<ChatScreen> {
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              // Raised bubbles: mine in gold, theirs on the neu surface.
+              // The tail corner stays square so it still reads as coming
+              // from its sender.
               decoration: BoxDecoration(
-                color: isMe ? _gold : Colors.white.withValues(alpha: 0.08),
+                color: isMe ? _gold : neuSurface,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
                   bottomLeft: Radius.circular(isMe ? 18 : 4),
                   bottomRight: Radius.circular(isMe ? 4 : 18),
                 ),
+                border: isMe
+                    ? null
+                    : Border.all(color: Colors.white.withValues(alpha: 0.04)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    offset: const Offset(4, 4),
+                    blurRadius: 10,
+                  ),
+                  if (!isMe)
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.035),
+                      offset: const Offset(-3, -3),
+                      blurRadius: 8,
+                    ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -1097,4 +1214,75 @@ class _SupportMessage {
     required this.senderName,
     required this.role,
   });
+}
+
+/// One-shot entrance for a chat bubble.
+///
+/// Plays once, when the bubble first enters the list — the ValueKey the
+/// caller builds from the message text and timestamp is what makes Flutter
+/// treat an incoming message as a new element rather than a rebuild of an
+/// old one. Without that key every message would replay its entrance on
+/// each stream tick.
+class _BubbleEntrance extends StatefulWidget {
+  const _BubbleEntrance({
+    super.key,
+    required this.child,
+    required this.fromRight,
+  });
+
+  final Widget child;
+
+  /// Drift in from the sender's own side, so a reply visibly arrives from
+  /// the other person rather than simply materialising.
+  final bool fromRight;
+
+  @override
+  State<_BubbleEntrance> createState() => _BubbleEntranceState();
+}
+
+class _BubbleEntranceState extends State<_BubbleEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  );
+
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: Offset(widget.fromRight ? 0.14 : -0.14, 0.18),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+  late final Animation<double> _scale = Tween<double>(begin: 0.92, end: 1.0)
+      .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: ScaleTransition(
+          scale: _scale,
+          alignment:
+              widget.fromRight ? Alignment.centerRight : Alignment.centerLeft,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
 }

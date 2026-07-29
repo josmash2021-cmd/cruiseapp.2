@@ -195,3 +195,39 @@ Route<T> sharedAxisVerticalRoute<T>(Widget page, {int durationMs = 320}) =>
 
 Route<T> smoothFadeRoute<T>(Widget page, {int durationMs = 280}) =>
     fadeThroughRoute<T>(page, durationMs: durationMs);
+
+/// Opening a conversation from the "Type a message…" pill.
+///
+/// Rises from the bottom rather than sliding in from the right: the tap
+/// target sits at the bottom of the tracking card, so the screen coming up
+/// from under the thumb reads as that pill expanding into a full page.
+/// Slightly quicker than the standard push, because a chat should feel
+/// like it was already open.
+Route<T> chatOpenRoute<T>(Widget page, {int durationMs = 280}) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration: Duration(milliseconds: (durationMs * 0.8).round()),
+    opaque: true,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: _easeOutQuart,
+        reverseCurve: _easeOutExpo,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.06),
+            end: Offset.zero,
+          ).animate(curved),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.985, end: 1.0).animate(curved),
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}

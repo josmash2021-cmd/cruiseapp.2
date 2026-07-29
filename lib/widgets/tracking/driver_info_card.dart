@@ -190,21 +190,35 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               Expanded(
                 child: GestureDetector(
                   onTap: () async {
-                    final userId = await ApiService.getCurrentUserId();
+                    HapticService.selectionClick();
+                    // Push FIRST, resolve the id after. Awaiting
+                    // getCurrentUserId here meant the chat only started
+                    // opening once an HTTP call came back — the tap felt
+                    // dead for as long as the network took. ChatScreen
+                    // resolves the id itself when it is not supplied.
                     if (!mounted) return;
-                    Navigator.of(context).push(
-                      slideFromRightRoute(
+                    final nav = Navigator.of(context);
+                    final userIdFuture = ApiService.getCurrentUserId();
+                    nav.push(
+                      chatOpenRoute(
                         ChatScreen(
-                          recipientName: widget.driverName.split(' ').first,
+                          // Full name, not just the first word — the header
+                          // showed "Jhon" where the driver is "Jhon
+                          // martinez".
+                          recipientName: widget.driverName,
+                          recipientPhotoUrl: _driverPhotoUrl,
+                          recipientId: widget.driverId,
+                          recipientRole: 'driver',
                           avatarInitial: widget.driverName.isNotEmpty
                               ? widget.driverName[0].toUpperCase()
                               : 'D',
                           tripId: widget.tripId,
                           currentRole: 'rider',
-                          currentUserId: userId?.toString(),
+                          currentUserId: null,
                         ),
                       ),
                     );
+                    unawaited(userIdFuture);
                   },
                   child: widget.tripId != null
                       ? StreamBuilder<int>(

@@ -1335,14 +1335,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _openChat() async {
     HapticService.lightImpact();
     // Resolve driver user ID before navigating so chat doesn't have to await
-    final driverId = await ApiService.getCurrentUserId();
+    // Open first, resolve the id after — ChatScreen resolves it itself when
+    // it is not supplied, and awaiting an HTTP call here made the button
+    // feel dead for as long as the network took.
     if (!mounted) return;
+    unawaited(ApiService.getCurrentUserId());
     Navigator.of(context).push(
-      slideFromRightRoute(ChatScreen(
+      chatOpenRoute(ChatScreen(
         recipientName: widget.riderName,
+        recipientPhotoUrl: widget.riderPhotoUrl,
+        recipientId: widget.riderId?.toString(),
+        recipientRole: 'rider',
         tripId: widget.tripId,
         currentRole: 'driver',
-        currentUserId: driverId?.toString(),
       )),
     );
   }

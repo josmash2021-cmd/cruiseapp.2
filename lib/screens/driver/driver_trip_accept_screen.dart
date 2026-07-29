@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import '../../utils/app_platform.dart';
+import '../../widgets/neu_style.dart';
+import 'driver_earnings_screen.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -110,8 +112,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     with TickerProviderStateMixin {
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _gold   = Color(0xFFD4A843);
-  static const _bg     = Color(0xFF0A0A0A);
-  static const _card   = Color(0xFF1A1A1F);
+  // Neumorphic base, not near-black: soft shadows are invisible on
+  // #0A0A0A, which is why neuBase exists (see neu_style.dart).
+  static const _bg     = neuBase;
+  static const _card   = neuSurface;
   static const _border = Color(0xFF262626);
 
   static final _usSuffixRe = RegExp(r',\s*United States$');
@@ -208,6 +212,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Driver pre-pickup cancel (POST /trips/{id}/driver-cancel) ──
   bool _driverCancelling = false;
   LatLng? _lastDriverPos; // latest live GPS fix, for the cancel audit trail
+
+  /// Live distance to the pickup, in miles, shown on the mini map.
+  ///
+  /// Seeded from the value dispatch sent so the chip is never blank, then
+  /// refreshed from the driver's own GPS as they drive.
+  double? _milesToPickup;
+
+  /// Miles to pickup, formatted. Falls back to the dispatch estimate until
+  /// the first GPS fix lands.
+  String get _pickupDistanceLabel {
+    final mi = _milesToPickup ?? (widget.distToPickupKm * 0.621371);
+    if (mi < 0.1) return '< 0.1 mi';
+    return '${mi.toStringAsFixed(1)} mi';
+  }
 
   // ── Dropoff proximity + trip finish ──
   bool _nearDropoff = false;
@@ -461,6 +479,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         pos.heading,
         pos.speed,
       );
+      // Refresh the distance chip. The stream already only fires every 5 m,
+      // and rebuilding is skipped unless the rounded label would change —
+      // no setState storm from a driver sitting at a light.
+      if (!_rideStarted) {
+        final miles = Geolocator.distanceBetween(
+              pos.latitude,
+              pos.longitude,
+              widget.pickupLatLng.latitude,
+              widget.pickupLatLng.longitude,
+            ) /
+            1609.34;
+        final prev = _milesToPickup;
+        if (prev == null || (prev - miles).abs() >= 0.05) {
+          setState(() => _milesToPickup = miles);
+        } else {
+          _milesToPickup = miles;
+        }
+      }
     });
 
     // Start GpsService upload ASAP — don't block on async user ID lookup.
@@ -766,9 +802,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           await Future.delayed(const Duration(seconds: 3));
         }
 
-        // Navigate back to DriverOnlineScreen — this screen was pushReplacement'd
-        // from TripAcceptedScreen, so pop() would leave us with nowhere to go.
-        // pushAndRemoveUntil ensures we always land back in the driver flow.
+        // Navigate back to DriverOnlineScreen. pushAndRemoveUntil (rather
+        // than pop) because this screen is also reached from entry points
+        // that leave nothing sensible underneath — resume-from-home, a
+        // push notification — so popping is not always an option.
         if (!mounted) return;
         try {
           Navigator.of(context).pushAndRemoveUntil(
@@ -1465,6 +1502,62 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Safety / Help menus ───────────────────────────────────────────────────
+  /// Header pill — sunken neumorphic well, the shared idiom for icon
+  /// buttons (see neu_style.dart).
+  Widget _headerIconBtn(
+    IconData icon,
+    VoidCallback onTap, {
+    Color? color,
+    double size = 19,
+  }) {
+    final d = Responsive.w(36);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: d,
+        height: d,
+        decoration: neuBox(radius: 12, pressed: true),
+        child: Icon(icon,
+            color: color ?? Colors.white.withValues(alpha: 0.75),
+            size: Responsive.sp(size)),
+      ),
+    );
+  }
+
+  /// Driver menu, opened from the header. Replaces the bare back arrow.
+  void _showDriverMenu() {
+    HapticService.mediumImpact();
+    final s = S.of(context);
+    _showSheet(
+      title: s.menu,
+      icon: Icons.menu_rounded,
+      iconColor: _gold,
+      items: [
+        _SheetItem(Icons.home_rounded, s.menu, s.backToDriverHomeSubtitle, () {
+          Navigator.pop(context);
+          _returnToDriverHome();
+        }),
+        _SheetItem(Icons.account_balance_wallet_rounded, s.earningsTitle,
+            s.earningsMenuSubtitle, () {
+          Navigator.pop(context);
+          Navigator.of(context).push(
+            slideFromRightRoute(const DriverEarningsScreen()),
+          );
+        }),
+        _SheetItem(Icons.support_agent_rounded, s.helpTitle,
+            s.helpMenuSubtitle, () {
+          Navigator.pop(context);
+          _showHelpMenu();
+        }),
+        _SheetItem(Icons.shield_rounded, s.safetyCenter, s.safetyCenterDesc,
+            () {
+          Navigator.pop(context);
+          _showSafetyMenu();
+        }),
+      ],
+    );
+  }
+
   void _showSafetyMenu() {
     HapticService.mediumImpact();
     _showSheet(
@@ -1504,6 +1597,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _SheetItem(Icons.support_agent_rounded, S.of(context).contactSupportTip,
             S.of(context).contactSupportSubtitle,
             () { Navigator.pop(context); _openSupportChat(); }),
+        // Cancel lives here now instead of sitting exposed under the
+        // slider, where it was one mis-tap away for the whole ride.
+        // Still pre-pickup only — never once the rider is aboard.
+        if (!_rideStarted)
+          _SheetItem(Icons.cancel_outlined, S.of(context).cancelTrip,
+              S.of(context).cancelTripMenuSubtitle,
+              () { Navigator.pop(context); _showDriverCancelSheet(); },
+              danger: true),
       ],
     );
   }
@@ -1904,42 +2005,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  /// Cancel affordance — pre-pickup only (hidden once the ride started).
-  Widget _buildDriverCancelButton() {
-    return GestureDetector(
-      onTap: _driverCancelling ? null : _showDriverCancelSheet,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_driverCancelling)
-              const SizedBox(
-                width: 14, height: 14,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFFEF4444)),
-              )
-            else
-              Icon(Icons.cancel_outlined,
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.85),
-                  size: 16),
-            const SizedBox(width: 6),
-            Text(
-              _driverCancelling
-                  ? S.of(context).driverCancellingLabel
-                  : S.of(context).cancelTrip,
-              style: TextStyle(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.85),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showSheet({
     required String title,
     required IconData icon,
@@ -1983,45 +2048,47 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  Widget _buildSheetItem(_SheetItem item) => GestureDetector(
-    onTap: item.onTap,
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(children: [
-        Container(
-          width: 38, height: 38,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(item.icon, color: Colors.white70, size: 18),
+  Widget _buildSheetItem(_SheetItem item) {
+    const danger = Color(0xFFEF4444);
+    final accent = item.danger ? danger : Colors.white70;
+    return GestureDetector(
+      onTap: item.onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(
+          radius: 16,
+          borderColor: item.danger ? danger.withValues(alpha: 0.35) : null,
         ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.label,
-              style: const TextStyle(color: Colors.white, fontSize: 14,
-                  fontWeight: FontWeight.w600)),
-            if (item.sub.isNotEmpty) ...[const SizedBox(height: 2),
-              Text(item.sub,
+        child: Row(children: [
+          Container(
+            width: 38, height: 38,
+            decoration: neuBox(radius: 12, pressed: true),
+            child: Icon(item.icon, color: accent, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item.label,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.42),
-                    fontSize: 12)),
+                    color: item.danger ? danger : Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
+              if (item.sub.isNotEmpty) ...[const SizedBox(height: 2),
+                Text(item.sub,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.42),
+                      fontSize: 12)),
+              ],
             ],
-          ],
-        )),
-        Icon(Icons.chevron_right_rounded,
-            color: Colors.white.withValues(alpha: 0.28), size: 18),
-      ]),
-    ),
-  );
+          )),
+          Icon(Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.28), size: 18),
+        ]),
+      ),
+    );
+  }
 
   // ── Map ─────────────────────────────────────────────────────────────────────
 
@@ -2617,44 +2684,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   // Top row: back / help icons
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: _returnToDriverHome,
-                        child: Container(
-                          width: Responsive.w(36), height: Responsive.w(36),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(Icons.chevron_left_rounded,
-                              color: Colors.white, size: Responsive.sp(24)),
-                        ),
+                      // Was a plain back arrow that dropped the driver
+                      // straight out of the trip. Now it opens the driver
+                      // menu, with going back as one option among several.
+                      _headerIconBtn(
+                        Icons.menu_rounded,
+                        _showDriverMenu,
+                        color: Colors.white,
+                        size: 22,
                       ),
                       const Spacer(),
-                      GestureDetector(
-                        onTap: _showSafetyMenu,
-                        child: Container(
-                          width: Responsive.w(36), height: Responsive.w(36),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(Icons.shield_rounded,
-                              color: Colors.white.withValues(alpha: 0.75), size: Responsive.sp(19)),
-                        ),
-                      ),
+                      _headerIconBtn(Icons.shield_rounded, _showSafetyMenu),
                       SizedBox(width: Responsive.w(10)),
-                      GestureDetector(
-                        onTap: _showHelpMenu,
-                        child: Container(
-                          width: Responsive.w(36), height: Responsive.w(36),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(Icons.help_outline_rounded,
-                              color: Colors.white.withValues(alpha: 0.75), size: Responsive.sp(19)),
-                        ),
-                      ),
+                      // Support agent, not a question mark: this sheet is
+                      // where the driver reaches a human — and now also
+                      // where Cancel Trip lives.
+                      _headerIconBtn(
+                          Icons.support_agent_rounded, _showHelpMenu),
                     ],
                   ),
                   SizedBox(height: Responsive.h(16)),
@@ -2815,6 +2861,37 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                             ),
                           ),
                         ),
+                        // Distance to pickup — live, from the driver's own
+                        // GPS. Only while heading there; once the rider is
+                        // aboard the pickup is behind them.
+                        if (!_rideStarted)
+                          Positioned(
+                            top: 10, left: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.72),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.near_me_rounded,
+                                      color: _gold, size: 12),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    _pickupDistanceLabel,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         // Mapbox attribution — plain text, no box
                         Positioned(
                           bottom: 5, left: 8,
@@ -2836,7 +2913,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
-                onTap: () => _showNavigationSheet(isPickup: true),
+                // On iPhone this goes straight to Apple Maps — one tap,
+                // no picker sheet in between while the driver is moving.
+                // Android still gets the chooser, since there is no single
+                // obvious default there.
+                onTap: () => AppPlatform.isIOS
+                    ? _openAppleMaps(widget.pickupLatLng)
+                    : _showNavigationSheet(isPickup: true),
                 onLongPress: () => _copyAddress(S.of(context).pickupAddressLabel, _pickupAddr),
                 child: _infoRow(
                   Icons.location_on_rounded,
@@ -2855,31 +2938,37 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
                 child: _buildHangingInstruction(widget.pickupInstructions),
               ),
-            const SizedBox(height: 8),
-
             // ── Dropoff address card + hanging instructions ───────────────
-            Padding(
-              padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
-              child: GestureDetector(
-                onTap: () => _showNavigationSheet(isPickup: false),
-                onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
-                child: _infoRow(
-                  Icons.flag_rounded,
-                  _gold.withValues(alpha: 0.15),
-                  _gold,
-                  S.of(context).dropOffLabel,
-                  _resolvingAddresses && _dropoffAddr.isEmpty
-                      ? S.of(context).fetchingAddress
-                      : _dropoffAddr,
-                  showChevron: true,
-                ),
-              ),
-            ),
-            if (widget.dropoffInstructions.isNotEmpty)
+            // Hidden until the rider is aboard. On the way to pickup the
+            // only address that matters is the pickup, and showing both
+            // invites navigating to the wrong one.
+            if (_rideStarted) ...[
+              const SizedBox(height: 8),
               Padding(
                 padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
-                child: _buildHangingInstruction(widget.dropoffInstructions),
+                child: GestureDetector(
+                  onTap: () => AppPlatform.isIOS
+                      ? _openAppleMaps(widget.dropoffLatLng)
+                      : _showNavigationSheet(isPickup: false),
+                  onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
+                  child: _infoRow(
+                    Icons.flag_rounded,
+                    _gold.withValues(alpha: 0.15),
+                    _gold,
+                    S.of(context).dropOffLabel,
+                    _resolvingAddresses && _dropoffAddr.isEmpty
+                        ? S.of(context).fetchingAddress
+                        : _dropoffAddr,
+                    showChevron: true,
+                  ),
+                ),
               ),
+              if (widget.dropoffInstructions.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
+                  child: _buildHangingInstruction(widget.dropoffInstructions),
+                ),
+            ],
             const SizedBox(height: 10),
 
             // ── Rider confirmed notification ──
@@ -2967,11 +3056,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     switchOutCurve: Curves.easeIn,
                     child: _buildCurrentPhaseWidget(),
                   ),
-                  // Cancel trip — pre-pickup only; never while in_trip.
-                  if (!_rideStarted) ...[
-                    const SizedBox(height: 8),
-                    _buildDriverCancelButton(),
-                  ],
+                  // Cancel trip moved into the support sheet — see
+                  // _showHelpMenu. It used to sit right under the slider,
+                  // one mis-tap from ending a live trip.
                 ],
               ),
             ),
@@ -3568,7 +3655,11 @@ class _SheetItem {
   final String     label;
   final String     sub;
   final VoidCallback onTap;
-  const _SheetItem(this.icon, this.label, this.sub, this.onTap);
+  /// Destructive action — rendered in red so Cancel Trip does not read
+  /// like the neutral options it now sits beside.
+  final bool danger;
+  const _SheetItem(this.icon, this.label, this.sub, this.onTap,
+      {this.danger = false});
 }
 
 class _LockedSlideButton extends StatelessWidget {

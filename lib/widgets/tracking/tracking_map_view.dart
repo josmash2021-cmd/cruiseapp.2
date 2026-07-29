@@ -1280,6 +1280,23 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // Redraw all annotations (pins, route, car)
               _updateAnnotations();
 
+              // Redraw the gold route line.
+              //
+              // This branch runs when iOS destroys and recreates the map —
+              // which is exactly what happens when the rider leaves the app
+              // and comes back. The native line dies with the old map and
+              // _remainingRouteAnnot is nulled above, but `_routeDrawDone`
+              // stayed true from the first draw, so _startAnimatedRouteDraw
+              // returned at its guard and NOTHING ever drew the line again.
+              // _updateAnnotations only covers pins and the car.
+              // The rider came back from the home screen to a map with no
+              // route on it for the rest of the trip.
+              if (_routePts.length >= 2 && _phase != _TrackPhase.completed) {
+                _routeDrawDone = false;
+                _syncRouteToMap();
+                _startAnimatedRouteDraw();
+              }
+
               // After style reload, re-fit bounds to ensure the route is visible
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted && _map != null) {

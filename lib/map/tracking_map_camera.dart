@@ -417,13 +417,19 @@ class TrackingMapCamera {
         1.0 - math.pow(1.0 - base, (dtSec.clamp(0.0, 0.1) * 60)).toDouble();
 
     // Zoom by speed: closer when stopped, wider as the car goes faster.
+    //
+    // Pulled back ~1.5 levels from the original 17.5/16.5/15.5/14.5. At
+    // 17.5 a stopped car filled the screen with a single block — the
+    // rider could see the car but not the street it was on, where it was
+    // heading, or how far was left. They are a passenger watching, not a
+    // driver navigating; legibility beats intimacy.
     final targetZoom = speedMps < 2.0
-        ? 17.5
+        ? 16.0
         : speedMps < 8.0
-            ? 16.5
+            ? 15.4
             : speedMps < 18.0
-                ? 15.5
-                : 14.5;
+                ? 14.8
+                : 14.0;
 
     // Bearing: freeze when nearly stopped so the map doesn't spin in traffic.
     var targetBearing = bearing;
@@ -438,7 +444,13 @@ class TrackingMapCamera {
     _navBearing = (_navBearing + db * tf(0.25)) % 360;
 
     // Smooth pitch: animate into 3D once chase starts.
-    final targetPitch = use3DPitch ? 55.0 : 0.0;
+    //
+    // 35°, not the 55° a driver's turn-by-turn view uses. At 55° the road
+    // ahead compresses into a thin band at the top and the map stops
+    // being readable — combined with the old close zoom, that is the view
+    // the rider complained about. 35° keeps a sense of depth and motion
+    // while the streets stay legible.
+    final targetPitch = use3DPitch ? 35.0 : 0.0;
     _navPitch = _navPitch + (targetPitch - _navPitch) * tf(0.12);
 
     // Smooth zoom.

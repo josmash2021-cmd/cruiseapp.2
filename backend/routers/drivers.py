@@ -410,11 +410,29 @@ async def get_driver_location_history(
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/earnings", dependencies=[Depends(_verify_api_key)])
-async def get_driver_earnings(period: str = Query("week"), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_driver_earnings(
+    period: str = Query("week"),
+    tz_offset: int = Query(
+        0,
+        ge=-840,
+        le=840,
+        description="Minutes to add to UTC to get the caller's local time. "
+                    "Defaults to 0 (UTC) so existing callers are unaffected.",
+    ),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get driver earnings — optimized using cached totals + lightweight recent query."""
     now = utc_now()
     if period == "today":
-        since = utc_today_start()
+        # "Today" has to mean the driver's today. With tz_offset unset this is
+        # the UTC day, which for a driver in Alabama starts at 6pm the evening
+        # before — so their first hours of the morning land in yesterday.
+        local_now = now + timedelta(minutes=tz_offset)
+        since = (
+            local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            - timedelta(minutes=tz_offset)
+        ) if tz_offset else utc_today_start()
     elif period == "month":
         since = utc_days_ago(30)
     else:
@@ -480,6 +498,24 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
             "type": "cancellation_fee" if t.status == "cancelled" else "trip",
         })
 
+    # Hourly breakdown for the driver's own day.
+    #
+    # daily_earnings answers "how has my week gone"; a driver checking in
+    # mid-shift is asking "how is today going", and a single total cannot
+    # answer that. 24 buckets, always all 24 so the chart's x-axis is stable
+    # and does not reflow as the day fills in.
+    #
+    # Bucketed in the CALLER's local time via tz_offset. Bucketing by UTC hour
+    # would put an Alabama driver's 6pm rush in the 11pm–midnight column.
+    hourly_earnings = [0.0] * 24
+    if period == "today":
+        for t in trips:
+            if not t.created_at:
+                continue
+            local_dt = t.created_at + timedelta(minutes=tz_offset)
+            hourly_earnings[local_dt.hour] += _driver_trip_amounts(t)[0]
+        hourly_earnings = [round(v, 2) for v in hourly_earnings]
+
     return {
         "total": total,
         "trips_count": len(trips),
@@ -487,6 +523,8 @@ async def get_driver_earnings(period: str = Query("week"), user: User = Depends(
         "tips_total": round(tips_total, 2),
         "daily_earnings": daily_earnings,
         "day_labels": day_labels,
+        # Index = local hour, 0..23. Zero-filled outside `period == "today"`.
+        "hourly_earnings": hourly_earnings,
         "transactions": transactions,
     }
 

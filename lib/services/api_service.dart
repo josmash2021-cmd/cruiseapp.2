@@ -2009,8 +2009,13 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
+    // Send the device's UTC offset so the server buckets "today" and its
+    // hourly breakdown in the driver's own day. Without it a driver in Alabama
+    // gets a day that started at 6pm yesterday and a 6pm rush that lands in
+    // the 11pm column.
+    final tzOffset = DateTime.now().timeZoneOffset.inMinutes;
     final res = await _cachedGet(
-      Uri.parse('$_baseUrl/drivers/earnings?period=$period'),
+      Uri.parse('$_baseUrl/drivers/earnings?period=$period&tz_offset=$tzOffset'),
       headers: _jsonHeaders(token),
       cacheTtl: const Duration(seconds: 10), // 10s — earnings are non-critical
       useCache: true,

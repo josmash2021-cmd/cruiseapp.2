@@ -3887,6 +3887,28 @@ class S {
   // Driver offer card — rider quality labels.
   String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
 
+  // Driver trip screen — header menu subtitles.
+  String get backToDriverHomeSubtitle =>
+      _es ? 'Volver a la pantalla principal' : 'Back to the main screen';
+  String get earningsMenuSubtitle =>
+      _es ? 'Ver tus ganancias del día' : 'See today\'s earnings';
+  String get helpMenuSubtitle =>
+      _es ? 'Problemas con el viaje o soporte' : 'Trip problems or support';
+  String get cancelTripMenuSubtitle => _es
+      ? 'Solo antes de recoger al pasajero'
+      : 'Only before picking up the rider';
+
+  // Driver "trip accepted" celebration overlay.
+  String get tripAcceptedTitle => _es ? 'Viaje Aceptado' : 'Trip Accepted';
+  String riderIsWaiting(String firstName) =>
+      _es ? '$firstName está esperando' : '$firstName is waiting';
+
+  // Shown when the driver app could not take the trip it had just been
+  // assigned, so the trip was handed back to dispatch for another driver.
+  String get tripReturnedToDispatch => _es
+      ? 'No pudimos abrir el viaje. Lo devolvimos a despacho.'
+      : "We couldn't open the trip. It went back to dispatch.";
+
   // Generic fallback labels used by offer cards when the trip payload
   // is missing addresses or names. These are visible in the offer
   // notifications, so they need to be localised.

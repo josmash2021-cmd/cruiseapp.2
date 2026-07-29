@@ -6,6 +6,31 @@ part of '../screens/rider_tracking_screen.dart';
 
 extension _RiderTrackingController on _RiderTrackingScreenState {
 
+  /// Whether the "connection lost" banner would be telling the truth.
+  ///
+  /// Requires BOTH enough failures AND real silence from every channel.
+  /// The failure counter alone is shared by four independent channels and
+  /// is reset by whichever one happens to succeed, so on its own it fires
+  /// for a single broken channel while the screen is updating fine — which
+  /// is exactly the phantom "Connection lost — reconnecting..." the rider
+  /// sees with a full signal bar.
+  bool get _shouldFlagConnectionLost {
+    if (!mounted || _connectionLost) return false;
+    if (_pollFailCount < _maxPollFailsBeforeBanner) return false;
+    final last = _lastAnyDataAt;
+    // Nothing has arrived yet — the screen just opened. Don't accuse.
+    if (last == null) return false;
+    return DateTime.now().difference(last).inMilliseconds > _kNoDataBannerMs;
+  }
+
+  /// Record that a channel delivered data: clears the failure counter and
+  /// refreshes the silence clock the banner is gated on.
+  void _markChannelAlive() {
+    _pollFailCount = 0;
+    _lastAnyDataAt = DateTime.now();
+    if (_connectionLost) _setState(() => _connectionLost = false);
+  }
+
   void _attachTripDocListener(
     String docId, {
     required bool isFallbackDoc,
@@ -14,15 +39,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       (data) {
         if (!mounted) return;
         if (data == null) {
+          // An absent FALLBACK doc is not a failure — it is an optional
+          // document that was simply never created, and it reports null on
+          // every single snapshot. Counting those walked the failure
+          // counter to the banner threshold on a perfectly healthy trip.
+          if (isFallbackDoc) return;
           _pollFailCount++;
           debugPrint('[RiderTracking] Trip data null for $docId ($_pollFailCount/$_maxPollFailsBeforeBanner)');
-          if (_pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost && !NetworkService().isOnline) {
+          if (_shouldFlagConnectionLost) {
             _setState(() => _connectionLost = true);
           }
           return;
         }
-        _pollFailCount = 0;
-        if (_connectionLost) _setState(() => _connectionLost = false);
+        _markChannelAlive();
         // Mark Firestore as recently alive so the very next 1.5s poll tick
         // can skip the HTTP GET (data already delivered here). We do NOT
         // slow the timer interval — a stale cached snapshot could make us
@@ -35,14 +64,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       onError: (error) {
         debugPrint('[RiderTracking] Trip status listener error for $docId: $error');
         _pollFailCount++;
-        if (mounted && _pollFailCount >= _maxPollFailsBeforeBanner && !_connectionLost) {
+        if (_shouldFlagConnectionLost) {
           _setState(() => _connectionLost = true);
         }
-        // permission-denied → Firebase Auth session expired. Re-auth
-        // and the listener will auto-reconnect on the next server push.
+        // permission-denied → the anonymous session is dead. Recycle it
+        // properly: plain signInAnonymously() returns the SAME broken user
+        // when one is already signed in, so the old recovery never
+        // recovered anything. See FirebaseAuthRecovery.
         final isPermDenied = error is FirebaseException && error.code == 'permission-denied';
         if (isPermDenied || error.toString().contains('permission-denied')) {
-          FirebaseAuth.instance.signInAnonymously().ignore();
+          FirebaseAuthRecovery.refreshAnonymousSession().ignore();
         }
       },
     );
@@ -133,10 +164,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // silently swallowed auth/500/TLS errors and the "connection lost"
       // banner only fired from the Firestore path.
       _pollFailCount++;
-      if (mounted &&
-          _pollFailCount >= _maxPollFailsBeforeBanner &&
-          !_connectionLost &&
-          !NetworkService().isOnline) {
+      if (_shouldFlagConnectionLost) {
         _setState(() => _connectionLost = true);
       }
     }
@@ -250,8 +278,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       (data) {
         if (!mounted || _phase == _TrackPhase.completed) return;
         _sseActive = true;
-        _pollFailCount = 0;
-        if (_connectionLost) _setState(() => _connectionLost = false);
+        _markChannelAlive();
 
         // Log latency if timestamp present
         final ts = data['ts'] as num?;
@@ -306,8 +333,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         debugPrint('[Socket.io] GPS latency: ${latency}ms');
       }
 
-      _pollFailCount = 0;
-      if (_connectionLost) _setState(() => _connectionLost = false);
+      _markChannelAlive();
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
     });
 
@@ -399,7 +425,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // problem is upstream (RTDB rules / driver app GPS / listener).
     // If it DOES print but the car still doesn't move, the bug is in
     // the interp pipeline below.
-    debugPrint(
+    // Debug builds only: this runs for every packet from BOTH live
+    // channels and formats a dozen doubles each time — pure overhead on
+    // the same UI isolate that is animating the car.
+    if (kDebugMode) {
+      debugPrint(
       '[RiderTracking] GPS in: lat=${ll.latitude.toStringAsFixed(5)} '
       'lng=${ll.longitude.toStringAsFixed(5)} '
       'speed=${speed?.toStringAsFixed(1) ?? "n/a"} '
@@ -410,7 +440,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       'velMps=${_velocityMps.toStringAsFixed(2)} '
       'animPos=(${_animPos.latitude.toStringAsFixed(5)},${_animPos.longitude.toStringAsFixed(5)}) '
       'tickerActive=${_interpTicker?.isActive ?? false}',
-    );
+      );
+    }
     // Always wake up the ticker on new GPS data — restarts if idle or stopped.
     _interpIdle = false;
     if (_interpTicker != null && !_interpTicker!.isActive) {
@@ -656,12 +687,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _dimmedRouteAnnot = null;
     }
 
-    // 2) Update route data
+    // 2) Update route data.
+    //
+    // Same trap as the approach route, worse here: the Directions call AND
+    // the 400 ms fade above both ran while the driver kept moving, so the
+    // new route's origin is several seconds stale. Resume from where the
+    // car actually is instead of snapping back to it.
     _routePts = newPoints;
     _buildSegDist();
-    _traveledM = 0;
-    _tgtTraveledM = 0;
-    _velocityMps = 0;
+    _traveledM = _startMOnCurrentRoute();
+    _tgtTraveledM = _traveledM;
     _directTargetPos = null;
     _directTargetBearing = null;
 
@@ -679,6 +714,23 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // 4) Animate new route drawing on top
     _routeDrawDone = false;
     _startAnimatedRouteDraw();
+  }
+
+  /// Where along the freshly-built route the car should resume from.
+  ///
+  /// Every route swap used to reset traveled distance to 0, which is only
+  /// right when the driver is genuinely at the new route's origin (leaving
+  /// the pickup). For routes fetched asynchronously it is wrong: the
+  /// origin is wherever the driver stood when the request went out, and
+  /// they have been driving ever since. Projecting the live position onto
+  /// the new geometry keeps the car exactly where it is drawn.
+  ///
+  /// Call AFTER [_buildSegDist] — the projection reads `_segDist`.
+  double _startMOnCurrentRoute() {
+    if (_segDist.isEmpty || _routePts.length < 2) return 0;
+    // No GPS yet — the route origin is the best guess we have.
+    if (_driverPos.latitude == 0 && _driverPos.longitude == 0) return 0;
+    return _projectOntoRoute(_driverPos).clamp(0.0, _segDist.last);
   }
 
   /// Fetch road-following route from driver's current position to pickup
@@ -704,9 +756,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Set approach route as the active route for car tracking.
       _routePts = result.points;
       _buildSegDist();
-      _traveledM = 0;
-      _tgtTraveledM = 0;
-      _velocityMps = 0;
+      // Start the car where the driver IS, not at the route's origin.
+      //
+      // This request is async: the driver kept driving while it was in
+      // flight, so the route's origin is where they WERE when it left.
+      // Zeroing here snapped the car backwards by however far they had
+      // travelled — a visible teleport at the exact moment the approach
+      // line appears, which is the first thing the rider watches.
+      _traveledM = _startMOnCurrentRoute();
+      _tgtTraveledM = _traveledM;
+      // _velocityMps is a scalar along the route, so it survives the swap.
+      // Zeroing it stalled the car until the next GPS packet.
       _directTargetPos = null;
       _directTargetBearing = null;
 
@@ -1110,7 +1170,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final bearing = (data['bearing'] as num?)?.toDouble();
       final speed = (data['speed'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
-      _pollFailCount = 0;
       // Fix 3: successful update — reset fail count and restore normal 8s polling
       if (_rtdbFailCount > 0) {
         _rtdbFailCount = 0;
@@ -1125,19 +1184,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           });
         }
       }
-      if (_connectionLost) _setState(() => _connectionLost = false);
+      _markChannelAlive();
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
     }, onError: (e) {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
       _rtdbFailCount++;
-      // permission-denied → session expired. Re-auth so the reconnect
-      // attempt (below) succeeds with a fresh token.
+      // permission-denied → session expired. Recycle it for real so the
+      // reconnect below actually gets a fresh token (see
+      // FirebaseAuthRecovery — the old call handed back the same user).
       final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
       if (isPermDenied || e.toString().contains('permission-denied')) {
-        FirebaseAuth.instance.signInAnonymously().ignore();
+        FirebaseAuthRecovery.refreshAnonymousSession().ignore();
       }
-      if (_pollFailCount >= _maxPollFailsBeforeBanner && mounted && !_connectionLost) {
+      if (_shouldFlagConnectionLost) {
         _setState(() => _connectionLost = true);
       }
       // Fix 3: auto-reconnect RTDB after errors with exponential back-off (max 30s)

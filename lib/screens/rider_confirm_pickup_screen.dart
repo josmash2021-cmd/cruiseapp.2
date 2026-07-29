@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../services/haptic_service.dart';
 
 import '../widgets/verified_avatar.dart';
+import '../widgets/neu_style.dart';
 import '../l10n/app_localizations.dart';
 
 /// Full-screen confirmation shown to the rider when the driver arrives.
@@ -60,7 +61,9 @@ class RiderConfirmPickupScreen extends StatefulWidget {
 class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF000000);
+  // Neumorphic base, not pure black: on #000000 the soft shadows that make
+  // the style read simply do not show (see neu_style.dart).
+  static const _bg = neuBase;
 
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
@@ -350,13 +353,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 24),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F1A12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF22C55E).withValues(alpha: 0.40),
-            width: 1,
-          ),
+        // Sunken well with a green edge — a countdown readout, same idiom
+        // as the ETA badge on the tracking screen.
+        decoration: neuBox(
+          radius: 16,
+          pressed: true,
+          borderColor: const Color(0xFF22C55E).withValues(alpha: 0.40),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -401,12 +403,17 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 24),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A0E0E),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFEF4444).withValues(alpha: 0.55),
-            width: 1.2,
+        // Charging phase: raised, not sunken, plus the red glow — this one
+        // is meant to push forward and be noticed, unlike the calm
+        // free-wait readout above.
+        decoration: neuBox(
+          radius: 16,
+          borderColor: const Color(0xFFEF4444).withValues(alpha: 0.55),
+          borderWidth: 1.2,
+        ).copyWith(
+          color: Color.alphaBlend(
+            const Color(0xFFEF4444).withValues(alpha: 0.10),
+            neuSurface,
           ),
           boxShadow: [
             BoxShadow(
@@ -572,9 +579,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           body: SizedBox.expand(
             child: Stack(
               children: [
-                // ── Pure black background (no gradient) ──
+                // ── Flat neumorphic base (no gradient) ──
                 const Positioned.fill(
-                  child: ColoredBox(color: Colors.black),
+                  child: ColoredBox(color: _bg),
                 ),
 
                 // ── Main content ──
@@ -689,18 +696,33 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                             child: Container(
                                               width: 180,
                                               height: 180,
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: isConfirmed
-                                                    ? _gold.withValues(alpha: 0.12)
-                                                    : _bg,
-                                                border: Border.all(
-                                                  color: isConfirmed
-                                                      ? _gold.withValues(alpha: 0.5)
-                                                      : _gold.withValues(alpha: 0.15),
-                                                  width: isConfirmed ? 2.0 : 1.0,
-                                                ),
-                                              ),
+                                              // Raised neumorphic disc —
+                                              // radius = half the box, so it
+                                              // renders as a circle. It reads
+                                              // as a physical button waiting
+                                              // to be pressed, which is
+                                              // exactly what it is. Confirmed
+                                              // state keeps the gold tint,
+                                              // blended over the surface so
+                                              // the shadows survive.
+                                              decoration: isConfirmed
+                                                  ? neuBox(
+                                                      radius: 90,
+                                                      borderColor: _gold
+                                                          .withValues(alpha: 0.5),
+                                                      borderWidth: 2,
+                                                    ).copyWith(
+                                                      color: Color.alphaBlend(
+                                                        _gold.withValues(
+                                                            alpha: 0.12),
+                                                        neuSurface,
+                                                      ),
+                                                    )
+                                                  : neuBox(
+                                                      radius: 90,
+                                                      borderColor: _gold
+                                                          .withValues(alpha: 0.15),
+                                                    ),
                                               child: AnimatedSwitcher(
                                                 duration: const Duration(milliseconds: 400),
                                                 switchInCurve: Curves.easeOutBack,
@@ -832,19 +854,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF14142a),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: _gold.withValues(alpha: 0.18),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
+                            decoration: neuBox(
+                              radius: 20,
+                              borderColor: _gold.withValues(alpha: 0.18),
                             ),
                             child: Row(
                               children: [
@@ -921,12 +933,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                       horizontal: 10,
                                       vertical: 4,
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: _gold.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: _gold.withValues(alpha: 0.3),
-                                      ),
+                                    // Sunken well — the plate reads as
+                                    // stamped into the card.
+                                    decoration: neuBox(
+                                      radius: 8,
+                                      pressed: true,
+                                      borderColor: _gold.withValues(alpha: 0.3),
                                     ),
                                     child: Text(
                                       widget.vehiclePlate!,

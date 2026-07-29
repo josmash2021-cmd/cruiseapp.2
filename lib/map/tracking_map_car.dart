@@ -25,14 +25,57 @@ class TrackingMapCar {
   bool _carAnnotCreating = false;
   bool _carPopDone = false;
 
+  /// Pop-in animation timer. Held so [clear] can cancel it — see
+  /// [_animateCarPopIn].
+  Timer? _popInTimer;
+
+  // ── Latest-wins write pipeline ───────────────────────────────────────
+  //
+  // Moving the car used to be a fixed 33 ms timer (30 fps hard ceiling)
+  // firing writes with no backpressure — the worst of both: it could
+  // never go faster on a good device, and on a slow one the writes still
+  // piled into the platform channel where Mapbox drops them mid-flight
+  // (project rule 25). Dropped flushes ARE the stutter the old comment
+  // blamed on awaiting.
+  //
+  // Instead: at most ONE write in flight, and the newest position always
+  // wins. A fast channel runs at the ticker's own 60 fps; a slow one
+  // self-throttles and still renders the FRESHEST position rather than a
+  // stale queued one.
+  bool _writeInFlight = false;
+  LatLng? _pendingPos;
+  double? _pendingBearing;
+
   LatLng _driverPos = const LatLng(0, 0);
   final LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
 
   final _kCarAnnotScale = 0.55;
 
-  /// Carga el icono del carro según el tipo de viaje
+  /// Carga el icono del carro según el tipo de viaje.
+  ///
+  /// Idempotent and safe to call from anywhere: [updatePosition] calls it
+  /// itself when the bytes are missing. That matters because the only
+  /// caller used to be a single `Future.delayed(500ms)` fired from
+  /// initState — if the Mapbox map took longer than half a second to come
+  /// up (cold start regularly takes 1–2 s) this object did not exist yet,
+  /// the call was skipped, and nothing ever retried. `_carPngBytes` stayed
+  /// null, every updatePosition bailed at the null check, and the rider
+  /// watched an empty map for the whole trip. A timing race decided
+  /// whether the car was visible at all.
   Future<void> loadCarIcon(String rideName) async {
+    if (_carPngBytes != null || _iconLoading) return;
+    _iconLoading = true;
+    try {
+      await _loadCarIconInner(rideName);
+    } finally {
+      _iconLoading = false;
+    }
+  }
+
+  bool _iconLoading = false;
+
+  Future<void> _loadCarIconInner(String rideName) async {
     final rideNameLower = rideName.toLowerCase();
     String carAsset;
 
@@ -71,8 +114,15 @@ class TrackingMapCar {
     _carAnnotCreating = false;
   }
 
-  /// Actualiza la posición del carro en el mapa
-  Future<void> updatePosition(LatLng pos, {double bearing = 0}) async {
+  /// Actualiza la posición del carro en el mapa.
+  ///
+  /// [rideName] lets this self-heal: if the icon never loaded, it starts
+  /// the load instead of silently doing nothing forever.
+  Future<void> updatePosition(
+    LatLng pos, {
+    double bearing = 0,
+    String? rideName,
+  }) async {
     _driverPos = pos;
     _driverBearing = bearing;
 
@@ -80,7 +130,12 @@ class TrackingMapCar {
     if (pos.latitude == 0 && pos.longitude == 0) return;
 
     if (_carAnnotCreating) return;
-    if (_carPngBytes == null) return;
+    if (_carPngBytes == null) {
+      // No icon yet — kick off the load (idempotent) and draw on a later
+      // frame. Never just return and hope someone else loads it.
+      if (rideName != null) unawaited(loadCarIcon(rideName));
+      return;
+    }
 
     final mgr = _carAnnotMgr;
     if (mgr == null) return;
@@ -111,22 +166,47 @@ class TrackingMapCar {
         _carAnnotCreating = false;
       }
     } else {
-      _carAnnot!.geometry = mapbox.Point(
-        coordinates: mapbox.Position(pos.longitude, pos.latitude),
-      );
-      _carAnnot!.iconRotate = bearing;
-      // Fire-and-forget: awaiting every frame serializes the animation behind
-      // the Mapbox platform channel and produces stutter. Catch errors so a
-      // stale annotation is recreated on the next valid position.
-      try {
-        mgr.update(_carAnnot!).catchError((e) {
-          debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
-          if (_carAnnot != null) _carAnnot = null;
-        });
-      } catch (e) {
+      // Hand the frame to the pipeline; it decides when it can go out.
+      _pendingPos = pos;
+      _pendingBearing = bearing;
+      if (_writeInFlight) return; // in-flight write will pick up the newest
+      _flushCarWrite(mgr);
+    }
+  }
+
+  /// Send the newest pending car frame, then immediately send whatever
+  /// arrived while it was travelling. Frames produced during a write are
+  /// coalesced — only the last one is ever sent, so the marker can never
+  /// fall behind the animation.
+  void _flushCarWrite(mapbox.PointAnnotationManager mgr) {
+    final pos = _pendingPos;
+    final bearing = _pendingBearing;
+    final annot = _carAnnot;
+    if (pos == null || annot == null) return;
+    _pendingPos = null;
+    _pendingBearing = null;
+
+    annot.geometry = mapbox.Point(
+      coordinates: mapbox.Position(pos.longitude, pos.latitude),
+    );
+    if (bearing != null) annot.iconRotate = bearing;
+
+    _writeInFlight = true;
+    try {
+      mgr.update(annot).then((_) {
+        _writeInFlight = false;
+        // A newer frame landed mid-write — send it now, no waiting for
+        // the next tick.
+        if (_pendingPos != null) _flushCarWrite(mgr);
+      }).catchError((e) {
         debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
-        _carAnnot = null;
-      }
+        _writeInFlight = false;
+        _carAnnot = null; // stale handle — recreated on the next position
+      });
+    } catch (e) {
+      debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
+      _writeInFlight = false;
+      _carAnnot = null;
     }
   }
 
@@ -137,7 +217,19 @@ class TrackingMapCar {
     final startTime = DateTime.now();
     const durationMs = 400;
 
-    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    // Held so clear() can kill it. Untracked, this timer outlived the
+    // screen: leave tracking within 400 ms of the car appearing and it
+    // kept firing mgr.update() against a map that was being torn down.
+    _popInTimer?.cancel();
+    _popInTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      // updatePosition() nulls _carAnnot when a write fails, so it can
+      // vanish mid-animation.
+      final annot = _carAnnot;
+      if (annot == null) {
+        timer.cancel();
+        _popInTimer = null;
+        return;
+      }
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / durationMs).clamp(0.0, 1.0);
 
@@ -151,15 +243,22 @@ class TrackingMapCar {
       }
 
       try {
-        mgr.update(_carAnnot!..iconSize = scale);
+        mgr.update(annot..iconSize = scale);
       } catch (_) {}
 
-      if (t >= 1.0) timer.cancel();
+      if (t >= 1.0) {
+        timer.cancel();
+        _popInTimer = null;
+      }
     });
   }
 
   /// Limpia la anotación del carro
   Future<void> clear() async {
+    // Always first: the pop-in timer must die even when there is no
+    // annotation left to delete, or it keeps ticking after teardown.
+    _popInTimer?.cancel();
+    _popInTimer = null;
     final mgr = _carAnnotMgr;
     if (mgr == null || _carAnnot == null) return;
     try {

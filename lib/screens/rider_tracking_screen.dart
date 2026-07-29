@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/scheduler.dart';
 import '../services/haptic_service.dart';
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
@@ -26,6 +27,7 @@ import '../services/trip_firestore_service.dart';
 import '../services/socket_service.dart';
 import '../config/feature_flags.dart';
 import '../widgets/offline_banner.dart';
+import '../widgets/neu_style.dart';
 import '../utils/mapbox_safe.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -48,6 +50,7 @@ import '../utils/name_helper.dart' as nh;
 import '../services/user_session.dart';
 import '../services/network_service.dart';
 import '../services/map_controller_cache.dart';
+import '../services/firebase_auth_recovery.dart';
 import '../map/tracking_map_annotations.dart';
 import '../map/tracking_map_route.dart';
 import '../map/tracking_map_camera.dart';
@@ -119,7 +122,26 @@ enum _TrackPhase { arriving, arrived, onTrip, nearDestination, completed }
 enum _PinIcon { house, store, airplane, person }
 
 const double _kCarAnnotScale = 0.55;  // PointAnnotation icon scale (smaller for cleaner look)
+
+/// How often the route line behind the car is trimmed. 66 ms ≈ 15 fps.
+///
+/// Was 500 ms — 2 fps — against a car that moves at 30 fps. The line
+/// visibly trailed the car and then snapped forward to catch up. The
+/// rider should see the road being consumed under the car, continuously.
+/// Safe at this rate only because an in-flight guard skips frames instead
+/// of queueing writes the SDK would drop (project rule 25).
+const int _kRouteEraseIntervalMs = 66;
+
+/// How long after the rider's last map drag the chase camera takes over
+/// again. Without a resume the camera stayed parked wherever they left it
+/// and the car simply drove off screen.
+const int _kResumeFollowAfterPanMs = 8000;
 const int _maxPollFailsBeforeBanner = 15;
+
+/// How long every channel must stay silent before the rider is told the
+/// connection is lost. Failures alone are not enough — a channel can error
+/// on repeat while the others keep the screen fully up to date.
+const int _kNoDataBannerMs = 20000;
 
 String? _normalizeRemotePhotoUrl(String? rawUrl) {
   var raw = (rawUrl ?? '').trim();
@@ -163,6 +185,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _pickupPopping = false; // pickup pin pop-out in progress
   bool _showPickupPin = true; // hide after pop-out completes
   DateTime _lastRouteErase = DateTime(2000); // throttle route erase updates
+  /// True while a route-erase update is still crossing the platform
+  /// channel. See [_kRouteEraseIntervalMs].
+  bool _routeEraseBusy = false;
 
   // ── Cinematic intro animation ──
   double _cinematicPitch = 0;
@@ -211,6 +236,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   String _anonymousFeedback = '';
   bool _connectionLost = false;
   int _pollFailCount = 0;
+  /// When ANY live channel last delivered trip data.
+  ///
+  /// The "connection lost" banner is gated on this. Four independent
+  /// channels share [_pollFailCount], so without it one permanently broken
+  /// channel (RTDB rules rejecting, a fallback doc that was never created)
+  /// accuses the rider's internet while the other three feed the screen
+  /// perfectly well. Null = nothing received yet; never accuse then either.
+  DateTime? _lastAnyDataAt;
   bool _cancelDialogShown = false; // guard: prevents duplicate cancel dialogs
   bool _confirmPickupShown = false; // guard: prevents double-push of confirm pickup
   bool _showPickupOverlay = false;  // inline overlay — set true when driver arrives
@@ -337,12 +370,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Load car PNG based on ride type
     _loadCarIcon();
     _loadPins();
-    // Also load into modular component when ready
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _mapCar != null) {
-        _mapCar!.loadCarIcon(widget.rideName);
-      }
-    });
+    // NOTE: the modular car icon is NOT loaded on a timer any more. It is
+    // loaded when the map is created, and _updateCarSmooth passes rideName
+    // on every frame so TrackingMapCar can load it itself if that missed.
+    // A single delayed attempt used to decide whether the rider saw a car
+    // at all — it ran at 500 ms, before a cold-started map existed.
     // Await persistence before starting real-time tracking to prevent
     // race condition where backend poll resets phase/traveledM to 0.
     _initFromPersistence().then((_) {
@@ -530,15 +562,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _cameraFollowTimer;
   bool _useNavCamera = true; // When true: follow driver at 55° pitch (Uber-style)
 
-  // Navigation chase camera ticker — drives the camera at ~25 fps for
-  // continuous Uber-style follow, replacing the previous 2000 ms Timer.
+  // Navigation chase camera ticker — runs at the display's own rate so the
+  // map glides frame-for-frame with the car marker. Frame dropping happens
+  // in TrackingMapCamera, against the platform channel, not on a clock.
   Ticker? _cameraTicker;
-  DateTime _lastCameraTick = DateTime(2000);
   bool _userControllingCamera = false;
   DateTime? _lastUserCameraInteraction;
-  // Guard: onCameraChange fires for both user gestures and code-driven
-  // easeTo updates. This flag lets us ignore the programmatic ones.
-  bool _cameraUpdateFromCode = false;
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;
@@ -585,29 +614,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               Positioned.fill(child: _buildFullScreenMap()),
               // LAYER 2: Back button
               _buildBackButton(topPad),
-              // LAYER 3: Driver info card (top)
+              // LAYER 3: Status + ETA bar (top).
+              //
+              // Starts to the RIGHT of the back button instead of spanning
+              // the full width: the driver card used to sit here and paint
+              // straight over the button, so back was invisible and
+              // untappable for the whole ride.
+              //
+              // _topCardKey stays on the top slot, not on a specific card —
+              // every map padding calculation measures "whatever is on
+              // top", so swapping the two cards needs no math changes.
               Positioned(
                 top: topPad + 10,
-                left: 16,
+                left: Responsive.w(16) + Responsive.w(40) + Responsive.w(10),
                 right: 16,
                 child: KeyedSubtree(
                   key: _topCardKey,
-                  child: _buildDriverCard(),
+                  child: _buildDestinationBox(),
                 ),
               ),
-              // LAYER 4: Resume button + Destination box (bottom)
+              // LAYER 4: Driver info card (bottom) — avatar, plate, chat,
+              // call, share and the more menu, all within thumb reach.
               Positioned(
                 bottom: bottomPad + 16,
                 left: 16,
                 right: 16,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KeyedSubtree(
-                      key: _bottomCardKey,
-                      child: _buildDestinationBox(),
-                    ),
-                  ],
+                child: KeyedSubtree(
+                  key: _bottomCardKey,
+                  child: _buildDriverCard(),
                 ),
               ),
               // Offline banner
@@ -617,16 +651,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 0,
                 child: const OfflineBanner(),
               ),
-              // Connection lost banner
+              // Connection lost banner — sits under the top status bar
+              // instead of on top of it.
               if (_connectionLost)
                 Positioned(
-                  top: topPad + 36,
+                  top: topPad + 10 + _topCardHeight + 8,
                   left: 24,
                   right: 24,
                   child: _buildConnectionLostBanner(),
                 ),
               // MORE menu overlay (tap-away dismisses)
-              if (_showMoreMenu) ...[  
+              if (_showMoreMenu) ...[
                 Positioned.fill(
                   child: GestureDetector(
                     onTap: () => setState(() => _showMoreMenu = false),
@@ -634,7 +669,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                     child: const ColoredBox(color: Colors.transparent),
                   ),
                 ),
-                _buildMoreMenuOverlay(topPad),
+                _buildMoreMenuOverlay(bottomPad),
               ],
               // CANCEL overlay (blur + spinner / checkmark)
               if (_cancelOverlayPhase > 0) _buildCancelOverlay(),

@@ -34,6 +34,8 @@ class TrackingMapAnnotations {
 
   Timer? _dropoffPopTimer;
   Timer? _pickupPopTimer;
+  /// Settled by [_finishPickupPop] on every exit path — see the note there.
+  Completer<void>? _pickupPopCompleter;
 
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PointAnnotationManager? mgr) {
@@ -140,6 +142,15 @@ class TrackingMapAnnotations {
     const durationMs = 500;
 
     _dropoffPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      // The annotation can be dropped mid-animation (map recreated, screen
+      // cleared) — bail instead of spinning out the remaining ticks on a
+      // null-check that only the catch below is hiding.
+      final annot = _dropoffAnnot;
+      if (annot == null) {
+        timer.cancel();
+        _dropoffPopTimer = null;
+        return;
+      }
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / durationMs).clamp(0.0, 1.0);
 
@@ -153,10 +164,13 @@ class TrackingMapAnnotations {
       }
 
       try {
-        mgr.update(_dropoffAnnot!..iconSize = scale);
+        mgr.update(annot..iconSize = scale);
       } catch (_) {}
 
-      if (t >= 1.0) timer.cancel();
+      if (t >= 1.0) {
+        timer.cancel();
+        _dropoffPopTimer = null;
+      }
     });
   }
 
@@ -197,9 +211,15 @@ class TrackingMapAnnotations {
     const durationMs = 600;
 
     final completer = Completer<void>();
-    _pickupPopTimer?.cancel();
+    _finishPickupPop(); // settle any previous run before replacing it
+    _pickupPopCompleter = completer;
 
     _pickupPopTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final annot = _pickupAnnot;
+      if (annot == null) {
+        _finishPickupPop();
+        return;
+      }
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / durationMs).clamp(0.0, 1.0);
 
@@ -212,22 +232,45 @@ class TrackingMapAnnotations {
       }
 
       try {
-        mgr.update(_pickupAnnot!..iconSize = math.max(scale, 0.01));
+        mgr.update(annot..iconSize = math.max(scale, 0.01));
       } catch (_) {}
 
       if (t >= 1.0) {
-        timer.cancel();
-        try { mgr.delete(_pickupAnnot!); } catch (_) {}
+        try { mgr.delete(annot); } catch (_) {}
         _pickupAnnot = null;
-        completer.complete();
+        _finishPickupPop();
       }
     });
 
     return completer.future;
   }
 
+  /// Stops the pop-out timer and ALWAYS settles its future.
+  ///
+  /// The caller clears its own "already popping" guard inside `.then()`,
+  /// so a future that never completes locks that guard on forever and the
+  /// pickup pin stays on the map for the rest of the trip. That is what
+  /// happened when [reset] cancelled the timer mid-animation (map
+  /// recreated by the PlatformView) — the pin never came off again.
+  void _finishPickupPop() {
+    _pickupPopTimer?.cancel();
+    _pickupPopTimer = null;
+    final c = _pickupPopCompleter;
+    _pickupPopCompleter = null;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
   /// Limpia todas las anotaciones
   Future<void> clear() async {
+    // Kill the pin animations FIRST, and before the early return below.
+    // clear() is what runs when the tracking screen is disposed, while
+    // reset() is only for map recreation — so these 16 ms timers used to
+    // outlive the screen by up to 600 ms, still writing to a map that was
+    // being torn down. Same leak as the car pop-in.
+    _dropoffPopTimer?.cancel();
+    _dropoffPopTimer = null;
+    _finishPickupPop();
+
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     if (_pickupAnnot != null) {
@@ -247,8 +290,7 @@ class TrackingMapAnnotations {
   void reset() {
     _dropoffPopTimer?.cancel();
     _dropoffPopTimer = null;
-    _pickupPopTimer?.cancel();
-    _pickupPopTimer = null;
+    _finishPickupPop();
     _pickupAnnot = null;
     _dropoffAnnot = null;
     _dropoffPinAdded = false;

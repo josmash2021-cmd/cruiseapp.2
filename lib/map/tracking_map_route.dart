@@ -34,6 +34,23 @@ class TrackingMapRoute {
 
   DateTime _lastRouteErase = DateTime(2000);
 
+  /// True while an erase update is still crossing the platform channel.
+  ///
+  /// The erase rate below is fast enough that a slow IPC round-trip could
+  /// overlap the next call. Without this the writes queue up and Mapbox
+  /// starts dropping them mid-flight (project rule 25), which shows up as
+  /// the route line stuttering and snapping backwards. Skipping a frame is
+  /// invisible; a dropped flush is not.
+  bool _eraseBusy = false;
+
+  /// How often the line behind the car is trimmed. 66 ms ≈ 15 fps.
+  ///
+  /// Was 500 ms — 2 fps — while the car itself moves at 30 fps. The line
+  /// visibly lagged the car and then jumped to catch up. Matching them is
+  /// the whole point: the rider should see the road being consumed under
+  /// the car, not swallowed in chunks half a second later.
+  static const int _eraseIntervalMs = 66;
+
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PolylineAnnotationManager? mgr) {
     _polylineAnnotMgr = mgr;
@@ -156,8 +173,11 @@ class TrackingMapRoute {
 
   /// Borra la ruta detrás del carro (muestra solo lo que queda por recorrer)
   Future<void> eraseRouteBehindCar(LatLng driverPos) async {
+    if (_eraseBusy) return;
     final now = DateTime.now();
-    if (now.difference(_lastRouteErase).inMilliseconds < 500) return;
+    if (now.difference(_lastRouteErase).inMilliseconds < _eraseIntervalMs) {
+      return;
+    }
     _lastRouteErase = now;
 
     final mgr = _polylineAnnotMgr;
@@ -202,10 +222,14 @@ class TrackingMapRoute {
     if (validRemaining.length < 2) return;
 
     final geom = mapbox.LineString(coordinates: validRemaining);
+    _eraseBusy = true;
     try {
       _remainingRouteAnnot!.geometry = geom;
       await mgr.update(_remainingRouteAnnot!);
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _eraseBusy = false;
+    }
   }
 
   /// Animación de dibujo progresivo de la ruta

@@ -54,17 +54,8 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     ].where((v) => v.isNotEmpty).join(' ');
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      // Raised neumorphic card (shared system — see neu_style.dart).
+      decoration: neuBox(radius: 24),
       padding: EdgeInsets.all(Responsive.w(14)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -216,16 +207,19 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   Widget _buildCardIconBtn({required IconData icon, required VoidCallback onTap}) {
+    final d = Responsive.w(40);
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: Responsive.w(40), height: Responsive.w(40),
-        decoration: BoxDecoration(
-          color: const Color(0xFF262626),
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+        width: d, height: d,
+        // Sunken well — the established neumorphic idiom for icon buttons.
+        // radius = half the box, so the well reads as a circle.
+        decoration: neuBox(
+          radius: d / 2,
+          pressed: true,
+          borderColor: AppColors.kGold.withValues(alpha: 0.35),
         ),
-        child: Icon(icon, color: Colors.white60, size: Responsive.sp(18)),
+        child: Icon(icon, color: AppColors.kGold, size: Responsive.sp(18)),
       ),
     );
   }
@@ -288,47 +282,47 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   Widget _buildMoreMenuButton() {
+    final d = Responsive.w(40);
     return GestureDetector(
       onTap: () => _setState(() => _showMoreMenu = !_showMoreMenu),
       child: Container(
-        width: Responsive.w(40), height: Responsive.w(40),
-        decoration: BoxDecoration(
-          color: _showMoreMenu ? const Color(0xFF333333) : const Color(0xFF262626),
-          shape: BoxShape.circle,
-          border: Border.all(color: _showMoreMenu ? AppColors.kGold.withValues(alpha: 0.8) : AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+        width: d, height: d,
+        // Open state pops OUT of the well (pressed: false) so the button
+        // visibly holds the menu it opened.
+        decoration: neuBox(
+          radius: d / 2,
+          pressed: !_showMoreMenu,
+          borderColor: AppColors.kGold
+              .withValues(alpha: _showMoreMenu ? 0.8 : 0.35),
         ),
-        child: Icon(Icons.more_horiz_rounded, color: _showMoreMenu ? AppColors.kGold : Colors.white60, size: Responsive.sp(18)),
+        child: Icon(Icons.more_horiz_rounded,
+            color: AppColors.kGold, size: Responsive.sp(18)),
       ),
     );
   }
 
-  /// Elegant dropdown menu positioned below the driver card
-  Widget _buildMoreMenuOverlay(double topPad) {
-    final top = topPad + 10 + _topCardHeight + 8;
+  /// Menu that opens UPWARD from the driver card, which now lives at the
+  /// bottom of the screen. It used to drop down from the top card.
+  Widget _buildMoreMenuOverlay(double bottomPad) {
+    final bottom = bottomPad + 16 + _bottomCardHeight + 8;
     return Positioned(
-      top: top,
+      bottom: bottom,
       right: 16,
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
+        // Rises into place (+8 → 0) instead of dropping, matching the
+        // direction it now opens from.
         builder: (context, value, child) => Transform.translate(
-          offset: Offset(0, -8 * (1 - value)),
+          offset: Offset(0, 8 * (1 - value)),
           child: Opacity(opacity: value, child: child),
         ),
         child: Container(
           width: 220,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.kGold.withValues(alpha: 0.2)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
+          decoration: neuBox(
+            radius: 16,
+            borderColor: AppColors.kGold.withValues(alpha: 0.2),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -475,24 +469,19 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   Widget _buildBackButton(double topPad) {
+    final d = Responsive.w(40);
     return Positioned(
       top: topPad + 10,
       left: Responsive.w(16),
       child: GestureDetector(
         onTap: _navigateToHome,
         child: Container(
-          width: Responsive.w(40), height: Responsive.w(40),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withValues(alpha: 0.9),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 12,
-              ),
-            ],
-          ),
-          child: Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: Responsive.sp(18)),
+          width: d, height: d,
+          // Raised, so it reads as the one thing sitting on the map rather
+          // than a hole punched into it.
+          decoration: neuBox(radius: d / 2),
+          child: Icon(Icons.arrow_back_ios_rounded,
+              color: Colors.white, size: Responsive.sp(18)),
         ),
       ),
     );
@@ -549,15 +538,15 @@ class _ChatPromptPillState extends State<_ChatPromptPill>
     final s = S.of(context);
 
     if (!hasUnread) {
+      // Idle: a sunken well, like a real text input carved into the card.
       return Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(
             horizontal: Responsive.w(14), vertical: Responsive.h(10)),
-        decoration: BoxDecoration(
-          color: const Color(0xFF262626),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-              color: AppColors.kGold.withValues(alpha: 0.7), width: 1.2),
+        decoration: neuBox(
+          radius: 24,
+          pressed: true,
+          borderColor: AppColors.kGold.withValues(alpha: 0.35),
         ),
         child: Text(
           s.typeMessage,

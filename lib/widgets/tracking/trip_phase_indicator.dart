@@ -131,18 +131,9 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     }
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      // Raised neumorphic bar (shared system — see neu_style.dart).
+      decoration: neuBox(radius: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 500),
         switchInCurve: Curves.easeOutCubic,
@@ -209,18 +200,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
           // state on every rebuild so it tracks the real-time countdown
           // pushed by the driver-location listener.
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            // Sunken well with gold digits — reads like an instrument
+            // readout. The old white block fought the neumorphic card
+            // around it.
+            decoration: neuBox(radius: 14, pressed: true),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -242,7 +226,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                     _etaDisplayText,
                     key: ValueKey('eta_$_etaMinutes'),
                     style: TextStyle(
-                      color: Colors.black,
+                      color: AppColors.kGold,
                       fontSize: _etaMinutes >= 60 ? 18 : 22,
                       fontWeight: FontWeight.w800,
                     ),
@@ -251,8 +235,8 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                 if (_etaUnitText.isNotEmpty)
                   Text(
                     _etaUnitText,
-                    style: const TextStyle(
-                        color: Colors.black54,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
                         fontSize: 11,
                         fontWeight: FontWeight.w600),
                   ),
@@ -414,18 +398,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
         if (!hideEta) ...[
           const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            // Sunken well with gold digits — reads like an instrument
+            // readout. The old white block fought the neumorphic card
+            // around it.
+            decoration: neuBox(radius: 14, pressed: true),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -447,7 +424,7 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                     _etaDisplayText,
                     key: ValueKey('eta_$_etaMinutes'),
                     style: TextStyle(
-                      color: Colors.black,
+                      color: AppColors.kGold,
                       fontSize: _etaMinutes >= 60 ? 18 : 22,
                       fontWeight: FontWeight.w800,
                     ),
@@ -456,8 +433,8 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                 if (_etaUnitText.isNotEmpty)
                   Text(
                     _etaUnitText,
-                    style: const TextStyle(
-                        color: Colors.black54,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
                         fontSize: 11,
                         fontWeight: FontWeight.w600),
                   ),

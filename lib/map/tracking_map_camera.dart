@@ -273,12 +273,114 @@ class TrackingMapCamera {
   double _navZoom = 16.0;
   DateTime? _lastNavFrameAt;
 
+  /// True while a camera write is crossing the platform channel. Same
+  /// latest-wins discipline as the car marker: frames produced during a
+  /// write are dropped, never queued, so the camera can never lag behind
+  /// the animation it is chasing.
+  bool _frameInFlight = false;
+
+  // ── Approach framing (driver on the way to the pickup) ──
+  // Null until the first frame seeds it from the real span, so the view
+  // opens already correct instead of gliding in from a default zoom.
+  double? _approachZoom;
+  DateTime? _lastApproachFrameAt;
+
   bool get isNavChaseActive => _navChaseActive;
+
+  /// True once [updateApproachFrame] owns the camera. Callers use this to
+  /// stand down their one-shot bounds fits, exactly as they already do for
+  /// the navigation chase — a flyTo landing on top of a per-frame
+  /// setCamera is a visible fight.
+  bool get isApproachFramingActive => _approachZoom != null;
 
   void startNavigationChase() {
     _navChaseActive = true;
     _lastNavFrameAt = null;
+    // Leaving the approach phase — re-seed if we ever come back to it.
+    _approachZoom = null;
+    _lastApproachFrameAt = null;
   }
+
+  /// Frame the driver on their way to the pickup.
+  ///
+  /// Keeps the car and the pickup pin both in view while continuously
+  /// tightening as the gap closes: wide while they are minutes away, close
+  /// enough to see which street they are turning onto once they are near.
+  ///
+  /// Deliberately NOT a periodic re-fit. That existed before and was
+  /// removed for jumping the camera every few seconds. This moves a
+  /// fraction of the way toward the target zoom on every frame, so the
+  /// tightening is continuous and never reads as a jump.
+  void updateApproachFrame({
+    required LatLng driverPos,
+    required LatLng pickupPos,
+    required Size screenSize,
+    required double topPadding,
+    required double bottomPadding,
+  }) {
+    if (_map == null) return;
+    if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
+
+    final now = DateTime.now();
+    final dtSec = _lastApproachFrameAt == null
+        ? 0.0
+        : now.difference(_lastApproachFrameAt!).inMilliseconds / 1000.0;
+    _lastApproachFrameAt = now;
+    double tf(double base) =>
+        1.0 - math.pow(1.0 - base, (dtSec.clamp(0.0, 0.1) * 60)).toDouble();
+
+    // Midpoint: both the car and the pin stay framed the whole way in.
+    final centerLat = (driverPos.latitude + pickupPos.latitude) / 2;
+    final centerLng = (driverPos.longitude + pickupPos.longitude) / 2;
+
+    final targetZoom = _zoomToFitSpan(
+      driverPos,
+      pickupPos,
+      screenSize,
+      topPadding,
+      bottomPadding,
+    );
+    // First frame snaps; every frame after glides 6% of the remaining gap.
+    _approachZoom = _approachZoom == null
+        ? targetZoom
+        : _approachZoom! + (targetZoom - _approachZoom!) * tf(0.06);
+
+    if (_frameInFlight) return;
+    _frameInFlight = true;
+    try {
+      _map!
+          .setCamera(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+            coordinates: mapbox.Position(centerLng, centerLat),
+          ),
+          zoom: _approachZoom,
+          // Flat and north-up while waiting: a tilted, rotating map is
+          // disorienting when you are standing still reading it.
+          bearing: 0,
+          pitch: 0,
+        ),
+      )
+          .then((_) {
+        _frameInFlight = false;
+      }).catchError((e) {
+        debugPrint('[TrackingMapCamera] approach setCamera failed: $e');
+        _frameInFlight = false;
+      });
+    } catch (e) {
+      debugPrint('[TrackingMapCamera] approach setCamera error: $e');
+      _frameInFlight = false;
+    }
+  }
+
+  double _zoomToFitSpan(
+    LatLng a,
+    LatLng b,
+    Size screen,
+    double topPadding,
+    double bottomPadding,
+  ) =>
+      zoomToFitSpan(a, b, screen, topPadding, bottomPadding);
 
   void stopNavigationChase() {
     _navChaseActive = false;
@@ -348,10 +450,19 @@ class TrackingMapCamera {
     final anchorX = screenSize.width / 2;
     final anchorY = topPadding + visibleH * 0.62;
 
-    // Fire-and-forget easeTo: short duration gives a continuous glide
-    // without serializing the ticker behind the platform channel.
+    // Instant setCamera, NOT an animated easeTo.
+    //
+    // Every value above is already low-passed by tf() against real dt, so
+    // the smoothing lives here, in our own state. Layering a 150 ms easeTo
+    // on top — restarted before it ever finished, every single frame —
+    // smoothed an already-smooth signal and left the camera rubber-banding
+    // behind the car it was chasing. Feeding pre-smoothed values straight
+    // in is what makes the map glide with the marker instead of after it.
+    if (_frameInFlight) return;
+    _frameInFlight = true;
     try {
-      _map!.easeTo(
+      _map!
+          .setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
             coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude),
@@ -361,12 +472,55 @@ class TrackingMapCamera {
           pitch: _navPitch,
           anchor: mapbox.ScreenCoordinate(x: anchorX, y: anchorY),
         ),
-        mapbox.MapAnimationOptions(duration: 150),
-      ).catchError((e) {
-        debugPrint('[TrackingMapCamera] easeTo failed: $e');
+      )
+          .then((_) {
+        _frameInFlight = false;
+      }).catchError((e) {
+        debugPrint('[TrackingMapCamera] setCamera failed: $e');
+        _frameInFlight = false;
       });
     } catch (e) {
-      debugPrint('[TrackingMapCamera] easeTo error: $e');
+      debugPrint('[TrackingMapCamera] setCamera error: $e');
+      _frameInFlight = false;
     }
   }
+}
+
+/// Zoom level that fits the span between two points inside the visible map
+/// area (the screen minus the cards at the top and bottom).
+///
+/// Top-level and public so it can be unit-tested: it is pure arithmetic
+/// derived from Mapbox's own metres-per-pixel relation
+/// (`156543.03392 * cos(lat) / 2^zoom`), and a sign or unit slip in here
+/// would silently frame the whole approach wrong.
+double zoomToFitSpan(
+  LatLng a,
+  LatLng b,
+  Size screen,
+  double topPadding,
+  double bottomPadding, {
+  double minZoom = 11.0,
+  double maxZoom = 17.0,
+}) {
+  final midLat = (a.latitude + b.latitude) / 2;
+  final cosLat = math.cos(midLat * math.pi / 180).abs().clamp(0.01, 1.0);
+
+  // 32 px breathing room on each side; never let the usable box hit zero
+  // (a card taller than the screen would otherwise divide by ~0).
+  final visibleW = math.max(screen.width - 64.0, 80.0);
+  final visibleH = math.max(screen.height - topPadding - bottomPadding, 80.0);
+
+  // Floor the span so the zoom stops tightening once the two points sit on
+  // top of each other — without it the camera races to maximum zoom at the
+  // exact moment the driver pulls up.
+  final spanX =
+      math.max((b.longitude - a.longitude).abs() * 111320.0 * cosLat, 80.0);
+  final spanY = math.max((b.latitude - a.latitude).abs() * 111320.0, 80.0);
+
+  double zoomFor(double spanM, double px) =>
+      math.log(156543.03392 * cosLat * px / spanM) / math.ln2;
+
+  final z = math.min(zoomFor(spanX, visibleW), zoomFor(spanY, visibleH));
+  if (z.isNaN || z.isInfinite) return 15.0;
+  return z.clamp(minZoom, maxZoom);
 }

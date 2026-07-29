@@ -569,6 +569,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // drives the camera. A periodic flyTo bounds-fit would fight it and
     // create visible jumps, so we skip those calls.
     if (isOnTrip && (_mapCamera?.isNavChaseActive ?? false)) return;
+    // Same reasoning for the approach phase, which now has its own
+    // continuous framer. The first fit still runs — it lands before the
+    // framer has seeded — and gives the wide opening shot the framer then
+    // tightens from.
+    if (_phase == _TrackPhase.arriving &&
+        (_mapCamera?.isApproachFramingActive ?? false)) {
+      return;
+    }
 
     // Get actual card heights from GlobalKeys
     final topHeight = _topCardHeight;
@@ -863,10 +871,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // In onTrip the next chase-camera tick will easeTo the driver smoothly.
   }
 
-  /// Called when the camera changes. Ignore programmatic easeTo updates
-  /// (flagged by [_cameraUpdateFromCode]); only react to user gestures.
-  void _onCameraChanged() {
-    if (_cameraUpdateFromCode) return;
+  /// The rider dragged the map: hand them the camera and stop chasing.
+  ///
+  /// Driven by the map's scroll (gesture) callback, NOT by camera-change
+  /// events. onCameraChangeListener fires for our own easeTo too, so it
+  /// needed a "this one is mine" flag that was cleared by a 120 ms
+  /// Future scheduled on every one of the 25 camera frames per second —
+  /// and those clears regularly landed while an easeTo was still
+  /// settling. The chase camera then declared the rider had grabbed the
+  /// map and stopped following the car for the rest of the trip, with no
+  /// gesture ever happening. A gesture callback cannot lie.
+  void _onUserPannedMap() {
     if (!_userControllingCamera) {
       _userControllingCamera = true;
       _mapCamera?.stopNavigationChase();
@@ -890,15 +905,52 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Ticker callback: drive the Uber-style chase camera.
   void _onCameraTick(Duration elapsed) {
     if (!mounted || _map == null || _mapCamera == null) return;
-    if (!_shouldFollowDriver || _userControllingCamera) return;
+    // Auto-resume: hand the camera back after the rider stops panning.
+    // _lastUserCameraInteraction was being written and never read, so a
+    // single pan parked the camera permanently — the car drove off screen
+    // and never came back for the rest of the ride.
+    if (_userControllingCamera) {
+      final last = _lastUserCameraInteraction;
+      if (last == null ||
+          DateTime.now().difference(last).inMilliseconds >
+              _kResumeFollowAfterPanMs) {
+        _userControllingCamera = false;
+        _lastUserCameraInteraction = null;
+      } else {
+        return;
+      }
+    }
+    if (!_shouldFollowDriver) return;
     if (_phase == _TrackPhase.arrived) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
 
-    // Throttle to ~25 fps — camera animations don't need 60 fps and the
-    // platform channel benefits from fewer calls.
-    final now = DateTime.now();
-    if (now.difference(_lastCameraTick).inMilliseconds < 40) return;
-    _lastCameraTick = now;
+    // No throttle: the camera runs at the ticker's own rate, matching the
+    // car marker frame for frame. A 25 fps camera under a 60 fps marker
+    // makes the car visibly oscillate around its anchor, because the map
+    // translates in coarser steps than the thing it is following.
+    // updateChaseFrame drops frames itself when the channel is busy.
+
+    final mq = MediaQuery.of(context);
+    final topPad = mq.padding.top;
+    final bottomPad = mq.padding.bottom;
+    final screenSize = mq.size;
+
+    // ── Driver on the way to the pickup ──
+    // Frame both the car and the pin, tightening continuously as the gap
+    // closes. Nothing used to drive the camera here at all: it was fitted
+    // once when the approach route arrived and then froze, so the rider
+    // watched the whole approach through a view sized for a driver who was
+    // still minutes away.
+    if (_phase == _TrackPhase.arriving) {
+      _mapCamera!.updateApproachFrame(
+        driverPos: _animPos,
+        pickupPos: widget.pickupLatLng,
+        screenSize: screenSize,
+        topPadding: topPad + 10 + _topCardHeight + 32,
+        bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+      );
+      return;
+    }
 
     final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (!isOnTrip) return;
@@ -907,12 +959,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _mapCamera!.startNavigationChase();
     }
 
-    final mq = MediaQuery.of(context);
-    final topPad = mq.padding.top;
-    final bottomPad = mq.padding.bottom;
-    final screenSize = mq.size;
-
-    _cameraUpdateFromCode = true;
     _mapCamera!.updateChaseFrame(
       driverPos: _animPos,
       bearing: _animBearing,
@@ -922,11 +968,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
       use3DPitch: _useNavCamera,
     );
-    // The camera-change listener fires asynchronously after easeTo starts.
-    // Keep the guard up long enough to swallow those programmatic events.
-    Future.delayed(const Duration(milliseconds: 120), () {
-      if (mounted) _cameraUpdateFromCode = false;
-    });
   }
 
   double _hav(LatLng a, LatLng b) {
@@ -1138,6 +1179,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _mapRoute = TrackingMapRoute(map: ctrl, polylineAnnotMgr: _polylineAnnotMgr);
               _mapCamera = TrackingMapCamera(ctrl);
               _mapCar = TrackingMapCar(map: ctrl, carAnnotMgr: _carAnnotMgr);
+              // Load the car icon the moment the component exists. It used
+              // to be a 500 ms timer from initState that simply skipped
+              // when the map was not up yet — and then never retried.
+              unawaited(_mapCar!.loadCarIcon(widget.rideName));
               // Load data into modular components
               _mapAnnotations!.loadPins(
                 pickupLabel: widget.pickupLabel,
@@ -1167,7 +1212,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                 }
               });
             },
-            onCameraChangeListener: (_) => _onCameraChanged(),
+            // Gesture callback, not onCameraChangeListener: the latter also
+            // fires for our own chase-camera easeTo. See _onUserPannedMap.
+            onScrollListener: (_) => _onUserPannedMap(),
             onMapLoadErrorListener: (err) {
               debugPrint('[TrackingMap] Map load error: ${err.message} (type: ${err.type})');
               _setState(() {
@@ -1299,12 +1346,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _updateCarSmooth() {
     if (_map == null) return;
 
-    // Throttle to ~30fps — Mapbox native updates don't need 60fps and can
-    // stutter if we queue too many async annotation updates.
-    final now = DateTime.now();
-    if (now.difference(_lastCarUpdate).inMilliseconds < _RiderTrackingScreenState._minCarUpdateMs) return;
-    _lastCarUpdate = now;
-
     // Determine effective position: use _animPos if valid, fallback to _directTargetPos
     LatLng effectivePos = _animPos;
     double effectiveBearing = _animBearing;
@@ -1323,13 +1364,29 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       }
     }
 
-    // Use the new modular TrackingMapCar if available
+    // Live path: TrackingMapCar runs a latest-wins pipeline, so it is fed
+    // every animation frame and paces itself against the platform channel.
+    // No fixed throttle here — that was a hard 30 fps ceiling on the one
+    // thing the rider watches for the whole trip.
     if (_mapCar != null) {
-      _mapCar!.updatePosition(effectivePos, bearing: effectiveBearing);
+      _mapCar!.updatePosition(
+        effectivePos,
+        bearing: effectiveBearing,
+        // Lets it load its own icon if the startup race lost.
+        rideName: widget.rideName,
+      );
       return;
     }
 
-    // Fallback to legacy inline code if modular component not ready
+    // ── Legacy path (modular component not ready yet) ──
+    // No backpressure here, so it keeps the old fixed throttle.
+    final now = DateTime.now();
+    if (now.difference(_lastCarUpdate).inMilliseconds <
+        _RiderTrackingScreenState._minCarUpdateMs) {
+      return;
+    }
+    _lastCarUpdate = now;
+
     if (_carPngBytes == null) return;
     final mgr = _carAnnotMgr;
     if (mgr == null) return;
@@ -1781,8 +1838,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Erase the route behind the car: update remaining-route layers to show
   /// only the portion ahead of the current driver position.
   void _eraseRouteBehindCar() {
+    if (_routeEraseBusy) return;
     final now = DateTime.now();
-    if (now.difference(_lastRouteErase).inMilliseconds < 500) return;
+    if (now.difference(_lastRouteErase).inMilliseconds <
+        _kRouteEraseIntervalMs) {
+      return;
+    }
     _lastRouteErase = now;
 
     // Use modular route component if available
@@ -1835,9 +1896,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (validRemaining.length < 2) return;
 
     final geom = mapbox.LineString(coordinates: validRemaining);
+    if (_remainingRouteAnnot == null) return;
+    // Hold the gate until the write lands, so the next frames skip instead
+    // of stacking writes the SDK would silently drop.
+    _routeEraseBusy = true;
     try {
-      if (_remainingRouteAnnot != null) mgr.update(_remainingRouteAnnot!..geometry = geom);
-    } catch (_) {}
+      mgr
+          .update(_remainingRouteAnnot!..geometry = geom)
+          .whenComplete(() => _routeEraseBusy = false);
+    } catch (_) {
+      _routeEraseBusy = false;
+    }
   }
 
   /// Remove the dimmed route (called when transitioning to onTrip gloss route)

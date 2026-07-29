@@ -1119,6 +1119,47 @@ class ApiService {
     }
   }
 
+  /// Whether the stored session token is still good.
+  ///
+  ///   * `true`  — the server accepted it.
+  ///   * `false` — the server *rejected* it (401 and the refresh token
+  ///     couldn't renew it, or there is no token at all). Only this
+  ///     warrants signing the user out.
+  ///   * `null`  — couldn't tell. Server error, timeout, no connectivity.
+  ///
+  /// The distinction matters: [getMe] collapses all three into `null`, so
+  /// callers using it to validate a session log people out during any
+  /// backend blip — including the seconds a Railway redeploy spends
+  /// returning 502 while it swaps containers. A deploy must not sign
+  /// anyone out.
+  static Future<bool?> isTokenValid() async {
+    final token = await getToken();
+    if (token == null) return false;
+    try {
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(token))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) return true;
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        // Give the refresh token its chance before condemning the session.
+        final refreshed = await refreshAccessToken();
+        if (!refreshed) return false;
+        final newToken = await getToken();
+        if (newToken == null) return false;
+        final retry = await _client
+            .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(newToken))
+            .timeout(const Duration(seconds: 8));
+        if (retry.statusCode == 200) return true;
+        if (retry.statusCode == 401 || retry.statusCode == 403) return false;
+        return null; // refreshed fine, server then misbehaved — inconclusive
+      }
+      return null; // 5xx, 429, anything else — server's problem, not the token's
+    } catch (e) {
+      debugPrint('[Auth] Token validation inconclusive (offline/deploy?): $e');
+      return null;
+    }
+  }
+
   /// Get dashboard data — combines user, verification, account status,
   /// active ride, etc. in a single request. Cached for 10s.
   static Map<String, dynamic>? _dashboardCache;

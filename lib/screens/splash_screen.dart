@@ -554,12 +554,19 @@ class _SplashScreenState extends State<SplashScreen>
   /// Does NOT block navigation — user gets in with cached session.
   Future<void> _validateTokenInBackground() async {
     try {
-      final me = await ApiService.getMe().timeout(const Duration(seconds: 5));
-      if (me == null) {
-        debugPrint('[Splash] Token invalid — logging out in background');
+      // Tri-state on purpose. The old check used getMe(), which returns
+      // null for a rejected token AND for a 502 — so every Railway
+      // redeploy signed everyone out mid-session. Only a definitive
+      // rejection (false) may clear the session; `null` means the server
+      // was unreachable or unhealthy and the session stays put.
+      final valid = await ApiService.isTokenValid();
+      if (valid == false) {
+        debugPrint('[Splash] Token rejected by server — logging out in background');
         await ApiService.clearToken();
         await UserSession.logout();
         // Note: user is already on home screen, they'll be redirected on next app open
+      } else if (valid == null) {
+        debugPrint('[Splash] Token validation inconclusive — keeping session');
       }
     } catch (e) {
       debugPrint('[Splash] Token validation failed (network?): $e');

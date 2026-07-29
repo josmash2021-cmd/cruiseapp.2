@@ -297,9 +297,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     // RideRequestScreen's pickingLocation phase. The same Mapbox canvas
     // then drives picker → confirm → route preview with zero teleports.
     setState(() => _handoffCover = true);
-    Navigator.of(context).pushReplacement(
-      slideUpFadeRoute(
-        RideRequestScreen(
+    // push, NOT pushReplacement: replacing this screen left the picker
+    // sitting directly on top of the home screen, so its back arrow
+    // dropped the rider all the way home instead of back to the search
+    // they came from. Keeping this screen on the stack is cheap — it
+    // holds no map instance.
+    _pushPicker(
+      RideRequestScreen(
           initialPickupDetails: _pickupDetails,
           initialDropoffDetails: seed,
           initialPickupLabel: _pickupLabel,
@@ -312,9 +316,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           // says "Reserve Now" instead of "Request Ride".
           scheduledAt: widget.scheduledAt,
           isAirportTrip: widget.isAirportTrip,
-        ),
       ),
     );
+  }
+
+  /// Push the single-canvas picker and lift the black handoff cover when
+  /// it comes back, so returning here doesn't land on a blank screen.
+  void _pushPicker(Widget picker) {
+    Navigator.of(context).push(slideUpFadeRoute(picker)).then((_) {
+      if (mounted) setState(() => _handoffCover = false);
+    });
   }
 
   Future<void> _onFieldSubmitted(String value) async {
@@ -366,22 +377,23 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     // phase. The same Mapbox canvas then drives picker → confirm →
     // route preview with zero teleports.
     setState(() => _handoffCover = true);
-    Navigator.of(context).pushReplacement(
-      slideUpFadeRoute(
-        RideRequestScreen(
-          initialPickupDetails: _pickupDetails,
-          initialDropoffDetails: _dropoffDetails,
-          initialPickupLabel: _pickupLabel,
-          initialDropoffLabel: _dropoffLabel,
-          handoffLat: lat,
-          handoffLng: lng,
-          pickerMode: true,
-          pickerIsPickup: _editingPickup,
-          // Forward Schedule/Airport context so the destination CTA
-          // says "Reserve Now" instead of "Request Ride".
-          scheduledAt: widget.scheduledAt,
-          isAirportTrip: widget.isAirportTrip,
-        ),
+    // push, NOT pushReplacement — see _pushPicker: keeping this screen on
+    // the stack is what makes the picker's back arrow return here instead
+    // of falling through to the home screen.
+    _pushPicker(
+      RideRequestScreen(
+        initialPickupDetails: _pickupDetails,
+        initialDropoffDetails: _dropoffDetails,
+        initialPickupLabel: _pickupLabel,
+        initialDropoffLabel: _dropoffLabel,
+        handoffLat: lat,
+        handoffLng: lng,
+        pickerMode: true,
+        pickerIsPickup: _editingPickup,
+        // Forward Schedule/Airport context so the destination CTA
+        // says "Reserve Now" instead of "Request Ride".
+        scheduledAt: widget.scheduledAt,
+        isAirportTrip: widget.isAirportTrip,
       ),
     );
     return;

@@ -465,13 +465,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _showPaymentDeclinedBanner = false;
   String? _heldPaymentIntentId;
 
-  // ── Map interaction state ──
-  bool _userMovedMap = false;
-
   // ── Shake animation (disabled request button) ──
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
-  bool _programmaticCam = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
 
   // ── Searching overlay: splash first, then map with address bars ──
@@ -507,11 +503,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Offset? _dropoffScreenOffset;
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
-  // Polyline projected to screen coordinates each camera tick — used
-  // to dim labels that the gold route would otherwise paint over.
-  // Empty when no route yet; sampled (every Nth point) so the
-  // collision check stays cheap on long routes.
-  List<Offset> _routeScreenPoints = const [];
 
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same
@@ -959,9 +950,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       } catch (_) {}
                     }
                   },
-                  onScrollListener: (_) {
-                    if (!_programmaticCam) setState(() => _userMovedMap = true);
-                  },
                   onCameraChangeListener: (_) {
                     _syncLabelOffsets();
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {
@@ -1026,11 +1014,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             maxWidth:
                                 MediaQuery.of(context).size.width * 0.72,
                           ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xCC0A0E1A),
-                            borderRadius: BorderRadius.circular(100),
-                            border: Border.all(color: const Color(0x33E8C547)),
-                          ),
+                          decoration: neuBox(radius: 100),
                           child: Text(
                             _pickerIsPickup
                                 ? S.of(context).moveMapToSetPickup
@@ -1078,10 +1062,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     child: _circleButton(
                       icon: Icons.arrow_back,
                       onTap: () {
-                        // Clean up map annotations and reset state before going back
-                        // to prevent bugs when starting a new route search
                         _cleanupMapAnnotations();
-                        _ctrl.reset();
+                        // Back out of the pin-drop step without wiping the
+                        // trip: the search screen this returns to still
+                        // holds the addresses the rider typed, and
+                        // _ctrl.reset() would drop them on the floor.
+                        // Every other phase is a committed step, so those
+                        // do reset before leaving to keep a fresh search
+                        // from inheriting stale route state.
+                        if (phase != RiderPhase.pickingLocation) {
+                          _ctrl.reset();
+                        }
                         Navigator.of(context).pop();
                       },
                       c: c,
@@ -1091,8 +1082,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               ),
             ),
 
-            // ── Recenter button — visible when user zoomed/panned ──
-            if (_userMovedMap && phase != RiderPhase.idle)
+            // ── Recenter button — always available while a route/pin is
+            // on screen, so the rider can re-frame as many times as they
+            // like. It used to be gated on _userMovedMap, which the
+            // recenter itself cleared, so it vanished on first tap.
+            if (phase != RiderPhase.idle)
               Positioned(
                 top: topPad + 8,
                 right: 12,
@@ -1187,21 +1181,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     return Container(
       padding: EdgeInsets.fromLTRB(
           20, 22, 20, 22 + MediaQuery.of(context).padding.bottom),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 40,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.05),
-            spreadRadius: 1,
-          ),
-        ],
-      ),
+      decoration: neuBox(radius: 22),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1234,21 +1214,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             onTap: _pickerGeocodeFailed ? _pickerOnCameraIdle : null,
             child: Container(
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08)),
-              ),
+              decoration: neuBox(radius: 14, pressed: true),
               child: Row(
                 children: [
                   Container(
                     width: 32,
                     height: 32,
-                    decoration: const BoxDecoration(
-                      color: Color(0x1FE8C547),
-                      shape: BoxShape.circle,
-                    ),
+                    alignment: Alignment.center,
+                    decoration: neuBox(radius: 11),
                     child: const Icon(Icons.search_rounded,
                         color: Color(0xFFE8C547), size: 16),
                   ),

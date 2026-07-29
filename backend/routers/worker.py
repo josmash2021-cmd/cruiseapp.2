@@ -85,9 +85,18 @@ async def _verify_worker_token(x_worker_token: str = Header(None)):
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
-@router.get("/health")
+@router.get("/worker/health")
 async def worker_health():
-    """Health check for external schedulers."""
+    """Health check for external schedulers.
+
+    Was registered on "/health", where it never ran a single time:
+    routers/system.py declares the same GET /health and is included
+    first, so FastAPI kept that one and silently ignored this (rule 19).
+    Schedulers polling for a cheap liveness ping were instead running
+    system.py's deep check, which hits the database, Redis, Stripe,
+    Twilio and FCM on every poll — and reports "degraded" when any
+    third party is having a bad day.
+    """
     return {
         "status": "ok",
         "service": "cruiseapp-worker",

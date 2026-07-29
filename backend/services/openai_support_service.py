@@ -42,21 +42,34 @@ _MOONSHOT_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1"
 _MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "kimi-k2-0711-preview")
 _OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+def _build_openai() -> tuple[Any, str, str] | None:
+    if not _OPENAI_API_KEY:
+        return None
+    return (openai.AsyncOpenAI(api_key=_OPENAI_API_KEY), _OPENAI_MODEL, "openai")
+
+
+def _build_kimi() -> tuple[Any, str, str] | None:
+    if not _MOONSHOT_API_KEY:
+        return None
+    client = openai.AsyncOpenAI(
+        api_key=_MOONSHOT_API_KEY,
+        base_url=_MOONSHOT_BASE_URL,
+    )
+    return (client, _MOONSHOT_MODEL, "kimi")
+
+
 _openai_client = None
 _MODEL = _OPENAI_MODEL
 _PROVIDER = "none"
 
-if _MOONSHOT_API_KEY:
-    _openai_client = openai.AsyncOpenAI(
-        api_key=_MOONSHOT_API_KEY,
-        base_url=_MOONSHOT_BASE_URL,
-    )
-    _MODEL = _MOONSHOT_MODEL
-    _PROVIDER = "kimi"
-elif _OPENAI_API_KEY:
-    _openai_client = openai.AsyncOpenAI(api_key=_OPENAI_API_KEY)
-    _MODEL = _OPENAI_MODEL
-    _PROVIDER = "openai"
+# Kimi first, OpenAI behind it.
+_primary = _build_kimi() or _build_openai()
+if _primary:
+    _openai_client, _MODEL, _PROVIDER = _primary
+
+# The standby is only meaningful when Kimi is primary — it is what a
+# rejected Moonshot key falls back TO.
+_fallback = _build_openai() if _PROVIDER == "kimi" else None
 
 # Logged at import so a misconfigured deploy is visible in Railway logs
 # instead of silently answering every rider with the escalation message.
@@ -65,6 +78,73 @@ _log.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)
 # Set once a tools= request has been rejected by the provider, so the
 # retry path below stops paying for a round-trip it knows will fail.
 _TOOLS_UNSUPPORTED = False
+
+
+async def _chat_completion(messages: list[dict[str, Any]]):
+    """One completion request, degrading past a provider that rejects tools.
+
+    Not every model behind an OpenAI-compatible endpoint accepts a `tools`
+    payload. Losing autonomous actions is a degradation; losing the reply
+    is a broken support chat. So a BadRequest retries once as plain text
+    and remembers, to stop paying for a round-trip we know will fail.
+    """
+    global _TOOLS_UNSUPPORTED
+    extra = {} if _TOOLS_UNSUPPORTED else {
+        "tools": _FUNCTIONS,
+        "tool_choice": "auto",
+    }
+    try:
+        return await _openai_client.chat.completions.create(
+            model=_MODEL,
+            messages=messages,
+            max_tokens=500,
+            temperature=0.7,
+            **extra,
+        )
+    except openai.BadRequestError as e:
+        if _TOOLS_UNSUPPORTED:
+            raise
+        _log.warning(
+            "[Support AI] %s rejected tools (%s) — retrying without them",
+            _PROVIDER, e,
+        )
+        _TOOLS_UNSUPPORTED = True
+        return await _openai_client.chat.completions.create(
+            model=_MODEL,
+            messages=messages,
+            max_tokens=500,
+            temperature=0.7,
+        )
+
+
+def _demote_primary(reason: str) -> bool:
+    """Primary provider rejected our credentials — switch to the standby.
+
+    Config-time selection alone is not a fallback chain: a Moonshot key
+    that is present but INVALID would otherwise shadow a perfectly good
+    OpenAI key and answer every rider with the escalation message, with
+    nothing in the logs explaining why. A rejected key has to demote at
+    request time, permanently, and say so loudly.
+
+    Returns True when a standby took over.
+    """
+    global _openai_client, _MODEL, _PROVIDER, _fallback, _TOOLS_UNSUPPORTED
+    if not _fallback:
+        _log.error(
+            "[Support AI] %s rejected our credentials (%s) and there is no "
+            "standby configured — support will escalate to humans",
+            _PROVIDER, reason,
+        )
+        return False
+    _log.error(
+        "[Support AI] %s rejected our credentials (%s) — falling back to %s. "
+        "Fix or remove that key.",
+        _PROVIDER, reason, _fallback[2],
+    )
+    _openai_client, _MODEL, _PROVIDER = _fallback
+    _fallback = None
+    _TOOLS_UNSUPPORTED = False  # a different provider, a different answer
+    return True
 
 # System prompt for Cruise support agent
 _SYSTEM_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
@@ -419,32 +499,13 @@ async def generate_support_response(
     global _TOOLS_UNSUPPORTED
     try:
         try:
-            response = await _openai_client.chat.completions.create(
-                model=_MODEL,
-                messages=openai_messages,
-                max_tokens=500,
-                temperature=0.7,
-                **({} if _TOOLS_UNSUPPORTED
-                   else {"tools": _FUNCTIONS, "tool_choice": "auto"}),
-            )
-        except openai.BadRequestError as e:
-            # Not every model behind an OpenAI-compatible endpoint accepts
-            # tools. Losing autonomous actions is a degradation; losing the
-            # whole reply is a broken support chat. Retry plain text once,
-            # and remember so we stop paying for the failed round-trip.
-            if _TOOLS_UNSUPPORTED:
+            response = await _chat_completion(openai_messages)
+        except openai.AuthenticationError as e:
+            # Bad key on the primary. Demote and answer this rider with the
+            # standby rather than making them the one who found out.
+            if not _demote_primary(str(e)[:120]):
                 raise
-            _log.warning(
-                "[Support AI] %s rejected tools (%s) — retrying without them",
-                _PROVIDER, e,
-            )
-            _TOOLS_UNSUPPORTED = True
-            response = await _openai_client.chat.completions.create(
-                model=_MODEL,
-                messages=openai_messages,
-                max_tokens=500,
-                temperature=0.7,
-            )
+            response = await _chat_completion(openai_messages)
 
         message = response.choices[0].message
 

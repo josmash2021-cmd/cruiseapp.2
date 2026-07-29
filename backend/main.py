@@ -156,15 +156,25 @@ async def _auto_payout_all_drivers():
         logging.error("[AutoPayout] Stripe import failed: %s", e)
         return
 
+    # Stamps the idempotency keys below. Every worker that reaches this run
+    # computes the same date, so Stripe collapses duplicate transfers for the
+    # same driver in the same week into one.
+    run_day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     async with SessionLocal() as db:
         result = await db.execute(
-            select(User).where(
+            select(User)
+            .where(
                 and_(
                     User.role == "driver",
                     User.stripe_connect_id.isnot(None),
                     User.pending_balance > 1.0,
                 )
             )
+            # Row-level lock: a second run cannot read the same balance while
+            # this one is still deciding what to send. skip_locked means a
+            # concurrent run walks past claimed drivers instead of blocking.
+            .with_for_update(skip_locked=True)
         )
         drivers = result.scalars().all()
         logging.info("[AutoPayout] %d driver(s) eligible for payout", len(drivers))
@@ -182,6 +192,10 @@ async def _auto_payout_all_drivers():
                     destination=drv.stripe_connect_id,
                     description=f"Cruise weekly auto-payout — cashout #{cashout.id}",
                     metadata={"cashout_id": str(cashout.id), "driver_id": str(drv.id)},
+                    # Last line of defence for real money. Keyed on driver +
+                    # run date, NOT on cashout.id, which differs per attempt
+                    # and would therefore let a duplicate run pay twice.
+                    idempotency_key=f"auto_payout_{drv.id}_{run_day}",
                 )
                 cashout.status = "completed"
                 drv.pending_balance = 0.0
@@ -201,6 +215,64 @@ async def _auto_payout_all_drivers():
             except Exception as e:
                 await db.rollback()
                 logging.error("[AutoPayout] Failed for driver %s: %s", drv.id, e)
+
+# ── Single-leader election for background tasks ──────────────────────────
+# Uvicorn runs multiple worker PROCESSES (UVICORN_WORKERS). Each one executes
+# lifespan(), so every scheduler below used to run once per worker: two copies
+# of the weekly payout loop, the scheduled-ride dispatcher, the ghost-driver
+# agent, backups and the nightly reconcile.
+#
+# For the payout loop that meant both workers waking at the same Tuesday
+# 02:00 UTC, both reading the same pending_balance and both transferring it —
+# paying every driver twice. This lock is what stops that.
+#
+# A session-scoped Postgres advisory lock is the right primitive here: it is
+# held by ONE connection, needs no table, and the database releases it
+# automatically if the process dies, so a respawned worker can take over.
+_leader_conn = None  # kept open for the process lifetime — do not close
+
+
+async def _try_become_scheduler_leader() -> bool:
+    """True if THIS worker process should run the background schedulers.
+
+    Returns True on SQLite (tests, local single-process runs) since there are
+    no sibling workers to race with.
+    """
+    global _leader_conn
+    if IS_SQLITE:
+        return True
+    try:
+        # Raw asyncpg-level connection outside the pool: an advisory lock lives
+        # as long as its connection, so it must not be handed back to the pool
+        # and reused by an unrelated query.
+        _leader_conn = await engine.connect()
+        got = await _leader_conn.scalar(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": _SCHEDULER_LOCK_KEY}
+        )
+        if got:
+            logging.info("[Leader] This worker owns the background schedulers")
+            return True
+        await _leader_conn.close()
+        _leader_conn = None
+        logging.info("[Leader] Another worker owns the schedulers — standing by")
+        return False
+    except Exception as e:
+        # Never let lock trouble take the API down. Failing closed (no
+        # schedulers) is safer than two workers racing over real money: a
+        # missed payout run is recoverable, a doubled one is not.
+        logging.error("[Leader] Advisory lock failed, skipping schedulers: %s", e)
+        if _leader_conn is not None:
+            try:
+                await _leader_conn.close()
+            except Exception:
+                pass
+            _leader_conn = None
+        return False
+
+
+# Arbitrary but fixed application-wide key for the scheduler lock.
+_SCHEDULER_LOCK_KEY = 771_120_045
+
 
 async def _schedule_weekly_payouts():
     """Background loop: sleep until next Tuesday 02:00 UTC, run payouts, repeat."""
@@ -320,10 +392,27 @@ async def lifespan(app: FastAPI):
 
         # ── Staggered agent startup (avoid thundering herd) ──
         # Phase 1: Critical agents (0s delay)
+        # These start in EVERY worker: request handlers call
+        # guardian_agent.request_guardian, so a worker without it would fail
+        # those requests.
         guardian_agent.set_db_session_maker(SessionLocal)
         await guardian_agent.start()
         await security_guardian.start_heartbeat()
         logging.info("[Lifespan] Phase 1 agents started (guardian, security)")
+
+        # ── Scheduler leadership ──
+        # Everything from here down is a periodic background loop, and uvicorn
+        # runs several worker PROCESSES that each execute this function. Every
+        # loop below therefore ran once per worker — including the weekly
+        # payout, which read the same pending_balance in both workers and
+        # transferred it twice. Only the leader runs them now.
+        if not await _try_become_scheduler_leader():
+            logging.info("[Lifespan] Not the scheduler leader — serving requests only")
+            yield
+            # Tear down only what this worker actually started (Phase 1).
+            await security_guardian.stop_heartbeat()
+            await guardian_agent.stop()
+            return
 
         # Phase 2: Critical background agents only (5s delay)
         await asyncio.sleep(5)

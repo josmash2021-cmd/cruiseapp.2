@@ -1664,35 +1664,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: enabled
-                              ? Colors.black.withValues(alpha: 0.15)
-                              : Colors.white.withValues(alpha: 0.08),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _isNavigatingToOnline
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  color: enabled ? Colors.black87 : _gold,
-                                  strokeWidth: 2,
+                      // No icon in the normal state — the label says it.
+                      //
+                      // The circle survives for two things that are not
+                      // decoration: the spinner while navigating, and the
+                      // warning when documents are missing or expired, where
+                      // the button is refusing to do what it says and needs to
+                      // look like it.
+                      if (_isNavigatingToOnline || !docsOk) ...[
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: enabled
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: _isNavigatingToOnline
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    color: enabled ? Colors.black87 : _gold,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  _hasExpiredDocs
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.upload_file_rounded,
+                                  color: fgColor,
+                                  size: 16,
                                 ),
-                              )
-                            : Icon(
-                                !docsOk
-                                    ? (_hasExpiredDocs ? Icons.warning_amber_rounded : Icons.upload_file_rounded)
-                                    : (_activeTripData != null || _isStillOnline)
-                                        ? Icons.play_arrow_rounded
-                                        : Icons.power_settings_new_rounded,
-                                color: fgColor,
-                                size: 16,
-                              ),
-                      ),
-                      const SizedBox(width: 10),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       Text(
                         _isNavigatingToOnline
                             ? 'GOING ONLINE...'

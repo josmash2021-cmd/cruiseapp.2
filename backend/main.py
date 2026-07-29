@@ -108,6 +108,7 @@ from models.database import (
     Document, Rating, ChatMessage, SupportChat, SupportMessage,
     ActionRequest, Notification, PromoCode, PasswordResetToken,
     Referral, FavoriteLocation, DriverIncentive, SurgeZone, ServiceArea,
+    AuditLog,
     column_missing as _column_missing,
     migrate_add_columns as _migrate_add_columns,
     migrate_postgres as _migrate_postgres,
@@ -450,6 +451,7 @@ async def lifespan(app: FastAPI):
         # Phase 4: Periodic tasks (30s delay) — full set with DB-smart intervals
         await asyncio.sleep(15)
         asyncio.create_task(_audit_flush_loop())
+        asyncio.create_task(_audit_retention_loop())
         asyncio.create_task(_scheduled_ride_dispatcher())
         asyncio.create_task(_scheduled_ride_reminder_loop())
         logging.info("[Lifespan] Phase 4 periodic tasks started")
@@ -525,6 +527,106 @@ async def _audit_flush_loop():
             await flush_audit_logs_to_db()
         except Exception:
             pass
+
+
+# Days of audit history kept in Postgres. Older entries are archived to
+# object storage and removed from the table.
+AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
+_AUDIT_ARCHIVE_BATCH = 5000
+
+
+async def _archive_and_prune_audit_logs() -> None:
+    """Move audit rows older than AUDIT_RETENTION_DAYS to object storage.
+
+    audit_logs is the only table here that grows without bound — it is
+    already the largest in the database — and nothing ever pruned it.
+
+    Rows are ARCHIVED, never merely deleted. Each row carries prev_hash and
+    entry_hash: the table is a tamper-evident chain, and dropping the oldest
+    rows outright would leave the surviving ones pointing at entries that no
+    longer exist anywhere, destroying exactly the property the chain was
+    built to provide. The archive keeps both hashes, so history stays
+    verifiable after the rows leave Postgres.
+
+    Ordering is deliberate: upload, confirm, then delete. If the upload
+    fails the rows stay in the database — losing disk space is recoverable,
+    losing the audit trail is not.
+    """
+    from services.storage import archive_bytes
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=AUDIT_RETENTION_DAYS)
+
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(AuditLog)
+            .where(AuditLog.ts < cutoff)
+            .order_by(AuditLog.id.asc())
+            .limit(_AUDIT_ARCHIVE_BATCH)
+        )
+        rows = result.scalars().all()
+        if not rows:
+            return
+
+        payload = "\n".join(
+            json.dumps(
+                {
+                    "id": r.id,
+                    "ts": r.ts.isoformat() if r.ts else None,
+                    "event": r.event,
+                    "ip": r.ip,
+                    "user_id": r.user_id,
+                    "details": r.details,
+                    "prev_hash": r.prev_hash,
+                    "entry_hash": r.entry_hash,
+                },
+                sort_keys=True,
+            )
+            for r in rows
+        ).encode()
+
+        first_id, last_id = rows[0].id, rows[-1].id
+        day = datetime.now(timezone.utc).strftime("%Y%m%d")
+        key = f"audit-archive/{day}/audit_{first_id}_{last_id}.jsonl"
+
+        try:
+            await archive_bytes(payload, key)
+        except Exception as e:
+            # Includes S3 being unconfigured. Keep the rows.
+            logging.error(
+                "[AuditRetention] Archive failed for ids %s-%s — keeping rows: %s",
+                first_id, last_id, e,
+            )
+            return
+
+        await db.execute(
+            text("DELETE FROM audit_logs WHERE id BETWEEN :a AND :b"),
+            {"a": first_id, "b": last_id},
+        )
+        await db.commit()
+
+    logging.info(
+        "[AuditRetention] Archived %d rows (ids %s-%s) to %s and pruned them",
+        len(rows), first_id, last_id, key,
+    )
+    # Leaves its own trace in the chain: the gap in ids is explained by an
+    # entry that names the archive holding the missing rows.
+    _security_audit_log(
+        "audit_archive",
+        "system",
+        f"ids={first_id}-{last_id} count={len(rows)} key={key}",
+    )
+
+
+async def _audit_retention_loop():
+    """Prune archived audit history daily. Leader-only, like every loop here."""
+    while True:
+        # Offset from startup so it never collides with the deploy itself.
+        await asyncio.sleep(3600)
+        try:
+            await _archive_and_prune_audit_logs()
+        except Exception as e:
+            logging.error("[AuditRetention] Run failed: %s", e)
+        await asyncio.sleep(86400 - 3600)
 
 # Use orjson for 2-10x faster JSON serialization if available
 try:

@@ -163,6 +163,37 @@ async def upload_file(
     return {"key": key, "signed_url": signed_url}
 
 
+async def archive_bytes(
+    data: bytes,
+    key: str,
+    content_type: str = "application/x-ndjson",
+) -> str:
+    """Store a server-generated file at an exact key. Returns the key.
+
+    Deliberately does NOT go through _validate_upload: that guards *user*
+    uploads and only permits images and PDFs, which is right for documents
+    and wrong for our own archives. This path is for data the server itself
+    produced — never for request bodies — and the caller chooses the key so
+    an archive can be located later without a database lookup.
+
+    Raises RuntimeError if S3 isn't configured, so a caller about to delete
+    the originals can abort instead of destroying them.
+    """
+    if not _HAS_S3 or _get_session is None:
+        raise RuntimeError("S3 storage is not configured")
+
+    async for client in _get_client():
+        await client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+            Metadata={"archived-at": datetime.now(timezone.utc).isoformat()},
+        )
+        logger.info("[Storage] Archived %s (%d bytes)", key, len(data))
+    return key
+
+
 async def get_signed_url(key: str, expiration: int = 3600) -> str:
     """Generate a pre-signed URL for temporary access to an S3 object.
 

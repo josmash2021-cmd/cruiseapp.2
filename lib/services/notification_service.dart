@@ -49,13 +49,21 @@ class NotificationService {
     try {
       final messaging = FirebaseMessaging.instance;
       final token = await messaging.getToken();
-      if (token != null) {
-        unawaited(ApiService.saveFcmToken(token).catchError((_) {}));
+      if (token == null) {
+        debugPrint('[Notifications] getToken() returned null — check APNs setup');
+      } else {
+        final ok = await ApiService.saveFcmToken(token);
+        if (!ok) {
+          debugPrint('[Notifications] token not registered (likely no session '
+              'yet) — will retry on the next rotation or screen entry');
+        }
       }
       _tokenRefreshSub ??= messaging.onTokenRefresh.listen((t) {
-        unawaited(ApiService.saveFcmToken(t).catchError((_) {}));
+        unawaited(ApiService.saveFcmToken(t));
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Notifications] token registration failed: $e');
+    }
   }
 
   /// Initialize the notification plugin. Call once at app startup.

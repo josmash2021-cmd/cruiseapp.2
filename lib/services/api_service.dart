@@ -1997,19 +1997,40 @@ class ApiService {
   }
 
   /// Save FCM device token for push notifications.
-  static Future<void> saveFcmToken(String fcmToken) async {
+  /// Register the device's FCM token with the backend. Returns whether it
+  /// actually landed.
+  ///
+  /// This used to return void and swallow every failure, including the
+  /// silent `return` below when no session token exists yet. Production has
+  /// every driver row holding fcm_token NULL — no push can reach any phone —
+  /// and nothing anywhere said why. The bool lets callers retry; the
+  /// distinct log lines say which of the three failure modes happened.
+  static Future<bool> saveFcmToken(String fcmToken) async {
     try {
       final token = await getToken();
-      if (token == null) return;
-      await _withRetry(() => _client
+      if (token == null) {
+        // Not logged in yet. The caller has to try again once auth lands,
+        // otherwise this device never registers at all.
+        debugPrint('[ApiService] FCM token NOT saved — no session token yet');
+        return false;
+      }
+      final res = await _withRetry(() => _client
           .post(
             Uri.parse('$_baseUrl/auth/fcm-token'),
             headers: _jsonHeaders(token),
             body: jsonEncode({'token': fcmToken}),
           )
           .timeout(const Duration(seconds: 8)));
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      if (!ok) {
+        debugPrint('[ApiService] FCM token save rejected: HTTP ${res.statusCode} ${res.body}');
+      } else {
+        debugPrint('[ApiService] FCM token registered ✓');
+      }
+      return ok;
     } catch (e) {
       debugPrint('[ApiService] FCM token save failed: $e');
+      return false;
     }
   }
 

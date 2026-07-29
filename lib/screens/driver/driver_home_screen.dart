@@ -308,15 +308,60 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  /// Register this device for push, retrying until it lands.
+  ///
+  /// Every driver row in production holds fcm_token NULL, so no ride offer
+  /// can ever wake a phone — and this method could not say why, because it
+  /// ignored the permission result, ignored a null token, did not await the
+  /// save, and buried the lot in `catch (_) {}`. Each failure mode now
+  /// names itself in the log.
+  ///
+  /// The retry matters: the save is a no-op until the session JWT exists,
+  /// and without a second attempt a device that got here a moment early
+  /// stayed unregistered for the whole session.
   Future<void> _registerFcmToken() async {
     try {
       final messaging = FirebaseMessaging.instance;
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
+
+      final settings = await messaging.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        debugPrint('[DriverHome] FCM: push permission DENIED by the user — '
+            'no ride offers can be delivered while the app is closed');
+        return;
+      }
+
       final token = await messaging.getToken();
-      if (token != null) ApiService.saveFcmToken(token);
+      if (token == null) {
+        // Typically APNs not wired up on iOS: no APNs token, no FCM token.
+        // A Firebase/Xcode configuration problem, not something the app can
+        // recover from at runtime — but it must not be silent.
+        debugPrint('[DriverHome] FCM: getToken() returned null — check APNs '
+            'setup in Firebase and the Xcode capabilities');
+        return;
+      }
+
+      var saved = await ApiService.saveFcmToken(token);
+      for (var attempt = 1; !saved && attempt <= 3; attempt++) {
+        await Future.delayed(Duration(seconds: attempt * 3));
+        if (!mounted) return;
+        debugPrint('[DriverHome] FCM: retrying token registration ($attempt/3)');
+        saved = await ApiService.saveFcmToken(token);
+      }
+      if (!saved) {
+        debugPrint('[DriverHome] FCM: token could NOT be registered after 3 '
+            'retries — this driver will not receive ride offers in background');
+      }
+
       _fcmTokenRefreshSub?.cancel();
-      _fcmTokenRefreshSub = messaging.onTokenRefresh.listen((t) => ApiService.saveFcmToken(t));
-    } catch (_) {}
+      _fcmTokenRefreshSub = messaging.onTokenRefresh.listen((t) {
+        debugPrint('[DriverHome] FCM: token rotated, re-registering');
+        ApiService.saveFcmToken(t);
+      });
+    } catch (e) {
+      debugPrint('[DriverHome] FCM registration failed: $e');
+    }
   }
 
   @override

@@ -898,34 +898,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Left: car render with its 3D shadow, sitting on the row's
-          // baseline. bottomCenter keeps the wheels planted no matter how
-          // tall the source asset is.
+          // ── Left: tier name sitting directly above its car, the two
+          // read as one unit. bottomCenter keeps the wheels planted no
+          // matter how tall the source asset is.
           SizedBox(
             width: 84,
-            height: 60,
-            child: CarImage3D(
-              assetPath: _carAssetForOption(opt.name),
-              cacheWidth: 640,
-              alignment: Alignment.bottomCenter,
-              fallback: Icon(
-                Icons.directions_car_rounded,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                size: 32,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // ── Center: tier name, then the three sunken stat chips.
-          Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   displayName,
+                  textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -937,6 +920,31 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                 ),
                 const SizedBox(height: 6),
+                SizedBox(
+                  height: 60,
+                  child: CarImage3D(
+                    assetPath: _carAssetForOption(opt.name),
+                    cacheWidth: 640,
+                    alignment: Alignment.bottomCenter,
+                    fallback: Icon(
+                      Icons.directions_car_rounded,
+                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                      size: 32,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // ── Center: the three sunken stat chips.
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 // Wrap, not Row: three chips beside an 84px car and a
                 // $126.42 price do not fit one line on a 320pt screen, and
                 // a Row would throw a RenderFlex overflow there. They stay

@@ -270,7 +270,14 @@ extension _RideRequestController on _RideRequestScreenState {
 
       if (mounted) {
         _setState(() {
-          _linkedPaymentMethods = {'credit_card'};
+          // add, don't replace. This was `= {'credit_card'}`, which wiped
+          // the 'bank_account' entry added a few lines above in this same
+          // function. A rider with both a linked bank and a card could
+          // select the bank — the label even showed its last 4 digits,
+          // since that is a separate field — but Request Ride stayed
+          // disabled, because _hasAnyPaymentMethod looks for the entry
+          // this line had just deleted. Only bit riders who had both.
+          _linkedPaymentMethods.add('credit_card');
           _savedCardLast4 = last4;
           _savedCardBrand = brand;
         });

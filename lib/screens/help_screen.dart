@@ -1123,6 +1123,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         // Buffer messages during queue — they'll be revealed after queue completes
         _bufferedMessages.clear();
         _bufferedMessages.addAll(newMessages.skip(_preQueueMsgCount));
+        // The server owns the wait now: it inserts the "has joined" row on its
+        // own clock, and that row ending the queue is what makes the handoff
+        // survive the app being closed. The countdown widget is only the
+        // visual — it no longer gets to decide when a supervisor arrived.
+        if (_bufferedMessages
+            .any((m) => AiSupportService.isAgentJoinedMessage(m.text))) {
+          _onQueueComplete();
+        }
         return;
       }
 
@@ -1223,6 +1231,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   void _onQueueComplete() async {
     if (!mounted) return;
+    // Both the countdown widget and the poll can reach this — the poll ends
+    // the wait the moment the server's "has joined" row lands, whatever the
+    // timer thinks. Second callers must fall straight through or the reveal
+    // loop below runs twice over the same buffer.
+    if (_phase == _ChatPhase.agent) return;
 
     // Transition to agent phase
     setState(() {

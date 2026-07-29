@@ -1000,6 +1000,151 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
     return clean, actions
 
 
+# ── Supervisor handoff, on the server's clock ────────────────────────────
+#
+# Seconds from the announcement that a supervisor was coming, to that
+# supervisor appearing; then from their arrival to their first line.
+_SUPERVISOR_JOINS_AFTER_S = 60
+_SUPERVISOR_GREETS_AFTER_S = 20
+
+_JOINED_RE = re.compile(r"se ha conectado|joined the chat", re.I)
+
+
+def _aware(dt):
+    """Postgres can hand back naive datetimes depending on the driver."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
+    """Walk an escalated chat toward a named supervisor on the server's clock.
+
+    The wait used to be counted on the phone: the client picked its own random
+    duration and decided for itself when an agent had "joined". Nothing was
+    stored, so closing the app erased the handoff, two devices could disagree
+    about the same chat, and a real supervisor opening the ticket in dispatch
+    found a conversation that had never happened.
+
+    Every step here inserts a real row. The timeline survives a restart and a
+    human can take over exactly where the script left off, which is the whole
+    reason for running it on this side.
+
+    Idempotent by inspection: each step looks for the row it would create
+    rather than tracking progress in a column, which is what makes it safe to
+    call from a poll that fires every few seconds.
+    """
+    if not chat or chat.bot_phase != "escalated":
+        return
+    # A real person is already in here. The script must never talk over them.
+    if getattr(chat, "supervisor_connected", False):
+        return
+
+    is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
+    agent = (chat.agent_name or "").strip() or ("Ana" if is_es else "Angela")
+
+    rows_r = await db.execute(
+        select(SupportMessage)
+        .where(SupportMessage.chat_id == chat.id)
+        .order_by(SupportMessage.created_at.asc())
+    )
+    rows = list(rows_r.scalars().all())
+    if not rows:
+        return
+
+    now = datetime.now(timezone.utc)
+    joined = next(
+        (m for m in rows
+         if m.sender_role == "system" and _JOINED_RE.search(m.message or "")),
+        None,
+    )
+
+    # ── Step 1: the supervisor arrives ──
+    if joined is None:
+        # Anchored on the system row that announced the handoff, NOT on the
+        # last message in the chat: the user often keeps typing while they
+        # wait, and anchoring on "latest" would push their own supervisor
+        # further away every time they did.
+        anchor = next(
+            (m for m in reversed(rows) if m.sender_role == "system"), rows[-1]
+        )
+        if (now - _aware(anchor.created_at)).total_seconds() < _SUPERVISOR_JOINS_AFTER_S:
+            return
+        text = (f"{agent} se ha conectado al chat."
+                if is_es else f"{agent} has joined the chat.")
+        chat.agent_name = agent
+        row = SupportMessage(
+            chat_id=chat.id, sender_id=None, sender_role="system", message=text
+        )
+        db.add(row)
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_message(
+                    chat.id, row.id, 0, agent, "system", text
+                )
+            except Exception as e:
+                logging.warning("[support] joined sync failed for %s: %s", chat.id, e)
+        return
+
+    # ── Step 2: their opening line ──
+    # Already spoke? Then this is a live conversation, not a script step.
+    if any(
+        m.sender_role == "bot"
+        and _aware(m.created_at) > _aware(joined.created_at)
+        for m in rows
+    ):
+        return
+    if (now - _aware(joined.created_at)).total_seconds() < _SUPERVISOR_GREETS_AFTER_S:
+        return
+
+    # Their own words, quoted back. A supervisor who repeats the problem is
+    # visibly caught up; one who opens with "how can I help you" makes the
+    # person type the whole thing again.
+    problem = ""
+    for m in reversed(rows):
+        if m.sender_role in ("rider", "driver", "user") and (m.message or "").strip():
+            problem = (m.message or "").strip()
+            break
+    if len(problem) > 160:
+        problem = problem[:157].rstrip() + "..."
+
+    name = ""
+    try:
+        u_r = await db.execute(select(User).where(User.id == chat.user_id))
+        u = u_r.scalar_one_or_none()
+        if u:
+            name = (u.first_name or "").strip()
+    except Exception as e:
+        logging.warning("[support] greeting name lookup failed: %s", e)
+
+    if is_es:
+        hello = f"Hola {name}, soy {agent}." if name else f"Hola, soy {agent}."
+        seen = f' Veo que tienes un problema con "{problem}".' if problem else ""
+        greeting = (
+            f"{hello}{seen} Voy a hacer todo lo posible por ayudarte. "
+            "¿Me puedes contar tu problema con mas detalle para atenderte mejor?"
+        )
+    else:
+        hello = f"Hi {name}, I'm {agent}." if name else f"Hi, I'm {agent}."
+        seen = f" I can see you're having a problem with \"{problem}\"." if problem else ""
+        greeting = (
+            f"{hello}{seen} I'll do everything I can to help. "
+            "Could you tell me a bit more about it so I can get this right?"
+        )
+
+    row = SupportMessage(
+        chat_id=chat.id, sender_id=None, sender_role="bot", message=greeting
+    )
+    db.add(row)
+    await db.commit()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(
+                chat.id, row.id, 0, agent, "bot", greeting
+            )
+        except Exception as e:
+            logging.warning("[support] greeting sync failed for %s: %s", chat.id, e)
+
+
 async def _hand_chat_to_dispatch(
     chat, user_name: str, reason: str, db: AsyncSession
 ) -> None:
@@ -2138,6 +2283,16 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
     chat = chat_result.scalar_one_or_none()
     if not chat or chat.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your chat")
+
+    # Move the supervisor handoff along before reading. The client's phase
+    # machine already keys off message text — "has joined the chat" puts it in
+    # the agent phase — so inserting the scripted rows here is all it takes to
+    # own the timeline from this side. Never fatal: a poll that cannot advance
+    # the script still has to return the conversation.
+    try:
+        await _advance_supervisor_script(chat, db)
+    except Exception as e:
+        logging.warning("[support] script advance failed for chat %s: %s", chat_id, e)
 
     result = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)

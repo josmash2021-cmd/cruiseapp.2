@@ -26,8 +26,17 @@ class AiSupportService {
     return (baseTime + variance).clamp(3000, 20000);
   }
 
-  /// Random queue wait time in seconds (180-240).
-  static int randomQueueWait() => 15 + _rng.nextInt(21);
+  /// How long the queue card counts down for, in seconds.
+  ///
+  /// Not random any more, and not the decision. The server inserts the "has
+  /// joined the chat" row 60 s after announcing the handoff
+  /// (_SUPERVISOR_JOINS_AFTER_S in backend/routers/support.py) and that row is
+  /// what ends the wait. This number only has to match it so the countdown
+  /// does not visibly finish early and leave the card sitting at zero.
+  ///
+  /// It was 15–35 s, which is less than the server's 60: the card would have
+  /// emptied and the phase flipped before any supervisor existed.
+  static int randomQueueWait() => 60;
 
   /// Whether a bot message signals "connecting to agent" (detecting phase transition).
   static bool isConnectingMessage(String text) {

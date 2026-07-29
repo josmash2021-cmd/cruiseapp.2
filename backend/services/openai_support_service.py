@@ -81,9 +81,9 @@ if _primary:
 # rejected Moonshot key falls back TO.
 _fallback = _build_openai() if _PROVIDER == "kimi" else None
 
-# Logged at import so a misconfigured deploy is visible in Railway logs
-# instead of silently answering every rider with the escalation message.
-_log.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)
+# Not logged here: main.py's lifespan reports the resolved provider at
+# startup, which is where an operator actually looks. Logging it at import
+# too printed the same line twice per worker.
 
 # Set once a tools= request has been rejected by the provider, so the
 # retry path below stops paying for a round-trip it knows will fail.

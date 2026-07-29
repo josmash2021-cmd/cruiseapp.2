@@ -95,8 +95,17 @@ class SocketService {
 
     debugPrint('[Socket.io] Connecting to $serverUrl');
 
-    // Only send token if it's valid — sending 'null' causes 400 errors
-    final queryParams = token != null && token.isNotEmpty && token != 'null'
+    // Only send token if it's valid — sending 'null' causes 400 errors.
+    //
+    // Sent in the handshake AUTH payload, not the query string. A query
+    // string is part of the request line, so uvicorn's access log printed
+    // the whole JWT in clear text on every connect:
+    //   "WebSocket /socket.io/?token=eyJhbGciOi... [accepted]
+    // Anyone who could read the logs — or anyone the logs were pasted to
+    // while debugging — held a working driver session until it expired.
+    // The auth payload travels in the handshake body and is never logged.
+    // The backend already reads auth.token first (socketio_service.connect).
+    final authPayload = token != null && token.isNotEmpty && token != 'null'
         ? {'token': token}
         : <String, String>{};
 
@@ -106,7 +115,7 @@ class SocketService {
           // FIX: Use both websocket AND polling for maximum compatibility
           // Some devices/networks block WebSocket but allow HTTP polling
           .setTransports(['websocket', 'polling'])
-          .setQuery(queryParams)         // Token in query string for handshake auth
+          .setAuth(authPayload)          // Handshake body — kept out of logs
           .enableForceNew()
           .enableReconnection()
           .setReconnectionAttempts(5)    // Reduced from 10 to prevent log spam

@@ -133,11 +133,22 @@ async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
     if auth and isinstance(auth, dict):
         token = auth.get("token", "")
     if not token and environ:
+        # Query-string fallback, kept only for app versions still in the
+        # wild. It is the insecure path: the query string is part of the
+        # request line, so uvicorn's access log prints the whole JWT in
+        # clear text. Warn every time one arrives so the tail of old
+        # clients is visible and this branch can eventually be deleted.
         query_string = environ.get("QUERY_STRING", "")
         if query_string:
             from urllib.parse import parse_qs
             params = parse_qs(query_string)
             token = params.get("token", [""])[0]
+            if token:
+                logger.warning(
+                    "[Socket.io] %s sent its token in the query string — that "
+                    "token is now in the access log. Client needs updating.",
+                    sid,
+                )
 
     # Reject connections without a valid token — no anonymous access
     if not token or token == "null":

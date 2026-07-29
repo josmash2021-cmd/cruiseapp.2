@@ -14,6 +14,25 @@ Hardened with 10 LAYERS OF ULTRA-STRONG SECURITY PROTECTION.
  L10  Security Audit Logging � Tamper-evident hash-chain log
 """
 
+# ── Logging level ──────────────────────────────────────────────────────────
+# Nothing configured the root logger, so Python's default of WARNING applied
+# and every logging.info() in this file was silently dropped in production.
+# Startup was invisible: no "Phase 1 agents started", no "FULLY OPERATIONAL",
+# no indication of which worker won the scheduler lock — the state of the
+# service had to be inferred from the database instead of read from its logs.
+# Configured first, before any import can emit or install a handler.
+import logging as _logging_boot
+import os as _os_boot
+
+_logging_boot.basicConfig(
+    level=getattr(
+        _logging_boot,
+        (_os_boot.getenv("LOG_LEVEL") or "INFO").upper(),
+        _logging_boot.INFO,
+    ),
+    format="%(levelname)s:%(name)s:%(message)s",
+)
+
 # ── CRITICAL: Ensure imports work regardless of working directory ──
 import sys
 from pathlib import Path

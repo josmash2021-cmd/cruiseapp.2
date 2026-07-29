@@ -42,8 +42,20 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Uvicorn tuning for Railway (2 CPUs on Hobby plan)
-ENV UVICORN_WORKERS=2
+# Uvicorn tuning.
+#
+# WORKERS is capped by the DATABASE, not by CPU. The service has 24 vCPU and
+# 24 GB available, and the app is I/O-bound, so cores are not the limit —
+# Postgres max_connections=100 is. Each worker builds its own pool
+# (DB_POOL_SIZE + DB_MAX_OVERFLOW = 18 by default), so 4 workers reserve at
+# most 72 connections and leave room for the scheduler leader's lock plus
+# admin sessions. Going higher means raising max_connections or putting a
+# pooler in front FIRST — otherwise extra workers make things worse, failing
+# checkouts instead of queueing them.
+#
+# This was 2, with a comment reading "2 CPUs on Hobby plan": the plan grew,
+# the setting did not, so the service was running on 2 of its 24 cores.
+ENV UVICORN_WORKERS=4
 ENV UVICORN_TIMEOUT_KEEP_ALIVE=75
 ENV UVICORN_LIMIT_CONCURRENCY=2000
 

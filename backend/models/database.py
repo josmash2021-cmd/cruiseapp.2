@@ -65,8 +65,16 @@ else:
         # ── Railway Private PostgreSQL: direct connection, ultra-fast ──
         # Same-region network = sub-millisecond latency.
         # Tuned for hot-cache reuse and minimal checkout overhead.
-        _engine_kwargs["pool_size"] = 10          # Conservative — Railway Hobby plan limit
-        _engine_kwargs["max_overflow"] = 20       # Burst capacity for spikes
+        # Sized against the database, not the app: Postgres reports
+        # max_connections=100 with 3 reserved for superusers, and EVERY
+        # uvicorn worker process builds its own pool. The ceiling is
+        # therefore workers * (pool_size + max_overflow), which has to stay
+        # comfortably under 97 or checkouts start failing under load rather
+        # than queueing. At 4 workers this is 4 * 18 = 72, plus the single
+        # connection the scheduler leader holds for its advisory lock.
+        # Raising either number means raising max_connections first.
+        _engine_kwargs["pool_size"] = int(os.getenv("DB_POOL_SIZE", "10"))
+        _engine_kwargs["max_overflow"] = int(os.getenv("DB_MAX_OVERFLOW", "8"))
         _engine_kwargs["pool_pre_ping"] = True    # CRITICAL: verify connection before use (prevents stale errors)
         _engine_kwargs["pool_recycle"] = 300      # Recycle every 5 min (Railway idle timeout ~10min)
         _engine_kwargs["pool_timeout"] = 30       # Wait up to 30s for available connection (survives latency spikes)

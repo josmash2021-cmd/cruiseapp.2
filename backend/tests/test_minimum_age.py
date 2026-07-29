@@ -6,7 +6,7 @@ and the endpoints that enforce it:
 - POST /drivers/{id}/background-check (DOB already required, must be 21+)
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -26,8 +26,16 @@ def _dob_for_age(years: int, *, day_offset: int = 0) -> str:
 
     day_offset=0  -> birthday is today (exactly `years` years old)
     day_offset=1  -> birthday is tomorrow (still one day short)
+
+    Anchored to the UTC date, not the machine's local one. compute_age()
+    measures against UTC, so building the boundary cases from date.today()
+    made the day_offset=1 cases fail on any machine whose local date was
+    behind UTC at the time of the run — the "one day short" birthday had
+    already passed in UTC. That made these tests pass in the morning and
+    fail in the evening, which is worse than no test: a real regression
+    would be dismissed as the usual flake.
     """
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     dob = date(today.year - years, today.month, today.day) + timedelta(days=day_offset)
     return dob.isoformat()
 

@@ -52,6 +52,29 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Clear the in-process rate limiter before each test.
+
+    The limiter is a module-level singleton, so its counters accumulated
+    across the whole session while the database was being reset per test.
+    Tests therefore passed alone and failed in the full run: by the time the
+    later auth tests executed, the 20-requests-per-minute auth bucket was
+    exhausted and the endpoint answered 429 instead of doing its job. That
+    made the suite depend on how many tests ran before it — adding one new
+    auth test could break an unrelated one.
+    """
+    try:
+        from middleware.rate_limit import rate_limiter
+        requests = getattr(rate_limiter, "_requests", None)
+        if requests is not None:
+            requests.clear()
+    except Exception:
+        # A Redis-backed limiter has no local state to clear; nothing to do.
+        pass
+    yield
+
+
 @pytest_asyncio.fixture
 async def db():
     """Provide a clean database session for direct DB operations."""

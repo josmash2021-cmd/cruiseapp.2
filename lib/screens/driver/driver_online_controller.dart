@@ -1919,8 +1919,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // arrives and dispatch can't reassign. Hand it back.
       // `handedOff` keeps this off trips that DriverTripAcceptScreen is
       // legitimately running.
+      // ...unless the trip is already ours. A 409 "offer already accepted"
+      // is the expected answer when the same trip reaches this driver
+      // twice: they take the first card, the trip is theirs, and tapping
+      // the leftover card lands here. Releasing then hands away a trip the
+      // driver legitimately holds and is about to drive — the rider is
+      // shown a driver, the driver is shown an error, and the trip goes
+      // back to the queue underneath both of them. Ask who owns it before
+      // giving it up.
       if (!handedOff && tripId != null) {
-        unawaited(_returnTripToDispatch(tripId, reason: 'driver_app_error'));
+        unawaited(() async {
+          if (await _tripIsAlreadyMine(tripId)) {
+            debugPrint('[DriverOnline] accept threw but trip $tripId is '
+                'already assigned to us — keeping it');
+            if (mounted) _snack(S.of(context).tripAlreadyYours);
+            return;
+          }
+          await _returnTripToDispatch(tripId, reason: 'driver_app_error');
+        }());
       }
       if (mounted) {
         _setState(() {
@@ -2133,6 +2149,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// it, or because it was never ours and nobody else took it. A trip past
   /// pickup, or one another driver now owns, is left alone: wiping the
   /// rider's driver info there would be the lie.
+  /// Is this trip already assigned to this driver and still live?
+  ///
+  /// Answers the only question that matters before handing a trip back:
+  /// did the accept actually fail, or did it succeed and something after
+  /// it throw. Defaults to false — if we cannot tell, the safer outcome is
+  /// releasing a trip we might hold (dispatch re-offers it) rather than
+  /// keeping one we do not (the rider waits for nobody).
+  Future<bool> _tripIsAlreadyMine(int tripId) async {
+    try {
+      final trip = await ApiService.getTrip(tripId);
+      final assigned = (trip['driver_id'] as num?)?.toInt();
+      final status = (trip['status'] ?? '').toString().toLowerCase().trim();
+      const live = {
+        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
+        'in_trip', 'in_progress',
+      };
+      return assigned != null && assigned == _driverId && live.contains(status);
+    } catch (e) {
+      debugPrint('[DriverOnline] ownership check failed for $tripId: $e');
+      return false;
+    }
+  }
+
   Future<void> _returnTripToDispatch(
     int tripId, {
     required String reason,

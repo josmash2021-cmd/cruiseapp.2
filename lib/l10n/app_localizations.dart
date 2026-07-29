@@ -3928,6 +3928,12 @@ class S {
   String riderIsWaiting(String firstName) =>
       _es ? '$firstName está esperando' : '$firstName is waiting';
 
+  // The accept threw, but the trip turned out to already be this driver's
+  // — so it was kept rather than handed back.
+  String get tripAlreadyYours => _es
+      ? 'Este viaje ya es tuyo. Ábrelo desde tu viaje activo.'
+      : "This trip is already yours — open it from your active trip.";
+
   // Shown when the driver app could not take the trip it had just been
   // assigned, so the trip was handed back to dispatch for another driver.
   String get tripReturnedToDispatch => _es

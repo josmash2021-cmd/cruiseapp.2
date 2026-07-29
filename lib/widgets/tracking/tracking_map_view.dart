@@ -1190,7 +1190,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               );
               _mapCar!.loadCarIcon(widget.rideName);
               try {
-                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                // 'map', not 'viewport': the car lies FLAT ON THE ROAD and
+                // tilts with it. On 'viewport' it billboards — stays square
+                // to the screen however far the rider tilts the map — so a
+                // top-down car render ends up standing upright on a slanted
+                // street like a sticker on the glass. Pins keep 'viewport'
+                // (a pin should stand up); a vehicle should not.
+                await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                 await ctrl.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);
@@ -1265,7 +1271,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               } catch (_) {}
               try {
                 _carAnnotMgr = await _map!.annotations.createPointAnnotationManager();
-                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                // Same as above — this is the style-reload path, and it has
+                // to agree with it or the car flips behaviour on a restyle.
+                await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-pitch-alignment', 'map');
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-allow-overlap', true);
                 await _map!.style.setStyleLayerProperty(_carAnnotMgr!.id, 'icon-ignore-placement', true);

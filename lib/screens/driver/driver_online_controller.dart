@@ -1931,8 +1931,28 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         unawaited(() async {
           if (await _tripIsAlreadyMine(tripId)) {
             debugPrint('[DriverOnline] accept threw but trip $tripId is '
-                'already assigned to us — keeping it');
-            if (mounted) _snack(S.of(context).tripAlreadyYours);
+                'already assigned to us — opening it');
+            // Open it, don't just say so. The accept worked; only the
+            // setup after it failed. Telling the driver "this trip is
+            // already yours" and leaving them on the offers list makes
+            // them find their own way to a trip they are supposed to be
+            // driving — which is what "close and reopen the app puts me
+            // in the ride" was really reporting.
+            if (!mounted) return;
+            // Coerced, not cast — the payload is the same one whose hard
+            // casts used to throw and land us in this very catch.
+            String text(dynamic v, String fallback) {
+              if (v == null) return fallback;
+              final s = v.toString().trim();
+              return s.isEmpty ? fallback : s;
+            }
+            await _pushTripScreen(
+              tripId: tripId,
+              riderName: text(r['rider_name'], 'Rider'),
+              riderPhotoUrl: text(r['rider_photo_url'], ''),
+              riderRating: (r['rider_rating'] as num?)?.toDouble() ?? 0.0,
+              riderIsNew: r['rider_is_new'] == true,
+            );
             return;
           }
           await _returnTripToDispatch(tripId, reason: 'driver_app_error');

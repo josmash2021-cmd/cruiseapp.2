@@ -1147,13 +1147,70 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
     await db.commit()
     await db.refresh(trip)
 
-    # --- Guest SMS notifications --------------------------------------------
+    # ── Tell the rider, before anything else ────────────────────────────────
+    #
+    # These three pushes used to sit ~90 lines below, after the guest SMS and
+    # email block. That block opens with two SELECTs — driver, then vehicle —
+    # whose only purpose is filling in a guest notification, so on every
+    # `arrived` the rider's own realtime channels waited on two Supabase round
+    # trips whose results an app rider never uses. On a guest booking it was
+    # far worse: Twilio and SMTP are awaited in there, putting seconds between
+    # the driver's swipe and the passenger's screen changing.
+    #
+    # Nothing below this point can change what these carry, so nothing below
+    # this point gets to delay them. Notifying a third party never gates
+    # notifying the passenger.
+    _safe_create_task(emit_trip_status(
+        trip_id=trip.id,
+        status=canonical_new,
+        extra={
+            "driver_id": trip.driver_id,
+            "rider_id": trip.rider_id,
+            "fare": float(trip.fare or 0),
+            "payment_status": trip.payment_status,
+        },
+    ))
+
+    # SSE — the rider app's primary status channel (sub-second).
+    await event_bus.push_trip_update(trip.id, {
+        "status": canonical_new,
+        "trip_id": trip.id,
+        "driver_id": trip.driver_id,
+        "fare": float(trip.fare or 0),
+    })
+
+    # Firestore mirror — the rider's fallback channel. Off-thread, so it
+    # costs this request nothing.
+    if _HAS_FIRESTORE:
+        _fs_dist = trip.distance
+        _fs_dur = trip.duration
+        _fs_status = canonical_new
+        def _sync_fs():
+            try:
+                firestore_sync.sync_trip_status(
+                    trip_id=trip.id, status=_fs_status,
+                    distance=_fs_dist, duration=_fs_dur,
+                )
+            except Exception as e:
+                logging.error("Firestore sync on update_trip_status failed: %s", e)
+        asyncio.get_event_loop().run_in_executor(None, _sync_fs)
+
+    # --- Guest SMS + email notifications ------------------------------------
+    # Gated on actually having a guest to reach. A booking made through the app
+    # has neither field set, and every function called below returns on its
+    # first line for those — but only after this endpoint had already paid for
+    # the driver and vehicle SELECTs feeding them.
+    #
     # The early-return guard at the top of this endpoint (canonical_current ==
     # canonical_new) already ensures we do NOT reach this line on a no-op
     # transition, so firing SMS here cannot double-send. Each call is fully
     # wrapped so SMS failure can never break the status transition response.
+    _has_guest_contact = bool(
+        (getattr(trip, "guest_phone", None) or "").strip()
+        or (getattr(trip, "guest_email", None) or "").strip()
+    )
     try:
-        if canonical_new in ("driver_en_route", "arrived"):
+        if _has_guest_contact and canonical_new in ("driver_en_route", "arrived"):
             _drv_sms_r = await db.execute(select(User).where(User.id == trip.driver_id))
             _drv_for_sms = _drv_sms_r.scalar_one_or_none()
             if canonical_new == "driver_en_route":
@@ -1196,7 +1253,7 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                         "[EMAIL] email_guest_driver_arrived failed for trip %s: %s",
                         trip.id, _email_err,
                     )
-        elif canonical_new == "completed":
+        elif _has_guest_contact and canonical_new == "completed":
             try:
                 await notify_guest_trip_completed(db, trip)
             except Exception as _sms_err:
@@ -1217,40 +1274,8 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             trip.id, _sms_outer_err,
         )
 
-    # --- Socket.io instant push (primary real-time channel) ===
-    _safe_create_task(emit_trip_status(
-        trip_id=trip.id,
-        status=canonical_new,
-        extra={
-            "driver_id": trip.driver_id,
-            "rider_id": trip.rider_id,
-            "fare": float(trip.fare or 0),
-            "payment_status": trip.payment_status,
-        },
-    ))
-
-    # --- SSE instant push to riders watching this trip (sub-second) ===
-    await event_bus.push_trip_update(trip.id, {
-        "status": canonical_new,
-        "trip_id": trip.id,
-        "driver_id": trip.driver_id,
-        "fare": float(trip.fare or 0),
-    })
-
-    # Sync status to Firestore (non-blocking backup)
-    if _HAS_FIRESTORE:
-        _fs_dist = trip.distance
-        _fs_dur = trip.duration
-        _fs_status = canonical_new
-        def _sync_fs():
-            try:
-                firestore_sync.sync_trip_status(
-                    trip_id=trip.id, status=_fs_status,
-                    distance=_fs_dist, duration=_fs_dur,
-                )
-            except Exception as e:
-                logging.error("Firestore sync on update_trip_status failed: %s", e)
-        asyncio.get_event_loop().run_in_executor(None, _sync_fs)
+    # Socket.io, SSE and the Firestore mirror all fired immediately after the
+    # commit, above the guest block — see the comment there.
 
     # Auto-charge rider when trip is completed
     charge_result = None

@@ -25,7 +25,7 @@ App de ride-sharing premium estilo Uber/Lyft. Rider pide viaje → driver acepta
 - **Notifications:** FCM (Firebase Cloud Messaging)
 - **Payments:** Stripe (Connect para drivers + regular checkout para riders)
 - **SMS:** Twilio
-- **Hosting backend:** Railway (proyecto `heroic-renewal`, env `production`, URL `cruiseapp2-production.up.railway.app`)
+- **Hosting backend:** Railway (proyecto `Cruise in Ride`, env `production`, servicio `cruiseapp.2`, URL `cruiseapp2-production.up.railway.app`, región US East, volumen `cruiseapp-volume` en `/app/data`)
 
 ### Frontend (Flutter)
 - **Framework:** Flutter 3.x, Dart SDK >=3.0.0
@@ -47,7 +47,7 @@ App de ride-sharing premium estilo Uber/Lyft. Rider pide viaje → driver acepta
 
 - **Archivo:** `pubspec.yaml` línea 5 → `version: 1.0.2+XXX`
 - **Formato:** `1.0.2+BUILD_NUMBER` — solo bumpeas el build number (+291, +292, +293...)
-- **Versión actual:** 1.0.2+300
+- **Versión actual:** 1.0.5+506 (leer siempre `pubspec.yaml` línea 5 — este número queda viejo rápido)
 - **Usa `/ship`** — es el wrapper oficial que bumpea, valida Python, commitea con mensaje auto-generado, hace push y deploya el backend en un solo paso. Ver abajo en "Slash commands disponibles".
 
 ### Workflow de bump de versión
@@ -213,7 +213,10 @@ Drivers con trips en estos estados NO deben ser forzados offline por el ghost ag
 ## Datos de Prueba
 
 - **Driver test:** #3 — Jhon Martinez
-- **Proyecto Railway:** `heroic-renewal` / env `production`
+- **Proyecto Railway:** `Cruise in Ride` / env `production` / servicio `cruiseapp.2`
+  - Project ID: `82c2a240-f567-4cd9-acb1-62d0f0e7d71e`
+  - El CLI ya está autenticado localmente (`railway whoami` → josmash2021@gmail.com), no hace falta token
+  - **NUNCA correr `railway variables` sin filtrar** — imprime secretos en claro. Para listar solo nombres: `railway variables --kv | cut -d= -f1 | sort`
 - **Git remote:** `https://github.com/josmash2021-cmd/cruiseapp.2`
 - **Git user:** `josmash2021-cmd`
 - **Branch principal:** `main`
@@ -320,10 +323,11 @@ git push
 
 ## Notas del Usuario
 
-- **OS:** Windows 10 Home, shell Git Bash (usar sintaxis Unix, forward slashes, `/dev/null` no `NUL`)
+- **OS:** Windows 11 Home, repo en `C:\Users\josma\Desktop\cruiseapp.2`. Shell Git Bash disponible (sintaxis Unix, forward slashes, `/dev/null` no `NUL`) y PowerShell 5.1
 - **Workflow preferido:** siempre push al remote después de cada change set
 - **Build workflow:** iOS = Codemagic, Android = Shorebird OTA (NO `flutter build apk` manual)
-- **Memoria persistente:** activa en `C:\Users\Puma\.claude\projects\c--Users-Puma-cruiseapp-2\memory\`
+- **Memoria persistente:** activa en `C:\Users\josma\.claude\projects\c--Users-josma-Desktop-cruiseapp-2\memory\`
+- **Sesiones paralelas:** el usuario a veces corre más de una sesión de Claude sobre el mismo working tree. Antes de commitear, `git status` y verificar que el diff de cada archivo sea tuyo; si arrastras cambios ajenos, decláralo en el mensaje del commit
 - **Preferencia de comunicación:** respuestas cortas y directas, explicaciones simplificadas cuando pregunta "explícame"
 
 ---
@@ -421,6 +425,22 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 17. **Mapbox annotation dedup: `deleteAll()` antes de `create` + null inmediato en `update` fallido (v494):** `PointAnnotationManager.update()`/`delete()` pueden fallar silenciosamente y dejar el marcador viejo visible, causando dots duplicados cuando el siguiente tick crea uno nuevo. Para evitarlo: (a) antes de cada `mgr.create()` hacer `try { await mgr.deleteAll(); } catch (_) {}`; (b) en el `catchError` de `mgr.update()`, setear `_miniMapAnnot = null` **inmediatamente** y lanzar el `mgr.delete(annot)` fire-and-forget; (c) nunca esperar el `delete` antes de invalidar el handle. Ver [lib/screens/home_screen.dart:290](lib/screens/home_screen.dart#L290).
 
+18. **Neumorfismo = sistema compartido, no helpers locales (v504):** todo diseño nuevo usa `neuBox()` / `neuBase` / `neuSurface` / `neuPressed` de [lib/widgets/neu_style.dart](lib/widgets/neu_style.dart). Idiom establecido: fondo `neuBase`, tarjetas elevadas `neuBox(radius: N)`, íconos en pozos hundidos `neuBox(radius: N, pressed: true)`, secciones agrupadas con divisores hairline `Colors.white.withValues(alpha: 0.05)`. **El sistema es dark-only** — si la pantalla usa `DriverColors`/`AppColors` para light mode, migrar a neu la deja fija en oscuro (aceptado en las ya migradas). **Nunca redeclarar helpers `_neu()` locales**; sobre negro puro (`#000000`) las sombras neumórficas son invisibles, por eso `neuBase` es `#14141A`.
+
+19. **Una sola ruta por path en FastAPI (v506):** FastAPI se queda con la **primera** ruta registrada para un path y **ignora en silencio** las demás — sin error, sin log. Había dos routers declarando `POST /webhooks/stripe` y uno llevaba meses sin ejecutar un solo evento. Antes de agregar un router nuevo, `grep -rn '"/tu/path"' backend --include=*.py`. Si encuentras lógica duplicada de pagos en dos archivos, uno está muerto.
+
+20. **Los handlers de webhook corren DESPUÉS del 200 (v506):** el dispatcher usa `background_tasks.add_task(...)` y responde 200 a Stripe de inmediato. Una excepción dentro de un handler **no se reintenta** — el evento se pierde en silencio y un viaje pagado queda marcado como impago para siempre. Todo parseo dentro de un handler (`int()`, `json.loads()`, indexado de dict) va con guard y fallback, nunca crudo.
+
+21. **Nunca cerrar sesión por un error de servidor (v505):** `getMe()` devuelve `null` para 401, 502, timeout y sin-red por igual. Tratar ese `null` como "token inválido" cerraba la sesión de todos en cada redeploy de Railway (mientras cambia el contenedor devuelve 502). Para validar sesión usar `ApiService.isTokenValid()` — tri-estado: `true` aceptado, `false` rechazado (única razón válida para logout), `null` no concluyente. **Nunca usar `getMe() == null` como señal de logout.**
+
+22. **Stripe Financial Connections no tiene URL hospedada (v504):** `POST /drivers/financial-connections` devuelve `client_secret`, **no** `url`. Vincular banco va por SDK nativo: `Stripe.instance.collectBankAccountToken(clientSecret:)` → `btok_` → backend lo adjunta como external_account. Igual para tarjetas: `createToken()` **exige un `CardField` montado** que buffere el PAN — llamarlo sin campo en pantalla no levanta ninguna hoja nativa, simplemente falla. Tokens de payout necesitan `currency: 'usd'`.
+
+23. **`flutter_stripe` y Mapbox no tienen implementación web:** ambos revientan en Flutter web (`Platform._operatingSystem`, crash en el primer layout). Todo flujo que los use va con guard `kIsWeb` y un mensaje. Por eso las pantallas con mapa no se pueden verificar en `flutter run -d web-server`.
+
+24. **Un ticker parado no redibuja nada (v505):** `GoldLocationDot` solo dispara `onTick` cuando la posición cambia, y `_smoothTicker` del driver se apaga al llegar al target. Con el driver quieto **nadie redibuja el dot**: si el bitmap no estaba listo o el `iconSize` quedó a medias, se queda roto hasta que el driver se mueva. De ahí los watchdogs de 2s en `driver_home_screen` y `driver_online_controller`, que además **reconstruyen el bitmap si `!_goldDot.isReady`** — el rasterizado puede fallar (GPU perdida en background, OOM) y deja `currentBytes` en null para siempre.
+
+25. **Flush de `mgr.update()` que se pierde (v505):** las escrituras a anotaciones Mapbox se saltan cuando el IPC anterior sigue en vuelo. En una animación, **el último paso es el que más probablemente se pierda** — justo el que lleva el valor final. Si un valor tiene que quedar asentado (tamaño, posición final), forzar el flush con reintentos, no confiar en el último frame.
+
 ---
 
-**Última actualización:** 2026-06-12 (v1.0.3+494 — home sheet redesign + part-file const fix + gold dot dedup)
+**Última actualización:** 2026-07-28 (v1.0.5+506 — payout methods reales, webhook duplicado eliminado, sesiones no se caen en deploy, neumorfismo en driver menu/online/picker)

@@ -1255,6 +1255,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _mapController = ctrl;
             // Cache controller for reuse across driver screens
             MapControllerCache.instance.cache(ctrl);
+
+            // Correct the camera if GPS already landed.
+            //
+            // cameraOptions above is only the INITIAL camera — Mapbox does
+            // not re-read it when the widget rebuilds. The location
+            // lookup does a flyTo when it resolves, but with
+            // `_mapController?.` — so if GPS won the race and resolved
+            // before this callback, that flyTo hit a null controller and
+            // was silently dropped. The map then sat on the fallback
+            // coordinates for the whole session, which is why drivers in
+            // Alabama were staring at New York.
+            final known = _currentLatLng;
+            if (known != null) {
+              try {
+                await ctrl.setCamera(mapbox.CameraOptions(
+                  center: mapbox.Point(
+                    coordinates:
+                        mapbox.Position(known.longitude, known.latitude),
+                  ),
+                  zoom: 16,
+                  pitch: 0,
+                  bearing: 0,
+                ));
+              } catch (e) {
+                debugPrint('[DriverMap] initial camera correction failed: $e');
+              }
+            }
             // Disable Mapbox native puck IMMEDIATELY before any annotation creation
             await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
             

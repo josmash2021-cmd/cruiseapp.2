@@ -1440,6 +1440,26 @@ extension _HomeScreenWidgets on _HomeScreenState {
               // belongs to an old manager. Reset so we create a fresh one.
               _homeDotAnnot = null;
 
+              // Same race as the driver map: cameraOptions above is only
+              // the INITIAL camera, and the GPS listener recenters through
+              // a null-safe controller call. If the fix arrived before this
+              // callback, that recenter was dropped and the map stayed on
+              // the NYC fallback for good.
+              final known = _currentLatLng;
+              if (known != null) {
+                try {
+                  await ctrl.setCamera(mapbox.CameraOptions(
+                    center: mapbox.Point(
+                      coordinates:
+                          mapbox.Position(known.longitude, known.latitude),
+                    ),
+                    zoom: 15.0,
+                  ));
+                } catch (e) {
+                  debugPrint('[HomeMiniMap] camera correction failed: $e');
+                }
+              }
+
               await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
               await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));

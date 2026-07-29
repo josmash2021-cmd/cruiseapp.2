@@ -450,9 +450,27 @@ class NotificationService {
           _onlineSoundPlaying = false;
           return;
         }
-        // NEVER await play() — audioplayers' MethodChannel round-trip
-        // blocks the UI thread for 100-300ms on iOS.
-        unawaited(_onlinePlayer.play(AssetSource('sounds/cruise_online.wav')));
+        // resume(), NOT play(AssetSource(...)).
+        //
+        // This is why Go Online still froze after two rounds of deferring
+        // the call: `play(Source)` is `setSource()` + `resume()`, so it
+        // re-loaded the asset and re-initialised the audio pipeline on
+        // every single tap — throwing away the careful pre-warm init()
+        // does at startup (setSource + silent volume-0 play). That reload
+        // runs on the platform thread, which is exactly why the screen
+        // stayed frozen for the length of the clip.
+        //
+        // resume() plays the already-loaded, already-warmed source.
+        // ReleaseMode.stop keeps it loaded across plays, and the
+        // onPlayerComplete handler stops it back at position zero.
+        unawaited(
+          _onlinePlayer.resume().catchError((e) {
+            // Source lost (audio interruption, phone call, OS reclaim) —
+            // fall back to a full load so the cue is not silently dropped.
+            debugPrint('[NotificationService] resume failed, reloading: $e');
+            return _onlinePlayer.play(AssetSource('sounds/cruise_online.wav'));
+          }),
+        );
       } catch (e) {
         debugPrint('[NotificationService] playOnlineSound error: $e');
       } finally {

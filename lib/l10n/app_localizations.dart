@@ -1652,6 +1652,8 @@ class S {
   String get currentPosition => _es ? 'Posición actual' : 'Current position';
   String get pickupLabel => _es ? 'Recogida' : 'Pickup';
   String get dropOffLabel => _es ? 'Destino' : 'Drop-off';
+  String get passengerInstructionsLabel =>
+      _es ? 'Instrucciones del pasajero' : 'Passenger instructions';
   // dropoffLabel (camelCase variant) is at line ~2097
   String get reject => _es ? 'Rechazar' : 'Reject';
   String get acceptRide => _es ? 'Aceptar viaje' : 'Accept Ride';
@@ -3915,6 +3917,8 @@ class S {
   // Driver trip screen — header menu subtitles.
   String get backToDriverHomeSubtitle =>
       _es ? 'Volver a la pantalla principal' : 'Back to the main screen';
+  String get driverMenuSubtitle =>
+      _es ? 'Perfil, nivel y ajustes' : 'Profile, level and settings';
   String get earningsMenuSubtitle =>
       _es ? 'Ver tus ganancias del día' : 'See today\'s earnings';
   String get helpMenuSubtitle =>

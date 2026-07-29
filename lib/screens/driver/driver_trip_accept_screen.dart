@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../utils/app_platform.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_earnings_screen.dart';
+import 'driver_menu_screen.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -115,8 +116,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // Neumorphic base, not near-black: soft shadows are invisible on
   // #0A0A0A, which is why neuBase exists (see neu_style.dart).
   static const _bg     = neuBase;
-  static const _card   = neuSurface;
-  static const _border = Color(0xFF262626);
+  // No _card / _border constants: every surface on this screen now goes
+  // through neuBox(), which owns its own fill, shadows and edge.
 
   static final _usSuffixRe = RegExp(r',\s*United States$');
   static final _prSuffixRe = RegExp(r',\s*Puerto Rico$');
@@ -197,6 +198,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Ride started (passenger picked up → "Start Ride") ──
   bool _rideStarted = false;
   bool _startRideSlidDone = false;
+  /// Thumb is down on Start Ride — drives the sink/spring animation.
+  bool _startRidePressed = false;
 
   // ── Rider pickup confirmation listener ──
   StreamSubscription? _riderConfirmSub;
@@ -222,9 +225,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// Miles to pickup, formatted. Falls back to the dispatch estimate until
   /// the first GPS fix lands.
   String get _pickupDistanceLabel {
-    final mi = _milesToPickup ?? (widget.distToPickupKm * 0.621371);
-    if (mi < 0.1) return '< 0.1 mi';
+    final raw = _milesToPickup ?? (widget.distToPickupKm * 0.621371);
+    // Non-finite would render as "NaN mi" on the card.
+    final mi = raw.isFinite && raw > 0 ? raw : 0.0;
+    // No comparison sign. Under a tenth of a mile it gains a decimal
+    // instead: "0.04 mi" says the same thing as the old "less than 0.1 mi"
+    // and says it more precisely, without an operator in the driver's face.
+    if (mi < 0.1) return '${mi.toStringAsFixed(2)} mi';
     return '${mi.toStringAsFixed(1)} mi';
+  }
+
+  /// What the passenger wrote when they booked, with machine-appended lines
+  /// stripped.
+  ///
+  /// `notes` is a shared column: the backend appends a `Wait started:`
+  /// timestamp line to it when the pickup wait timer starts, so the raw value
+  /// is not safe to put in front of a driver. Filtering here instead of at the
+  /// call sites means every route into this screen is sanitised, not just the
+  /// one I plumbed.
+  String get _passengerInstructions {
+    final raw = widget.pickupInstructions.trim();
+    if (raw.isEmpty) return '';
+    return raw
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty && !l.startsWith('Wait started:'))
+        .join('\n');
   }
 
   // ── Dropoff proximity + trip finish ──
@@ -674,6 +700,34 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
+  /// Write to this trip's Firestore doc now, re-authenticating only if the
+  /// write actually fails.
+  ///
+  /// Replaces `await _ensureFirebaseAuth()` before every write: a network
+  /// round trip paid on every single call to guard against a session that is
+  /// almost never expired. On the arrival and ride-start paths that round trip
+  /// sat between the driver's swipe and the rider being told anything — which
+  /// is exactly what writing to Firestore first was supposed to avoid. The
+  /// common path now costs nothing, and the rare expired-token path costs one
+  /// retry instead of delaying everyone.
+  Future<void> _writeTripDoc(Map<String, dynamic> data, String label) async {
+    final ref = FirebaseFirestore.instance.collection('trips').doc(_fsDocId);
+    try {
+      await ref.set(data, SetOptions(merge: true));
+      debugPrint('[Driver] Firestore $label write OK → $_fsDocId');
+      return;
+    } catch (e) {
+      debugPrint('[Driver] Firestore $label write failed ($e) — re-auth, retry');
+    }
+    await _ensureFirebaseAuth();
+    try {
+      await ref.set(data, SetOptions(merge: true));
+      debugPrint('[Driver] Firestore $label write OK after re-auth → $_fsDocId');
+    } catch (e) {
+      debugPrint('[Driver] Firestore $label write FAILED after re-auth: $e');
+    }
+  }
+
   /// Ensure Firebase anonymous auth is active before any Firestore write.
   /// The token can expire after long sessions; re-auth is instant.
   Future<void> _ensureFirebaseAuth() async {
@@ -689,9 +743,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
-    await _ensureFirebaseAuth();
 
-    // Tell the rider FIRST.
+    // Tell the rider FIRST. Nothing is awaited above this line, and nothing
+    // may be added above it.
     //
     // This write used to happen only after the backend call succeeded —
     // behind a 6 s timeout and up to two 2 s retry gaps. On a weak signal
@@ -701,14 +755,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // fastest channel; firing it now makes their overlay appear in the
     // same beat as the swipe. Reverted below if the backend ultimately
     // rejects the arrival, exactly like the optimistic write on accept.
-    unawaited(
-      FirebaseFirestore.instance.collection('trips').doc(_fsDocId).set({
-        'status': 'arrived',
-        'arrivedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).catchError((e) {
-        debugPrint('[Driver] Firestore arrived write FAILED: $e');
-      }),
-    );
+    //
+    // An `await _ensureFirebaseAuth()` used to sit directly above this,
+    // which quietly undid all of it: on an expired anonymous session that
+    // is a network round trip, and the passenger was told nothing until it
+    // came back. _writeTripDoc re-authenticates on failure instead.
+    unawaited(_writeTripDoc({
+      'status': 'arrived',
+      'arrivedAt': FieldValue.serverTimestamp(),
+    }, 'arrived'));
 
     // Retry backend API up to 3 times — it remains the source of truth.
     bool apiOk = false;
@@ -727,13 +782,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // Undo the optimistic write above, or the rider is left staring at a
       // "confirm you are with the driver" screen for an arrival the
       // backend never accepted.
-      unawaited(
-        FirebaseFirestore.instance.collection('trips').doc(_fsDocId).set({
-          'status': 'driver_en_route',
-        }, SetOptions(merge: true)).catchError((e) {
-          debugPrint('[Driver] Firestore arrived rollback FAILED: $e');
-        }),
-      );
+      unawaited(_writeTripDoc({
+        'status': 'driver_en_route',
+      }, 'arrived rollback'));
       // H2 fix: previously the UI stayed in "arrived" state even when all
       // 3 backend attempts failed — the driver thought they were at pickup
       // but neither the backend nor the rider ever knew. Roll back the
@@ -988,8 +1039,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
   Future<void> _updateTripInTrip() async {
-    await _ensureFirebaseAuth();
-    // Retry backend API up to 3 times; only then fire Firestore sync as backup.
+    // Tell the rider FIRST, for the same reason as _confirmArrival — this
+    // path had the identical defect and it was never fixed here.
+    //
+    // The Firestore write was the LAST thing this method did, after up to
+    // three backend attempts with 2 s gaps and a 6 s timeout each. On a weak
+    // signal the rider's "confirm you are with the driver" overlay stayed on
+    // their screen for that whole time, long after the driver swiped Start
+    // Ride and started driving. Firestore is the rider's fastest channel, so
+    // it goes first; the backend below is still the source of truth.
+    //
+    // No rollback on API failure, matching the previous behaviour: the old
+    // code wrote in_trip to Firestore unconditionally too, success or not.
+    unawaited(_writeTripDoc({
+      'status': 'in_trip',
+      'rideStartedAt': FieldValue.serverTimestamp(),
+    }, 'in_trip'));
+
+    // Retry backend API up to 3 times.
     bool apiOk = false;
     for (int attempt = 0; attempt < 3 && !apiOk; attempt++) {
       try {
@@ -1004,28 +1071,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (!apiOk) {
       debugPrint('[Driver] in_trip API FAILED after 3 attempts');
     }
-    // Fire-and-forget Firestore sync as backup (backend already syncs on success)
-    FirebaseFirestore.instance
-        .collection('trips')
-        .doc(_fsDocId)
-        .set({
-      'status': 'in_trip',
-      'rideStartedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true)).then((_) {
-      debugPrint('[Driver] Firestore in_trip write OK → $_fsDocId');
-    }).catchError((e) {
-      debugPrint('[Driver] Firestore in_trip write FAILED: $e');
-    });
+    // Firestore already went out at the top of this method.
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────
   Future<void> _finishTrip() async {
     if (_tripFinished) return;
     setState(() => _tripFinished = true);
-    await _ensureFirebaseAuth();
     HapticService.heavyImpact();
 
-    // Show completion overlay immediately (do not block on network)
+    // Show completion overlay immediately (do not block on network).
+    //
+    // "Immediately" was not true: an awaited _ensureFirebaseAuth() sat above
+    // this line, so on an expired session the driver swiped and watched
+    // nothing happen until a sign-in round trip came back. The write below
+    // goes through _writeTripDoc, which re-authenticates if it is rejected.
     _finishFadeCtrl.forward(from: 0);
 
     // Fire-and-forget cleanup/status updates so UI never hangs.
@@ -1046,18 +1106,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (!apiOk) {
         debugPrint('[Driver] completeTrip API FAILED after 3 attempts — trip may be stuck');
       }
-      try {
-        await FirebaseFirestore.instance
-            .collection('trips')
-            .doc(_fsDocId)
-            .set({
-          'status': 'completed',
-          'completedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        debugPrint('[Driver] Firestore completed write OK → $_fsDocId');
-      } catch (e) {
-        debugPrint('[Driver] Firestore completed write FAILED: $e');
-      }
+      // Stays after the API loop, unlike arrived and in_trip: completion is
+      // what charges the rider, and writing `completed` to Firestore first
+      // would send them to the rating screen for a trip the backend may
+      // never have completed. _writeTripDoc only replaces the bare set()
+      // here — it re-authenticates if the write is rejected, which the
+      // previous plain try/catch did not.
+      await _writeTripDoc({
+        'status': 'completed',
+        'completedAt': FieldValue.serverTimestamp(),
+      }, 'completed');
 
       final gps = GpsService();
       try { await gps.clearTripLocation(); } catch (_) {}
@@ -1223,10 +1281,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         child: Container(
           width: 40,
           height: 40,
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            shape: BoxShape.circle,
-            border: Border.all(color: _gold, width: 1.5),
+          // Raised disc with a gold edge instead of a hollow gold ring. On a
+          // neumorphic surface a transparent outline reads as a hole, and the
+          // two most-used buttons on the screen should read as buttons.
+          decoration: neuBox(
+            radius: 20,
+            borderColor: _gold.withValues(alpha: 0.55),
+            borderWidth: 1.2,
           ),
           child: Icon(icon, color: _gold, size: 18),
         ),
@@ -1300,29 +1361,84 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
+  /// What the passenger typed when they booked, shown directly under the map.
+  ///
+  /// Titled, unlike the hanging note that dangles off the address cards: this
+  /// is the first thing the driver should read after seeing where they are
+  /// going, and an untitled paragraph of text under a map does not announce
+  /// whose words it is.
+  Widget _passengerInstructionsCard(String text) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+    decoration: neuBox(radius: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 26, height: 26,
+              decoration: neuBox(radius: 9, pressed: true),
+              child: Icon(Icons.format_quote_rounded,
+                  color: _gold, size: 15),
+            ),
+            const SizedBox(width: 9),
+            Text(
+              S.of(context).passengerInstructionsLabel,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        Text(
+          text,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.88),
+            fontSize: 14,
+            height: 1.42,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  /// Raised pill that floats over the map preview. Opaque on purpose — a
+  /// translucent chip over a moving dark map is the one place where the
+  /// neumorphic highlight stops reading as an edge.
+  Widget _mapChip(Widget child) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: neuBox(radius: 10),
+    child: child,
+  );
+
+  /// [iconSize] exists because the pickup ring and the dropoff square are not
+  /// the same weight at the same size — the filled square needs to sit smaller
+  /// than the open ring to read as its equal.
   Widget _infoRow(
     IconData icon,
-    Color iconBg,
     Color iconColor,
     String label,
     String address, {
     bool showChevron = false,
+    double iconSize = 18,
   }) => Container(
     padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: _card,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _border),
-    ),
+    decoration: neuBox(radius: 16),
     child: Row(
       children: [
+        // Sunken well, not a coloured tile: the icon reads as set into the
+        // card instead of pasted onto it, which is the whole point of the
+        // neumorphic system (project rule 18).
         Container(
           width: 38, height: 38,
-          decoration: BoxDecoration(
-            color: iconBg,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: iconColor, size: 19),
+          decoration: neuBox(radius: 12, pressed: true),
+          child: Icon(icon, color: iconColor, size: iconSize),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -1387,6 +1503,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             builder: (context, snap) {
               final count = snap.data ?? 0;
               if (count == 0) return const SizedBox.shrink();
+              // Keyed on the count, so every new message replays the pop
+              // rather than silently swapping the digit.
               return TweenAnimationBuilder<double>(
                 key: ValueKey(count),
                 tween: Tween(begin: 0.0, end: 1.0),
@@ -1395,11 +1513,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
                 child: Container(
                   padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEF4444),
+                  constraints: const BoxConstraints(minWidth: 19, minHeight: 19),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
                     shape: BoxShape.circle,
+                    // Ring in the sheet colour so the badge separates from
+                    // the raised disc underneath instead of merging into its
+                    // highlight, plus its own lift so it reads as sitting on
+                    // top of the button rather than punched into it.
+                    border: Border.all(color: neuBase, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.45),
+                        blurRadius: 8,
+                        spreadRadius: -1,
+                      ),
+                    ],
                   ),
-                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                   child: Text(
                     count > 9 ? '9+' : '$count',
                     style: const TextStyle(
@@ -1556,10 +1686,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       title: s.menu,
       icon: Icons.menu_rounded,
       iconColor: _gold,
+      fullScreen: true,
       items: [
-        _SheetItem(Icons.home_rounded, s.menu, s.backToDriverHomeSubtitle, () {
+        // Opens the real driver menu — profile, Cruise Level, earnings,
+        // vehicles, documents. It used to drop the driver onto the home
+        // screen instead, which is a different place with a different job,
+        // and left them a tap further from everything the menu holds.
+        _SheetItem(Icons.grid_view_rounded, s.menu, s.driverMenuSubtitle, () {
           Navigator.pop(context);
-          _returnToDriverHome();
+          Navigator.of(context).push(
+            slideFromRightRoute(const DriverMenuScreen()),
+          );
         }),
         _SheetItem(Icons.account_balance_wallet_rounded, s.earningsTitle,
             s.earningsMenuSubtitle, () {
@@ -1608,16 +1745,38 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       title: S.of(context).helpTitle,
       icon: Icons.help_rounded,
       iconColor: _gold,
+      fullScreen: true,
       items: [
-        _SheetItem(Icons.location_on_rounded, S.of(context).problemWithPickup,
+        // All three go straight into the support chat with the problem
+        // already stated, instead of opening a second form to pick a reason
+        // from. The reason lists still exist for the cancel flow below.
+        _SheetItem(Icons.trip_origin, S.of(context).problemWithPickup,
             S.of(context).problemWithPickupSubtitle,
-            () { Navigator.pop(context); _showPickupProblem(); }),
-        _SheetItem(Icons.flag_rounded, S.of(context).problemWithDropoff,
+            () {
+          Navigator.pop(context);
+          _openSupportChat(
+            problem: S.of(context).pickupAddressProblem,
+            reportType: 'pickup_address_problem',
+          );
+        }),
+        _SheetItem(Icons.square_rounded, S.of(context).problemWithDropoff,
             S.of(context).problemWithDropoffSubtitle,
-            () { Navigator.pop(context); _showDropoffProblem(); }),
+            () {
+          Navigator.pop(context);
+          _openSupportChat(
+            problem: S.of(context).dropoffAddressProblem,
+            reportType: 'dropoff_address_problem',
+          );
+        }),
         _SheetItem(Icons.directions_car_rounded, S.of(context).problemWithTrip,
             S.of(context).problemWithTripSubtitle,
-            () { Navigator.pop(context); _showTripProblem(); }),
+            () {
+          Navigator.pop(context);
+          _openSupportChat(
+            problem: S.of(context).tripProblem,
+            reportType: 'trip_problem',
+          );
+        }),
         _SheetItem(Icons.support_agent_rounded, S.of(context).contactSupportTip,
             S.of(context).contactSupportSubtitle,
             () { Navigator.pop(context); _openSupportChat(); }),
@@ -1633,154 +1792,53 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  // ── Help button 1 — Pickup address problem ─────────────────────────────
-  void _showPickupProblem() {
-    _showReportSheet(
-      title: S.of(context).pickupAddressProblem,
-      type: 'pickup_address_problem',
-      reasons: S.of(context).pickupCancelReasons,
-    );
-  }
-
-  // ── Help button 2 — Dropoff address problem ────────────────────────────
-  void _showDropoffProblem() {
-    _showReportSheet(
-      title: S.of(context).dropoffAddressProblem,
-      type: 'dropoff_address_problem',
-      reasons: S.of(context).dropoffCancelReasons,
-    );
-  }
-
-  // ── Help button 3 — Trip problem ───────────────────────────────────────
-  void _showTripProblem() {
-    _showReportSheet(
-      title: S.of(context).tripProblem,
-      type: 'trip_problem',
-      reasons: S.of(context).tripCancelReasons,
-    );
-  }
-
-  // ── Help button 4 — Contact Support (live chat) ────────────────────────
-  void _openSupportChat() {
+  // ── Contact Support (live chat) ─────────────────────────────────────────
+  //
+  // [problem] is sent as the driver's opening line the moment the chat is
+  // ready. The three "problem with..." buttons used to open a second form
+  // asking them to pick a reason from a list, while parked with a passenger
+  // waiting; now the tap itself introduces them and states what is wrong.
+  //
+  // [reportType] still files the structured trip report that form filed.
+  // Replacing the flow with a chat message alone would have quietly dropped
+  // it: the chat is a conversation, but the report is a typed row on the trip
+  // that dispatch can find later without reading a transcript.
+  void _openSupportChat({String? problem, String? reportType}) async {
     HapticService.lightImpact();
+
+    if (reportType != null) {
+      unawaited(_submitReport(
+        type: reportType,
+        reason: problem ?? '',
+        urgent: false,
+      ));
+    }
+
+    String? opener;
+    if (problem != null) {
+      // The driver's own name, not the rider's. Falls back to no introduction
+      // rather than to a wrong name or a literal "null".
+      String me = '';
+      try {
+        final u = await UserSession.getUser();
+        me = (u?['firstName'] ?? '').trim();
+      } catch (_) {}
+      if (!mounted) return;
+      final es = Localizations.localeOf(context).languageCode.startsWith('es');
+      final hello = me.isEmpty
+          ? (es ? 'Hola.' : 'Hi.')
+          : (es ? 'Hola, mi nombre es $me.' : 'Hi, my name is $me.');
+      opener = '$hello $problem';
+    }
+
+    if (!mounted) return;
     Navigator.of(context).push(
-      slideFromRightRoute(const CruiseSupportChatScreen()),
-    );
-  }
-
-  // ── Generic report bottom sheet ────────────────────────────────────────
-  void _showReportSheet({
-    required String title,
-    required String type,
-    required List<String> reasons,
-  }) {
-    final bot = MediaQuery.of(context).padding.bottom;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1a1a2e),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          border: Border(top: BorderSide(color: Color(0xFFc8a951), width: 1)),
-        ),
-        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(title, style: const TextStyle(
-                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 14),
-            ...reasons.map((reason) => _reportOption(ctx, reason, type)),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => Navigator.pop(ctx),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(S.of(context).cancelBtn,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.42),
-                    fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _reportOption(BuildContext ctx, String reason, String type) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(ctx);
-        if (type == 'trip_problem' && reason == 'Problema de seguridad') {
-          _showSafetyConfirmation(reason, type);
-        } else {
-          _submitReport(type: type, reason: reason, urgent: false);
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0d0d1a),
-          borderRadius: BorderRadius.circular(12),
-          border: const Border(left: BorderSide(color: Color(0xFFc8a951), width: 2)),
-        ),
-        child: Row(children: [
-          Expanded(child: Text(reason,
-            style: const TextStyle(color: Colors.white, fontSize: 14,
-              fontWeight: FontWeight.w700))),
-          const Icon(Icons.chevron_right_rounded, color: Color(0xFFc8a951), size: 20),
-        ]),
-      ),
-    );
-  }
-
-  // ── Safety emergency confirmation ──────────────────────────────────────
-  void _showSafetyConfirmation(String reason, String type) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(S.of(context).emergencyHelpTitle,
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _submitReport(type: type, reason: reason, urgent: true);
-            },
-            child: Text(S.of(context).noJustReport,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _submitReport(type: type, reason: reason, urgent: true);
-              launchUrl(Uri.parse('tel:911'));
-            },
-            child: Text(S.of(context).yesCall911,
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
+      // Slides in rather than cutting: the driver is being taken somewhere
+      // else mid-trip, and the motion is what tells them so.
+      slideFromRightRoute(CruiseSupportChatScreen(
+        initialMessage: opener,
+        inTrip: true,
+      )),
     );
   }
 
@@ -2029,25 +2087,39 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
+  /// [fullScreen] makes the sheet cover the display instead of rising to
+  /// roughly half of it. Opt-in per sheet: the driver menu is a destination
+  /// and earns the whole screen, while Help and Safety are three-item
+  /// pickers that would look abandoned in all that space.
   void _showSheet({
     required String title,
     required IconData icon,
     required Color iconColor,
     required List<_SheetItem> items,
+    bool fullScreen = false,
   }) {
     final bot = MediaQuery.of(context).padding.bottom;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      // A full-height sheet has to clear the status bar, or the drag handle
+      // ends up under the clock.
+      useSafeArea: fullScreen,
       builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1F),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        // double.infinity, not size.height: showModalBottomSheet already
+        // constrains the child to the space it is allowed to use, and with
+        // useSafeArea that space is smaller than the screen.
+        height: fullScreen ? double.infinity : null,
+        decoration: BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(fullScreen ? 0 : 22),
+          ),
         ),
-        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, fullScreen ? 0 : bot + 24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: fullScreen ? MainAxisSize.max : MainAxisSize.min,
           children: [
             Container(
               width: 40, height: 4,
@@ -2060,12 +2132,43 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             Row(children: [
               Icon(icon, color: iconColor, size: 22),
               const SizedBox(width: 10),
-              Text(title, style: const TextStyle(
-                  color: Colors.white, fontSize: 17,
-                  fontWeight: FontWeight.w800)),
+              Expanded(
+                child: Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 17,
+                        fontWeight: FontWeight.w800)),
+              ),
+              // A full-height sheet covers the trip, so it needs a visible way
+              // back to it. On a half sheet the drag handle and the backdrop
+              // are enough, and a button there is clutter.
+              if (fullScreen)
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: Responsive.w(34),
+                    height: Responsive.w(34),
+                    decoration: neuBox(radius: Responsive.w(17), pressed: true),
+                    child: Icon(Icons.arrow_back_rounded,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        size: Responsive.sp(18)),
+                  ),
+                ),
             ]),
             const SizedBox(height: 14),
-            ...items.map(_buildSheetItem),
+            // Scrollable when full-height: the items no longer size the
+            // sheet, so on a short phone they would overflow instead of
+            // shrinking it.
+            if (fullScreen)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(bottom: bot + 12),
+                  child: Column(children: items.map(_buildSheetItem).toList()),
+                ),
+              )
+            else
+              ...items.map(_buildSheetItem),
           ],
         ),
       ),
@@ -2755,22 +2858,47 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               style: TextStyle(
                                 color: Colors.white, fontSize: Responsive.sp(15),
                                 fontWeight: FontWeight.w700)),
+                            // Reputation, directly under the name. This block
+                            // has always been here — it never rendered
+                            // because the offers payload did not carry
+                            // rider_rating or rider_is_new, so both arrived
+                            // at their 0/false defaults and every passenger
+                            // showed as a bare name. Backend sends them now.
                             if (widget.riderIsNew || widget.riderRating > 0)
                               const SizedBox(height: 4),
                             if (widget.riderIsNew)
-                              Text(S.of(context).newRiderLabel,
-                                style: TextStyle(
-                                  color: const Color(0xFFE8C547),
-                                  fontSize: Responsive.sp(11),
-                                  fontWeight: FontWeight.w600))
-                            else if (widget.riderRating > 0) ...[
-                              _stars(widget.riderRating),
-                              const SizedBox(height: 3),
-                              Text('${widget.riderRating.toStringAsFixed(1)} ${S.of(context).rating.toLowerCase()}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.42),
-                                  fontSize: Responsive.sp(11))),
-                            ],
+                              // Sunken pill, so "first ride" reads as a
+                              // standing fact about the passenger and not as
+                              // a warning.
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: neuBox(radius: 8, pressed: true),
+                                child: Text(S.of(context).newRiderLabel,
+                                  style: TextStyle(
+                                    color: _gold,
+                                    fontSize: Responsive.sp(10.5),
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                  )),
+                              )
+                            else if (widget.riderRating > 0)
+                              // One line, not stars-then-a-caption: two
+                              // stacked lines under the name pushed this
+                              // column taller than the call and message
+                              // buttons beside it.
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _stars(widget.riderRating),
+                                  SizedBox(width: Responsive.w(6)),
+                                  Text(widget.riderRating.toStringAsFixed(1),
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.55),
+                                      fontSize: Responsive.sp(11),
+                                      fontWeight: FontWeight.w600)),
+                                ],
+                              ),
                           ],
                         ),
                       ),
@@ -2792,25 +2920,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
               child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.12),
-                      blurRadius: 24,
-                      spreadRadius: -2,
-                      offset: const Offset(0, 8),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.50),
-                      blurRadius: 32,
-                      spreadRadius: 2,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
+                // Same raised block as every other card on the screen. The
+                // hand-rolled gold glow + heavy black drop was a third
+                // shadow language on a screen that already has one
+                // (project rule 18: no ad-hoc shadows).
+                decoration: neuBox(radius: 18),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
                     height: Responsive.h(190),
                     child: Stack(
@@ -2865,57 +2981,52 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                             ),
                           ),
                         ),
-                        // ETA chip
+                        // Trip time, with the distance to pickup stacked
+                        // underneath it.
+                        //
+                        // The two used to sit in opposite corners, so the
+                        // driver read one number top-left and the other
+                        // top-right with a whole map between them. Stacked in
+                        // one corner they read as what they are: two figures
+                        // about the same trip.
                         Positioned(
                           top: 10, right: 10,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.72),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$_tripEta min trip',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _mapChip(Text(
+                                '$_tripEta min trip',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )),
+                              // Live, from the driver's own GPS. Only while
+                              // heading there; once the rider is aboard the
+                              // pickup is behind them.
+                              if (!_rideStarted) ...[
+                                const SizedBox(height: 6),
+                                _mapChip(Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.near_me_rounded,
+                                        color: _gold, size: 12),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      _pickupDistanceLabel,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                )),
+                              ],
+                            ],
                           ),
                         ),
-                        // Distance to pickup — live, from the driver's own
-                        // GPS. Only while heading there; once the rider is
-                        // aboard the pickup is behind them.
-                        if (!_rideStarted)
-                          Positioned(
-                            top: 10, left: 10,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.72),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.near_me_rounded,
-                                      color: _gold, size: 12),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    _pickupDistanceLabel,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                         // Mapbox attribution — plain text, no box
                         Positioned(
                           bottom: 5, left: 8,
@@ -2933,7 +3044,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ),
             ),
 
-            // ── Pickup address card + hanging instructions ────────────────
+            // ── Passenger instructions, straight under the map ────────────
+            //
+            // Was a small untitled note hanging off the bottom of the pickup
+            // card, below the fold on a short phone. What the passenger asked
+            // for belongs where the driver is already looking.
+            if (_passengerInstructions.isNotEmpty) ...[
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                    Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
+                child: _passengerInstructionsCard(_passengerInstructions),
+              ),
+            ],
+
+            // ── Pickup address card ───────────────────────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
@@ -2946,8 +3070,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     : _showNavigationSheet(isPickup: true),
                 onLongPress: () => _copyAddress(S.of(context).pickupAddressLabel, _pickupAddr),
                 child: _infoRow(
-                  Icons.location_on_rounded,
-                  _gold.withValues(alpha: 0.15),
+                  // Open ring for the origin, filled square for the
+                  // destination further down — the pairing every modern
+                  // ride app uses. A map pin for the pickup and a flag for
+                  // the dropoff were two unrelated metaphors that both just
+                  // meant "a place".
+                  Icons.trip_origin,
                   _gold,
                   S.of(context).pickupLabel,
                   _resolvingAddresses && _pickupAddr.isEmpty
@@ -2957,11 +3085,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 ),
               ),
             ),
-            if (widget.pickupInstructions.isNotEmpty)
-              Padding(
-                padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
-                child: _buildHangingInstruction(widget.pickupInstructions),
-              ),
             // ── Dropoff address card + hanging instructions ───────────────
             // Hidden until the rider is aboard. On the way to pickup the
             // only address that matters is the pickup, and showing both
@@ -2976,14 +3099,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       : _showNavigationSheet(isPickup: false),
                   onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
                   child: _infoRow(
-                    Icons.flag_rounded,
-                    _gold.withValues(alpha: 0.15),
+                    Icons.square_rounded,
                     _gold,
                     S.of(context).dropOffLabel,
                     _resolvingAddresses && _dropoffAddr.isEmpty
                         ? S.of(context).fetchingAddress
                         : _dropoffAddr,
                     showChevron: true,
+                    iconSize: 14,
                   ),
                 ),
               ),
@@ -3469,36 +3592,69 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Tap "Start Ride" button (pickup confirmed → go to dropoff) ─────────
+  //
+  // Hand-built instead of an ElevatedButton so the press is felt: the button
+  // sinks and its glow collapses under the thumb, then springs back. Material's
+  // default is an ink ripple, which on a solid gold pill on a dark screen is
+  // almost invisible — the driver got haptics and nothing to look at.
   Widget _buildSlideStartRide() {
-    return SizedBox(
+    final done = _startRideSlidDone;
+    final pressed = _startRidePressed && !done;
+    return GestureDetector(
       key: const ValueKey('tap_start_ride'),
-      width: double.infinity,
-      height: 62,
-      child: ElevatedButton(
-        onPressed: _startRideSlidDone ? null : () {
-          setState(() => _startRideSlidDone = true);
-          HapticService.heavyImpact();
-          Future.delayed(const Duration(milliseconds: 300), () {
-            if (!mounted) return;
-            setState(() => _rideStarted = true);
-            _startDropoffProximityDetection();
-            _updateTripInTrip();
-            // Navigate immediately — route fetch runs in background
-            _openNativeMaps(widget.dropoffLatLng);
-          });
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _gold,
-          foregroundColor: Colors.black,
-          disabledBackgroundColor: _gold.withValues(alpha: 0.6),
-          shape: RoundedRectangleBorder(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: done ? null : (_) => setState(() => _startRidePressed = true),
+      onTapCancel: () {
+        if (_startRidePressed) setState(() => _startRidePressed = false);
+      },
+      onTapUp: done ? null : (_) {
+        setState(() {
+          _startRidePressed = false;
+          _startRideSlidDone = true;
+        });
+        HapticService.heavyImpact();
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          setState(() => _rideStarted = true);
+          _startDropoffProximityDetection();
+          _updateTripInTrip();
+          // Navigate immediately — route fetch runs in background
+          _openNativeMaps(widget.dropoffLatLng);
+        });
+      },
+      child: AnimatedScale(
+        scale: pressed ? 0.96 : 1.0,
+        duration: Duration(milliseconds: pressed ? 90 : 260),
+        // Overshoot on release only. Easing both ways makes the spring back
+        // feel like the button is catching up rather than pushing off.
+        curve: pressed ? Curves.easeOut : Curves.elasticOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 62,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: done ? _gold.withValues(alpha: 0.6) : _gold,
             borderRadius: BorderRadius.circular(31),
+            boxShadow: pressed
+                ? const []
+                : [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.28),
+                      blurRadius: 22,
+                      spreadRadius: -4,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
           ),
-          elevation: 0,
-        ),
-        child: Text(
-          _startRideSlidDone ? S.of(context).startingLabel : S.of(context).startRideLabel,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          child: Text(
+            done ? S.of(context).startingLabel : S.of(context).startRideLabel,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ),
     );

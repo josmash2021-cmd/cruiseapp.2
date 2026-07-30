@@ -242,6 +242,28 @@ class TrackingMapCamera {
 
   bool get isNavChaseActive => _navChaseActive;
 
+  // ── Live chase frame, for anyone drawing on top of the map ──
+  //
+  // The car is held at a fixed point of the screen while the chase runs, so
+  // it can be painted by Flutter instead of shipped to Mapbox as an
+  // annotation — the same move that took the driver's arrow off the
+  // platform channel. Whoever paints it needs the frame this camera is
+  // currently showing: where the anchor is, how far the map is tilted, and
+  // how far it is turned, so the drawing lies on the road the way the
+  // annotation did rather than standing on the glass.
+  double get navPitch => _navPitch;
+  double get navBearing => _navBearing;
+
+  /// Where the car sits on screen right now, or null if the chase is not
+  /// driving the camera and the answer would be a guess.
+  Offset? chaseAnchor(Size screenSize, double topPadding, double bottomPadding) {
+    if (!_navChaseActive || _introActive) return null;
+    return Offset(
+      screenSize.width / 2,
+      chaseAnchorY(screenSize.height, topPadding, bottomPadding),
+    );
+  }
+
   /// True once [updateApproachFrame] owns the camera. Callers use this to
   /// stand down their one-shot bounds fits, exactly as they already do for
   /// the navigation chase — a flyTo landing on top of a per-frame

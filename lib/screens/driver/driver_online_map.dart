@@ -88,9 +88,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // annotation (cheap, synchronous). Only gate the mgr.update() IPC call.
       // This ensures the dot never stalls between async flushes — every tick
       // carries the latest position, and the next update() always sends it.
+      final overlayOwns = _dotOverlayOwnsMarker;
       try {
         _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
         _goldDotAnnot!.image = dotBytes;
+        // Invisible while the Flutter overlay is drawing the marker, or the
+        // driver would see two: the smooth one and this one stepping behind
+        // it. Kept alive and kept current rather than deleted, so the moment
+        // they pan away it is already in the right place.
+        _goldDotAnnot!.iconOpacity = overlayOwns ? 0.0 : 1.0;
         _goldDotAnnot!.iconSize = _dotPopScale;
         _goldDotAnnot!.iconRotate = _heading;
       } catch (_) {
@@ -99,6 +105,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _goldDotAnnotGen = 0;
         return;
       }
+
+      // While the overlay owns the marker there is nothing to look at here,
+      // so send one flush to hide it and then leave the channel alone — the
+      // map itself is what needs that bandwidth at sixty frames a second.
+      if (overlayOwns && _goldDotHidden) return;
+      _goldDotHidden = overlayOwns;
 
       // Fire update() only when previous IPC finished. If busy, the geometry
       // write above already captured the latest position — no info lost.
@@ -183,7 +195,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     for (int i = 1; i <= riseSteps; i++) {
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
-      _dotPopScale = (i / riseSteps) * 1.15;
+      _dotPopScale = (i / riseSteps) * 1.15 * GoldLocationDot.driverIconSize;
       await _updateDriverAnnotation(); // await so frames don't pile up
     }
     // Phase 2: bounce back 1.15 → 1.0 over ~150 ms (9 frames × 16 ms)
@@ -191,10 +203,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     for (int i = 1; i <= bounceSteps; i++) {
       await Future.delayed(const Duration(milliseconds: 16));
       if (!mounted) return;
-      _dotPopScale = 1.15 - (0.15 * (i / bounceSteps));
+      _dotPopScale =
+          (1.15 - (0.15 * (i / bounceSteps))) * GoldLocationDot.driverIconSize;
       await _updateDriverAnnotation(); // await so frames don't pile up
     }
-    _dotPopScale = 1.0;
+    _dotPopScale = GoldLocationDot.driverIconSize;
     await _settleDotSize();
   }
 
@@ -1046,27 +1059,89 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Called when a camera movement is initiated by user gesture.
   /// Pauses auto-follow so the driver can freely explore the map.
+  ///
+  /// Applies in every phase now. It used to return early unless the driver
+  /// was navigating, so while merely online the camera re-centred on them
+  /// sixty times a second — the map fought the finger and sprang back the
+  /// instant they let go.
+  ///
+  /// The marker keeps tracking the whole time. It stops being the Flutter
+  /// overlay pinned to the centre and becomes the Mapbox annotation at its
+  /// true coordinates, so a driver who has panned away still sees exactly
+  /// where they are, off to the side of the view or off screen entirely.
   void _onCameraMoveStarted() {
-    // Only pause follow during active navigation phases
-    final isNav =
-        _phase == _Phase.enRouteToPickup ||
-        _phase == _Phase.inTrip ||
-        _phase == _Phase.routeSummary;
-    if (!isNav) return;
+    _lastMapPanAt = DateTime.now();
+    _reFollowTimer?.cancel();
+    // Auto-resume ten seconds after the last drag, not ten seconds after the
+    // first: a driver still moving the map around should not have it yanked
+    // out from under them mid-gesture.
+    _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
     if (!_cameraFollowing) return; // already paused
     _setState(() => _cameraFollowing = false);
-    _reFollowTimer?.cancel();
-    // Auto-resume after 8 seconds of inactivity
-    _reFollowTimer = Timer(const Duration(seconds: 8), _recenterCamera);
   }
 
-  /// Resume camera follow mode and snap back to driver position.
+  /// Resume camera follow mode and glide back to the driver.
   void _recenterCamera() {
     if (!mounted) return;
     _reFollowTimer?.cancel();
     _setState(() => _cameraFollowing = true);
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
-    if (_pos != null) _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);
+    if (_pos == null) return;
+    final isNav = _phase == _Phase.enRouteToPickup ||
+        _phase == _Phase.inTrip ||
+        _phase == _Phase.routeSummary;
+    if (isNav) {
+      _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);
+    } else {
+      // Searching: flat and north-up, the framing this phase already uses.
+      // Recentring into a tilted nav view here would be a different screen.
+      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    }
+  }
+
+  /// True while the marker is the Flutter overlay rather than the Mapbox
+  /// annotation.
+  ///
+  /// Two ways to earn it. Camera glued to the driver: the marker sits at the
+  /// centre of the viewport by construction, no arithmetic needed. Camera
+  /// left somewhere by the driver's finger: still fine, because a parked
+  /// camera plus [FlatMapProjection] gives the exact pixel — as long as the
+  /// view is flat. The tilted navigation camera is the one case that falls
+  /// back to the annotation, and FlatMapProjection decides that itself by
+  /// returning null, so there is no phase check here to keep in sync.
+  bool get _dotOverlayOwnsMarker {
+    if (_pos == null) return false;
+    // An offer preview flies the camera around the route. The overlay is
+    // positioned from camera-change events, which arrive over the same
+    // channel we are avoiding — during an animation they lag, and a marker
+    // that lags a moving camera slides across the map. The annotation is
+    // anchored in map space and rides the animation correctly, so it wins
+    // here.
+    if (_isCardAnimating || _previewingOffer != null) return false;
+    if (_cameraFollowing) return true;
+    return _dotScreenOffset != null;
+  }
+
+  /// Where to draw the marker while the camera is parked, or null if we
+  /// cannot say — off screen, or a tilted camera we refuse to guess at.
+  Offset? get _dotScreenOffset {
+    if (_cameraFollowing) return null; // centred, no projection needed
+    final cam = _onlineCamState;
+    final p = _pos;
+    final size = _onlineMapSize;
+    if (cam == null || p == null || size == null) return null;
+    final c = cam.center.coordinates;
+    final off = FlatMapProjection.screenOffsetFlat(
+      target: p,
+      cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
+      zoom: cam.zoom,
+      bearingDeg: cam.bearing,
+      pitchDeg: cam.pitch,
+      viewport: size,
+    );
+    if (off == null) return null;
+    if (!FlatMapProjection.isOnScreen(off, size)) return null;
+    return off;
   }
 }

@@ -802,6 +802,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _onAnimationFrame(Duration elapsed) {
     _interpolate(elapsed);
     _onCameraTick(elapsed);
+    // Repaint the Flutter-painted car with this frame. See _carFrame.
+    if (mounted) _carFrame.value++;
   }
 
   /// Make sure the shared animation frame is running.
@@ -833,6 +835,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Ticker callback: drive the Uber-style chase camera.
   void _onCameraTick(Duration elapsed) {
     if (!mounted || _map == null || _mapCamera == null) return;
+
+    // Before anything that can return early. The annotation is only allowed
+    // to be invisible while the overlay is actually drawing, and this is the
+    // one line that decides it — see _chaseCarAnchor.
+    unawaited(_mapCar?.setHidden(_chaseCarAnchor != null) ?? Future.value());
+
     // Auto-resume: hand the camera back after the rider stops panning.
     // _lastUserCameraInteraction was being written and never read, so a
     // single pan parked the camera permanently — the car drove off screen
@@ -1047,6 +1055,91 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   // ── Full-screen Map ──
+  /// The car, painted by Flutter while the chase camera owns the screen.
+  ///
+  /// Same move as the driver's own arrow: a Mapbox annotation can only
+  /// advance as fast as the platform channel drains, and on a phone
+  /// rendering this map that is ten or fifteen times a second against a
+  /// display doing sixty. During the chase the car does not travel across
+  /// the screen at all — it is pinned to the anchor while the world slides
+  /// underneath — so there is nothing to send. Painting it here also hands
+  /// the whole channel to the camera, which is the thing that actually has
+  /// to move.
+  ///
+  /// Laid down onto the road, not stood up on the glass: the annotation
+  /// underneath uses `icon-pitch-alignment: map`, so a flat billboard here
+  /// would be a different car. The X rotation by the camera's own pitch is
+  /// what puts it back on the tarmac.
+  /// Where the Flutter-painted car goes, or null if it is not drawing.
+  ///
+  /// The one place that decides. The overlay reads it to know whether to
+  /// paint, and the annotation underneath reads it to know whether to hide
+  /// — so the two can never disagree, and there can never be a moment with
+  /// no car at all.
+  ///
+  /// There was one. The hide was written next to the chase-frame call, and
+  /// the tick returns before that as soon as the rider drags the map. So a
+  /// drag left the annotation invisible from the frame before and the
+  /// overlay switched off by the drag: the car vanished for the whole eight
+  /// seconds until the camera came back. Two places deciding one thing.
+  Offset? get _chaseCarAnchor {
+    final cam = _mapCamera;
+    final car = _mapCar;
+    if (cam == null || car == null) return null;
+    if (!mounted) return null;
+    if (_phase != _TrackPhase.onTrip && _phase != _TrackPhase.nearDestination) {
+      return null;
+    }
+    if (_userControllingCamera) return null;
+    if (car.carBytes == null) return null;
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return null;
+    return cam.chaseAnchor(
+      mq.size,
+      mq.padding.top + 10 + _topCardHeight + 32,
+      mq.padding.bottom + 16 + _bottomCardHeight + 32,
+    );
+  }
+
+  Widget _buildChaseCarOverlay() {
+    final cam = _mapCamera;
+    final car = _mapCar;
+    final anchor = _chaseCarAnchor;
+    if (cam == null || car == null || anchor == null) {
+      return const SizedBox.shrink();
+    }
+    final bytes = car.carBytes;
+    if (bytes == null) return const SizedBox.shrink();
+
+    // The map is already turned to the car's heading, so what is left is
+    // whatever the smoothing has not caught up on yet — usually near zero,
+    // which is exactly why the car sits still while the world turns.
+    final relBearing = (_animBearing - cam.navBearing) * math.pi / 180.0;
+    final pitchRad = cam.navPitch * math.pi / 180.0;
+    final size = 160.0 * car.carScale;
+
+    return Positioned(
+      left: anchor.dx - size / 2,
+      top: anchor.dy - size / 2,
+      width: size,
+      height: size,
+      child: IgnorePointer(
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            // A touch of perspective, then lie the image down by the same
+            // angle the camera is leaning. Without the perspective entry the
+            // X rotation is an orthographic squash and the car reads as
+            // flattened rather than as receding.
+            ..setEntry(3, 2, 0.0015)
+            ..rotateX(pitchRad)
+            ..rotateZ(relBearing),
+          child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFullScreenMap() {
     return Stack(
       children: [
@@ -1242,6 +1335,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               });
             },
           ),
+        ),
+        // The car, painted on top while the chase owns the camera. Rebuilt
+        // by _carFrame on every animation frame, not by the screen's own
+        // 3 fps setState.
+        ListenableBuilder(
+          listenable: _carFrame,
+          builder: (_, __) => _buildChaseCarOverlay(),
         ),
         // Show error overlay when map fails to load
         if (_mapLoadError)

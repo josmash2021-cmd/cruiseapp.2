@@ -19,8 +19,11 @@ import 'package:permission_handler/permission_handler.dart'
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
 import '../../config/route_observers.dart';
+import '../../map/flat_map_projection.dart';
+import '../../map/map_surface_coordinator.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
+import '../../services/gps_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_session.dart';
@@ -89,7 +92,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // relaunch with an active trip, the crash loop that made the app take
   // several attempts to open. The map is remounted when the trip screen
   // pops.
-  bool _mapSuspended = false;
+  /// Starts suspended on purpose.
+  ///
+  /// The map used to mount unconditionally on the first build, which left
+  /// the coordinator unaware that this screen holds a surface at all. On a
+  /// cold start with an active trip that is fatal: home paints its map,
+  /// _resumeActiveTrip pushes the trip screen, the trip screen asks for the
+  /// surface, finds no registered holder and mounts immediately — two live
+  /// surfaces, which is the relaunch crash loop. Claiming first costs a
+  /// couple of frames on an empty coordinator and removes the case.
+  bool _mapSuspended = true;
+
+  /// Mini-map camera glued to the driver. Cleared when they drag it,
+  /// restored ten seconds after they stop. See _onHomeMapPanned.
+  bool _homeCameraFollowing = true;
+  Timer? _homeReFollowTimer;
+
+  /// A camera write is crossing the platform channel. See _writeHomeCamera.
+  bool _camWriteBusy = false;
+
+  /// Ticks once per frame the marker moved, so the Flutter overlay repaints
+  /// with it.
+  ///
+  /// A CustomPaint only redraws when something tells it to, and nothing in
+  /// the GPS path calls setState — the annotation was updated directly,
+  /// which needs no rebuild. Left like that the overlay would have frozen
+  /// at whatever bearing the last unrelated rebuild caught it at: the
+  /// arrow would not have turned through a bend at all.
+  ///
+  /// A notifier rather than setState because setState rebuilds the entire
+  /// screen — map card, earnings, panel — sixty times a second. This
+  /// repaints one 64-pixel widget.
+  final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
+
+  /// True once the native dot has been flushed to invisible under the
+  /// overlay, so the per-frame path stops re-sending the same hide.
+  bool _dotHiddenFlushed = false;
   final GoldLocationDot _goldDot = GoldLocationDot(heading: true);
   // Retries the first dot draw until it lands. _updateMyLocAnnotation() no-ops
   // until BOTH the annotation manager and the dot image exist, and the dot
@@ -123,13 +161,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   List<String> _daySeriesLabels = const [];
   /// Which tab the earnings chart is showing.
   bool _earningsWeekTab = false;
+
+  /// Which way the last earnings swipe went, so the pages slide the way the
+  /// thumb did instead of always from the same side.
+  bool _earningsSwipeForward = true;
   String _driverName = 'Driver';
   String? _photoUrl;
 
   // ── Animations ──
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
-  late AnimationController _glossCtrl; // gloss shimmer sweep
+  late AnimationController _glossCtrl;
+  late AnimationController _radarCtrl; // gloss shimmer sweep
   late AnimationController _statsCtrl;
   late Animation<double> _statsAnim;
   late AnimationController _fabCtrl;
@@ -162,13 +205,36 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // Travel for the spring drag (must stay > 0 — drag deltas divide by it).
   // Collapsed (92) + travel (400) = 492 expanded, which fits the full content
   // (status row + 3 stat cards + all 3 recommended rows) without clipping.
-  static const double _panelTravelH = 400.0;
+  /// Legacy fixed travel, kept only as the fallback when there is no
+  /// MediaQuery yet. See [_panelTravelH].
+  static const double _panelTravelFallbackH = 400.0;
 
   bool get _scheduledBannerVisible =>
       _isStillOnline && _activeTripData == null && _scheduledAvailableCount > 0;
 
   double get _panelCollapsedH =>
       _panelBaseH + (_scheduledBannerVisible ? _panelBannerH : 0);
+
+  /// How far the panel travels when the driver drags it up.
+  ///
+  /// Was a flat 400 px. On a tall phone that stops the panel two thirds of
+  /// the way up — it reads as a sheet that refused to finish opening, and
+  /// the content below the fold can only be reached by scrolling inside a
+  /// panel that looks like it has more room to give.
+  ///
+  /// Measured from the screen instead: open all the way to just under the
+  /// status bar, so the gesture ends where the driver expects it to. Falls
+  /// back to the old constant only before the first layout, when there is
+  /// no MediaQuery to ask.
+  double get _panelTravelH {
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return _panelTravelFallbackH;
+    // 44 px of map left visible at the top: enough to keep the sheet reading
+    // as a sheet over a map, rather than as a new screen.
+    final full = mq.size.height - mq.padding.top - 44;
+    return math.max(_panelTravelFallbackH, full - _panelCollapsedH);
+  }
+
   double get _panelExpandedH => _panelCollapsedH + _panelTravelH;
   bool _dragging = false;
 
@@ -192,6 +258,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Timer? _tripPollTimer;
   Timer? _statsRefreshTimer;
   int? _driverId;
+
+  /// Shared uploader. Only used while the driver is online and standing on
+  /// this screen — see _feedGpsUploads.
+  final GpsService _gpsService = GpsService();
   Map<String, dynamic>? _activeTripData;
 
   // ── Scheduled rides banner ──
@@ -248,6 +318,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2400),
     )..repeat();
+    // The radar gets its own clock, slower than everything else on the
+    // button. Sharing the gloss sweep's 2.4 s made the rings hurry; a radar
+    // that hurries reads as a loading spinner rather than as a beacon.
+    _radarCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
+    )..repeat();
 
     // Red → gold color transition for Go Online button
     _btnColorCtrl = AnimationController(
@@ -277,7 +354,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
 
     if (widget.returnFromTrip) _isStillOnline = true;
-    _goldDot.build(this, () {
+    _goldDot.build(this, onFrame: () {
+      if (!mounted) return;
+      _markerFrame.value++;
+      _followHomeCameraToDriver();
+    }, () {
       // Update the Mapbox annotation directly — no setState needed (avoids rebuild storm)
       if (mounted) _syncDotAnnotation();
     });
@@ -414,7 +495,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (route is PageRoute) {
       mapRouteObserver.subscribe(this, route);
     }
+    // First claim. Post-frame so ModalRoute is settled — on a cold start
+    // with an active trip the resume push may already be on its way, and
+    // then this correctly declines to mount.
+    if (!_claimedMapSurfaceOnce) {
+      _claimedMapSurfaceOnce = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_acquireMapSurface());
+      });
+    }
   }
+
+  bool _claimedMapSurfaceOnce = false;
 
   // ── RouteAware: one live Mapbox surface at a time ──
   //
@@ -432,33 +524,44 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void didPushNext() {
-    // Wait out the incoming transition before releasing the surface:
-    // unmounting a PlatformView under a route that is still partly
-    // transparent flashes our base colour in the driver's face. The
-    // longest push transition out of here is 500 ms.
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (!mounted) return;
-      // Came back inside the delay window — keep the map.
-      if (ModalRoute.of(context)?.isCurrent == true) return;
-      _suspendMap();
-    });
+    // Deliberately empty. We keep our map.
+    //
+    // This used to tear the surface down 600 ms after anything covered us,
+    // which meant walking into Settings or Earnings and back rebuilt the
+    // whole map: black card, then tiles, then the location dot drawn again
+    // from scratch. The driver saw their own arrow vanish and come back for
+    // a trip through a menu.
+    //
+    // It only ever existed as crash insurance, and the crash needs two live
+    // surfaces. Menus have no map, so they cannot be the second one — and
+    // any screen that DOES have a map now claims it through
+    // MapSurfaceCoordinator, which revokes ours and waits for us before it
+    // mounts. Holding a PlatformView under an opaque menu costs some memory;
+    // it cannot cost a crash.
   }
 
   @override
   void didPopNext() => _unsuspendMap();
 
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  static const String _kHomeMapSurfaceOwner = 'DriverHome';
+
   @override
   void dispose() {
     mapRouteObserver.unsubscribe(this);
+    MapSurfaceCoordinator.instance.release(_kHomeMapSurfaceOwner);
     _fcmTokenRefreshSub?.cancel();
     disposePanelAnimation();
     _pulseCtrl.dispose();
     _glossCtrl.dispose();
+    _radarCtrl.dispose();
     _btnColorCtrl.dispose();
     _statsCtrl.dispose();
     _fabCtrl.dispose();
     _goldDot.dispose();
     _dotCreateWatchdog?.cancel();
+    _homeReFollowTimer?.cancel();
+    _markerFrame.dispose();
     _posStream?.cancel();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
@@ -543,7 +646,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          iconSize: 1.0,
+          // Matched to the Flutter overlay so the arrow does not change size
+          // when the driver drags the map and the two swap over.
+          iconSize: GoldLocationDot.driverIconSize,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
           // The badge is drawn pointing north; the heading is applied here.
@@ -557,25 +662,79 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       return;
     }
 
-    // Update geometry + image every frame — no skip guard.
-    // The Ticker runs at 60fps and advances _goldDot smoothly.
-    // Mapbox internally handles rapid updates; skipping frames caused stutter.
+    // Update geometry + image every frame.
+    //
+    // Invisible while the Flutter overlay is drawing the marker — see
+    // _dotOverlayOwnsMarker. Kept alive and kept current rather than
+    // deleted, so the instant the driver pans away it is already at their
+    // real coordinates with nothing to rebuild.
+    final overlayOwns = _dotOverlayOwnsMarker;
     try {
       _myLocAnnot!.geometry = point;
       _myLocAnnot!.image = bytes;
       _myLocAnnot!.iconRotate = _goldDot.bearing;
-      mgr.update(_myLocAnnot!).catchError((_) {
-        _myLocAnnot = null;
-      });
+      _myLocAnnot!.iconSize = GoldLocationDot.driverIconSize;
+      _myLocAnnot!.iconOpacity = overlayOwns ? 0.0 : 1.0;
+      // One flush to hide it, then leave the channel to the camera.
+      if (!overlayOwns || !_dotHiddenFlushed) {
+        _dotHiddenFlushed = overlayOwns;
+        mgr.update(_myLocAnnot!).catchError((_) {
+          _myLocAnnot = null;
+        });
+      }
     } catch (_) {
       _myLocAnnot = null;
     }
 
-    // Smooth camera follow — instant setCamera on every dot tick (~30fps,
-    // throttled inside GoldLocationDot). The camera glides frame-by-frame
-    // with the INTERPOLATED dot position, so the driver sees a continuous
-    // slide instead of discrete flyTo jumps.
-    _mapController?.setCamera(
+  }
+
+  /// Keep the map under the driver.
+  ///
+  /// Deliberately NOT inside _updateMyLocAnnotation. It used to be, at the
+  /// very bottom, behind five guards that all concern the Mapbox annotation:
+  /// no annotation manager yet, no rasterised icon yet, the frame the
+  /// annotation is first created on. Any of those and the camera silently
+  /// stopped following — the driver drove off the edge of a map that had
+  /// decided not to move, for a reason that had nothing to do with the
+  /// camera.
+  ///
+  /// That coupling was survivable while the annotation *was* the marker.
+  /// Now the marker is a Flutter overlay that draws regardless, so the only
+  /// thing those guards could still block is the one job that has to keep
+  /// working. Driven from the motion frame instead.
+  /// Keep the position uploads fed while the driver sits on this screen.
+  ///
+  /// GpsService uploads on its own timers from the last position it was
+  /// given — so leaving it running without feeding it is worse than stopping
+  /// it: it republishes one stale coordinate forever, and a car frozen at a
+  /// real-looking address is harder to spot than one that vanished.
+  ///
+  /// The online screen fed it; this one never did, because until now the
+  /// driver could not be online and standing here at the same time. They can:
+  /// the Home button on the online screen is explicitly a look-at-home, not
+  /// a go-off-shift.
+  void _feedGpsUploads(LatLng pos, double heading, double speed) {
+    // An active trip counts even if the online flag has not caught up.
+    //
+    // A driver who walks back to this screen mid-ride has a passenger
+    // watching their car on a map. That car is drawn from these uploads and
+    // from nothing else, so the flag being a beat behind is not a reason to
+    // stop feeding it — the trip is.
+    if (!_isStillOnline && _activeTripData == null) return;
+    final id = _driverId;
+    if (id == null) return;
+    _gpsService.startTracking(id.toString()); // no-op once already tracking
+    _gpsService.updatePosition(pos, heading, speed);
+  }
+
+  void _followHomeCameraToDriver() {
+    if (!mounted || !_homeCameraFollowing) return;
+    final lat = _goldDot.lat ?? _currentLatLng?.latitude;
+    final lng = _goldDot.lng ?? _currentLatLng?.longitude;
+    if (lat == null || lng == null) return;
+    final point = safePoint(lng, lat);
+    if (point == null) return;
+    _writeHomeCamera(
       mapbox.CameraOptions(
         center: point,
         zoom: 16.0,
@@ -583,6 +742,85 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         bearing: 0.0,
       ),
     );
+  }
+
+  /// Push one camera frame, dropping any produced while the previous write
+  /// is still crossing the channel. An un-awaited setCamera per tick queues
+  /// up behind a busy platform thread, and a backlog lands in bursts —
+  /// which is the stutter. Every frame is recomputed, so a dropped one
+  /// carries nothing the next does not.
+  void _writeHomeCamera(mapbox.CameraOptions options) {
+    final map = _mapController;
+    if (map == null) return;
+    if (_camWriteBusy) return;
+    _camWriteBusy = true;
+    try {
+      map.setCamera(options).then((_) {
+        _camWriteBusy = false;
+      }).catchError((Object _) {
+        _camWriteBusy = false;
+      });
+    } catch (_) {
+      _camWriteBusy = false;
+    }
+  }
+
+  /// The camera as Mapbox last reported it. Pushed to us by
+  /// onCameraChangeListener, so reading it costs nothing per frame.
+  mapbox.CameraState? _homeCamState;
+
+  /// True while the Flutter overlay draws the marker instead of Mapbox.
+  ///
+  /// Not only while the camera is following any more: with the camera state
+  /// in hand we can work out the driver's pixel ourselves for any flat view,
+  /// so the marker stays smooth after the driver pans or zooms too. The
+  /// annotation only takes back over where the arithmetic would be a guess —
+  /// a tilted or rotated camera. See FlatMapProjection.
+  bool get _dotOverlayOwnsMarker {
+    if (_mapSuspended || _goldDot.lat == null) return false;
+    if (_homeCameraFollowing) return true;
+    return _homeDotOffset != null;
+  }
+
+  /// Where to draw the marker, or null if we cannot say.
+  ///
+  /// While following, the camera centres on the driver every frame, so it is
+  /// the middle of the viewport by definition and no projection is needed.
+  Offset? get _homeDotOffset {
+    if (_homeCameraFollowing) return null; // centred
+    final cam = _homeCamState;
+    final lat = _goldDot.lat, lng = _goldDot.lng;
+    if (cam == null || lat == null || lng == null) return null;
+    final size = _homeMapSize;
+    if (size == null) return null;
+    final c = cam.center.coordinates;
+    final off = FlatMapProjection.screenOffsetFlat(
+      target: LatLng(lat, lng),
+      cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
+      zoom: cam.zoom,
+      bearingDeg: cam.bearing,
+      pitchDeg: cam.pitch,
+      viewport: size,
+    );
+    if (off == null) return null;
+    // Off screen: nothing to draw, and the marker is genuinely not in view.
+    if (!FlatMapProjection.isOnScreen(off, size)) return null;
+    return off;
+  }
+
+  /// Size of the map box, measured from its own layout rather than assumed.
+  Size? _homeMapSize;
+
+  /// The driver dragged the mini map: stop following so it stays where they
+  /// put it, and come back ten seconds after they stop.
+  void _onHomeMapPanned() {
+    _homeReFollowTimer?.cancel();
+    _homeReFollowTimer = Timer(const Duration(seconds: 10), () {
+      if (!mounted) return;
+      setState(() => _homeCameraFollowing = true);
+    });
+    if (!_homeCameraFollowing) return;
+    setState(() => _homeCameraFollowing = false);
   }
 
   /// Update the gold dot PointAnnotation with latest interpolated position + frame.
@@ -606,7 +844,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // is then a silent no-op, and nothing else rebuilds it on this
       // screen. Same retry the rider home does in _scheduleHomeDotRetry.
       if (!_goldDot.isReady) {
-        await _goldDot.build(this, () {
+        await _goldDot.build(this, onFrame: () {
+          if (!mounted) return;
+          _markerFrame.value++;
+          _followHomeCameraToDriver();
+        }, () {
           if (mounted) _syncDotAnnotation();
         });
         if (!mounted) return;
@@ -749,6 +991,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _currentLatLng = ll;
         _goldDot.setTarget(ll.latitude, ll.longitude,
             bearing: _usableHeading(p));
+        // Keep publishing while online — the driver can be on this screen
+        // mid-shift now. See _feedGpsUploads.
+        _feedGpsUploads(ll, _usableHeading(p) ?? 0, p.speed);
         debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
         // Camera follow is handled per dot-tick in _updateMyLocAnnotation
@@ -1338,6 +1583,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             right: 0,
             child: _buildDraggablePanel(pad),
           ),
+
+          // ── GO button — above the panel so it can leave it ──
+          _buildMorphingGoButton(pad),
         ],
       ),
     );
@@ -1386,6 +1634,49 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // and move camera when GPS arrives. Prevents blank screen on slow GPS.
     final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
 
+    return RepaintBoundary(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Remember the box we are drawn in: the projection needs it to
+          // turn a coordinate into a pixel, and guessing it would put the
+          // marker in the wrong place on every screen size but one.
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          if (_homeMapSize != size) {
+            _homeMapSize = size;
+          }
+          final offset = _homeDotOffset;
+          return Stack(
+            children: [
+              Positioned.fill(child: _homeMapSurface(pos)),
+              // The marker, painted by Flutter: 60 fps with no platform
+              // channel in the way, and nothing that can fail to rasterise.
+              // Centred while the camera follows; at its own projected pixel
+              // once the driver has panned or zoomed away.
+              // Rebuilt by _markerFrame on every frame the marker moves, so
+              // the arrow slides and turns with the ticker rather than with
+              // whatever else happens to rebuild the screen.
+              Positioned.fill(
+                child: ListenableBuilder(
+                listenable: _markerFrame,
+                builder: (context, _) {
+                  if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
+                  final o = _homeDotOffset;
+                  final dot = GoldLocationDotOverlay(bearing: _goldDot.bearing);
+                  const half = GoldLocationDot.driverOverlaySize / 2;
+                  if (o == null) return Center(child: dot);
+                  return Stack(children: [
+                    Positioned(left: o.dx - half, top: o.dy - half, child: dot),
+                  ]);
+                },
+              )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _homeMapSurface(LatLng pos) {
     return RepaintBoundary(
       child: mapbox.MapWidget(
         styleUri: MapboxConfig.styleDark,
@@ -1479,6 +1770,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             debugPrint('[DriverMap] onStyleLoaded error: $e');
           }
         },
+        onScrollListener: (_) => _onHomeMapPanned(),
+        // The camera state is pushed to us here, so the projection never has
+        // to ask for it — asking would put the marker back on the channel
+        // this whole approach exists to get off.
+        onCameraChangeListener: (data) {
+          _homeCamState = data.cameraState;
+          // Repaint the overlay too. Its screen position is derived from
+          // this camera, and the motion ticker parks itself when the driver
+          // stands still — so a driver dragging the map while stopped would
+          // otherwise leave the arrow pinned to a stale pixel while the map
+          // slid out from under it.
+          _markerFrame.value++;
+        },
         // FIX: Catch map load errors
         onMapLoadErrorListener: (err) {
           debugPrint('[DriverMap] Load error: ${err.message} (type: ${err.type})');
@@ -1518,16 +1822,37 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final barH = Responsive.h(84);
 
     if (values.isEmpty) {
-      // Nothing fetched yet. Deliberately not "you earned $0" — an empty axis
-      // and a real zero look identical, and only one of them is true.
+      // Draw the axis immediately, empty.
+      //
+      // This used to be the word "Loading", so the chart arrived in two
+      // steps: a line of text, then a sudden wall of bars once the request
+      // came back. The bars appearing all at once is what reads as slow —
+      // the fetch takes what it takes, but the driver should not watch the
+      // shape of the panel change underneath them.
+      //
+      // The baseline ticks are the same ones a real zero draws, so when the
+      // data lands the bars grow out of them instead of replacing something
+      // else. Nothing here claims an amount: an empty axis says "no numbers
+      // yet", which is true, where "$0" would not be.
       return SizedBox(
-        height: barH,
-        child: Center(
-          child: Text(
-            S.of(context).loading,
-            style: TextStyle(
-                color: dc.textSecondary, fontSize: Responsive.sp(12)),
-          ),
+        height: barH + Responsive.h(6) + Responsive.sp(11),
+        child: Column(
+          children: [
+            SizedBox(
+              height: barH,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 0; i < (week ? 7 : 24); i++) ...[
+                    if (i > 0) SizedBox(width: week ? Responsive.w(7) : 2),
+                    Expanded(child: _chartBar(barH * 0.03, week, false)),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(height: Responsive.h(6)),
+            _chartLabels(dc, week),
+          ],
         ),
       );
     }
@@ -1553,17 +1878,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 // fine on one device and collapses to nothing on another.
                 // barH is known right here, so the arithmetic is done here.
                 Expanded(
-                  child: Container(
-                    // A floor of 3%, so an hour that earned nothing still
-                    // draws a baseline tick. Without it the axis has holes in
-                    // it and reads as broken rather than as empty.
-                    height: barH *
-                        (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
-                    decoration: BoxDecoration(
-                      color:
-                          i == nowIdx ? _gold : _gold.withValues(alpha: 0.30),
-                      borderRadius: BorderRadius.circular(week ? 4 : 2),
-                    ),
+                  // A floor of 3%, so an hour that earned nothing still
+                  // draws a baseline tick. Without it the axis has holes in
+                  // it and reads as broken rather than as empty.
+                  child: _chartBar(
+                    barH * (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
+                    week,
+                    i == nowIdx,
                   ),
                 ),
               ],
@@ -1573,6 +1894,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         SizedBox(height: Responsive.h(6)),
         _chartLabels(dc, week),
       ],
+    );
+  }
+
+  /// One bar. Slim on purpose.
+  ///
+  /// The bars used to take the full column width, which on the seven-bar week
+  /// view made them wide blocks — a bar chart reads as data when the bar is
+  /// thinner than the space around it, and as a bar chart of nothing in
+  /// particular when it is not. Capped rather than fractional so the week and
+  /// the day views end up with the same weight of line despite having seven
+  /// bars against twenty-four.
+  Widget _chartBar(double height, bool week, bool isNow) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SizedBox(
+        width: week ? Responsive.w(10) : Responsive.w(4),
+        child: Container(
+          height: height,
+          decoration: BoxDecoration(
+            color: isNow ? _gold : _gold.withValues(alpha: 0.30),
+            borderRadius: BorderRadius.circular(week ? 3 : 2),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1801,15 +2146,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Scheduled rides marketplace
+        // Notifications.
+        //
+        // This was the scheduled-rides calendar. The badge that mattered here
+        // was never "how many jobs exist in the marketplace" — it was "how
+        // many things are waiting for you", and that is the inbox. Scheduled
+        // rides keep their own entry in the menu, where a browsing
+        // destination belongs.
         _glassBtn(
-          Icons.event_note_rounded,
-          badge: _scheduledAvailableCount > 0 ? _scheduledAvailableCount : null,
+          Icons.notifications_none_rounded,
+          badge: _unreadCount > 0 ? _unreadCount : null,
           onTap: () {
             HapticService.selectionClick();
-            Navigator.of(context).push(
-              slideFromRightRoute(const ScheduledRidesScreen()),
-            );
+            Navigator.of(context)
+                .push(slideFromRightRoute(const DriverInboxScreen()));
           },
         ),
 
@@ -1823,7 +2173,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// figure the driver is looking at. Two periods here instead of three:
   /// the home screen never fetches a last-trip total.
   Widget _earningsPill() {
-    const pillBorder = Color(0x0FFFFFFF); // white @ 6%
     const pillText = Colors.white;
     const pillSub = Colors.white38;
     const dotActive = Colors.white;
@@ -1838,14 +2187,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final pageCount = amounts.length;
     final safePage = _earningsPage.clamp(0, pageCount - 1);
 
+    // No plate behind the figure.
+    //
+    // It used to sit on a blurred, bordered slab. Standing still that is a
+    // pill; the moment the driver swipes it, the slab is a rectangle sliding
+    // over the map with its own edges and its own blur, and the eye follows
+    // the box instead of the number that changed. The amount is white on a
+    // dark map and needs no help being read — so the container goes and only
+    // the type travels.
     Widget pillPage(double amount, double prevAmount, String label) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
+      return SizedBox(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: neuBox(radius: 20, borderColor: pillBorder),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1894,7 +2247,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ],
             ),
           ),
-        ),
       );
     }
 
@@ -1909,22 +2261,51 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (details.primaryVelocity == null) return;
         if (details.primaryVelocity! < -200 && safePage < pageCount - 1) {
           HapticService.selectionClick();
-          setState(() => _earningsPage = safePage + 1);
+          setState(() {
+            _earningsSwipeForward = true;
+            _earningsPage = safePage + 1;
+          });
         } else if (details.primaryVelocity! > 200 && safePage > 0) {
           HapticService.selectionClick();
-          setState(() => _earningsPage = safePage - 1);
+          setState(() {
+            _earningsSwipeForward = false;
+            _earningsPage = safePage - 1;
+          });
         }
       },
       child: SizedBox(
         width: 160,
         height: 52,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          reverseDuration: const Duration(milliseconds: 300),
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
-          transitionBuilder: (child, animation) =>
-              FadeTransition(opacity: animation, child: child),
+          duration: const Duration(milliseconds: 380),
+          reverseDuration: const Duration(milliseconds: 380),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          // Slide as well as fade, and in the direction the thumb went.
+          //
+          // A pure crossfade says "this number was replaced". A short travel
+          // says "you moved to the one next door", which is what a swipe
+          // means — and it is the difference between the change reading as
+          // a glitch and as a gesture. layoutBuilder stacks the outgoing and
+          // incoming pages so neither shoves the other while they cross.
+          transitionBuilder: (child, animation) {
+            final incoming = child.key == ValueKey<int>(safePage);
+            final dir = _earningsSwipeForward ? 1.0 : -1.0;
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: Offset(incoming ? 0.35 * dir : -0.35 * dir, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.center,
+            children: [...previous, if (current != null) current],
+          ),
           child: Center(
             key: ValueKey<int>(safePage),
             child: pillPage(
@@ -2077,10 +2458,54 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  // ── GO button geometry, both ends of the morph ──
+  static const double _kGoPillH = 56.0;
+  static const double _kGoCircleD = 74.0;
+  static const double _kGoSideInset = 20.0;
+
+  /// The GO button, morphing between two shapes as the sheet is dragged.
+  ///
+  /// Open, it is the wide pill at the foot of the sheet — the one action the
+  /// panel offers. Closed, there is no sheet to sit in, so it becomes the
+  /// round GO hovering over the map.
+  ///
+  /// Both are the same widget travelling, not two widgets swapping. Every
+  /// property — width, height, corner radius, height above the screen floor,
+  /// and which of the two labels is showing — is read straight off
+  /// [panelExtent], the same 0-to-1 the drag already produces. So it is not
+  /// an animation that plays after the gesture: it IS the gesture. Let go
+  /// halfway and the button is halfway, and the panel's own spring carries
+  /// both the rest of the way together.
+  Widget _buildMorphingGoButton(EdgeInsets pad) {
+    final t = panelExtent; // 0 = closed circle, 1 = open pill
+    final screenW = MediaQuery.of(context).size.width;
+
+    final width = ui.lerpDouble(_kGoCircleD, screenW - _kGoSideInset * 2, t)!;
+    final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
+    final radius = ui.lerpDouble(_kGoCircleD / 2, 16.0, t)!;
+
+    // Closed: floating clear of the sheet's rounded top. Open: resting on the
+    // sheet's floor, above the home indicator.
+    final bottomClosed = _panelCollapsedH + 20;
+    final bottomOpen = pad.bottom + 14;
+    final bottom = ui.lerpDouble(bottomClosed, bottomOpen, t)!;
+
+    return Positioned(
+      bottom: bottom,
+      left: (screenW - width) / 2,
+      width: width,
+      height: height,
+      child: FadeTransition(
+        opacity: _fabScale,
+        child: _buildGoButton(radius: radius, morph: t),
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
-  Widget _buildGoButton() {
+  Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
     final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: _isVerified
@@ -2089,7 +2514,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               await _ensureVerified();
             },
       child: AnimatedBuilder(
-        animation: Listenable.merge([_pulseAnim, _btnColorAnim, _glossCtrl]),
+        animation:
+            Listenable.merge([_pulseAnim, _btnColorAnim, _glossCtrl, _radarCtrl]),
         builder: (_, __) {
           final p = _pulseAnim.value;
           final g = _glossCtrl.value;
@@ -2097,25 +2523,57 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           // Disabled when docs missing or not verified — sunken neu well.
           final enabled = _isVerified && docsOk;
 
-          const goldTop1 = Color(0xFFF0D060);
-          const goldTop2 = Color(0xFFF5DC7A);
-          const goldBot = Color(0xFFD4A800);
+          // Graphite body, gold lettering — the reverse of the old gold
+          // slab with black type. The gold is now the thing that moves and
+          // glows (the word, the radar, the rim light) against a still,
+          // neutral body, which is what lets the radar read at all: rings
+          // of gold over gold were invisible.
+          //
+          // Still breathing with the pulse, just narrower: a body this dark
+          // shows a large swing as flicker rather than as a heartbeat.
+          const greyTop1 = Color(0xFF32323C);
+          const greyTop2 = Color(0xFF3A3A46);
+          const greyBot = Color(0xFF1E1E26);
 
-          final topColor = Color.lerp(goldTop1, goldTop2, p)!;
-          final botColor = goldBot;
+          final topColor = Color.lerp(greyTop1, greyTop2, p)!;
+          final botColor = greyBot;
           final glowColor = _gold;
 
-          final fgColor = enabled ? Colors.black87 : dc.textSecondary;
+          final fgColor = enabled ? _gold : dc.textSecondary;
 
           return ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(radius),
             child: Stack(
               children: [
+                // Radar sweep — only while the button is the round GO.
+                //
+                // Faded out by `morph` rather than switched off, so it thins
+                // away as the circle stretches into the pill instead of
+                // vanishing at some threshold mid-gesture. Rings on a pill
+                // read as a glitch; rings appearing and disappearing under
+                // the driver's thumb read as a worse one.
+                if (enabled && morph < 0.98)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: (1 - morph).clamp(0.0, 1.0),
+                        child: CustomPaint(
+                          painter: _GoRadarPainter(
+                            progress: _radarCtrl.value,
+                            color: glowColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ui.lerpDouble(0, 28, morph)!,
+                    vertical: ui.lerpDouble(0, 13, morph)!,
+                  ),
                   decoration: enabled
                       ? BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(radius),
                           boxShadow: [
                             BoxShadow(
                               color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
@@ -2178,21 +2636,58 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         ),
                         const SizedBox(width: 10),
                       ],
-                      Text(
-                        _isNavigatingToOnline
-                            ? 'GOING ONLINE...'
-                            : _isVerified
-                                ? (!docsOk
-                                    ? (_hasExpiredDocs ? 'EXPIRED DOCS' : 'DOCUMENTS')
-                                    : (_activeTripData != null || _isStillOnline)
-                                        ? S.of(context).resumeOnline
-                                        : S.of(context).goOnline)
-                                : S.of(context).verifyFirst,
-                        style: TextStyle(
-                          color: fgColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
+                      // Two labels crossing over, not one label changing.
+                      //
+                      // The circle has room for "GO" and nothing else, the
+                      // pill wants the full sentence. Swapping the string at
+                      // some point in the drag would pop; overlapping them
+                      // and trading opacity means that mid-gesture you see
+                      // both faintly, which is what a shape becoming another
+                      // shape should look like. Stacked so neither reflows
+                      // the row as it fades.
+                      Flexible(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Opacity(
+                              opacity: (1 - morph * 1.6).clamp(0.0, 1.0),
+                              child: Text(
+                                'GO',
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: fgColor,
+                                  fontSize: ui.lerpDouble(22, 14, morph),
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                            Opacity(
+                              opacity: ((morph - 0.35) / 0.65).clamp(0.0, 1.0),
+                              child: Text(
+                                _isNavigatingToOnline
+                                    ? 'GOING ONLINE...'
+                                    : _isVerified
+                                        ? (!docsOk
+                                            ? (_hasExpiredDocs
+                                                ? 'EXPIRED DOCS'
+                                                : 'DOCUMENTS')
+                                            : (_activeTripData != null ||
+                                                    _isStillOnline)
+                                                ? S.of(context).resumeOnline
+                                                : S.of(context).goOnline)
+                                        : S.of(context).verifyFirst,
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                style: TextStyle(
+                                  color: fgColor,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -2224,6 +2719,49 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// The sheet's direction hint: `^` closed, `v` open.
+  ///
+  /// Rotated by [panelExtent] rather than by its own animation, so it turns
+  /// with the drag and not after it. Halfway up the sheet the arrow is on
+  /// its side — which is exactly what "you are between the two" should look
+  /// like, and something a swap of two icons could never show.
+  ///
+  /// It also drags: the gesture is the same one the handle above it takes,
+  /// so a thumb landing on the arrow does the obvious thing instead of
+  /// nothing. Tapping snaps to the other end.
+  Widget _buildPanelChevron(DriverColors dc) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticService.selectionClick();
+        animatePanelTo(panelExtent > 0.5 ? 0.0 : 1.0);
+      },
+      onVerticalDragStart: (_) => setState(() => _dragging = true),
+      onVerticalDragUpdate: (d) {
+        setState(() => _dragging = true);
+        updatePanelDrag(d.primaryDelta ?? 0);
+      },
+      onVerticalDragEnd: (d) {
+        setState(() => _dragging = false);
+        endPanelDrag(d.primaryVelocity ?? 0);
+      },
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: Transform.rotate(
+            angle: math.pi * panelExtent,
+            child: Icon(
+              Icons.keyboard_arrow_up_rounded,
+              color: dc.textSecondary,
+              size: 30,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2332,51 +2870,39 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             : S.of(context).youreOffline,
                         style: TextStyle(
                           color: dc.text,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
                         ),
                       ),
                     ],
                   ),
                   const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      HapticService.selectionClick();
-                      Navigator.of(context).push(
-                        slideFromRightRoute(const DriverTripHistoryScreen()),
-                      );
-                    },
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: neuBox(radius: 14, pressed: true),
-                      child: Icon(
-                        Icons.format_list_bulleted_rounded,
-                        color: dc.textSecondary,
-                        size: 20,
-                      ),
-                    ),
-                  ),
+                  // A chevron that tells you which way the sheet goes.
+                  //
+                  // This was a list button opening trip history — a second
+                  // destination competing with the sheet's own handle for a
+                  // thumb that is already there to drag. The affordance the
+                  // spot needs is "there is more, pull it up", so that is
+                  // what it shows now: an arrow that turns over as the sheet
+                  // opens, so it always points the way it will next travel.
+                  _buildPanelChevron(dc),
                 ],
               ),
             ),
             ),
-            // ── GO ONLINE — always visible, collapsed or open ──
+            // The GO button used to sit here, inside the column.
             //
-            // Sits below the status row rather than floating over the map. The
-            // status line says what state the driver is in; the button is how
-            // they change it, so the two belong together. Full width because
-            // it is the only action on this panel.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 2, 20, 14),
-              child: FadeTransition(
-                opacity: _fabScale,
-                child: SizedBox(
-                  width: double.infinity,
-                  child: _buildGoButton(),
-                ),
-              ),
-            ),
+            // It cannot any more: it has to travel out of the panel and hover
+            // over the map when the sheet closes, and a child cannot leave
+            // its parent. It lives in the screen's Stack now — see
+            // _buildMorphingGoButton — and this space is what it occupies
+            // when the sheet is open.
+            // Scaled by the drag, not a fixed reservation. Held at full
+            // height it would leave a 72 px band of nothing in the collapsed
+            // sheet — the button is not there any more, it is hovering over
+            // the map — and the sheet would look like it had lost something.
+            SizedBox(height: (_kGoPillH + 16) * panelExtent),
 
             // ── Panel content — hidden when collapsed; fades/slides in
             // proportionally to the drag for a fluid open gesture ──
@@ -2820,6 +3346,44 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _unsuspendMap() {
     if (!_mapSuspended || !mounted) return;
     if (ModalRoute.of(context)?.isCurrent != true) return;
+    unawaited(_acquireMapSurface());
+  }
+
+  /// Claim the one live Mapbox surface, then bring our map back.
+  ///
+  /// Going through the coordinator rather than flipping the flag closes the
+  /// case the isCurrent guard above cannot see: we can be the top route
+  /// while the screen that just left is still tearing its PlatformView
+  /// down. Remounting into that overlap is the same two-surface crash,
+  /// arrived at from the other direction.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _kHomeMapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || _mapSuspended) return;
+        _suspendMap();
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_kHomeMapSurfaceOwner);
+      return;
+    }
+    // Only remount if we are the visible route. A trip screen that ends with
+    // pushAndRemoveUntil hands straight over to a new online screen without
+    // ever popping back to us; mounting there would fight it for the surface.
+    //
+    // One retry, because didPopNext fires as the pop begins: on a 300 ms
+    // transition we can still be behind the outgoing route at this point,
+    // and giving up silently is how the driver returns from a menu to a
+    // black card that never comes back.
+    if (ModalRoute.of(context)?.isCurrent != true) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) {
+        MapSurfaceCoordinator.instance.release(_kHomeMapSurfaceOwner);
+        return;
+      }
+    }
     setState(() => _mapSuspended = false);
   }
 
@@ -3036,4 +3600,70 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             sb * sb;
     return r * 2 * math.atan2(math.sqrt(aa), math.sqrt(1 - aa));
   }
+}
+
+/// The radar inside the round GO button.
+///
+/// Three rings expanding out of the centre, staggered a third of a cycle
+/// apart and fading as they grow, so there is always one leaving and one
+/// arriving — a pulse with no gap in it. Drawn rather than animated with
+/// widgets because it is three circles: a stack of AnimatedContainers for
+/// that would cost three elements and a layout pass per frame to say the
+/// same thing.
+///
+/// [progress] is a 0-to-1 that already loops; the painter adds the stagger,
+/// so the button does not need three controllers of its own.
+class _GoRadarPainter extends CustomPainter {
+  const _GoRadarPainter({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centre = Offset(size.width / 2, size.height / 2);
+    final maxR = size.shortestSide / 2;
+    if (maxR <= 0) return;
+
+    // The band the rings live in: clear of the lettering at the centre,
+    // clear of the rim at the edge.
+    //
+    // A ring that crosses the word cuts through it — the two are the same
+    // gold and there is no depth to tell them apart. A ring that reaches
+    // the rim gets sliced flat by the clip, which turns a circle into an
+    // arc for the last of its life. Both ends are held off deliberately.
+    const inner = 0.62;
+    const outer = 0.90;
+
+    for (int i = 0; i < 3; i++) {
+      final t = (progress + i / 3.0) % 1.0;
+      // Ease out: quick at birth, drifting by the time it fades. A ring
+      // travelling at constant speed reads as mechanical; this is what
+      // makes a slow animation feel unhurried rather than merely slow.
+      final e = 1.0 - math.pow(1.0 - t, 2.2).toDouble();
+      final r = maxR * (inner + (outer - inner) * e);
+
+      // Fade in over the first sliver so a ring never pops into existence
+      // on top of the word, then fade out squared so it reads as leaving
+      // rather than as being switched off.
+      final fadeIn = (t / 0.12).clamp(0.0, 1.0);
+      final a = fadeIn * (1.0 - e) * (1.0 - e) * 0.5;
+      if (a <= 0.01) continue;
+
+      canvas.drawCircle(
+        centre,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          // Thinning as it travels: a ring keeping its weight while it
+          // grows looks like it is being drawn, not like it is spreading.
+          ..strokeWidth = 1.8 - 0.9 * e
+          ..color = color.withValues(alpha: a),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GoRadarPainter old) =>
+      old.progress != progress || old.color != color;
 }

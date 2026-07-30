@@ -39,6 +39,10 @@ import '../../utils/smooth_motion.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
+import '../../map/flat_map_projection.dart';
+import '../../map/map_surface_coordinator.dart';
+import '../../services/resilient_position_stream.dart';
+import '../../utils/driver_location_settings.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
@@ -148,7 +152,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _previewPickupAnnot;
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
   LatLng? _pos;
-  StreamSubscription<Position>? _posStream;
+  ResilientPositionStream? _posStream;
   final _gpsService = GpsService();
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
@@ -347,6 +351,30 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _dotWatchdog;
   bool _smoothTickerStarted = false; // first start is deferred, restarts aren't
   bool _annotUpdateBusy = false; // prevents overlapping annotation update() IPC calls
+
+  /// True once the native gold dot has been flushed to invisible, so the
+  /// per-frame path can stop re-sending the same hide.
+  bool _goldDotHidden = false;
+
+  /// True only on the deliberate go-offline exit, so dispose() can tell it
+  /// apart from every other way this screen is left. See dispose().
+  bool _leavingOffline = false;
+
+  /// A camera write is crossing the platform channel. See _writeCamera.
+  bool _camWriteBusy = false;
+
+  /// The camera as Mapbox last reported it, pushed to us by
+  /// onCameraChangeListener so the projection never has to ask for it.
+  mapbox.CameraState? _onlineCamState;
+
+  /// Size of the map box, measured from its own layout.
+  Size? _onlineMapSize;
+
+  /// Ticks once per animation frame so the Flutter marker repaints with the
+  /// motion. The screen's own setState is throttled to ~15 fps to keep the
+  /// panels responsive — right for panels, far too slow for an arrow
+  /// turning through a bend. This repaints only the marker.
+  final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
   bool _annotCreateBusy = false; // prevents parallel create/delete (stricter than update)
   bool _isClearingAnnotations = false; // prevents create during clear
   // Monotonically incremented generation counter captured when each
@@ -392,6 +420,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
+
+  /// When the driver last dragged the map. The auto-recentre is scheduled
+  /// from this, so it lands ten seconds after they stop, not ten seconds
+  /// after they start.
+  DateTime? _lastMapPanAt;
   Timer? _reFollowTimer;
 
   // â”€â”€ Draggable panel â”€â”€
@@ -558,11 +591,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
     _boot();
 
-    // Mount the MapWidget immediately — the 150ms delay was causing a
-    // blank dark blue screen. The map now renders tiles right away.
-    // Heavy annotation manager creation is moved to Future.microtask
-    // inside onMapCreated so tiles render first, annotations after.
-    _mapMounted = true;
+    // Mount the MapWidget as soon as the surface is ours. It used to be set
+    // true right here — but this screen is entered from the home screen,
+    // which still has its own map up, and from the trip screen, which is
+    // tearing one down. Claiming through the coordinator keeps the tiles
+    // essentially as immediate (the home map releases in a couple of
+    // frames) without ever overlapping the map we are replacing.
+    unawaited(_acquireMapSurface().then((_) {
+      if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
+    }));
   }
 
   bool _appInForeground = true;
@@ -594,6 +631,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       DriverBackgroundService().start();
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
+      // Before anything else: the location stream may not have survived the
+      // background. Everything on this screen — the dot, the heartbeat that
+      // keeps the driver online, the offers that depend on being findable —
+      // is downstream of it.
+      _posStream?.onAppResumed();
       _stopBackgroundHeartbeat();
       DriverBackgroundService().stop();
       // Reset sound guards so offer sounds play correctly after app resumes
@@ -641,8 +683,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _dotWatchdog?.cancel();
     _goldDot.dispose();
     _driverPhotoImage?.dispose();
-    _posStream?.cancel();
-    _gpsService.stopTracking();
+    _markerFrame.dispose();
+    MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);
+    unawaited(_posStream?.stop());
+    // Only when the driver actually went offline.
+    //
+    // This ran unconditionally, so tapping Home — which pops with
+    // stillOnline: true and is meant to change nothing — silenced the
+    // position uploads on the way out. The backend still counted the driver
+    // as online, riders would have watched a car that never moved again, and
+    // the ghost agent would have forced them offline for going quiet. Going
+    // to look at your home screen is not going off shift.
+    if (_leavingOffline) _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
@@ -934,8 +986,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final fabBorder = isDark
         ? const Color(0xFFE8C547).withValues(alpha: 0.18)
         : Colors.black.withValues(alpha: 0.06);
+    // Same colour the home screen's top buttons use.
+    //
+    // These were gold, which on this screen put them in direct competition
+    // with the things that actually mean something in gold: the driver's
+    // own arrow, the route, the GO button, an offer arriving. Controls are
+    // not events. Neutral here, gold reserved for what is happening.
     final fabIcon = isDark
-        ? const Color(0xFFE8C547)
+        ? Colors.white
         : Colors.black.withValues(alpha: 0.65);
     final textPrimary = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final textMuted = isDark
@@ -984,7 +1042,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 left: 16,
                 child: _enterTopWrap(
                   _fab(
-                    Icons.arrow_back_ios_new_rounded,
+                    // A house, not a back arrow. The driver is not undoing a
+                    // step — they are going to look at the home screen while
+                    // staying exactly as online as they were. _goBack pops
+                    // with stillOnline: true and stops nothing: not the GPS,
+                    // not the marker, not the shift.
+                    Icons.home_rounded,
                     48,
                     fabBg,
                     fabBorder,
@@ -1024,10 +1087,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
-                        slideFromRightRoute(
-                          const ScheduledRidesScreen(initialTab: 0),
-                        ),
-                      ).then((_) => _fetchScheduledCount());
+                        slideFromRightRoute(const DriverInboxScreen()),
+                      );
                     },
                     child: Container(
                       width: 48,
@@ -1056,11 +1117,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          const Center(
+                          Center(
                             child: Icon(
-                              Icons.calendar_today_rounded,
+                              Icons.notifications_none_rounded,
                               size: 22,
-                              color: Color(0xFFE8C547),
+                              color: fabIcon,
                             ),
                           ),
                           if (_scheduledAvailCount > 0)
@@ -1171,15 +1232,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 child: Column(
                   children: [
                     _fab(
-                      Icons.shield_outlined,
+                      Icons.calendar_today_rounded,
                       44,
                       fabBg,
                       fabBorder,
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        slideFromRightRoute(const SafetyScreen()),
-                      ),
+                        slideFromRightRoute(
+                          const ScheduledRidesScreen(initialTab: 0),
+                        ),
+                      ).then((_) => _fetchScheduledCount()),
                       stagger: 0,
                     ),
                   ],
@@ -1190,43 +1253,40 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 right: 16,
                 child: Column(
                   children: [
+                    // Safety, where promotions used to be. The chat button
+                    // that led this column is gone — it opened the same inbox
+                    // the notifications button at the top now owns, and one
+                    // destination does not need two doors on one screen.
                     _fab(
-                      Icons.message_outlined,
+                      Icons.health_and_safety_outlined,
                       44,
                       fabBg,
                       fabBorder,
                       fabIcon,
                       () => Navigator.push(
                         context,
-                        slideFromRightRoute(const DriverInboxScreen()),
+                        slideFromRightRoute(const SafetyScreen()),
                       ),
                       stagger: 1,
                     ),
                     const SizedBox(height: 10),
+                    // Recentre, where analytics used to be.
+                    //
+                    // The map lets the driver drag it away and hands the
+                    // camera back after ten seconds of stillness — but ten
+                    // seconds is a long time to wait for your own position,
+                    // and there was no way to ask for it. Now there is.
                     _fab(
-                      Icons.campaign_rounded,
+                      Icons.gps_fixed_rounded,
                       44,
                       fabBg,
                       fabBorder,
                       fabIcon,
-                      () => Navigator.push(
-                        context,
-                        slideFromRightRoute(const DriverPromosScreen()),
-                      ),
+                      () {
+                        HapticService.selectionClick();
+                        _recenterCamera();
+                      },
                       stagger: 2,
-                    ),
-                    const SizedBox(height: 10),
-                    _fab(
-                      Icons.bar_chart_rounded,
-                      44,
-                      fabBg,
-                      fabBorder,
-                      fabIcon,
-                      () => Navigator.push(
-                        context,
-                        slideFromRightRoute(const DriverAnalyticsScreen()),
-                      ),
-                      stagger: 3,
                     ),
                   ],
                 ),

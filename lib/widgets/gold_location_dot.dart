@@ -34,12 +34,58 @@ class GoldLocationDot {
   static const Color _gold = Color(0xFFE8C547);
   static const Color _body = Color(0xFF07070A);
   static const double _canvasSize = 160.0;
+
+  /// Exposed so [GoldLocationDotOverlay] scales into the same coordinate
+  /// space the bitmap is drawn in.
+  static const double canvasSize = _canvasSize;
+
+  // ── Driver marker size ────────────────────────────────────────────────
+  //
+  // The arrow is drawn two different ways — a Flutter overlay while the
+  // marker is smooth, a Mapbox annotation while it is not — and the driver
+  // crosses between them by dragging the map. If the two disagree on size
+  // the arrow visibly grows or shrinks at that moment, which reads as a
+  // glitch. So both come from one number here.
+  //
+  // [driverScale] is the only knob: raise it and both techniques follow.
+
+  /// The size the overlay was matched to the annotation at, before scaling.
+  static const double _driverBaseSize = 44.0;
+
+  /// How much larger than that baseline the driver's arrow is drawn.
+  static const double driverScale = 1.45;
+
+  /// Width of the Flutter overlay, in logical pixels.
+  static const double driverOverlaySize = _driverBaseSize * driverScale;
+
+  /// `iconSize` for the Mapbox annotation, so it lands at the same size.
+  static const double driverIconSize = driverScale;
   /// Outer edge of the marker.
   static const double _dotR = 20.0;
   /// The plain dot is smaller than the badge — it has no arrow to hold.
   static const double _plainDotR = 18.0;
 
   final SmoothMotion _motion = SmoothMotion();
+
+  /// The rasterised marker, cached for the life of the process.
+  ///
+  /// There are exactly two of these in the whole app — the plain dot and the
+  /// heading badge — and both are constant images. The arrow is drawn once
+  /// pointing north and *turned by the map* via `iconRotate`, so nothing
+  /// about a driver moving, turning or changing screens changes a pixel.
+  ///
+  /// Yet every screen that showed a marker rasterised its own copy, and
+  /// every one of those was a chance to fail: encoding a PNG needs the GPU,
+  /// and the GPU is exactly what is unreliable while backgrounding or under
+  /// memory pressure. A failure there left `_frame` null, every draw became
+  /// a silent no-op, and the driver's arrow was simply absent until
+  /// something retried.
+  ///
+  /// Keyed by [heading] because that is the only thing that varies. After
+  /// the first successful raster of each look, no screen ever rasterises
+  /// again — the failure this class kept recovering from can happen at most
+  /// once per launch instead of once per screen.
+  static final Map<bool, Uint8List> _frameCache = <bool, Uint8List>{};
 
   Uint8List? _frame;
   Ticker? _ticker;
@@ -86,7 +132,32 @@ class GoldLocationDot {
   /// [vsync] must stay alive for the lifetime of the dot (usually the
   /// hosting [State] with `TickerProviderStateMixin`). [onTick] is called
   /// whenever the position changes and the annotation needs a redraw.
-  Future<void> build(TickerProvider vsync, VoidCallback onTick) async {
+  /// Fired on every frame the marker actually moved, ahead of the throttle.
+  ///
+  /// [onTick] is rate-limited because it writes to a Mapbox annotation and
+  /// that traffic has to be paced. Repainting a Flutter widget does not —
+  /// it is the cheapest thing in the frame, and it is what makes the arrow
+  /// turn smoothly through a bend instead of in steps. Two callbacks
+  /// because they answer to two different constraints.
+  VoidCallback? _onFrame;
+
+  Future<void> build(
+    TickerProvider vsync,
+    VoidCallback onTick, {
+    VoidCallback? onFrame,
+  }) async {
+    _onFrame = onFrame;
+    // Already rasterised once in this process — reuse it. This is the path
+    // every screen after the first takes, and it cannot fail: no canvas, no
+    // GPU, no await before the marker is ready.
+    final cached = _frameCache[heading];
+    if (cached != null) {
+      _frame = cached;
+      _startTicker(vsync, onTick);
+      return;
+    }
+
+
     // Render a single static frame — no sprite atlas, no 90-frame loop.
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(
@@ -113,11 +184,19 @@ class GoldLocationDot {
       img.dispose();
       if (data == null || _isDisposing) return;
       _frame = data.buffer.asUint8List();
+      _frameCache[heading] = _frame!;
     } catch (e) {
       debugPrint('[GoldLocationDot] frame render failed: $e');
       return; // isReady stays false; the caller may build() again later
     }
 
+    _startTicker(vsync, onTick);
+  }
+
+  /// Drive the marker from vsync. Split out of [build] so the cached path
+  /// — which does no rasterising at all — starts the ticker the same way.
+  void _startTicker(TickerProvider vsync, VoidCallback onTick) {
+    // _onFrame is set by build() before this runs.
     _lastElapsed = Duration.zero;
     _onTick = onTick;
     _vsync = vsync;
@@ -131,6 +210,9 @@ class GoldLocationDot {
 
         final posChanged = _motion.tick(dtSec);
         if (!posChanged) return;
+
+        // Unthrottled: the overlay repaints with the frame.
+        _onFrame?.call();
 
         final now = DateTime.now();
         if (_lastTickAt != null &&
@@ -151,6 +233,12 @@ class GoldLocationDot {
   }
 
   /// The classic marker: gold core, white ring, soft white halo.
+  static void paintPlainDot(Canvas canvas, Offset center) =>
+      _paintPlainDot(canvas, center);
+
+  static void paintHeadingBadge(Canvas canvas, Offset center) =>
+      _paintHeadingBadge(canvas, center);
+
   static void _paintPlainDot(Canvas canvas, Offset center) {
     canvas.drawCircle(
       center,
@@ -250,4 +338,89 @@ class GoldLocationDot {
     _onTick = null;
     _vsync = null;
   }
+}
+
+/// The same marker as [GoldLocationDot], painted by Flutter instead of being
+/// handed to Mapbox as an image.
+///
+/// A point annotation can only move as fast as the platform channel lets it:
+/// the driver screen writes fresh geometry every frame but can only flush
+/// when the previous round trip has landed, so on a busy channel the marker
+/// advances ten or fifteen times a second while the map under it renders at
+/// sixty. That difference is the stepping a driver sees while walking.
+///
+/// Whenever the camera is following the driver, the marker does not actually
+/// move across the screen at all — the map slides underneath it. So there is
+/// nothing to send: paint it in Flutter at the point the camera centres on
+/// and it glides at the display's own rate, with no channel involved.
+///
+/// It also cannot fail. There is no PNG to rasterise, no annotation manager
+/// to be ready, and no native object to die with the map surface — the three
+/// things the watchdog on the driver screens exists to recover from.
+class GoldLocationDotOverlay extends StatelessWidget {
+  const GoldLocationDotOverlay({
+    super.key,
+    required this.bearing,
+    this.heading = true,
+    this.size = GoldLocationDot.driverOverlaySize,
+  });
+
+  /// Degrees clockwise from north, already smoothed by SmoothMotion.
+  final double bearing;
+
+  /// Match [GoldLocationDot.heading]: arrow badge vs plain dot.
+  final bool heading;
+
+  /// Rendered width. The painter draws into the same 160-unit canvas the
+  /// bitmap uses and is scaled down, so both looks stay identical.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _GoldDotOverlayPainter(bearing: bearing, heading: heading),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoldDotOverlayPainter extends CustomPainter {
+  const _GoldDotOverlayPainter({required this.bearing, required this.heading});
+
+  final double bearing;
+  final bool heading;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // The shared painters draw in absolute coordinates on a 160x160 canvas.
+    // Scale into whatever box we were given so the overlay and the bitmap
+    // are the same drawing at different sizes.
+    final scale = size.width / GoldLocationDot.canvasSize;
+    canvas.save();
+    canvas.scale(scale);
+    const center = Offset(
+      GoldLocationDot.canvasSize / 2,
+      GoldLocationDot.canvasSize / 2,
+    );
+    if (heading) {
+      // The bitmap is rotated by Mapbox via iconRotate; here we rotate the
+      // canvas ourselves, around the same centre.
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(bearing * math.pi / 180.0);
+      canvas.translate(-center.dx, -center.dy);
+      GoldLocationDot.paintHeadingBadge(canvas, center);
+    } else {
+      GoldLocationDot.paintPlainDot(canvas, center);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_GoldDotOverlayPainter old) =>
+      old.bearing != bearing || old.heading != heading;
 }

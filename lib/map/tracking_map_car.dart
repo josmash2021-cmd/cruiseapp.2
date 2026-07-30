@@ -275,6 +275,12 @@ class TrackingMapCar {
     _carAnnot = null;
     _carAnnotCreating = false;
     _carPopDone = false;
+    // The hidden flag belonged to the annotation that just died with the
+    // map surface. Left set, setHidden(true) would see nothing to do while
+    // the freshly created annotation is fully opaque underneath the overlay
+    // — two cars, a few frames apart. This happens on every style reload,
+    // which is what iOS does when the rider comes back from another app.
+    _hidden = false;
   }
 
   /// Redimensiona un PNG para usar como icono de mapa
@@ -309,5 +315,38 @@ class TrackingMapCar {
   LatLng get animPos => _animPos;
   double get driverBearing => _driverBearing;
   bool get hasIcon => _carPngBytes != null;
+
+  /// The rendered car, for anyone drawing it outside the map.
+  ///
+  /// While the chase camera holds the car at a fixed point of the screen it
+  /// can be painted by Flutter instead of shipped over the platform channel
+  /// — the channel is the reason the marker advances ten or fifteen times a
+  /// second under a map rendering at sixty. Same bytes either way, so the
+  /// two drawings are the same car.
+  Uint8List? get carBytes => _carPngBytes;
+
+  /// The scale the annotation settles at, so an overlay can match its size.
+  double get carScale => _kCarAnnotScale;
+
+  /// Hide or show the native annotation without destroying it.
+  ///
+  /// Kept alive and kept current underneath the overlay rather than deleted,
+  /// so the instant the chase stops owning the screen it is already in the
+  /// right place with nothing to rebuild.
+  Future<void> setHidden(bool hidden) async {
+    final annot = _carAnnot;
+    final mgr = _carAnnotMgr;
+    if (annot == null || mgr == null) return;
+    if (_hidden == hidden) return;
+    _hidden = hidden;
+    try {
+      annot.iconOpacity = hidden ? 0.0 : 1.0;
+      await mgr.update(annot);
+    } catch (_) {
+      // Left to the next position write, which reasserts it.
+    }
+  }
+
+  bool _hidden = false;
   bool get hasAnnotation => _carAnnot != null;
 }

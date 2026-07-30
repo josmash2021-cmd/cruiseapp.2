@@ -13,6 +13,9 @@ DateTime? _driverOnlineLastStartPolling;
 
 final _htmlTagRe = RegExp(r'<[^>]*>');
 
+/// Identifies this screen to [MapSurfaceCoordinator].
+const String _kMapSurfaceOwner = 'DriverOnline';
+
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
   String _normalizePhotoUrl(dynamic rawUrl) {
@@ -859,7 +862,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPosStream() {
     // Prevent duplicate GPS streams — cancel existing before creating new
-    _posStream?.cancel();
+    unawaited(_posStream?.stop());
     _posStream = null;
 
     // FIX: Ensure Socket.io is initialized so the driver can send GPS
@@ -875,15 +878,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _gpsService.startTracking(_driverId.toString());
     }
 
-    _posStream =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            // distanceFilter: 2 -> fixes every 2 meters.
-            // SmoothMotion still glides smoothly. Balance accuracy/battery.
-            distanceFilter: 2,
-          ),
-        ).listen((pos) {
+    // Background-capable, or an online driver goes silent the moment their
+    // screen locks — which is how the ghost agent ends up logging a working
+    // driver "inactive 21 min" and forcing them offline mid-shift.
+    final s = S.of(context);
+    _posStream = ResilientPositionStream(
+      label: 'DriverOnlineGps',
+      settings: driverLocationSettings(
+        // distanceFilter: 2 -> fixes every 2 meters.
+        // SmoothMotion still glides smoothly. Balance accuracy/battery.
+        distanceFilter: 2,
+        notificationTitle: s.driverLocationNotifTitle,
+        notificationText: s.driverLocationNotifOnline,
+      ),
+      // Re-announce presence the moment the stream is back: while it was
+      // down the ghost agent has been counting this driver as inactive.
+      onFirstFixAfterGap: () {
+        if (_driverId != null) _gpsService.startTracking(_driverId.toString());
+      },
+      onPosition: (pos) {
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
           _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.25);
@@ -965,7 +978,38 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               _smoothedBearing,
             );
           }
-        }, onError: (_) {});
+        },
+    )..start();
+  }
+
+  /// Push one camera frame, latest-wins.
+  ///
+  /// This used to be a bare `_map?.setCamera(...)` fired on every one of the
+  /// sixty ticks a second and never awaited. Each call is a message across
+  /// the platform channel, and the channel does not deliver sixty a second
+  /// while a map is rendering on the other side — so the un-awaited futures
+  /// queued up. A queue is worse than a dropped frame in both ways that
+  /// matter: the camera falls further behind the driver the longer they
+  /// drive, and the backlog lands in bursts, which is the stutter.
+  ///
+  /// Dropping a frame costs nothing here. Every frame is recomputed from
+  /// SmoothMotion, so the next write already carries a newer position than
+  /// the one skipped — there is no information in the frames we discard.
+  /// Same discipline the rider's chase camera uses (TrackingMapCamera).
+  void _writeCamera(mapbox.CameraOptions options) {
+    final map = _map;
+    if (map == null) return;
+    if (_camWriteBusy) return;
+    _camWriteBusy = true;
+    try {
+      map.setCamera(options).then((_) {
+        _camWriteBusy = false;
+      }).catchError((Object _) {
+        _camWriteBusy = false;
+      });
+    } catch (_) {
+      _camWriteBusy = false;
+    }
   }
 
   /// Update turn-by-turn navigation state from GPS position.
@@ -1130,7 +1174,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Skip camera control when offer animation is running or route is previewing
     final isNav = _phase == _Phase.enRouteToPickup || _phase == _Phase.inTrip;
     final offerActive = _isCardAnimating || _previewingOffer != null;
-    if (_phase == _Phase.searching && !offerActive) {
+    // _cameraFollowing is honoured in every phase now. Searching used to
+    // ignore it, so a driver dragging the map while online was overruled
+    // sixty times a second and the view snapped back under their finger.
+    if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working 15.5 over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.
@@ -1143,9 +1190,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         zoom = 16.0 - 0.5 * e;
         if (t >= 1.0) _zoomEaseDone = true;
       }
-      // Smooth camera follow at 60fps — setCamera (instant) so the camera
-      // glides with the interpolated dot position frame-by-frame.
-      _map?.setCamera(
+      _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
@@ -1155,11 +1200,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ),
       );
     } else if (isNav && _cameraFollowing) {
-      // Nav camera follow at 60fps — setCamera (instant) so the car stays
-      // glued to center without jumps. The smoothness comes from _motion.tick()
-      // running every frame, not from easing animations.
       _cameraBearing = _heading;
-      _map?.setCamera(
+      _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
@@ -1169,6 +1211,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ),
       );
     }
+
+    // Repaint the Flutter marker with this frame. Cheap, and the only thing
+    // that makes the overlay follow the motion instead of the 15 fps
+    // setState below.
+    _markerFrame.value++;
 
     // Annotation update every frame — write freshest geometry in-memory
     // (cheap), then flush to Mapbox. The annotation follows the dot exactly.
@@ -1640,7 +1687,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
       // FIX: Cancelar el stream de GPS de DriverOnlineScreen antes de navegar
       // para evitar doble stream cuando DriverTripAcceptScreen cree el suyo.
-      _posStream?.cancel();
+      unawaited(_posStream?.stop());
       _posStream = null;
 
       _setState(() => _pendingOffers = []);
@@ -2143,24 +2190,39 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ),
     );
 
-    // Tear our surface down only once the handoff transition has landed and
-    // the trip screen actually covers us. Unmounting a PlatformView under a
-    // half-transparent route flashes the "Finding trips" placeholder in
-    // the driver's face; the celebration overlay is what hides the swap.
+    // Our surface is no longer dropped on a timer — the trip screen asks
+    // MapSurfaceCoordinator for it, which calls our revoke and waits for it.
+    // What is left here is purely cosmetic: hide the celebration overlay
+    // once the transition has landed, so the swap happens behind it rather
+    // than in the driver's face.
     //
-    // Derived from kTripHandoffMs, not a copied number: this used to be a
-    // hardcoded 500 ms against a 280 ms fade, so lengthening the transition
-    // would have started tearing the map down mid-animation.
+    // Derived from kTripHandoffMs, not a copied number, so lengthening the
+    // transition cannot leave the overlay disappearing mid-animation.
     Future.delayed(const Duration(milliseconds: kTripHandoffMs + 200), () {
       if (!mounted) return;
       // isCurrent means nothing is on top of us anymore — the trip screen
-      // came and went inside the fade window, so keep the map (rule 12).
+      // came and went inside the fade window (rule 12).
       if (ModalRoute.of(context)?.isCurrent == true) return;
       _hideAcceptedOverlay();
-      _releaseMapSurface();
     });
 
     return future;
+  }
+
+  /// Claim the one live Mapbox surface for this screen.
+  ///
+  /// The revoke handed over is what lets whoever comes next — the trip
+  /// screen on accept, a fresh online screen at the end of a ride — take it
+  /// from us and know for certain that we are down before they mount.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _kMapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        _releaseMapSurface();
+        await surfaceRemoved();
+      },
+    );
   }
 
   /// Tear down our native map so the screen on top of us can own the only
@@ -2200,8 +2262,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   /// Bring the canvas back after the screen above us is gone.
-  void _remountMapSurface() {
+  ///
+  /// Through the coordinator, not straight to the flag: on the way back
+  /// from a trip the screen above may still be tearing its own map down,
+  /// and remounting into that overlap is the same crash from the other
+  /// direction.
+  Future<void> _remountMapSurface() async {
     if (_mapMounted || !mounted) return;
+    await _acquireMapSurface();
+    if (!mounted || _mapMounted) return;
     debugPrint('[DriverOnline] remounting map surface');
     _setState(() => _mapMounted = true);
     // onMapCreated redraws the driver annotation; the watchdog re-asserts
@@ -2400,186 +2469,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     );
   }
 
-  Future<void> _showPickupSummary() async {
-    if (_tripId != null) {
-      try {
-        await ApiService.updateTripStatus(
-          tripId: _tripId!,
-          status: 'driver_en_route',
-        );
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    _setState(() {
-      _isPickupSummary = true;
-      _phase = _Phase.routeSummary;
-      _cameraFollowing = false;
-      _navDist = _hav(_pos!, _pickupLL);
-      _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _navInstruct = S.of(context).headToPickup;
-      _navProgress = 0;
-      _slideVal = 0;
-      _slid = false;
-    });
-    _syncSearchPulse();
-    _setPickupDropoffAnnotations();
-    await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fitBounds(_pos!, _pickupLL);
-    });
-  }
 
-  Future<void> _toPickup() async {
-    if (_tripId != null) {
-      try {
-        await ApiService.updateTripStatus(
-          tripId: _tripId!,
-          status: 'driver_en_route',
-        );
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    _setState(() {
-      _phase = _Phase.enRouteToPickup;
-      _cameraFollowing = true;
-      _reFollowTimer?.cancel();
-      _navDist = _hav(_pos!, _pickupLL);
-      _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _navInstruct = S.of(context).headToPickup;
-      _navProgress = 0;
-      _slideVal = 0;
-      _slid = false;
-    });
-    _syncSearchPulse();
-    _setPickupAnnotation();
-    await _drawRoute(_pos!, _pickupLL, 'pickup', _navyRoute);
-    // Fit bounds after frame renders with updated map padding
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fitBounds(_pos!, _pickupLL);
-    });
-  }
 
-  Future<void> _arrivePickup() async {
-    HapticService.mediumImpact();
-    if (_tripId != null) {
-      try {
-        await ApiService.updateTripStatus(tripId: _tripId!, status: 'arrived');
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    _setState(() {
-      _phase = _Phase.arrivedAtPickup;
-      _slideVal = 0;
-      _slid = false;
-    });
-    _syncSearchPulse();
-    _clearRouteAnnotation();
-    _setDropoffAnnotation();
-    _animateToPosition(_pickupLL, zoom: 17);
-  }
 
-  Future<void> _startTrip() async {
-    HapticService.heavyImpact();
 
-    // ── Check if rider confirmed pickup ──
-    bool riderConfirmed = false;
-    if (_tripId != null) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('trips')
-            .doc('sql_$_tripId')
-            .get();
-        riderConfirmed = doc.data()?['rider_confirmed_pickup'] == true;
-      } catch (_) {}
-    }
-    if (!riderConfirmed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(S.of(context).riderNotConfirmedStarting),
-        duration: const Duration(seconds: 2),
-      ));
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-    }
-
-    if (_tripId != null) {
-      try {
-        await ApiService.updateTripStatus(tripId: _tripId!, status: 'in_trip');
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    // Show route summary with Start Navigation button
-    _setState(() {
-      _isPickupSummary = false;
-      _phase = _Phase.routeSummary;
-      _cameraFollowing = false;
-      _reFollowTimer?.cancel();
-      _navDist = _hav(_pos!, _dropoffLL);
-      _navEta = (_navDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _navInstruct = S.of(context).headToDropOff;
-      _navProgress = 0;
-      _slideVal = 0;
-      _slid = false;
-    });
-    _syncSearchPulse();
-    _setDropoffAnnotation();
-    await _drawRoute(_pos!, _dropoffLL, 'trip', _navyRoute);
-    _nearDropoffNotified = false;
-    // Fit bounds after frame renders
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _fitBounds(_pos!, _dropoffLL);
-    });
-  }
-
-  /// User pressed "Start Navigation" from the route summary — begin actual nav.
-  /// If _isPickupSummary, transition to enRouteToPickup; otherwise inTrip.
-  Future<void> _beginNavigation() async {
-    HapticService.heavyImpact();
-
-    if (_isPickupSummary) {
-      // ── Navigate to pickup ──
-      _setState(() {
-        _isPickupSummary = false;
-        _phase = _Phase.enRouteToPickup;
-        _cameraFollowing = true;
-        _reFollowTimer?.cancel();
-        _slideVal = 0;
-        _slid = false;
-      });
-      _syncSearchPulse();
-      _setPickupAnnotation();
-      _cameraBearing = _heading;
-      _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
-      MapLauncherService.prefersInApp().then((inApp) {
-        if (!inApp) {
-          MapLauncherService.navigate(
-            destLat: _pickupLL.latitude,
-            destLng: _pickupLL.longitude,
-          );
-        }
-      });
-    } else {
-      // ── Navigate to dropoff ──
-      _setState(() {
-        _phase = _Phase.inTrip;
-        _cameraFollowing = true;
-        _reFollowTimer?.cancel();
-        _slideVal = 0;
-        _slid = false;
-      });
-      _syncSearchPulse();
-      _setDropoffAnnotation();
-      _cameraBearing = _heading;
-      _animateToPosition(_pos!, zoom: 17.5, bearing: _heading, tilt: 55);
-      MapLauncherService.prefersInApp().then((inApp) {
-        if (!inApp) {
-          MapLauncherService.navigate(
-            destLat: _dropoffLL.latitude,
-            destLng: _dropoffLL.longitude,
-          );
-        }
-      });
-    }
-  }
 
   void _decline() {
     int? toInt(dynamic v) {
@@ -2717,6 +2610,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _offerSseSub?.cancel();
     _clock?.cancel();
     _earningsRefreshTimer?.cancel();
+
+    // Going offline for real — this is the one exit that should silence the
+    // position uploads. Every other way out of this screen leaves the driver
+    // online and must keep them reporting. See dispose().
+    _leavingOffline = true;
 
     final result = {
       'earnings': _earnings,

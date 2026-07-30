@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import '../utils/app_platform.dart';
+import '../config/route_observers.dart';
+import '../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kDebugMode, defaultTargetPlatform, TargetPlatform;
@@ -363,8 +365,19 @@ class _PaymentRetryDialog extends StatelessWidget {
 }
 
 class _RideRequestScreenState extends State<RideRequestScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
+
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// Picking a spot on the map opens the location picker, which has a
+  /// full-screen map of its own. Ours stayed mounted underneath — two live
+  /// Mapbox surfaces, which closes the app on iOS. The picker now revokes
+  /// this one and waits for it to be gone before it mounts, and we take the
+  /// surface back when it pops.
+  static const String _mapSurfaceOwner = 'RideRequest';
+  bool _mapMounted = false;
+
   // ── Map ──
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
@@ -561,6 +574,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(_acquireMapSurface());
 
     // Restore the method the rider chose to keep, if they ever chose one.
     //
@@ -812,8 +826,43 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) mapRouteObserver.subscribe(this, route);
+  }
+
+  /// Claim the one live Mapbox surface before mounting the map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        _setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    _setState(() => _mapMounted = true);
+  }
+
+  /// Back from the picker (or anything else that took the surface) — take
+  /// it back. The camera handoff below restores the spot the rider picked,
+  /// so a fresh mount lands where they left off.
+  @override
+  void didPopNext() {
+    if (!mounted || _mapMounted) return;
+    unawaited(_acquireMapSurface());
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    mapRouteObserver.unsubscribe(this);
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _shimmerTimeoutTimer?.cancel();
     _stuckPaymentFuse?.cancel();
     _searchMapTimer?.cancel();
@@ -891,6 +940,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   child: CircularProgressIndicator(color: Color(0xFFE8C547), strokeWidth: 2),
                 ),
               )
+            // The Driver Found overlay brings its own full-screen map. Held
+            // mounted underneath it, that is two live Mapbox surfaces — the
+            // iOS crash where the app closes — and this one is completely
+            // hidden behind the overlay anyway. The overlay auto-navigates
+            // to tracking a moment later, so it is never remounted.
+            else if ((_driverFoundVisible && _ctrl.state.driver != null) ||
+                !_mapMounted)
+              const ColoredBox(color: Color(0xFF07080D))
             else
               RepaintBoundary(
                 child: mapbox.MapWidget(

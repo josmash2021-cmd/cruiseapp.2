@@ -7,21 +7,16 @@ import '../../services/haptic_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/api_keys.dart';
 import '../../config/app_theme.dart';
-import '../../config/map_theme.dart';
-import '../../config/mapbox_config.dart';
+import '../../widgets/static_route_preview.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
-import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/tier_badge.dart';
-import '../../utils/mapbox_safe.dart';
-import '../../services/map_controller_cache.dart';
 import 'scheduled_ride_details_screen.dart';
 
 /// Unified scheduled rides screen with two tabs:
@@ -504,8 +499,10 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
     return _cardShell(
       isAirport: false,
+      // A still, not a live map. One of these is mounted per card, and a
+      // native Mapbox surface per card is the crash that closed the app.
       mapWidget: hasPickup
-          ? _AvailableMiniMap(
+          ? StaticRoutePreview(
               pickupLat: pickupLat,
               pickupLng: pickupLng,
               dropoffLat: dropoffLat,
@@ -904,11 +901,6 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   bool _mapEverExpanded = false;
 
   // ── Mapbox state ──
-  mapbox.MapboxMap? _mapCtrl;
-  mapbox.PointAnnotationManager? _pointAnnotMgr;
-  mapbox.PolylineAnnotationManager? _polyAnnotMgr;
-  mapbox.PolylineAnnotation? _routeAnnot;
-  final List<mapbox.PointAnnotation> _markerAnnots = [];
   AnimationController? _routeAnimCtrl;
   bool _routeLoaded   = false;
   bool _routeLoading  = false;
@@ -947,6 +939,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       _expanded = !_expanded;
       if (_expanded) _mapEverExpanded = true;
     });
+    if (_expanded) unawaited(_loadRouteDuration());
   }
 
   Future<void> _cancelTrip() async {
@@ -1003,179 +996,33 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
 
   // ── Mapbox callbacks ──
 
-  Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
-    _mapCtrl = ctrl;
-    // Cache controller for reuse across driver screens
-    MapControllerCache.instance.cache(ctrl);
-    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-    try {
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-allow-overlap', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-ignore-placement', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-    } catch (_) {}
-    _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
-    if (_hasCoords && mounted) _loadRouteAndAnimate();
-  }
-
-  Future<void> _loadRouteAndAnimate() async {
+  /// Fetches the trip duration for the chip on the preview.
+  ///
+  /// This used to be _loadRouteAndAnimate and was kicked off by the map's
+  /// onMapCreated — drawing pins and animating a polyline onto a live Mapbox
+  /// surface. The preview is a still image now, so the drawing is gone; the
+  /// duration is not, and it still has to load or the "X min trip" chip
+  /// never appears.
+  Future<void> _loadRouteDuration() async {
     if (_routeLoading || _routeLoaded || !_hasCoords) return;
     setState(() => _routeLoading = true);
     try {
-      final pickup  = LatLng(_pickupLat!,  _pickupLng!);
+      final pickup = LatLng(_pickupLat!, _pickupLng!);
       final dropoff = LatLng(_dropoffLat!, _dropoffLng!);
-      final dirs    = DirectionsService(ApiKeys.webServices);
-      final route   = await dirs.getRoute(origin: pickup, destination: dropoff);
+      final dirs = DirectionsService(ApiKeys.webServices);
+      final route = await dirs.getRoute(origin: pickup, destination: dropoff);
       if (!mounted || !_expanded) return;
       if (route == null) return;
       setState(() {
         _tripDuration = route.durationText;
-        _routeLoaded  = true;
+        _routeLoaded = true;
       });
-      // Use road-snapped route points directly — do NOT cap with raw coords
-      final routePts = route.points;
-      await _fitCamera(routePts, pitch: 0);
-      await _placePins(pickup, dropoff);
-      await _animateRoute(routePts);
-      if (_mapCtrl != null && mounted) {
-        final curCam = await _mapCtrl!.getCameraState();
-        await _mapCtrl!.flyTo(
-          mapbox.CameraOptions(
-            center: curCam.center,
-            zoom: curCam.zoom,
-            bearing: curCam.bearing,
-            pitch: 35,
-          ),
-          mapbox.MapAnimationOptions(duration: 700),
-        );
-      }
     } catch (_) {
     } finally {
       if (mounted) setState(() => _routeLoading = false);
     }
   }
 
-  Future<void> _fitCamera(List<LatLng> pts, {double pitch = 0}) async {
-    if (_mapCtrl == null || pts.length < 2) return;
-    final lats = pts.map((p) => p.latitude).toList()..sort();
-    final lngs = pts.map((p) => p.longitude).toList()..sort();
-    try {
-      final cam = await _mapCtrl!.cameraForCoordinatesPadding(
-        [
-          mapbox.Point(coordinates: mapbox.Position(lngs.first, lats.first)),
-          mapbox.Point(coordinates: mapbox.Position(lngs.last,  lats.last)),
-        ],
-        mapbox.CameraOptions(pitch: pitch),
-        mapbox.MbxEdgeInsets(top: 70, left: 60, bottom: 70, right: 60),
-        null,
-        null,
-      );
-      await _mapCtrl!.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
-    } catch (_) {}
-  }
-
-  Future<void> _placePins(LatLng pickup, LatLng dropoff) async {
-    if (_pointAnnotMgr == null) return;
-    for (final a in _markerAnnots) {
-      try { await _pointAnnotMgr!.delete(a); } catch (_) {}
-    }
-    _markerAnnots.clear();
-    final pickupBytes = await renderCircularPinBytes(
-        icon: CircularPinIcon.person, isPickup: true,  radius: 44);
-    final dropBytes   = await renderCircularPinBytes(
-        icon: CircularPinIcon.home,   isPickup: false, radius: 44);
-    if (!mounted) return;
-    final pickupPoint = safePoint(pickup.longitude, pickup.latitude);
-    if (pickupPoint != null) {
-      try {
-        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: pickupPoint,
-          image:       pickupBytes,
-          iconSize:    0.65,
-          iconAnchor:  mapbox.IconAnchor.BOTTOM,
-          iconOffset:  [0, 0],
-        ));
-        _markerAnnots.add(a);
-      } catch (_) {}
-    }
-    final dropoffPoint = safePoint(dropoff.longitude, dropoff.latitude);
-    if (dropoffPoint != null) {
-      try {
-        final a = await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: dropoffPoint,
-          image:      dropBytes,
-          iconSize:   0.65,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
-        ));
-        _markerAnnots.add(a);
-      } catch (_) {}
-    }
-  }
-
-  Future<void> _animateRoute(List<LatLng> points) async {
-    if (_polyAnnotMgr == null || points.length < 2) return;
-    if (_routeAnnot != null) {
-      try { await _polyAnnotMgr!.delete(_routeAnnot!); } catch (_) {}
-      _routeAnnot = null;
-    }
-    final routeGeo = safeLineString(points.sublist(0, 2));
-    if (routeGeo == null) return;
-    try {
-      _routeAnnot = await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-        geometry:  routeGeo,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 4.5,
-        lineJoin:  mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    if (!mounted || _routeAnnot == null) return;
-
-    _routeAnimCtrl?.dispose();
-    _routeAnimCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    final completer = Completer<void>();
-    int  lastCount = 2;
-    bool updating  = false;
-    _routeAnimCtrl!.addListener(() {
-      if (!mounted || updating) return;
-      final eased = Curves.easeInOutSine.transform(_routeAnimCtrl!.value);
-      final count = (eased * points.length).round().clamp(2, points.length);
-      if (count != lastCount) {
-        lastCount = count;
-        final coords = points
-            .sublist(0, count)
-            .map((p) => mapbox.Position(p.longitude, p.latitude))
-            .toList();
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        updating = true;
-        _polyAnnotMgr!.update(_routeAnnot!)
-            .then((_) => updating = false)
-            .catchError((_) { updating = false; return false; });
-      }
-    });
-    _routeAnimCtrl!.addStatusListener((s) {
-      if (s == AnimationStatus.completed && !completer.isCompleted) {
-        completer.complete();
-      }
-    });
-    _routeAnimCtrl!.forward();
-    return completer.future;
-  }
-
-  // ── Helpers ──
 
   String _countdown(DateTime? scheduledAt) {
     if (scheduledAt == null) return '';
@@ -1611,35 +1458,20 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   }
 
   Widget _buildMiniMap() {
+    // Every expanded card used to mount its own live Mapbox surface, so two
+    // cards open at once was already two of them. This is a still image, so
+    // the count no longer matters.
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         children: [
-          mapbox.MapWidget(
-            styleUri: MapboxConfig.styleDark,
-            cameraOptions: mapbox.CameraOptions(
-              center: mapbox.Point(
-                coordinates: mapbox.Position(
-                  (_pickupLng! + (_dropoffLng ?? _pickupLng!)) / 2,
-                  (_pickupLat! + (_dropoffLat ?? _pickupLat!)) / 2,
-                ),
-              ),
-              zoom: 11.5,
+          Positioned.fill(
+            child: StaticRoutePreview(
+              pickupLat: _pickupLat!,
+              pickupLng: _pickupLng!,
+              dropoffLat: _dropoffLat,
+              dropoffLng: _dropoffLng,
             ),
-            onMapCreated: _onMapCreated,
-            onStyleLoadedListener: (_) async {
-              if (_mapCtrl != null) {
-                await MapTheme.applyNavyGold(_mapCtrl!);
-                if (_pointAnnotMgr != null) {
-                  try {
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
-                    await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-                  } catch (_) {}
-                }
-              }
-            },
           ),
           if (_routeLoading)
             const Center(
@@ -1701,205 +1533,3 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  _AvailableMiniMap — lightweight interactive map with golden teardrop pins
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _AvailableMiniMap extends StatefulWidget {
-  final double pickupLat;
-  final double pickupLng;
-  final double? dropoffLat;
-  final double? dropoffLng;
-
-  const _AvailableMiniMap({
-    required this.pickupLat,
-    required this.pickupLng,
-    this.dropoffLat,
-    this.dropoffLng,
-  });
-
-  @override
-  State<_AvailableMiniMap> createState() => _AvailableMiniMapState();
-}
-
-class _AvailableMiniMapState extends State<_AvailableMiniMap> {
-  mapbox.MapboxMap? _mapCtrl;
-  mapbox.PointAnnotationManager? _pointAnnotMgr;
-  mapbox.PolylineAnnotationManager? _polyAnnotMgr;
-  bool _routeLoading = false;
-  bool _routeLoaded = false;
-
-  bool get _hasDropoff =>
-      widget.dropoffLat != null && widget.dropoffLng != null;
-
-  @override
-  Widget build(BuildContext context) {
-    final centerLng = _hasDropoff
-        ? (widget.pickupLng + widget.dropoffLng!) / 2
-        : widget.pickupLng;
-    final centerLat = _hasDropoff
-        ? (widget.pickupLat + widget.dropoffLat!) / 2
-        : widget.pickupLat;
-
-    return mapbox.MapWidget(
-      styleUri: MapboxConfig.styleDark,
-      cameraOptions: mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(centerLng, centerLat),
-        ),
-        zoom: _hasDropoff ? 11.0 : 14.0,
-      ),
-      onMapCreated: _onMapCreated,
-      onStyleLoadedListener: (_) async {
-        if (_mapCtrl != null) {
-          await MapTheme.applyNavyGold(_mapCtrl!);
-        }
-      },
-    );
-  }
-
-  Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
-    _mapCtrl = ctrl;
-    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution
-        .updateSettings(mapbox.AttributionSettings(enabled: false));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-    try {
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-allow-overlap', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-ignore-placement', true);
-      await ctrl.style.setStyleLayerProperty(
-          _pointAnnotMgr!.id, 'icon-anchor', 'bottom');
-    } catch (_) {}
-    _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
-    if (mounted) await _placePins();
-    if (mounted && _hasDropoff) await _fitBounds();
-  }
-
-  Future<void> _placePins() async {
-    if (_pointAnnotMgr == null) return;
-    final pickupBytes = await renderCircularPinBytes(
-        icon: CircularPinIcon.person, isPickup: true, radius: 44);
-    if (!mounted) return;
-    final pickupPoint = safePoint(widget.pickupLng, widget.pickupLat);
-    if (pickupPoint != null) {
-      try {
-        await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: pickupPoint,
-          image: pickupBytes,
-          iconSize: 0.55,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: [0, 0],
-        ));
-      } catch (_) {}
-    }
-
-    if (_hasDropoff) {
-      final dropBytes = await renderCircularPinBytes(
-          icon: CircularPinIcon.flag, isPickup: false, radius: 44);
-      if (!mounted) return;
-      final dropoffPoint = safePoint(widget.dropoffLng!, widget.dropoffLat!);
-      if (dropoffPoint != null) {
-        try {
-          await _pointAnnotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: dropoffPoint,
-            image: dropBytes,
-            iconSize: 0.55,
-            iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: [0, 0],
-          ));
-        } catch (_) {}
-      }
-
-      // Fetch real road-based route and draw golden polyline
-      if (_polyAnnotMgr != null) {
-        _fetchAndDrawRoute();
-      }
-    }
-  }
-
-  Future<void> _fetchAndDrawRoute() async {
-    if (!_hasDropoff || _routeLoading || _routeLoaded) return;
-    _routeLoading = true;
-    try {
-      final pickup = LatLng(widget.pickupLat, widget.pickupLng);
-      final dropoff = LatLng(widget.dropoffLat!, widget.dropoffLng!);
-      final dirs = DirectionsService(ApiKeys.webServices);
-      final route = await dirs.getRoute(origin: pickup, destination: dropoff);
-      if (!mounted || route == null || route.points.length < 2) {
-        // Fallback: straight line if directions API fails
-        _drawStraightLine();
-        return;
-      }
-      _routeLoaded = true;
-      // Use road-snapped route points directly — do NOT cap with raw coords
-      final routeGeo = safeLineString(route.points);
-      if (routeGeo != null) {
-        try {
-          await _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-            geometry: routeGeo,
-            lineColor: const Color(0xFFE8C547).toARGB32(),
-            lineWidth: 3.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (_) {}
-        // Fit bounds to route
-        if (_mapCtrl != null) await _fitBounds();
-      }
-    } catch (_) {
-      _drawStraightLine();
-    } finally {
-      _routeLoading = false;
-    }
-  }
-
-  void _drawStraightLine() {
-    if (_polyAnnotMgr == null || !_hasDropoff) return;
-    final straightGeo = safeLineString([
-      LatLng(widget.pickupLat, widget.pickupLng),
-      LatLng(widget.dropoffLat!, widget.dropoffLng!),
-    ]);
-    if (straightGeo == null) return;
-    try {
-      _polyAnnotMgr!.create(mapbox.PolylineAnnotationOptions(
-        geometry: straightGeo,
-        lineColor: const Color(0xFFE8C547).toARGB32(),
-        lineWidth: 3.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-  }
-
-  Future<void> _fitBounds() async {
-    if (_mapCtrl == null || !_hasDropoff) return;
-    try {
-      final cam = await _mapCtrl!.cameraForCoordinateBounds(
-        mapbox.CoordinateBounds(
-          southwest: mapbox.Point(
-            coordinates: mapbox.Position(
-              math.min(widget.pickupLng, widget.dropoffLng!),
-              math.min(widget.pickupLat, widget.dropoffLat!),
-            ),
-          ),
-          northeast: mapbox.Point(
-            coordinates: mapbox.Position(
-              math.max(widget.pickupLng, widget.dropoffLng!),
-              math.max(widget.pickupLat, widget.dropoffLat!),
-            ),
-          ),
-          infiniteBounds: false,
-        ),
-        mapbox.MbxEdgeInsets(top: 55, left: 45, bottom: 55, right: 45),
-        null, null, null, null,
-      );
-      await _mapCtrl!.flyTo(cam, mapbox.MapAnimationOptions(duration: 600));
-    } catch (_) {}
-  }
-}

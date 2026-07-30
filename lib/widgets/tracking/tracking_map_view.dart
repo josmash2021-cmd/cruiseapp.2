@@ -1143,6 +1143,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   Widget _buildFullScreenMap() {
     return Stack(
       children: [
+        // Held back until this screen owns the one live Mapbox surface —
+        // the booking screen underneath still has its map up until then.
+        if (!_mapMounted)
+          const Positioned.fill(
+            child: ColoredBox(color: Color(0xFF07080D)),
+          )
+        else
         RepaintBoundary(
           child: mapbox.MapWidget(
             key: const ValueKey('rider-map'),

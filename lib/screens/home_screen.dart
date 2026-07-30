@@ -10,6 +10,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/route_observers.dart';
+import '../map/map_surface_coordinator.dart';
 import '../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/preload_service.dart';
@@ -74,7 +76,12 @@ const _goldLight = Color(0xFFFBE47A);
 // inside const expressions without relying on class static const visibility.
 const int _gpsWatchdogSec = 5;
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver, SecureScreenMixin {
+class _HomeScreenState extends State<HomeScreen>
+    with
+        TickerProviderStateMixin,
+        WidgetsBindingObserver,
+        SecureScreenMixin,
+        RouteAware {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 
@@ -285,6 +292,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      mapRouteObserver.subscribe(this, route);
+    }
+    // Post-frame so ModalRoute is settled — on a cold start with an active
+    // ride the tracking push may already be on its way, and then this
+    // correctly declines to mount.
+    if (!_claimedMapSurfaceOnce) {
+      _claimedMapSurfaceOnce = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_acquireMapSurface());
+      });
+    }
     if (!_imagesPrecached) {
       _imagesPrecached = true;
       // Precache car images so they display instantly
@@ -362,12 +382,80 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
   }
 
+  // ── RouteAware: one live Mapbox surface at a time ──
+  //
+  // This screen is the bottom of the rider stack and its mini map stayed
+  // mounted under every screen opened from here — the booking flow, the
+  // location picker, the scheduled rides list. Each of those brings its own
+  // native Mapbox view, so a single tap left two live surfaces up, which is
+  // a native crash on iOS: the app just closes.
+  //
+  // The observer is typed on PageRoute, so bottom sheets and dialogs never
+  // reach here — opening a sheet over the map must not tear it down.
+
+  /// Hides the mini map while another full screen covers it.
+  bool _miniMapSuspended = true;
+
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// Registering matters for timing, not just for correctness: a screen that
+  /// claims the surface revokes this one and *waits* for it to be gone before
+  /// mounting its own, so the two never overlap. The [didPushNext] fallback
+  /// below only fires 600 ms later, which would leave both alive in between.
+  static const String _mapSurfaceOwner = 'RiderHome';
+  bool _claimedMapSurfaceOnce = false;
+
+  /// Claim the one live Mapbox surface before mounting the mini map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || _miniMapSuspended) return;
+        setState(() => _miniMapSuspended = true);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _miniMapSuspended = false);
+  }
+
+  @override
+  void didPushNext() {
+    // The delay lets a route that is only passing through (a picker the
+    // rider dismisses immediately) come back without a map rebuild.
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      if (ModalRoute.of(context)?.isCurrent == true) return;
+      if (_miniMapSuspended) return;
+      // A registered screen already took it and owns the teardown.
+      if (MapSurfaceCoordinator.instance.currentOwner != _mapSurfaceOwner) {
+        return;
+      }
+      setState(() => _miniMapSuspended = true);
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    });
+  }
+
+  @override
+  void didPopNext() {
+    if (!mounted || !_miniMapSuspended) return;
+    unawaited(_acquireMapSurface());
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    mapRouteObserver.unsubscribe(this);
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
-    _miniDotFrame.dispose();
+    // The dot owns the ticker that writes to the notifier, so it goes
+    // first. The other order leaves a live ticker pointed at a disposed
+    // ValueNotifier.
     _homeDot.dispose();
+    _miniDotFrame.dispose();
     _homeDotRetryTimer?.cancel();
     _homeDotRetryTimer = null;
     _boltFlashCtrl.dispose();

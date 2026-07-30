@@ -1472,7 +1472,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
         child: IgnorePointer(
           child: Stack(
             children: [
-              Positioned.fill(child: _homeMiniMapSurface(pos)),
+              // Torn down while another full screen covers the home, so
+              // the rider never has two native Mapbox views alive at once.
+              // The dot below keeps painting, so the card never looks dead.
+              Positioned.fill(
+                child: _miniMapSuspended
+                    ? const ColoredBox(color: Color(0xFF0B0B0F))
+                    : _homeMiniMapSurface(pos),
+              ),
               // The dot, painted by Flutter at the centre the camera is
               // held on. Same reason as the driver's arrow: an annotation
               // only advances as fast as the platform channel drains, which
@@ -1661,11 +1668,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'image': 'cruisert1.png',
       },
       {
+        'tier': 'SUV_XL',
+        'displayName': 'SUV XL',
+        'desc': s.suvXlDesc,
+        'features': s.suvXlFeatures,
+        'idx': 1,
+        'image': 'cruisert_suvxl.png',
+      },
+      {
         'tier': 'PREMIUM',
         'displayName': 'PREMIUM',
         'desc': s.premiumDesc,
         'features': s.premiumFeatures,
-        'idx': 1,
+        'idx': 2,
         'image': 'cruisert2.png',
       },
       {
@@ -1673,7 +1688,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'displayName': 'STANDARD',
         'desc': s.comfortDesc,
         'features': s.comfortFeatures,
-        'idx': 2,
+        'idx': 3,
         'image': 'cruisert3.png',
       },
     ];
@@ -1685,11 +1700,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
         final displayName = v['displayName'] as String;
         final isVIP = tier == 'VIP';
 
-        final rideId = isVIP ? 'suburban' : tier == 'PREMIUM' ? 'camry' : 'fusion';
+        final rideId = isVIP
+            ? 'suburban'
+            : tier == 'SUV_XL'
+                ? 'suv_xl'
+                : tier == 'PREMIUM'
+                    ? 'camry'
+                    : 'fusion';
 
         return Expanded(
           child: Padding(
-            padding: EdgeInsets.only(right: idx < 2 ? 8 : 0),
+            padding: EdgeInsets.only(right: idx < 3 ? 6 : 0),
             child: IgnorePointer(
               ignoring: active,
               child: Opacity(
@@ -1716,14 +1737,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           top: 12,
                           left: 8,
                           right: 8,
-                          child: Text(
-                            displayName,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              displayName,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
@@ -1758,8 +1783,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         // collide — the minutes ended up behind the wheels.
                         // Checked on screen, not assumed.
                         Positioned(
-                          left: 16,
-                          right: 16,
+                          left: 8,
+                          right: 8,
                           bottom: 32,
                           child: SizedBox(
                             height: 58,

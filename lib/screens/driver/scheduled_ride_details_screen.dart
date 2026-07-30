@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import '../../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -39,6 +41,16 @@ class ScheduledRideDetailsScreen extends StatefulWidget {
 
 class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// It mounts a full-screen Mapbox background, and every other screen that
+  /// does is registered — an unregistered one leaves whatever it was opened
+  /// from holding a second live surface, which is a native crash on iOS.
+  static const String _mapSurfaceOwner = 'ScheduledRideDetails';
+
+  /// The backdrop waits until the surface is actually free.
+  bool _mapMounted = false;
+
   static const _gold = Color(0xFFE8C547);
   static const _darkBg = Color(0xFF0A0E21);
   static const _cardBg = Color(0xFF1A1A2E);
@@ -76,11 +88,30 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+    unawaited(_acquireMapSurface());
+  }
+
+  /// Claim the one live Mapbox surface before mounting the backdrop.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _mapMounted = true);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _pulseCtrl.dispose();
     super.dispose();
@@ -326,7 +357,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
       body: Stack(
         children: [
           // ── Live map background ──
-          if (pickupLat != null && pickupLng != null)
+          if (_mapMounted && pickupLat != null && pickupLng != null)
             Positioned.fill(
               child: IgnorePointer(
                 child: mapbox.MapWidget(

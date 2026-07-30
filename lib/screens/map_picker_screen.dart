@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
+import '../map/map_surface_coordinator.dart';
 import '../config/app_theme.dart';
 import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
@@ -35,6 +36,15 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   static const _gold = Color(0xFFE8C547);
   final _places = PlacesService(ApiKeys.webServices);
 
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// This screen is opened from the booking flow, which has a full-screen
+  /// map of its own. Mounting ours on top of it was two live Mapbox
+  /// surfaces, which closes the app on iOS. The coordinator revokes the
+  /// screen underneath and waits for it to be gone before we mount.
+  static const String _mapSurfaceOwner = 'MapPicker';
+  bool _mapMounted = false;
+
   mapbox.MapboxMap? _mapCtrl;
   String _address = '';
   bool _addressIsPlaceholder = true;
@@ -58,6 +68,7 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(_acquireMapSurface());
     _settleCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -98,8 +109,26 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     }
   }
 
+  /// Claim the one live Mapbox surface before mounting the map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _mapMounted = true);
+  }
+
   @override
   void dispose() {
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _debounce?.cancel();
     _settleCtrl.dispose();
     _anchorCtrl?.dispose();
@@ -411,6 +440,9 @@ class _MapPickerScreenState extends State<MapPickerScreen>
       body: Stack(
         children: [
           // ── Map ──
+          if (!_mapMounted)
+            const ColoredBox(color: Color(0xFF0A1128))
+          else
           RepaintBoundary(
             child: mapbox.MapWidget(
               textureView: true,

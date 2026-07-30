@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import '../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -161,6 +163,33 @@ String? _normalizeRemotePhotoUrl(String? rawUrl) {
 class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
+
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// This is pushed on top of the booking screen, which keeps its own
+  /// full-screen map — two live Mapbox surfaces, which closes the app on
+  /// iOS right at the moment the rider is matched with a driver. Claiming
+  /// the surface revokes the one underneath and waits for it to be gone.
+  static const String _mapSurfaceOwner = 'RiderTracking';
+  bool _mapMounted = false;
+
+  /// Claim the one live Mapbox surface before mounting the map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        _setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    _setState(() => _mapMounted = true);
+  }
+
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
   mapbox.PointAnnotationManager? _carAnnotMgr;     // for car (icon-anchor: center)
@@ -361,6 +390,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(_acquireMapSurface());
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.
     if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty) &&
@@ -485,12 +515,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   @override
   void dispose() {
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
     }
-    _carFrame.dispose();
+    // Ticker first, notifier second. Reversed, the ticker is still live
+    // when the notifier dies and its very next frame writes to a disposed
+    // ValueNotifier — which throws, out of dispose(), and takes the app
+    // down every time the rider leaves this screen.
     _interpTicker?.dispose();
+    _carFrame.dispose();
     _camTimer?.cancel();
     _carHeartbeatTimer?.cancel();
     // car annotation cleaned up with pointAnnotMgr

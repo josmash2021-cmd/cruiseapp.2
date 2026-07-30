@@ -9,6 +9,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
+import '../config/route_observers.dart';
+import '../map/map_surface_coordinator.dart';
 import '../config/map_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -44,7 +46,15 @@ class ScheduleBookingScreen extends StatefulWidget {
 }
 
 class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
-    with TickerProviderStateMixin, SecureScreenMixin {
+    with TickerProviderStateMixin, SecureScreenMixin, RouteAware {
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  ///
+  /// This screen opens the location picker, which has a full-screen map of
+  /// its own. Ours stayed mounted underneath — two live Mapbox surfaces,
+  /// which closes the app on iOS.
+  static const String _mapSurfaceOwner = 'ScheduleBooking';
+  bool _mapMounted = false;
+
   static const _gold = Color(0xFFE8C547);
   static final _hourRe = RegExp(r'(\d+)\s*(h|hr|hrs|hour|hours)');
   static final _minRe = RegExp(r'(\d+)\s*(m|min|mins|minute|minutes)');
@@ -122,6 +132,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(_acquireMapSurface());
     _loadPayments();
     _rides = _defaultRides();
     _pickupFocus.addListener(_onPickupFocusChanged);
@@ -174,7 +185,40 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   void _onDropoffFocusChanged() => setState(() {});
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) mapRouteObserver.subscribe(this, route);
+  }
+
+  /// Claim the one live Mapbox surface before mounting the map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _mapMounted = true);
+  }
+
+  /// Back from the picker — take the surface back.
+  @override
+  void didPopNext() {
+    if (!mounted || _mapMounted) return;
+    unawaited(_acquireMapSurface());
+  }
+
+  @override
   void dispose() {
+    mapRouteObserver.unsubscribe(this);
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _debounce?.cancel();
     _pickupFocus.removeListener(_onPickupFocusChanged);
     _dropoffFocus.removeListener(_onDropoffFocusChanged);
@@ -1211,6 +1255,11 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
               Expanded(
                 child: Stack(
                   children: [
+                    if (!_mapMounted)
+                      const Positioned.fill(
+                        child: ColoredBox(color: Color(0xFF07080D)),
+                      )
+                    else
                     mapbox.MapWidget(
                       textureView: true,
                       styleUri: MapboxConfig.styleDark,

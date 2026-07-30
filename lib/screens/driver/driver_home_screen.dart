@@ -530,18 +530,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void didPushNext() {
     // Deliberately empty. We keep our map.
     //
-    // This used to tear the surface down 600 ms after anything covered us,
-    // which meant walking into Settings or Earnings and back rebuilt the
-    // whole map: black card, then tiles, then the location dot drawn again
-    // from scratch. The driver saw their own arrow vanish and come back for
-    // a trip through a menu.
+    // Tearing it down for anything that covered us meant walking into the
+    // menu or Earnings and back rebuilt the whole map: black card, then
+    // tiles, then the location dot drawn again from scratch. The driver saw
+    // their own arrow vanish and come back for a trip through a menu.
     //
     // It only ever existed as crash insurance, and the crash needs two live
     // surfaces. Menus have no map, so they cannot be the second one — and
-    // any screen that DOES have a map now claims it through
+    // every driver screen that DOES have one claims it through
     // MapSurfaceCoordinator, which revokes ours and waits for us before it
-    // mounts. Holding a PlatformView under an opaque menu costs some memory;
-    // it cannot cost a crash.
+    // mounts. That claim was previously missing on the scheduled-rides
+    // screens, which is why this guard had to come back for a while; the
+    // list no longer mounts a map at all and the detail screen registers.
+    // test/map_surface_registration_test.dart fails if a new one forgets.
+    //
+    // Holding a PlatformView under an opaque menu costs some memory; it
+    // cannot cost a crash.
   }
 
   @override
